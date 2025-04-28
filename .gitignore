@@ -1,0 +1,37 @@
+# Annoying files and folders
+.vscode/
+.cache/
+.DS_Store/
+.directory/
+.idea/
+*.log
+*.tmp
+*.swp
+*.bak
+*.old
+*.orig
+*.rej
+*.sublime-workspace
+*.sublime-project
+*.iml
+Thumbs.db
+*.pyc
+*.pyo
+*.class
+*.out
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.stackdump
+*.trace
+*.prof
+*.pid
+*.seed
+*.core
+
+# Rust-specific
+/target
+Cargo.lock
