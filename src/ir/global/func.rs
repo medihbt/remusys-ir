@@ -20,6 +20,14 @@ pub struct FuncBodyIter<'a> {
 }
 
 impl FuncBody {
+    pub fn new(parent: GlobalRef, entry: BlockRef) -> Self {
+        Self {
+            parent,
+            blocks: slab::Slab::new(),
+            entry,
+        }
+    }
+
     pub fn get_parent<'a>(&'a self, module: &'a Module) -> &'a Func {
         match self.parent
                   .to_slabref(&module._alloc_global)

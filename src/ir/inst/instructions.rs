@@ -1,6 +1,6 @@
 use crate::{
     base::{slabref::SlabRef, NullableValue},
-    ir::{block::BlockRef, opcode::Opcode, FuncHolder, Module, PtrStorage, ValueRef},
+    ir::{block::BlockRef, opcode::Opcode, Module, ValueRef},
     typing::id::{ValTypeID, ValTypeUnion},
 };
 
@@ -11,7 +11,7 @@ use super::{
 
 pub struct BinSelect {
     pub cond: UseRef,
-    pub true_value: UseRef,
+    pub true_value:  UseRef,
     pub false_value: UseRef,
 }
 
@@ -25,10 +25,10 @@ pub struct CastOp {
 }
 
 pub struct IndexPtrOp {
-    pub aggr_ty: ValTypeID,
-    pub index_ty: ValTypeID,
-    pub indexed: UseRef,
-    pub indices: Vec<UseRef>,
+    pub aggr_ty:    ValTypeID,
+    pub index_ty:   ValTypeID,
+    pub indexed:    UseRef,
+    pub indices:    Vec<UseRef>,
 }
 
 pub struct CallOp {
@@ -58,9 +58,9 @@ impl InstDataTrait for BinSelect {
         module: &mut Module,
     ) -> InstCommon {
         let ret = InstCommon::new(opcode, ty, parent, module);
-        self.cond = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
-        self.true_value = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
-        self.false_value = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
+        self.cond = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
+        self.true_value = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
+        self.false_value = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
         ret
     }
 }
@@ -74,8 +74,8 @@ impl InstDataTrait for BinOp {
         module: &mut Module,
     ) -> InstCommon {
         let ret = InstCommon::new(opcode, ty, parent, module);
-        self.lhs = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
-        self.rhs = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
+        self.lhs = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
+        self.rhs = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
         ret
     }
 }
@@ -89,7 +89,7 @@ impl InstDataTrait for CastOp {
         module: &mut Module,
     ) -> InstCommon {
         let ret = InstCommon::new(opcode, ty, parent, module);
-        self.src = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
+        self.src = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
         ret
     }
 }
@@ -103,7 +103,7 @@ impl InstDataTrait for IndexPtrOp {
         module: &mut Module,
     ) -> InstCommon {
         let ret = InstCommon::new(opcode, ty, parent, module);
-        self.indexed = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
+        self.indexed = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
         // `self.indices` cannot be initialized because lacking of actual container type.
         ret
     }
@@ -153,6 +153,7 @@ impl CallOp {
         self.args.len()
     }
 }
+
 impl InstDataTrait for CallOp {
     fn init_common(
         &mut self,
@@ -162,7 +163,7 @@ impl InstDataTrait for CallOp {
         module: &mut Module,
     ) -> InstCommon {
         let ret = InstCommon::new(opcode, ty, parent, module);
-        self.callee = ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use);
+        self.callee = ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
         // initialize `self.args` depending on the actual callee function type.
         let nargs = {
             let type_ctx = module.get_type_ctx().borrow();
@@ -176,14 +177,8 @@ impl InstDataTrait for CallOp {
         self.args.reserve(nargs);
         for _ in 0..nargs {
             self.args
-                .push(ret.add_use(UseData::new(InstRef::new_nil()), &mut module._alloc_use));
+                .push(ret.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use));
         }
         ret
     }
 }
-impl PtrStorage for CallOp {
-    fn get_pointee_ty(&self) -> ValTypeID {
-        self.func_ty.clone()
-    }
-}
-impl FuncHolder for CallOp {}

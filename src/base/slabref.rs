@@ -6,9 +6,6 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
     type Item: Sized;
 
     fn from_handle(handle: usize) -> Self;
-    fn new_nil() -> Self {
-        Self::from_handle(usize::MAX)
-    }
     fn get_handle (&self) -> usize;
 
     fn to_slabref    <'a>(&self, slab: &'a Slab<Self::Item>)     -> Option<&'a Self::Item> {

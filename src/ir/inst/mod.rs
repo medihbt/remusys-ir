@@ -12,7 +12,7 @@ use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slablist::{SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
         slabref::SlabRef,
     },
     typing::id::ValTypeID,
@@ -34,57 +34,57 @@ pub enum Inst {
     // Terminator instructions. These instructions are put at the end of a block and
     // transfer control to another block or return from a function.
     /// Mark this block as unreachable.
-    Unreachable(InstCommon, Unreachable),
+    Unreachable (InstCommon, Unreachable),
     /// Return from a function, sometimes with a value.
-    Ret(InstCommon, Ret),
+    Ret         (InstCommon, Cell<Ret>),
     /// Jump to another block unconditionally.
-    Jump(InstCommon, Jump),
+    Jump        (InstCommon, Jump),
     /// Branch to one of two blocks based on a condition.
-    Br(InstCommon, Br),
+    Br          (InstCommon, Br),
     /// Branch to one of many blocks based on a condition.
-    Switch(InstCommon, Switch),
+    Switch      (InstCommon, Switch),
     /// Call a function and transfer control to the callee.
     /// Return type of the tail call instruction should be same as
     /// the callee function return type.
-    TailCall(InstCommon, TailCallOp),
+    TailCall    (InstCommon, TailCallOp),
 
     // Non-terminator instructions. These instructions are put in the middle of a block
     // and do not transfer control to another block or return from a function.
     /// PHI Node. This instruction is used to select a value based on the control flow.
-    Phi(InstCommon, phi::PhiNode),
+    Phi         (InstCommon, RefCell<phi::PhiNode>),
 
     /// Select a value based on the control flow.
-    BinSelect(InstCommon, instructions::BinSelect),
+    BinSelect   (InstCommon, instructions::BinSelect),
 
     /// Binary operation. This instruction is used to perform a binary operation on two
     /// values.
-    BinOp(InstCommon, instructions::BinOp),
+    BinOp       (InstCommon, instructions::BinOp),
 
     /// Compare operation. This instruction is used to perform a comparison operation
     /// on two values.
     /// The result of the comparison is a boolean value.
-    Cmp(InstCommon, instructions::BinOp),
+    Cmp         (InstCommon, instructions::BinOp),
 
     /// Cast operation. This instruction is used to perform a cast operation on a value.
     /// The result of the cast operation is a value of a different type.
-    Cast(InstCommon, instructions::CastOp),
+    Cast        (InstCommon, instructions::CastOp),
 
     /// GetElemtPtr operation. This instruction adjusts the pointer to point to
     /// the right position in the array or struct.
-    IndexPtr(InstCommon, instructions::IndexPtrOp),
+    IndexPtr    (InstCommon, instructions::IndexPtrOp),
 
     /// Static call operation with a known function target.
-    Call(InstCommon, instructions::CallOp),
+    Call        (InstCommon, instructions::CallOp),
 
     /// Dynamic call operation with its callee being anything that holds a
     /// function pointer.
-    DynCall(InstCommon, instructions::CallOp),
+    DynCall     (InstCommon, instructions::CallOp),
 
     /// Loads value from a pointer.
-    Load(InstCommon, instructions::LoadOp),
+    Load        (InstCommon, instructions::LoadOp),
 
     /// Store value to a pointer.
-    Store(InstCommon, instructions::StoreOp),
+    Store       (InstCommon, instructions::StoreOp),
 }
 
 pub trait InstDataTrait {
@@ -104,25 +104,28 @@ pub trait InstDataTrait {
     }
 }
 
-pub struct InstCommon {
-    /// As node of the instruction list.
-    pub node_head: Cell<SlabRefListNodeHead>,
+#[derive(Debug, Clone, Copy)]
+pub struct InstMutInner {
+    node_head: SlabRefListNodeHead,
+    parent:    BlockRef,
+}
 
+pub struct InstCommon {
     /// The opcode of the instruction.
     pub opcode: Opcode,
 
     /// The type of the instruction.
     pub ty: ValTypeID,
-    /// The parent block of the instruction.
-    pub parent: BlockRef,
 
     /// The operands of the instruction.
-    pub op_begin: UseRef,
-    pub op_end: UseRef,
+    pub operands: SlabRefList<UseRef>,
+
+    /// The common mutable part of the instruction.
+    pub(crate) inner: Cell<InstMutInner>,
 }
 
 impl SlabRef for InstRef {
-    type Item = RefCell<Inst>;
+    type Item = Inst;
 
     fn from_handle(handle: usize) -> Self {
         Self(handle)
@@ -132,17 +135,28 @@ impl SlabRef for InstRef {
     }
 }
 
-impl SlabRefListNode for RefCell<Inst> {
+impl SlabRefListNode for Inst {
     fn new_guide() -> Self {
-        RefCell::new(Inst::ListGuideNode(Cell::new(SlabRefListNodeHead::new())))
+        Inst::ListGuideNode(Cell::new(SlabRefListNodeHead::new()))
     }
-    
+
     fn load_node_head(&self) -> SlabRefListNodeHead {
-        self.borrow().get_list_head().get()
+        match self {
+            Inst::ListGuideNode(node_head) => node_head.get(),
+            _ => self.get_common().inner.get().node_head,
+        }
     }
 
     fn store_node_head(&self, node_head: SlabRefListNodeHead) {
-        self.borrow().get_list_head().set(node_head);
+        match self {
+            Inst::ListGuideNode(_) => panic!("Cannot store node head to ListGuideNode"),
+            _ => {
+                let inner = &self.get_common().inner;
+                inner.get()
+                     .insert_head(node_head)
+                     .set_into(inner);
+            }
+        }
     }
 }
 
@@ -175,39 +189,6 @@ impl Inst {
             Inst::Store(common, _) => common,
         }
     }
-    pub fn common_mut(&mut self) -> &mut InstCommon {
-        match self {
-            Inst::ListGuideNode(_) => panic!(
-                "Inst::ListGuideNode is head or tail of instruction list, NOT valid instruction"
-            ),
-
-            Inst::Unreachable(common, _) => common,
-            Inst::Ret(common, _) => common,
-            Inst::Jump(common, _) => common,
-            Inst::Br(common, _) => common,
-            Inst::Switch(common, _) => common,
-            Inst::TailCall(common, _) => common,
-
-            Inst::Phi(common, _) => common,
-
-            Inst::BinSelect(common, _) => common,
-            Inst::BinOp(common, _) => common,
-            Inst::Cmp(common, _) => common,
-            Inst::Cast(common, _) => common,
-            Inst::IndexPtr(common, _) => common,
-            Inst::Call(common, _) => common,
-            Inst::DynCall(common, _) => common,
-            Inst::Load(common, _) => common,
-            Inst::Store(common, _) => common,
-        }
-    }
-
-    pub fn get_list_head(&self) -> &Cell<SlabRefListNodeHead> {
-        match self {
-            Inst::ListGuideNode(h) => h,
-            _ => &self.get_common().node_head
-        }
-    }
 
     pub fn get_opcode(&self) -> Opcode {
         self.get_common().opcode
@@ -215,62 +196,70 @@ impl Inst {
     pub fn get_ty(&self) -> ValTypeID {
         self.get_common().ty.clone()
     }
+
     pub fn get_parent(&self) -> BlockRef {
-        self.get_common().parent
+        self.get_common().inner.get().parent
+    }
+    pub fn set_parent(&self, parent: BlockRef) {
+        self.get_common().inner.get()
+            .insert_parent(parent)
+            .set_into(&self.get_common().inner);
+    }
+
+    pub fn is_terminator(&self) -> bool {
+        matches!(self,
+            Inst::Unreachable(..) | Inst::Ret(..) |
+            Inst::Jump(..) | Inst::Br(..) | Inst::Switch(..) |
+            Inst::TailCall(..)
+        )
+    }
+}
+
+impl InstMutInner {
+    pub fn new(parent: BlockRef) -> Self {
+        Self {
+            node_head: SlabRefListNodeHead::new(),
+            parent,
+        }
+    }
+    pub fn insert_head(&self, node_head: SlabRefListNodeHead) -> Self {
+        Self {
+            node_head,
+            parent: self.parent,
+        }
+    }
+    pub fn insert_parent(&self, parent: BlockRef) -> Self {
+        Self {
+            node_head: self.node_head,
+            parent,
+        }
+    }
+    pub fn set_into(self, value: &Cell<Self>) {
+        value.set(self);
     }
 }
 
 impl InstCommon {
     pub fn new(opcode: Opcode, ty: ValTypeID, parent: BlockRef, module: &mut Module) -> Self {
-        let ret = Self {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
-            opcode,
-            ty,
-            parent,
-            op_begin: module.alloc_use(UseData::new(InstRef::new_nil())),
-            op_end: module.alloc_use(UseData::new(InstRef::new_nil())),
-        };
-
-        ret.op_begin.modify_slabref(&mut module._alloc_use, |v| {
-            v.prev = None;
-            v.next = Some(ret.op_end);
-        });
-        ret.op_end.modify_slabref(&mut module._alloc_use, |v| {
-            v.prev = Some(ret.op_begin);
-            v.next = None;
-        });
-
-        ret
+        Self {
+            opcode, ty,
+            operands: SlabRefList::from_slab(&mut module._alloc_use),
+            inner: Cell::new(InstMutInner::new(parent)),
+        }
     }
 
-    fn get_use_back(&self, alloc: &Slab<UseData>) -> UseRef {
-        self.op_end
-            .read_slabref(alloc, |v| v.prev)
-            .unwrap()
-            .unwrap()
+    pub(super) fn add_use(&self, use_data: UseData, alloc: &mut Slab<UseData>) -> UseRef {
+        let useref = UseRef::from_handle(alloc.insert(use_data));
+        self.operands
+            .push_back_ref(alloc, useref.clone())
+            .expect("Failed to add use reference to instruction");
+        useref
     }
 
-    /// Adding a 'use' Step1: add Use data
-    fn _add_use_modify(&self, use_data: &mut UseData, alloc: &Slab<UseData>) {
-        use_data.prev = Some(self.get_use_back(alloc));
-        use_data.next = Some(self.op_end);
-    }
-
-    /// Adding a 'use' Step2: modify the previous use
-    fn _add_use_fill(&self, use_ref: UseRef, alloc: &mut Slab<UseData>) {
-        self.get_use_back(alloc).modify_slabref(alloc, |v| {
-            v.next = Some(use_ref);
-        });
-        self.op_end.modify_slabref(alloc, |v| {
-            v.prev = Some(use_ref);
-        });
-    }
-
-    /// Adding a 'use'
-    fn add_use(&self, mut use_data: UseData, alloc: &mut Slab<UseData>) -> UseRef {
-        self._add_use_modify(&mut use_data, alloc);
-        let use_ref = UseRef::from_handle(alloc.insert(use_data));
-        self._add_use_fill(use_ref, alloc);
-        use_ref
+    #[allow(dead_code)]
+    pub(super) fn remove_use(&self, use_ref: UseRef, alloc: &Slab<UseData>) -> Result<UseRef, SlabRefListError> {
+        self.operands
+            .unplug_node(alloc, use_ref.clone())
+            .map(|_| use_ref)
     }
 }

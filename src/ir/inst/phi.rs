@@ -10,13 +10,11 @@ pub struct PhiNode {
 
 impl PhiNode {
     pub fn new() -> Self {
-        Self {
-            incoming: Vec::new(),
-        }
+        Self { incoming: Vec::new(), }
     }
 
     pub fn add_incoming(&mut self,
-                        self_common: &InstCommon,
+                        self_common: &mut InstCommon,
                         self_ref:     InstRef,
                         alloc:       &mut Slab<UseData>,
                         incoming: (BlockRef, ValueRef)) {

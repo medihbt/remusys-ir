@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use block::{BlockData, BlockRef};
 use global::{Global, GlobalRef};
@@ -12,6 +12,7 @@ pub mod constant;
 pub mod global;
 pub mod block;
 pub mod inst;
+pub mod util;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValueRef {
@@ -34,7 +35,8 @@ pub trait PtrStorage {
         }
     }
 }
-pub trait FuncHolder: PtrStorage {
+
+pub trait FuncStorage: PtrStorage {
     fn read_func_ty<R>(&self, module: &Module, f: impl FnOnce(&FuncType) -> R) -> Option<R> {
         self.read_pointee_ty(module, |ty| {
             if let ValTypeUnion::Func(func_ty) = ty {
@@ -60,7 +62,6 @@ pub trait FuncHolder: PtrStorage {
     }
 }
 
-
 impl NullableValue for ValueRef {
     fn new_null() -> Self { ValueRef::None }
     fn is_null(&self) -> bool { matches!(self, ValueRef::None) }
@@ -80,7 +81,7 @@ impl ValueRef {
                 inst_ref.read_slabref(
                     &module._alloc_inst,
                     |inst| {
-                        inst.borrow().get_ty()
+                        inst.get_ty()
                     }).unwrap_or(type_ctx.get_void_type())
             }
         }
@@ -96,7 +97,7 @@ pub struct Module {
     _type_ctx:     Rc<TypeContext>,
     _alloc_global: Slab<Global>,
     _alloc_block:  Slab<BlockData>,
-    _alloc_inst:   Slab<RefCell<inst::Inst>>,
+    _alloc_inst:   Slab<inst::Inst>,
     _alloc_use:    Slab<inst::usedef::UseData>,
     _alloc_jt:     Slab<inst::jump_targets::JumpTargetData>,
     _global_map:   HashMap<String, GlobalRef>,
@@ -162,7 +163,7 @@ impl Module {
         BlockRef::from_handle(self._alloc_block.insert(block))
     }
     pub fn alloc_inst(&mut self, inst: inst::Inst) -> inst::InstRef {
-        inst::InstRef::from_handle(self._alloc_inst.insert(RefCell::new(inst)))
+        inst::InstRef::from_handle(self._alloc_inst.insert(inst))
     }
     pub fn alloc_use(&mut self, use_data: inst::usedef::UseData) -> inst::usedef::UseRef {
         inst::usedef::UseRef::from_handle(self._alloc_use.insert(use_data))

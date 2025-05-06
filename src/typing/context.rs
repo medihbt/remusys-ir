@@ -18,6 +18,8 @@ pub struct TypeContextInner {
 #[derive(Debug)]
 pub struct TypeContext {
     pub inner: RefCell<TypeContextInner>,
+    _void_type:    ValTypeID,
+    _ptr_type:     ValTypeID,
 }
 
 impl TypeContextInner {
@@ -111,9 +113,11 @@ impl TypeContext {
                 _struct_alias: HashMap::new(),
                 _int_types:    [const { None }; u8::MAX as usize],
                 _float_types:  [const { None }; FloatTypeKind::NELEMS],
-                _void_type:    void_tyid,
-                _ptr_type:     ptr_tyid,
+                _void_type:    void_tyid.clone(),
+                _ptr_type:     ptr_tyid.clone(),
             }),
+            _void_type:    void_tyid,
+            _ptr_type:     ptr_tyid,
         });
 
         let weak_ret = Rc::downgrade(&ret);
@@ -136,10 +140,10 @@ impl TypeContext {
         self.borrow_mut()._get_float_type(Rc::downgrade(self), kind)
     }
     pub fn get_void_type(self: &Rc<Self>) -> ValTypeID {
-        self.borrow().get_void_type()
+        self._void_type.clone()
     }
     pub fn get_ptr_type(self: &Rc<Self>) -> ValTypeID {
-        self.borrow().get_ptr_type()
+        self._ptr_type.clone()
     }
     pub fn reg_get_type(self: &Rc<Self>, vty: ValTypeUnion) -> ValTypeID {
         let idx = self.borrow_mut()._find_or_register_type(vty);
