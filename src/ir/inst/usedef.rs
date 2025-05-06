@@ -1,3 +1,6 @@
+use std::cell::Cell;
+
+use crate::base::slablist::SlabRefListNodeHead;
 use crate::base::slabref::SlabRef;
 use crate::ir::ValueRef;
 
@@ -7,10 +10,9 @@ use super::InstRef;
 pub struct UseRef(usize);
 
 pub struct UseData {
-    pub user:    InstRef,
-    pub operand: Option<ValueRef>,
-    pub prev:    Option<UseRef>,
-    pub next:    Option<UseRef>,
+    pub node_head: Cell<SlabRefListNodeHead>,
+    pub operand:   Cell<Option<ValueRef>>,
+    pub user:      InstRef,
 }
 
 impl SlabRef for UseRef {
@@ -23,18 +25,16 @@ impl SlabRef for UseRef {
 impl UseData {
     pub fn new(user: InstRef) -> Self {
         Self {
+            node_head:  Cell::new(SlabRefListNodeHead::new()),
+            operand:    Cell::new(None),
             user,
-            operand: None,
-            prev:    None,
-            next:    None,
         }
     }
     pub fn new_with_operand(user: InstRef, operand: ValueRef) -> Self {
         Self {
+            node_head: Cell::new(SlabRefListNodeHead::new()),
+            operand:   Cell::new(Some(operand)),
             user,
-            operand: Some(operand),
-            prev:    None,
-            next:    None,
         }
     }
 }

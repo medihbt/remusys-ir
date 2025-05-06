@@ -1,59 +1,4 @@
-//< Transformed from Vala Opcode definition:
-/*
-public enum MusysIR.OpCode {
-    NONE,
-    AND,  ORR,  XOR,  SHL,  LSHR, ASHR, 
-    ADD,  SUB,  MUL,  SDIV, UDIV, SREM, UREM,
-    FADD, FSUB, FMUL, FDIV, FREM,
-    JMP, BR, SWITCH, RET, UNREACHABLE,
-    INEG, FNEG, NOT,
-    SITOFP, UITOFP, FPTOSI, ZEXT, SEXT, TRUNC, FPEXT, FPTRUNC,
-    BITCAST, INT_TO_PTR, PTR_TO_INT,
-    SELECT, INDEX_EXTRACT, INDEX_INSERT, INDEX_PTR, INDEX_OFFSET_OF,
-    LOAD, STORE, ALLOCA, DYN_ALLOCA,
-    CALL, DYN_CALL, PHI,
-    ICMP, FCMP,
-    CONST_ARRAY, CONST_STRUCT, CONST_VEC, CONST_PTR_NULL,
-    INTRIN, RESERVED_CNT;
-
-    public bool is_shift_op()  { return SHL  <= this <= ASHR; }
-    public bool is_logic_op()  { return AND  <= this <= ASHR || this == NOT; }
-    public bool is_int_op()    { return AND  <= this <= UREM; }
-    public bool is_float_op()  { return FADD <= this <= FREM; }
-    public bool is_binary_op() { return AND  <= this <= FREM; }
-    public bool is_divrem_op() {
-        return SDIV <= this <= UREM || this == FREM || this == FDIV;
-    }
-    public bool is_constexpr_op() {
-        return (AND <= this <= FREM) || (INDEX_EXTRACT <= this <= INDEX_OFFSET_OF);
-    }
-    public bool is_inst_op() {
-        return this != INDEX_OFFSET_OF && !(CONST_ARRAY <= this <= CONST_VEC);
-    }
-    public unowned string get_name() {
-        return this >= RESERVED_CNT?
-                "<undefined-opcode>":
-                _instruction_opcode_names[this];
-    }
-} // public enum OpCode
-
-private unowned string _instruction_opcode_names[MusysIR.OpCode.RESERVED_CNT] = {
-    "<undefined>",
-    "and", "or", "xor", "shl",  "lshr", "ashr", 
-    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
-    "fadd", "fsub", "fmul", "fdiv", "frem",
-    "br", "br", "switch", "ret", "unreachable",
-    "ineg", "fneg", "not",
-    "sitofp", "uitofp", "fptosi", "zext", "sext", "trunc", "fpext", "fptrunc",
-    "bitcast", "inttoptr", "ptrtoint",
-    "select", "extractelement", "insertelement", "getelementptr", "offsetof",
-    "load", "store", "alloca", "dyn-alloca", "call", "dyncall", "phi",
-    "icmp", "fcmp",
-    "constarray", "conststruct", "constvec",
-    "intrin"
-};
-
-*/
+use std::{collections::HashMap, str::FromStr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Enum representing the various opcodes in the Musys IR.
@@ -73,3 +18,86 @@ pub enum Opcode {
     Intrin, ReservedCnt,
 }
 
+impl Opcode {
+    pub fn is_shift_op(self) -> bool {
+        matches!(self, Opcode::Shl | Opcode::Lshr | Opcode::Ashr)
+    }
+    pub fn is_logic_op(self) -> bool {
+        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor)
+    }
+    pub fn is_int_op(self) -> bool {
+        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+    }
+    pub fn is_float_op(self) -> bool {
+        matches!(self, Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem)
+    }
+    pub fn is_binary_op(self) -> bool {
+        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+    }
+    pub fn is_divrem_op(self) -> bool {
+        matches!(self, Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::Frem | Opcode::Fdiv)
+    }
+    pub fn is_constexpr_op(self) -> bool {
+        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::IndexExtract | Opcode::IndexInsert | Opcode::IndexPtr | Opcode::IndexOffsetOf)
+    }
+    pub fn is_inst_op(self) -> bool {
+        !matches!(self, Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec)
+    }
+
+    pub fn get_name(self) -> &'static str {
+        if self as usize >= Opcode::ReservedCnt as usize {
+            "<undefined-opcode>"
+        } else {
+            OPCODE_NAMES[self as usize]
+        }
+    }
+
+    fn init_name_map() -> HashMap<&'static str, Opcode> {
+        let mut m = HashMap::new();
+        for (i, &name) in OPCODE_NAMES.iter().enumerate() {
+            m.insert(name, unsafe { std::mem::transmute(i as u8) });
+        }
+        m
+    }
+}
+impl ToString for Opcode {
+    fn to_string(&self) -> String {
+        self.get_name().to_string()
+    }
+}
+impl FromStr for Opcode {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        OPCODE_NAME_MAP.get(s).copied().ok_or(())
+    }
+}
+impl From<u8> for Opcode {
+    fn from(value: u8) -> Self {
+        if (Self::None as usize .. Self::ReservedCnt as usize).contains(&(value as usize)) {
+            unsafe { std::mem::transmute(value) }
+        } else {
+            Self::None
+        }
+    }
+}
+
+static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
+    "<undefined>",
+    "and", "or", "xor", "shl",  "lshr", "ashr",
+    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
+    "fadd", "fsub", "fmul", "fdiv", "frem",
+    "jmp", "br", "switch", "ret", "unreachable",
+    "sitofp", "uitofp", "fptosi", "zext", "sext", "trunc", "fpext", "fptrunc",
+    "bitcast", "inttoptr", "ptrtoint",
+    "select", "extractelement", "insertelement", "getelementptr", "offsetof",
+    "load", "store", "alloca", "dyn-alloca",
+    "call", "dyncall", "phi",
+    "icmp", "fcmp",
+    "constarray", "conststruct", "constvec",
+    "constptrnull",
+    "intrin"
+];
+
+lazy_static::lazy_static! {
+    static ref OPCODE_NAME_MAP: HashMap<&'static str, Opcode> = Opcode::init_name_map();
+}

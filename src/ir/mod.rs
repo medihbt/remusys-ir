@@ -98,6 +98,7 @@ pub struct Module {
     _alloc_block:  Slab<BlockData>,
     _alloc_inst:   Slab<RefCell<inst::Inst>>,
     _alloc_use:    Slab<inst::usedef::UseData>,
+    _alloc_jt:     Slab<inst::jump_targets::JumpTargetData>,
     _global_map:   HashMap<String, GlobalRef>,
 }
 
@@ -110,6 +111,7 @@ impl Module {
             _alloc_block:  Slab::new(),
             _alloc_inst:   Slab::new(),
             _alloc_use:    Slab::new(),
+            _alloc_jt:     Slab::new(),
             _global_map:   HashMap::new(),
         }
     }
@@ -164,6 +166,9 @@ impl Module {
     }
     pub fn alloc_use(&mut self, use_data: inst::usedef::UseData) -> inst::usedef::UseRef {
         inst::usedef::UseRef::from_handle(self._alloc_use.insert(use_data))
+    }
+    pub fn alloc_jt(&mut self, jt_data: inst::jump_targets::JumpTargetData) -> inst::jump_targets::JumpTargetRef {
+        inst::jump_targets::JumpTargetRef::from_handle(self._alloc_jt.insert(jt_data))
     }
 
     pub fn gc(&mut self) {

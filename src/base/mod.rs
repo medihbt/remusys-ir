@@ -1,4 +1,5 @@
 pub mod slabref;
+pub mod slablist;
 
 pub trait NullableValue: Clone + Eq {
     fn new_null()     -> Self;

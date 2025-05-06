@@ -115,20 +115,21 @@ impl CallOp {
             .to_slabref(&module._alloc_use)
             .unwrap()
             .operand
+            .get()
             .unwrap_or(ValueRef::None)
     }
     pub fn set_callee(&mut self, callee: ValueRef, module: &mut Module) {
         self.callee
             .to_slabref_mut(&mut module._alloc_use)
             .unwrap()
-            .operand = callee.to_option();
+            .operand.set(callee.to_option());
     }
     pub fn get_args<'a>(&'a self, module: &'a Module) -> impl Iterator<Item = ValueRef> + 'a {
         self.args
             .iter()
             .map(move |u| {
                 u.to_slabref(&module._alloc_use).unwrap()
-                 .operand.unwrap_or(ValueRef::None)
+                 .operand.get().unwrap_or(ValueRef::None)
             })
     }
     pub fn args_mut<'a>(&'a self, module: &'a mut Module) -> impl Iterator<Item = ValueRef> + 'a {
@@ -136,7 +137,7 @@ impl CallOp {
             .iter()
             .map(move |u| {
                 u.to_slabref_mut(&mut module._alloc_use).unwrap()
-                 .operand.unwrap_or(ValueRef::None)
+                 .operand.get().unwrap_or(ValueRef::None)
             })
     }
     pub fn get_arg(&self, i: usize, module: &Module) -> ValueRef {
@@ -146,7 +147,7 @@ impl CallOp {
         self.args[i]
             .to_slabref_mut(&mut module._alloc_use)
             .unwrap()
-            .operand = arg.to_option();
+            .operand.set(arg.to_option());
     }
     pub fn get_n_args(&self) -> usize {
         self.args.len()

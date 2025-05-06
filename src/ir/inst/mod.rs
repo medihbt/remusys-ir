@@ -1,15 +1,22 @@
 pub mod instructions;
+pub mod jump_targets;
 pub mod phi;
 pub mod terminator;
 pub mod usedef;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use slab::Slab;
 use terminator::*;
 use usedef::{UseData, UseRef};
 
-use crate::{base::slabref::SlabRef, typing::id::ValTypeID};
+use crate::{
+    base::{
+        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slabref::SlabRef,
+    },
+    typing::id::ValTypeID,
+};
 
 use super::{Module, block::BlockRef, opcode::Opcode};
 
@@ -18,6 +25,12 @@ use super::{Module, block::BlockRef, opcode::Opcode};
 pub struct InstRef(pub(crate) usize);
 
 pub enum Inst {
+    /// Head or tail node of the instruction list, used to mark the beginning
+    /// or end of the instruction list.
+    ///
+    /// NOTE: This is NOT a valid instruction.
+    ListGuideNode(Cell<SlabRefListNodeHead>),
+
     // Terminator instructions. These instructions are put at the end of a block and
     // transfer control to another block or return from a function.
     /// Mark this block as unreachable.
@@ -66,7 +79,7 @@ pub enum Inst {
     /// Dynamic call operation with its callee being anything that holds a
     /// function pointer.
     DynCall(InstCommon, instructions::CallOp),
-    
+
     /// Loads value from a pointer.
     Load(InstCommon, instructions::LoadOp),
 
@@ -92,6 +105,9 @@ pub trait InstDataTrait {
 }
 
 pub struct InstCommon {
+    /// As node of the instruction list.
+    pub node_head: Cell<SlabRefListNodeHead>,
+
     /// The opcode of the instruction.
     pub opcode: Opcode,
 
@@ -100,14 +116,9 @@ pub struct InstCommon {
     /// The parent block of the instruction.
     pub parent: BlockRef,
 
-    /// Next instruction in the block.
-    pub next: Option<InstRef>,
-    /// Previous instruction in the block.
-    pub prev: Option<InstRef>,
-
     /// The operands of the instruction.
     pub op_begin: UseRef,
-    pub op_end:   UseRef,
+    pub op_end: UseRef,
 }
 
 impl SlabRef for InstRef {
@@ -121,9 +132,29 @@ impl SlabRef for InstRef {
     }
 }
 
+impl SlabRefListNode for RefCell<Inst> {
+    fn new_guide() -> Self {
+        RefCell::new(Inst::ListGuideNode(Cell::new(SlabRefListNodeHead::new())))
+    }
+    
+    fn load_node_head(&self) -> SlabRefListNodeHead {
+        self.borrow().get_list_head().get()
+    }
+
+    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+        self.borrow().get_list_head().set(node_head);
+    }
+}
+
+impl SlabRefListNodeRef for InstRef {}
+
 impl Inst {
     pub fn get_common(&self) -> &InstCommon {
         match self {
+            Inst::ListGuideNode(_) => panic!(
+                "Inst::ListGuideNode is head or tail of instruction list, NOT valid instruction"
+            ),
+
             Inst::Unreachable(common, _) => common,
             Inst::Ret(common, _) => common,
             Inst::Jump(common, _) => common,
@@ -146,6 +177,10 @@ impl Inst {
     }
     pub fn common_mut(&mut self) -> &mut InstCommon {
         match self {
+            Inst::ListGuideNode(_) => panic!(
+                "Inst::ListGuideNode is head or tail of instruction list, NOT valid instruction"
+            ),
+
             Inst::Unreachable(common, _) => common,
             Inst::Ret(common, _) => common,
             Inst::Jump(common, _) => common,
@@ -167,6 +202,13 @@ impl Inst {
         }
     }
 
+    pub fn get_list_head(&self) -> &Cell<SlabRefListNodeHead> {
+        match self {
+            Inst::ListGuideNode(h) => h,
+            _ => &self.get_common().node_head
+        }
+    }
+
     pub fn get_opcode(&self) -> Opcode {
         self.get_common().opcode
     }
@@ -181,11 +223,10 @@ impl Inst {
 impl InstCommon {
     pub fn new(opcode: Opcode, ty: ValTypeID, parent: BlockRef, module: &mut Module) -> Self {
         let ret = Self {
+            node_head: Cell::new(SlabRefListNodeHead::new()),
             opcode,
             ty,
             parent,
-            next: None,
-            prev: None,
             op_begin: module.alloc_use(UseData::new(InstRef::new_nil())),
             op_end: module.alloc_use(UseData::new(InstRef::new_nil())),
         };
