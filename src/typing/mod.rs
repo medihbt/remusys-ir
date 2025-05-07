@@ -1,45 +1,52 @@
-pub mod subtypes;
+use context::TypeContext;
+use id::ValTypeID;
+
 pub mod context;
 pub mod id;
+pub mod types;
 
+pub trait IValType {
+    fn get_instance_size(&self, type_ctx: &TypeContext) -> Option<usize>;
+    fn makes_instance(&self) -> bool;
+
+    fn get_display_name(&self, type_ctx: &TypeContext) -> String;
+
+    fn deep_eq(&self, rhs: &Self) -> bool;
+
+    fn gc_trace(&self, gather_func: impl Fn(ValTypeID));
+}
+
+#[cfg(test)]
 mod testing {
-    #[allow(unused_imports)]
-    use super::{context::TypeContext, id::ValTypeUnion, subtypes::ArrayType};
+    use super::{context::{binary_bits_to_bytes, PlatformPolicy, TypeContext}, id::ValTypeID, types::FloatTypeKind};
 
+    
     #[test]
-    fn test_type_context() {
-        let context = TypeContext::new();
-        let i32ty = context.get_int_type(32);
-        let i32ty2 = context.get_int_type(32);
-        let ai32n4ty = context.reg_get_type(
-            ValTypeUnion::Array(ArrayType {
-                elem_ty: i32ty.clone(),
-                length:  4,
-            })
-        );
-        let ai32n4ty2 = context.reg_get_type(
-            ValTypeUnion::Array(ArrayType {
-                elem_ty: i32ty.clone(),
-                length:  4,
-            })
-        );
-        assert_eq!(i32ty, i32ty2);
-        assert_eq!(ai32n4ty.to_string(), "[i32 x 4]");
-        assert_eq!(ai32n4ty, ai32n4ty2);
+    fn test_void_ptr() {
+        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
+        let voidty = ValTypeID::Void;
+        let ptrty  = ValTypeID::Ptr;
+
+        assert_eq!(voidty.get_display_name(&type_ctx), "void");
+        assert_eq!(ptrty.get_display_name(&type_ctx),  "ptr");
     }
 
     #[test]
-    fn test_int_types() {
-        let context = TypeContext::new();
-        let boolty = context.get_int_type(1);
-        let i8ty  = context.get_int_type(8);
-        let i16ty = context.get_int_type(16);
-        let i32ty = context.get_int_type(32);
-        let i64ty = context.get_int_type(64);
-        assert_eq!(boolty.to_string(), "i1");
-        assert_eq!(i8ty.to_string(),   "i8");
-        assert_eq!(i16ty.to_string(), "i16");
-        assert_eq!(i32ty.to_string(), "i32");
-        assert_eq!(i64ty.to_string(), "i64");
+    fn test_primitive_types() {
+        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
+        for i in 1..u8::MAX {
+            let inty = ValTypeID::Int(i);
+
+            assert_eq!(inty.get_instance_size(&type_ctx), Some(binary_bits_to_bytes(i as usize)));
+            print!("{}, ", inty.get_display_name(&type_ctx));
+        }
+
+        assert_eq!(ValTypeID::Int(1), ValTypeID::new_boolean());
+
+        let f32ty = ValTypeID::Float(FloatTypeKind::Ieee32);
+        let f64ty = ValTypeID::Float(FloatTypeKind::Ieee64);
+
+        assert_eq!(f32ty.get_display_name(&type_ctx), "float");
+        assert_eq!(f64ty.get_display_name(&type_ctx), "double");
     }
 }

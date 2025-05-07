@@ -1,71 +1,62 @@
+use std::cell::Cell;
+
+use func::FuncData;
+
+use crate::{impl_slabref, typing::id::ValTypeID};
+
+use super::{PtrStorage, ValueSSA};
+
 pub mod func;
 
-use crate::{base::slabref::SlabRef, typing::id::ValTypeID};
-
-use super::ValueRef;
-
-pub enum Global {
-    Var  (GlobalVar),
-    Alias(GlobalAlias),
-    Func (func::Func),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GlobalRef(pub(crate) usize);
-
-impl SlabRef for GlobalRef {
-    type RefObject = Global;
-
-    fn from_handle(handle: usize) -> Self { GlobalRef(handle) }
-    fn get_handle(&self) -> usize { self.0 }
+pub enum GlobalData {
+    Alias(Alias),
+    Var(Var),
+    Func(FuncData),
 }
 
 pub struct GlobalDataCommon {
-    pub name:       String,
-    pub pointee_ty: ValTypeID,
-}
-pub struct GlobalAlias {
-    pub data:    GlobalDataCommon,
-    pub aliased: GlobalRef,
-}
-pub struct GlobalVar {
-    pub data: GlobalDataCommon,
-    pub init: Option<ValueRef>,
+    pub name: String,
+    pub content_ty: ValTypeID,
 }
 
-impl Global {
+pub struct Alias {
+    pub common: GlobalDataCommon,
+    pub target: Cell<GlobalRef>,
+}
+
+pub struct Var {
+    pub common: GlobalDataCommon,
+    pub init: Cell<ValueSSA>,
+}
+
+impl PtrStorage for GlobalData {
+    fn get_stored_pointee_type(&self) -> ValTypeID {
+        self.get_common().content_ty.clone()
+    }
+}
+impl GlobalData {
     pub fn get_common(&self) -> &GlobalDataCommon {
         match self {
-            Global::Var(data) => &data.data,
-            Global::Alias(data) => &data.data,
-            Global::Func(data) => &data.global,
-        }
-    }
-    pub fn common_mut(&mut self) -> &mut GlobalDataCommon {
-        match self {
-            Global::Var(data) => &mut data.data,
-            Global::Alias(data) => &mut data.data,
-            Global::Func(data) => &mut data.global,
+            GlobalData::Alias(alias) => &alias.common,
+            GlobalData::Var(var) => &var.common,
+            GlobalData::Func(func) => &func.common,
         }
     }
 
-    pub fn get_pointee_ty(&self) -> ValTypeID {
-        self.get_common().pointee_ty.clone()
+    pub fn new_variable(name: String, content_ty: ValTypeID, init: ValueSSA) -> Self {
+        GlobalData::Var(Var {
+            common: GlobalDataCommon { name, content_ty },
+            init: Cell::new(init),
+        })
     }
-    pub fn get_name(&self) -> &str {
-        self.get_common().name.as_str()
-    }
-
-    pub fn try_as_func(&self) -> Option<&func::Func> {
-        match self {
-            Global::Func(data) => Some(data),
-            _ => None,
-        }
-    }
-    pub fn try_as_func_mut(&mut self) -> Option<&mut func::Func> {
-        match self {
-            Global::Func(data) => Some(data),
-            _ => None,
-        }
+    pub fn new_alias(name: String, content_ty: ValTypeID, target: GlobalRef) -> Self {
+        GlobalData::Alias(Alias {
+            common: GlobalDataCommon { name, content_ty },
+            target: Cell::new(target),
+        })
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalRef(usize);
+impl_slabref!(GlobalRef, GlobalData);

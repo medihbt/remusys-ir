@@ -1,191 +1,126 @@
-use std::{collections::HashMap, rc::Rc};
+use std::num::NonZero;
 
-use block::{BlockData, BlockRef};
-use global::{Global, GlobalRef};
+use block::BlockRef;
+use constant::{data::ConstData, expr::ConstExprRef};
+use global::{GlobalData, GlobalRef, func::FuncStorage};
 use inst::InstRef;
-use slab::Slab;
+use module::Module;
 
-use crate::{base::{slabref::SlabRef, NullableValue}, typing::{context::TypeContext, id::{ValTypeID, ValTypeUnion}, subtypes::FuncType}};
+use crate::{base::NullableValue, typing::id::ValTypeID};
 
-pub mod opcode;
+pub mod block;
 pub mod constant;
 pub mod global;
-pub mod block;
 pub mod inst;
+pub mod module;
+pub mod opcode;
 pub mod util;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ValueRef {
+/// Represents a value in the intermediate representation (IR).
+/// 
+/// A value can be a constant data, constant expression, function argument,
+/// block, instruction, global variable, or none (representing absence of a value).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueSSA {
+    /// Represents no value or absence of a value.
     None,
-    Block (BlockRef),
+    /// A constant data value with a specific type.
+    ConstData(ConstData),
+    /// A constant expression that can be evaluated at compile time.
+    ConstExpr(ConstExprRef),
+    /// A function argument identified by the function reference and argument index.
+    FuncArg(GlobalRef, u32),
+    /// A basic block in the control flow graph.
+    Block(BlockRef),
+    /// An instruction that produces a value.
+    Inst(InstRef),
+    /// A reference to a global variable or function.
     Global(GlobalRef),
-    Inst  (InstRef),
-    FuncArg(GlobalRef, u32)
 }
 
-pub struct ValueCommon {
-    pub value_ty: ValTypeID,
-}
-
-pub trait PtrStorage {
-    fn get_pointee_ty(&self) -> ValTypeID;
-
-    fn read_pointee_ty<R>(&self, module: &Module, f: impl FnOnce(&ValTypeUnion) -> R) -> Option<R> {
-        let ty = self.get_pointee_ty();
-        let tctx = module.get_type_ctx().borrow();
-        if let Some(ty) = tctx.find_type(&ty) {
-            Some(f(ty))
-        } else {
-            None
-        }
+impl ValueSSA {
+    pub fn is_none(&self) -> bool {
+        matches!(self, ValueSSA::None)
     }
-}
-
-pub trait FuncStorage: PtrStorage {
-    fn read_func_ty<R>(&self, module: &Module, f: impl FnOnce(&FuncType) -> R) -> Option<R> {
-        self.read_pointee_ty(module, |ty| {
-            if let ValTypeUnion::Func(func_ty) = ty {
-                Some(f(func_ty))
-            } else {
-                panic!("Invalid type: requires function type but got {:?}", ty);
-            }
-        }).unwrap_or(None)
+    pub fn is_block(&self) -> bool {
+        matches!(self, ValueSSA::Block(_))
+    }
+    pub fn is_const_data(&self) -> bool {
+        matches!(self, ValueSSA::ConstData(_))
+    }
+    pub fn is_const_expr(&self) -> bool {
+        matches!(self, ValueSSA::ConstExpr(_))
+    }
+    pub fn is_func_arg(&self) -> bool {
+        matches!(self, ValueSSA::FuncArg(_, _))
+    }
+    pub fn is_inst(&self) -> bool {
+        matches!(self, ValueSSA::Inst(_))
+    }
+    pub fn is_global(&self) -> bool {
+        matches!(self, ValueSSA::Global(_))
     }
 
-    fn get_rettype(&self, module: &Module) -> Option<ValTypeID> {
-        self.read_func_ty(module, |func_ty| Some(func_ty.ret_ty.clone()))
-            .unwrap_or(None)
-    }
-    fn get_argtype(&self, module: &Module, index: usize) -> Option<ValTypeID> {
-        self.read_func_ty(module, |func_ty| {
-            if index < func_ty.args.len() {
-                Some(func_ty.args[index].clone())
-            } else {
-                None
-            }
-        }).unwrap_or(None)
-    }
-}
-
-impl NullableValue for ValueRef {
-    fn new_null() -> Self { ValueRef::None }
-    fn is_null(&self) -> bool { matches!(self, ValueRef::None) }
-}
-impl ValueRef {
-    pub fn is_none(&self)   -> bool { matches!(self, ValueRef::None) }
-    pub fn is_block(&self)  -> bool { matches!(self, ValueRef::Block(_)) }
-    pub fn is_global(&self) -> bool { matches!(self, ValueRef::Global(_)) }
-    pub fn is_inst(&self)   -> bool { matches!(self, ValueRef::Inst(_)) }
-
-    pub fn get_value_ty(&self, module: &Module) -> ValTypeID {
-        let type_ctx = module.get_rc_type_ctx();
+    pub fn get_value_type(&self, module: &Module) -> ValTypeID {
         match self {
-            ValueRef::None | ValueRef::Block(_) => type_ctx.get_void_type(),
-            ValueRef::Global(_) => type_ctx.get_ptr_type(),
-            ValueRef::Inst(inst_ref) => {
-                inst_ref.read_slabref(
-                    &module._alloc_inst,
-                    |inst| {
-                        inst.get_ty()
-                    }).unwrap_or(type_ctx.get_void_type())
-            }
-            ValueRef::FuncArg(funcref, index) => {
-                // funcref.to_slabref_unwrap(&module._alloc_global)
-                //        .try_as_func()
-                //        .expect("Final type error: NOT FUNCTION")
-                //        .global
-                //        .pointee_ty.
-                todo!()
+            ValueSSA::None | ValueSSA::Block(_) => ValTypeID::Void,
+            ValueSSA::ConstData(data) => data.get_value_type(),
+            ValueSSA::ConstExpr(expr) => expr.get_value_type(module),
+            ValueSSA::Inst(inst) => module.get_inst(inst.clone()).get_value_type(),
+            ValueSSA::Global(_) => ValTypeID::Ptr,
+            ValueSSA::FuncArg(func_id, index) => {
+                let func = module.get_global(func_id.clone());
+                match &*func {
+                    GlobalData::Func(func) => func
+                        .get_stored_func_type()
+                        .get_arg(&module.type_ctx, *index as usize)
+                        .expect("Index overflow"),
+                    _ => panic!("Invalid function reference"),
+                }
             }
         }
     }
 }
 
+/// Implementation of `NullableValue` trait for `Value` type.
+/// This allows `Value` to be treated as a nullable value where `Value::None` represents null.
+impl NullableValue for ValueSSA {
+    /// Checks if the value is null (i.e., `Value::None`).
+    /// 
+    /// ### Returns
+    /// `true` if the value is `Value::None`, otherwise `false`.
+    fn is_null(&self) -> bool {
+        self.is_none()
+    }
 
-// ============================[ Module definition ]==============================
-
-pub struct Module {
-    pub name: String,
-
-    _type_ctx:     Rc<TypeContext>,
-    _alloc_global: Slab<Global>,
-    _alloc_block:  Slab<BlockData>,
-    _alloc_inst:   Slab<inst::Inst>,
-    _alloc_use:    Slab<inst::usedef::UseData>,
-    _alloc_jt:     Slab<inst::jump_targets::JumpTargetData>,
-    _global_map:   HashMap<String, GlobalRef>,
+    /// Creates a new null value.
+    /// 
+    /// ### Returns
+    /// A `Value::None` representing a null value.
+    fn new_null() -> Self {
+        ValueSSA::None
+    }
 }
 
-impl Module {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            _type_ctx:     TypeContext::new(),
-            _alloc_global: Slab::new(),
-            _alloc_block:  Slab::new(),
-            _alloc_inst:   Slab::new(),
-            _alloc_use:    Slab::new(),
-            _alloc_jt:     Slab::new(),
-            _global_map:   HashMap::new(),
-        }
-    }
+/// Trait for types that store pointer information.
+/// Implementors of this trait can provide information about the type pointed to.
+pub trait PtrStorage {
+    /// Gets the type of the value being pointed to.
+    /// 
+    /// # Returns
+    /// The value type ID of the pointee type.
+    fn get_stored_pointee_type(&self) -> ValTypeID;
+}
 
-    pub fn get_type_ctx   (&self) -> &TypeContext     { &self._type_ctx }
-    pub fn get_rc_type_ctx(&self) -> &Rc<TypeContext> { &self._type_ctx }
+/// Trait for types that use pointers as operands.
+/// Implementors of this trait can retrieve type information about the pointee.
+pub trait PtrUser {
+    /// Gets the type of the value pointed to by an operand.
+    /// 
+    /// # Returns
+    /// The value type ID of the pointee.
+    fn get_operand_pointee_type(&self) -> ValTypeID;
 
-    pub fn alloc_global(&mut self, global: Global) -> Option<GlobalRef> {
-        if self._global_map.contains_key(global.get_name()) {
-            None
-        } else {
-            let global_ref = GlobalRef::from_handle(self._alloc_global.insert(global));
-            let global = global_ref.to_slabref(&self._alloc_global).unwrap();
-            self._global_map.insert(global.get_name().to_string(), global_ref);
-            Some(global_ref)
-        }
-    }
-    pub fn find_global(&self, name: &str) -> Option<GlobalRef> {
-        self._global_map.get(name).cloned()
-    }
-    pub fn edit_global<R>(&mut self, name: &str, f: impl FnOnce(&mut Global) -> R) -> Option<R> {
-        if let Some(global_ref) = self._global_map.get(name) {
-            let global = global_ref.to_slabref_mut(&mut self._alloc_global).unwrap();
-            Some(f(global))
-        } else {
-            None
-        }
-    }
-    pub fn read_global<R>(&self, name: &str, f: impl FnOnce(&Global) -> R) -> Option<R> {
-        if let Some(global_ref) = self._global_map.get(name) {
-            let global = global_ref.to_slabref(&self._alloc_global).unwrap();
-            Some(f(global))
-        } else {
-            None
-        }
-    }
-    pub fn remove_global(&mut self, name: &str) -> Option<GlobalRef>
-    {
-        if let Some(global_ref) = self._global_map.remove(name) {
-            self._alloc_global.remove(global_ref.get_handle());
-            Some(global_ref)
-        } else {
-            None
-        }
-    }
-
-    pub fn alloc_block(&mut self, block: BlockData) -> BlockRef {
-        BlockRef::from_handle(self._alloc_block.insert(block))
-    }
-    pub fn alloc_inst(&mut self, inst: inst::Inst) -> inst::InstRef {
-        inst::InstRef::from_handle(self._alloc_inst.insert(inst))
-    }
-    pub fn alloc_use(&mut self, use_data: inst::usedef::UseData) -> inst::usedef::UseRef {
-        inst::usedef::UseRef::from_handle(self._alloc_use.insert(use_data))
-    }
-    pub fn alloc_jt(&mut self, jt_data: inst::jump_targets::JumpTargetData) -> inst::jump_targets::JumpTargetRef {
-        inst::jump_targets::JumpTargetRef::from_handle(self._alloc_jt.insert(jt_data))
-    }
-
-    pub fn gc(&mut self) {
-        todo!("Implement garbage collection for Module");
-    }
+    /// Gets the align of this value user.
+    fn get_operand_align(&self) -> Option<NonZero<usize>>;
 }

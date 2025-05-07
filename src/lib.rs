@@ -1,6 +1,5 @@
 pub mod base;
 pub mod typing;
-pub mod typing_new;
 pub mod ir;
 
 pub fn add(left: u64, right: u64) -> u64 {

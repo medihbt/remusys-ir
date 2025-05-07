@@ -1,25 +1,17 @@
-use std::{cell::RefCell, collections::BTreeMap};
-
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefList, slabref::SlabRef},
-    ir::{Module, block::BlockRef, opcode::Opcode},
-    typing::id::ValTypeID,
+    base::slablist::SlabRefList,
+    ir::block::jump_target::{JumpTargetData, JumpTargetKind, JumpTargetRef},
 };
 
-use super::{
-    Inst, InstCommon, InstDataTrait, InstRef,
-    callop::CallOp,
-    jump_targets::JumpTargetRef,
-    usedef::{UseData, UseRef},
-};
+use super::usedef::UseRef;
 
 pub trait TerminatorInst {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>>;
 
     fn get_n_jump_targets(&self) -> usize {
-        self.get_jump_targets().map_or(0, SlabRefList::get_size)
+        self.get_jump_targets().map_or(0, |targets| targets.len())
     }
 
     /// Whether this terminator terminates the function control flow.
@@ -28,135 +20,80 @@ pub trait TerminatorInst {
     fn terminates_function(&self) -> bool {
         self.get_jump_targets().is_none()
     }
+
+    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>);
 }
 
-pub struct Unreachable;
 pub struct Ret {
-    pub retval: UseRef,
+    _retval: UseRef,
 }
-pub struct TailCallOp(pub CallOp);
 
-pub struct Jump {
-    pub jump_targets: SlabRefList<JumpTargetRef>,
+pub struct JumpCommon {
+    _targets: SlabRefList<JumpTargetRef>,
+    _condition: UseRef,
 }
-pub struct Br {
-    pub cond: UseRef,
-    pub jump_targets: SlabRefList<JumpTargetRef>,
-}
+
+pub struct Jump(JumpCommon);
+pub struct Br(JumpCommon);
+
 pub struct Switch {
-    pub cond: UseRef,
-    pub jump_targets: SlabRefList<JumpTargetRef>,
-    pub default_target: JumpTargetRef,
-    pub cases: RefCell<BTreeMap<i128, JumpTargetRef>>,
+    _common: JumpCommon,
+    _default: JumpTargetRef,
+    _cases: Vec<(i128, JumpTargetRef)>,
 }
 
-impl TerminatorInst for Unreachable {
-    fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        None
-    }
-}
 impl TerminatorInst for Ret {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
         None
     }
+    fn init_jump_targets(&mut self, _: &mut Slab<JumpTargetData>) {}
 }
-impl TerminatorInst for TailCallOp {
-    fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        None
-    }
-}
-
 impl TerminatorInst for Jump {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        Some(&self.jump_targets)
+        Some(&self.0._targets)
+    }
+    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(jt_alloc);
+        list.push_back_value(
+            jt_alloc,
+            JumpTargetData::new_with_kind(JumpTargetKind::Jump),
+        )
+        .unwrap();
+        self.0._targets = list;
     }
 }
 impl TerminatorInst for Br {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        Some(&self.jump_targets)
+        Some(&self.0._targets)
+    }
+    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(jt_alloc);
+        list.push_back_value(
+            jt_alloc,
+            JumpTargetData::new_with_kind(JumpTargetKind::BrFalse),
+        )
+        .unwrap();
+        list.push_back_value(
+            jt_alloc,
+            JumpTargetData::new_with_kind(JumpTargetKind::BrTrue),
+        )
+        .unwrap();
+        self.0._targets = list;
     }
 }
 impl TerminatorInst for Switch {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        Some(&self.jump_targets)
-    }
-}
-
-impl InstDataTrait for Ret {
-    fn init_common(
-        &mut self,
-        opcode: Opcode,
-        ty: ValTypeID,
-        parent: BlockRef,
-        module: &mut Module,
-    ) -> InstCommon {
-        let common = InstCommon::new(opcode, ty, parent, module);
-        self.retval = common.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
-        common
-    }
-}
-
-impl InstDataTrait for Jump {}
-
-impl InstDataTrait for Br {
-    fn init_common(
-        &mut self,
-        opcode: Opcode,
-        ty: ValTypeID,
-        parent: BlockRef,
-        module: &mut Module,
-    ) -> InstCommon {
-        let common = InstCommon::new(opcode, ty, parent, module);
-        self.cond = common.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
-        common
-    }
-}
-
-impl InstDataTrait for Switch {
-    fn init_common(
-        &mut self,
-        opcode: Opcode,
-        ty: ValTypeID,
-        parent: BlockRef,
-        module: &mut Module,
-    ) -> InstCommon {
-        let common = InstCommon::new(opcode, ty, parent, module);
-        self.cond = common.add_use(UseData::new(InstRef::new_null()), &mut module._alloc_use);
-        common
-    }
-}
-
-/**
- * Simple view reference of terminator instruction.
- */
-pub struct TerminatorInstView<'a>(pub(crate) usize, pub(crate) &'a Slab<Inst>);
-
-impl<'a> TerminatorInstView<'a> {
-    pub fn from_inst(inst_ref: InstRef, inst_alloc: &'a Slab<Inst>) -> Option<Self> {
-        let is_terminator = inst_ref
-            .to_slabref(&inst_alloc)
-            .map(Inst::is_terminator)
-            .expect("Invalid instruction reference (Use after free?)");
-        if is_terminator {
-            Some(TerminatorInstView(inst_ref.get_handle(), inst_alloc))
-        } else {
-            None
-        }
-    }
-    pub fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
-        let inst_ref = InstRef::from_handle(self.0);
-        inst_ref
-            .to_slabref(&self.1)
-            .map(|inst| match inst {
-                Inst::Jump(_, j) => j.get_jump_targets(),
-                Inst::Br(_, b) => b.get_jump_targets(),
-                Inst::Switch(_, s) => s.get_jump_targets(),
-                _ => None,
-            })
-            .expect("Invalid instruction reference (Use after free?)")
+        Some(&self._common._targets)
     }
 
-    pub fn as_inst(&self) -> InstRef {
-        InstRef::from_handle(self.0)
+    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(jt_alloc);
+        self._default = list
+            .push_back_value(
+                jt_alloc,
+                JumpTargetData::new_with_kind(JumpTargetKind::SwitchDefault),
+            )
+            .unwrap();
+        self._common._targets = list;
     }
 }

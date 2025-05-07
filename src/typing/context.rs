@@ -1,155 +1,149 @@
-use std::{cell::{Ref, RefCell}, collections::HashMap, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+use slab::Slab;
+
+use crate::base::slabref::SlabRef;
 
 use super::{
-    subtypes::{FloatTypeKind, IntType, StructAliasType},
-    id::{ValTypeID, ValTypeUnion}
+    IValType,
+    id::ValTypeID,
+    types::{
+        ArrayTypeData, ArrayTypeRef, FuncTypeData, StructAliasData, StructAliasRef, StructTypeData,
+        StructTypeRef,
+    },
 };
 
-#[derive(Debug)]
-pub struct TypeContextInner {
-    _type_storage: slab::Slab<ValTypeUnion>,
-    _struct_alias: HashMap<String, ValTypeID>,
-    _int_types:    [Option<ValTypeID>; u8::MAX as usize],
-    _float_types:  [Option<ValTypeID>; FloatTypeKind::NELEMS],
-    _void_type:    ValTypeID,
-    _ptr_type:     ValTypeID,
+#[derive(Debug, Clone)]
+pub struct PlatformPolicy {
+    pub ptr_nbits: usize,
+    pub reg_nbits: usize,
 }
 
-#[derive(Debug)]
+impl PlatformPolicy {
+    pub fn new_host() -> Self {
+        Self {
+            ptr_nbits: core::mem::size_of::<usize>() * 8,
+            reg_nbits: core::mem::size_of::<usize>() * 8,
+        }
+    }
+}
+
+
 pub struct TypeContext {
-    pub inner: RefCell<TypeContextInner>,
-    _void_type:    ValTypeID,
-    _ptr_type:     ValTypeID,
+    pub platform_policy: PlatformPolicy,
+    pub(super) _inner: RefCell<TypeContextInner>,
+    pub(super) _struct_alias_map: RefCell<HashMap<String, StructAliasRef>>,
 }
 
-impl TypeContextInner {
-    pub fn find_type<'a>(&'a self, vtyid: &ValTypeID) -> Option<&'a ValTypeUnion> {
-        self._type_storage.get(vtyid.handle())
-    }
-    pub fn find_struct_alias(&self, name: &str) -> Option<&ValTypeID> {
-        self._struct_alias.get(name)
-    }
-
-    pub fn get_ptr_type(&self) -> ValTypeID {
-        self._ptr_type.clone()
-    }
-    pub fn get_void_type(&self) -> ValTypeID {
-        self._void_type.clone()
-    }
-
-    pub fn intptr_size(&self) -> usize {
-        std::mem::size_of::<usize>()
-    }
-    pub fn register_size(&self) -> usize {
-        std::mem::size_of::<usize>()
-    }
-
-    fn _try_find_unique_type_index(&self, vtyid: &ValTypeUnion) -> Option<usize>
-    {
-        for (idx, vty) in self._type_storage.iter() {
-            if vtyid.deep_eq(vty) {
-                return Some(idx);
-            }
-        }
-        None
-    }
-    fn _find_or_register_type(&mut self, vty: ValTypeUnion) -> usize
-    {
-        match self._try_find_unique_type_index(&vty) {
-            Some(idx) => idx,
-            None => self._type_storage.insert(vty)
-        }
-    }
-
-    fn _get_int_type(&mut self, weak_ref: Weak<TypeContext>, binary_bits: u8) -> ValTypeID
-    {
-        if let Some(vtyid) = self._int_types[binary_bits as usize].clone() {
-            return vtyid;
-        }
-        let vty = ValTypeUnion::Int(IntType { bin_bits: binary_bits });
-        let idx = self._find_or_register_type(vty);
-        let vtyid = ValTypeID(idx, weak_ref);
-        self._int_types[binary_bits as usize] = Some(vtyid.clone());
-        vtyid
-    }
-    fn _get_float_type(&mut self, weak_ref: Weak<TypeContext>, kind: FloatTypeKind) -> ValTypeID
-    {
-        if let Some(vtyid) = self._float_types[kind as usize].clone() {
-            return vtyid;
-        }
-        let vty = ValTypeUnion::Float(kind);
-        let idx = self._find_or_register_type(vty);
-        let vtyid = ValTypeID(idx, weak_ref);
-        self._float_types[kind as usize] = Some(vtyid.clone());
-        vtyid
-    }
-    fn _get_struct_alias(&mut self, weak_ref: Weak<TypeContext>, name: String, aliasee: ValTypeID) -> ValTypeID
-    {
-        if !matches!(self.find_type(&aliasee), Some(ValTypeUnion::Struct(_))) {
-            panic!("aliasee must be a struct type");
-        }
-        if let Some(vtyid) = self._struct_alias.get(&name).cloned() {
-            return vtyid;
-        }
-        let vty = ValTypeUnion::StructAlias(StructAliasType{
-            name:    name.clone(),
-            aliasee: aliasee.clone(),
-        });
-        let idx = self._find_or_register_type(vty);
-        let vtyid = ValTypeID(idx, weak_ref);
-        self._struct_alias.insert(name, vtyid.clone());
-        vtyid
-    }
+pub(super) struct TypeContextInner {
+    pub(super) _alloc_array: Slab<ArrayTypeData>,
+    pub(super) _alloc_struct: Slab<StructTypeData>,
+    pub(super) _alloc_struct_alias: Slab<StructAliasData>,
+    pub(super) _alloc_func: Slab<FuncTypeData>,
 }
 
 impl TypeContext {
-    pub fn new() -> Rc<Self> {
-        let mut type_storage = slab::Slab::with_capacity(1024);
-        let void_tyid = ValTypeID(type_storage.insert(ValTypeUnion::Void), Weak::new());
-        let ptr_tyid  = ValTypeID(type_storage.insert(ValTypeUnion::Ptr), Weak::new());
-        let ret = Rc::new(Self {
-            inner: RefCell::new(TypeContextInner {
-                _type_storage: type_storage,
-                _struct_alias: HashMap::new(),
-                _int_types:    [const { None }; u8::MAX as usize],
-                _float_types:  [const { None }; FloatTypeKind::NELEMS],
-                _void_type:    void_tyid.clone(),
-                _ptr_type:     ptr_tyid.clone(),
+    pub fn new(platform: PlatformPolicy) -> Self {
+        Self {
+            platform_policy: platform,
+            _inner: RefCell::new(TypeContextInner {
+                _alloc_array: Slab::new(),
+                _alloc_struct: Slab::new(),
+                _alloc_func: Slab::new(),
+                _alloc_struct_alias: Slab::new()
             }),
-            _void_type:    void_tyid,
-            _ptr_type:     ptr_tyid,
-        });
+            _struct_alias_map: RefCell::new(HashMap::new())
+        }
+    }
+    pub fn new_rc(platform: PlatformPolicy) -> Rc<Self> {
+        Rc::new(Self::new(platform))
+    }
 
-        let weak_ret = Rc::downgrade(&ret);
-        ret.borrow_mut()._void_type.1 = weak_ret.clone();
-        ret.borrow_mut()._ptr_type.1  = weak_ret.clone();
+    pub fn get_array_type(&self, arrty: ArrayTypeData) -> ArrayTypeRef {
+        let option_array = self
+            ._inner
+            .borrow()
+            ._alloc_array
+            .iter()
+            .find(|(_, arr)| arr.length == arrty.length && arr.elemty == arrty.elemty)
+            .map(|(idx, _)| idx);
+
+        match option_array {
+            Some(index) => ArrayTypeRef::from_handle(index),
+            None => {
+                let index = self._inner.borrow_mut()._alloc_array.insert(arrty);
+                ArrayTypeRef::from_handle(index)
+            }
+        }
+    }
+    pub fn make_array_type(&self, length: usize, elemty: ValTypeID) -> ArrayTypeRef {
+        self.get_array_type(ArrayTypeData { length, elemty })
+    }
+
+    pub fn get_struct_type(&self, struct_ty: StructTypeData) -> StructTypeRef {
+        let option_struct = self
+            ._inner
+            .borrow()
+            ._alloc_struct
+            .iter()
+            .find(|(_, st)| st.deep_eq(&struct_ty))
+            .map(|(idx, _)| idx);
+
+        match option_struct {
+            Some(index) => StructTypeRef::from_handle(index),
+            None => {
+                let index = self._inner.borrow_mut()._alloc_struct.insert(struct_ty);
+                StructTypeRef::from_handle(index)
+            }
+        }
+    }
+    pub fn make_struct_type(&self, elems: &[ValTypeID]) -> StructTypeRef {
+        self.get_struct_type(StructTypeData {
+            elemty: Box::from(elems),
+        })
+    }
+
+    pub fn get_struct_alias(&self, name: &str) -> Option<StructAliasRef> {
+        self._struct_alias_map
+            .borrow()
+            .get(name)
+            .map(|sa| sa.clone())
+    }
+    pub fn make_struct_alias_lazy(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
+        if let Some(alias) = self.get_struct_alias(name) {
+            alias
+        } else {
+            self._force_insert_struct_alias(name, aliasee)
+        }
+    }
+    pub fn make_struct_alias_force(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
+        if let Some(alias) = self.get_struct_alias(name) {
+            if alias
+                .to_slabref_unwrap(&self._inner.borrow()._alloc_struct_alias)
+                .aliasee
+                .eq(&aliasee) {
+                return alias;
+            }
+        }
+        self._force_insert_struct_alias(name, aliasee)
+    }
+    fn _force_insert_struct_alias(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
+        let handle = self
+            ._inner
+            .borrow_mut()
+            ._alloc_struct_alias
+            .insert(StructAliasData {
+                name: name.to_string(),
+                aliasee,
+            });
+        let ret = StructAliasRef::from_handle(handle);
+        self._struct_alias_map
+            .borrow_mut()
+            .insert(name.to_string(), ret.clone());
         ret
     }
+}
 
-    pub fn borrow(&self) -> Ref<TypeContextInner> {
-        self.inner.borrow()
-    }
-    pub fn borrow_mut(&self) -> std::cell::RefMut<TypeContextInner> {
-        self.inner.borrow_mut()
-    }
-
-    pub fn get_int_type(self: &Rc<Self>, binary_bits: u8) -> ValTypeID {
-        self.borrow_mut()._get_int_type(Rc::downgrade(self), binary_bits)
-    }
-    pub fn get_float_type(self: &Rc<Self>, kind: FloatTypeKind) -> ValTypeID {
-        self.borrow_mut()._get_float_type(Rc::downgrade(self), kind)
-    }
-    pub fn get_void_type(self: &Rc<Self>) -> ValTypeID {
-        self._void_type.clone()
-    }
-    pub fn get_ptr_type(self: &Rc<Self>) -> ValTypeID {
-        self._ptr_type.clone()
-    }
-    pub fn reg_get_type(self: &Rc<Self>, vty: ValTypeUnion) -> ValTypeID {
-        let idx = self.borrow_mut()._find_or_register_type(vty);
-        ValTypeID(idx, Rc::downgrade(self))
-    }
-    pub fn reg_get_struct_alias(self: &Rc<Self>, name: String, aliasee: ValTypeID) -> ValTypeID {
-        self.borrow_mut()._get_struct_alias(Rc::downgrade(self), name, aliasee)
-    }
+pub(super) const fn binary_bits_to_bytes(binary_bits: usize) -> usize {
+    (binary_bits - 1) / 8 + 1
 }

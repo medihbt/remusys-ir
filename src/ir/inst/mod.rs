@@ -1,266 +1,238 @@
-pub mod instructions;
-pub mod callop;
-pub mod jump_targets;
-pub mod phi;
-pub mod terminator;
-pub mod usedef;
-
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 
 use slab::Slab;
-use terminator::*;
 use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        slablist::{SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        NullableValue,
+        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
         slabref::SlabRef,
     },
+    impl_slabref,
     typing::id::ValTypeID,
 };
 
-use super::{Module, block::BlockRef, opcode::Opcode};
+use super::{block::BlockRef, module::Module, opcode::Opcode};
+
+pub mod binop;
+pub mod callop;
+pub mod cmp;
+pub mod gep;
+pub mod load_store;
+pub mod terminator;
+pub mod usedef;
+pub mod sundury_inst;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// A reference to an instruction.
-pub struct InstRef(pub(crate) usize);
+pub struct InstRef(usize);
+impl_slabref!(InstRef, InstData);
+impl SlabRefListNodeRef for InstRef {}
 
-pub enum Inst {
-    /// Head or tail node of the instruction list, used to mark the beginning
-    /// or end of the instruction list.
-    ///
-    /// NOTE: This is NOT a valid instruction.
+pub enum InstData {
     ListGuideNode(Cell<SlabRefListNodeHead>),
 
     // Terminator instructions. These instructions are put at the end of a block and
     // transfer control to another block or return from a function.
     /// Mark this block as unreachable.
-    Unreachable (InstCommon, Unreachable),
+    Unreachable(InstDataCommon),
+
     /// Return from a function, sometimes with a value.
-    Ret         (InstCommon, Cell<Ret>),
+    Ret(InstDataCommon, terminator::Ret),
+
     /// Jump to another block unconditionally.
-    Jump        (InstCommon, Jump),
+    Jump(InstDataCommon, terminator::Jump),
+
     /// Branch to one of two blocks based on a condition.
-    Br          (InstCommon, Br),
-    /// Branch to one of many blocks based on a condition.
-    Switch      (InstCommon, Switch),
-    /// Call a function and transfer control to the callee.
-    /// Return type of the tail call instruction should be same as
-    /// the callee function return type.
-    TailCall    (InstCommon, TailCallOp),
+    Br(InstDataCommon, terminator::Br),
+
+    /// Switch to one of multiple blocks based on a value.
+    Switch(InstDataCommon, terminator::Switch),
+
+    /// Call a function while transferring control to the callee.
+    TailCall(InstDataCommon),
 
     // Non-terminator instructions. These instructions are put in the middle of a block
     // and do not transfer control to another block or return from a function.
     /// PHI Node. This instruction is used to select a value based on the control flow.
-    Phi         (InstCommon, RefCell<phi::PhiNode>),
+    Phi(InstDataCommon),
 
-    /// Select a value based on the control flow.
-    BinSelect   (InstCommon, instructions::BinSelect),
+    /// Load a value from memory.
+    Load(InstDataCommon),
 
-    /// Binary operation. This instruction is used to perform a binary operation on two
-    /// values.
-    BinOp       (InstCommon, instructions::BinOp),
+    /// Store a value to memory.
+    Store(InstDataCommon),
 
-    /// Compare operation. This instruction is used to perform a comparison operation
-    /// on two values.
-    /// The result of the comparison is a boolean value.
-    Cmp         (InstCommon, instructions::BinOp),
+    /// Select a value from two options based on a condition.
+    Select(InstDataCommon),
 
-    /// Cast operation. This instruction is used to perform a cast operation on a value.
-    /// The result of the cast operation is a value of a different type.
-    Cast        (InstCommon, instructions::CastOp),
+    /// Binary operations (add, sub, mul, div, etc.).
+    BinOp(InstDataCommon),
 
-    /// GetElemtPtr operation. This instruction adjusts the pointer to point to
-    /// the right position in the array or struct.
-    IndexPtr    (InstCommon, instructions::IndexPtrOp),
+    /// Compare two values and produce a boolean result.
+    Cmp(InstDataCommon),
 
-    /// Static call operation with a known function target.
-    Call        (InstCommon, callop::CallOp),
+    /// Cast a value from one type to another.
+    Cast(InstDataCommon),
 
-    /// Dynamic call operation with its callee being anything that holds a
-    /// function pointer.
-    DynCall     (InstCommon, callop::CallOp),
+    /// Adjusts a pointer to an array or structure to the right position by indices.
+    IndexPtr(InstDataCommon),
 
-    /// Loads value from a pointer.
-    Load        (InstCommon, instructions::LoadOp),
+    /// Call a function and get the result.
+    Call(InstDataCommon),
 
-    /// Store value to a pointer.
-    Store       (InstCommon, instructions::StoreOp),
+    /// Call a value and get the result.
+    DynCall(InstDataCommon),
+
+    /// Call an intrinsic function and get the result.
+    Intrin(InstDataCommon),
 }
 
-pub trait InstDataTrait {
-    /// Initialize the common data after initializing the opcode-dependent
-    /// data of the instruction.
-    ///
-    /// This function should be called after the opcode-dependent data of the
-    /// instruction has been initialized.
-    fn init_common(
-        &mut self,
-        opcode: Opcode,
-        ty: ValTypeID,
-        parent: BlockRef,
-        module: &mut Module,
-    ) -> InstCommon {
-        InstCommon::new(opcode, ty, parent, module)
-    }
+pub struct InstDataCommon {
+    pub inner: Cell<InstDataInner>,
+    pub opcode: Opcode,
+    pub operands: SlabRefList<UseRef>,
+    pub ret_type: ValTypeID,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct InstMutInner {
-    node_head: SlabRefListNodeHead,
-    parent:    BlockRef,
+pub struct InstDataInner {
+    pub(super) _node_head: SlabRefListNodeHead,
+    pub(super) _parent_bb: BlockRef,
 }
 
-pub struct InstCommon {
-    /// The opcode of the instruction.
-    pub opcode: Opcode,
-
-    /// The type of the instruction.
-    pub ty: ValTypeID,
-
-    /// The operands of the instruction.
-    pub operands: SlabRefList<UseRef>,
-
-    /// The common mutable part of the instruction.
-    pub(crate) inner: Cell<InstMutInner>,
+trait InstDataUnique {
+    fn update_build_common(
+        &mut self,
+        common: InstDataCommon,
+        mut_module: &Module,
+    ) -> InstDataCommon;
 }
 
-impl SlabRef for InstRef {
-    type RefObject = Inst;
-
-    fn from_handle(handle: usize) -> Self {
-        Self(handle)
+impl InstDataInner {
+    fn insert_node_head(self, node_head: SlabRefListNodeHead) -> Self {
+        Self {
+            _node_head: node_head,
+            _parent_bb: self._parent_bb,
+        }
     }
-    fn get_handle(&self) -> usize {
-        self.0
+    fn insert_parent_bb(self, parent_bb: BlockRef) -> Self {
+        Self {
+            _node_head: self._node_head,
+            _parent_bb: parent_bb,
+        }
+    }
+    fn assign_to(&self, cell: &Cell<InstDataInner>) {
+        cell.set(*self);
     }
 }
 
-impl SlabRefListNode for Inst {
+impl SlabRefListNode for InstData {
     fn new_guide() -> Self {
-        Inst::ListGuideNode(Cell::new(SlabRefListNodeHead::new()))
+        Self::ListGuideNode(Cell::new(SlabRefListNodeHead::new()))
     }
 
     fn load_node_head(&self) -> SlabRefListNodeHead {
         match self {
-            Inst::ListGuideNode(node_head) => node_head.get(),
-            _ => self.get_common().inner.get().node_head,
+            Self::ListGuideNode(cell) => cell.get(),
+            _ => self.get_common().inner.get()._node_head,
         }
     }
 
     fn store_node_head(&self, node_head: SlabRefListNodeHead) {
         match self {
-            Inst::ListGuideNode(_) => panic!("Cannot store node head to ListGuideNode"),
-            _ => {
-                let inner = &self.get_common().inner;
-                inner.get()
-                     .insert_head(node_head)
-                     .set_into(inner);
-            }
+            Self::ListGuideNode(cell) => cell.set(node_head),
+            _ => self
+                .get_common()
+                .inner
+                .get()
+                .insert_node_head(node_head)
+                .assign_to(&self.get_common().inner),
         }
     }
 }
 
-impl SlabRefListNodeRef for InstRef {}
-
-impl Inst {
-    pub fn get_common(&self) -> &InstCommon {
+impl InstData {
+    pub fn get_common(&self) -> &InstDataCommon {
         match self {
-            Inst::ListGuideNode(_) => panic!(
-                "Inst::ListGuideNode is head or tail of instruction list, NOT valid instruction"
-            ),
-
-            Inst::Unreachable(common, _) => common,
-            Inst::Ret(common, _) => common,
-            Inst::Jump(common, _) => common,
-            Inst::Br(common, _) => common,
-            Inst::Switch(common, _) => common,
-            Inst::TailCall(common, _) => common,
-
-            Inst::Phi(common, _) => common,
-
-            Inst::BinSelect(common, _) => common,
-            Inst::BinOp(common, _) => common,
-            Inst::Cmp(common, _) => common,
-            Inst::Cast(common, _) => common,
-            Inst::IndexPtr(common, _) => common,
-            Inst::Call(common, _) => common,
-            Inst::DynCall(common, _) => common,
-            Inst::Load(common, _) => common,
-            Inst::Store(common, _) => common,
+            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            Self::Unreachable(common) => common,
+            Self::Ret(common, _) => common,
+            Self::Jump(common, _) => common,
+            Self::Br(common, _) => common,
+            Self::Switch(common, _) => common,
+            Self::TailCall(common) => common,
+            Self::Phi(common) => common,
+            Self::Load(common) => common,
+            Self::Store(common) => common,
+            Self::Select(common) => common,
+            Self::BinOp(common) => common,
+            Self::Cmp(common) => common,
+            Self::Cast(common) => common,
+            Self::IndexPtr(common) => common,
+            Self::Call(common) => common,
+            Self::DynCall(common) => common,
+            Self::Intrin(common) => common,
         }
     }
-
     pub fn get_opcode(&self) -> Opcode {
         self.get_common().opcode
     }
-    pub fn get_ty(&self) -> ValTypeID {
-        self.get_common().ty.clone()
+    pub fn get_value_type(&self) -> ValTypeID {
+        self.get_common().ret_type.clone()
     }
 
-    pub fn get_parent(&self) -> BlockRef {
-        self.get_common().inner.get().parent
+    pub fn get_parent_bb(&self) -> BlockRef {
+        match self {
+            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            _ => self.get_common().inner.get()._parent_bb,
+        }
     }
-    pub fn set_parent(&self, parent: BlockRef) {
-        self.get_common().inner.get()
-            .insert_parent(parent)
-            .set_into(&self.get_common().inner);
+    pub fn set_parent_bb(&self, parent_bb: BlockRef) {
+        match self {
+            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            _ => self
+                .get_common()
+                .inner
+                .get()
+                .insert_parent_bb(parent_bb)
+                .assign_to(&self.get_common().inner),
+        }
     }
 
+    /// Checks if this instruction ends a control flow.
     pub fn is_terminator(&self) -> bool {
-        matches!(self,
-            Inst::Unreachable(..) | Inst::Ret(..) |
-            Inst::Jump(..) | Inst::Br(..) | Inst::Switch(..) |
-            Inst::TailCall(..)
-        )
+        matches!(self, Self::Unreachable(_))
     }
 }
 
-impl InstMutInner {
-    pub fn new(parent: BlockRef) -> Self {
+impl InstDataCommon {
+    pub fn new(opcode: Opcode, ret_type: ValTypeID, alloc_use: &mut Slab<UseData>) -> Self {
         Self {
-            node_head: SlabRefListNodeHead::new(),
-            parent,
-        }
-    }
-    pub fn insert_head(&self, node_head: SlabRefListNodeHead) -> Self {
-        Self {
-            node_head,
-            parent: self.parent,
-        }
-    }
-    pub fn insert_parent(&self, parent: BlockRef) -> Self {
-        Self {
-            node_head: self.node_head,
-            parent,
-        }
-    }
-    pub fn set_into(self, value: &Cell<Self>) {
-        value.set(self);
-    }
-}
-
-impl InstCommon {
-    pub fn new(opcode: Opcode, ty: ValTypeID, parent: BlockRef, module: &mut Module) -> Self {
-        Self {
-            opcode, ty,
-            operands: SlabRefList::from_slab(&mut module._alloc_use),
-            inner: Cell::new(InstMutInner::new(parent)),
+            inner: Cell::new(InstDataInner {
+                _node_head: SlabRefListNodeHead::new(),
+                _parent_bb: BlockRef::new_null(),
+            }),
+            opcode,
+            operands: SlabRefList::from_slab(alloc_use),
+            ret_type,
         }
     }
 
-    pub(super) fn add_use(&self, use_data: UseData, alloc: &mut Slab<UseData>) -> UseRef {
-        let useref = UseRef::from_handle(alloc.insert(use_data));
+    fn add_use(&self, alloc_use: &mut Slab<UseData>, use_data: UseData) -> UseRef {
+        let use_ref = alloc_use.insert(use_data);
         self.operands
-            .push_back_ref(alloc, useref.clone())
+            .push_back_ref(alloc_use, UseRef::from_handle(use_ref))
             .expect("Failed to add use reference to instruction");
-        useref
+        UseRef::from_handle(use_ref)
+    }
+    fn alloc_use(&self, alloc_use: &mut Slab<UseData>) -> UseRef {
+        self.add_use(alloc_use, UseData::new_guide())
     }
 
-    #[allow(dead_code)]
-    pub(super) fn remove_use(&self, use_ref: UseRef, alloc: &Slab<UseData>) -> Result<UseRef, SlabRefListError> {
+    fn remove_use(&self, alloc_use: &mut Slab<UseData>, use_ref: UseRef) {
         self.operands
-            .unplug_node(alloc, use_ref.clone())
-            .map(|_| use_ref)
+            .unplug_node(alloc_use, use_ref)
+            .expect("Failed to remove use reference from instruction");
     }
 }

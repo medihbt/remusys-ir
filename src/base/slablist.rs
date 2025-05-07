@@ -173,7 +173,7 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
             .flatten()
             .map(T::from_handle)
     }
-    pub fn get_size(&self) -> usize { self._size.get() }
+    pub fn len(&self) -> usize { self._size.get() }
     pub fn is_empty(&self) -> bool  { self._size.get() == 0 }
 
     /**
@@ -429,7 +429,7 @@ mod testing {
 
     #[allow(dead_code)]
     fn print_test_list(list: &SlabRefList<TestNodeRef>, slab: &Slab<TestNode>) {
-        print!("List({} elems): [ ", list.get_size());
+        print!("List({} elems): [ ", list.len());
         for i in list.view(slab) {
             print!("{}, ", i.to_slabref(slab).unwrap().number);
         }
@@ -440,7 +440,7 @@ mod testing {
     fn slab_node_test() {
         let mut slab = Slab::new();
         let list = test_list_from_vec(&mut slab, vec![1, 2, 3, 4, 5]);
-        assert_eq!(list.get_size(), 5);
+        assert_eq!(list.len(), 5);
         print_test_list(&list, &slab);
     }
 
@@ -449,12 +449,12 @@ mod testing {
         let mut slab = Slab::new();
         let list = test_list_from_vec(&mut slab, vec![1, 2, 3, 4, 5]);
 
-        assert_eq!(list.get_size(), 5);
+        assert_eq!(list.len(), 5);
 
         for i in 6..=10 {
             list.push_back_value(&mut slab, TestNode::new(i)).unwrap();
         }
-        assert_eq!(list.get_size(), 10);
+        assert_eq!(list.len(), 10);
         print_test_list(&list, &slab);
 
         for i in 0..5 {
@@ -462,7 +462,7 @@ mod testing {
             assert_eq!(node.to_slabref(&slab).unwrap().number, 10 - i);
             slab.remove(node.get_handle());
         }
-        assert_eq!(list.get_size(), 5);
+        assert_eq!(list.len(), 5);
         print_test_list(&list, &slab);
     }
 }

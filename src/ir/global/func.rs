@@ -1,69 +1,45 @@
-use crate::{base::slabref::SlabRef, ir::{block::BlockRef, Module, PtrStorage}, typing::id::ValTypeID};
+use crate::{
+    base::slablist::SlabRefList, ir::{block::BlockRef, PtrStorage, PtrUser}, typing::{id::ValTypeID, types::FuncTypeRef}
+};
 
-use super::{Global, GlobalDataCommon, GlobalRef};
+use super::{GlobalDataCommon, GlobalRef};
 
-pub struct Func {
-    pub global: GlobalDataCommon,
-    pub body:   Option<FuncBody>,
+pub trait FuncStorage: PtrStorage {
+    fn get_stored_func_type(&self) -> FuncTypeRef {
+        match self.get_stored_pointee_type() {
+            ValTypeID::Func(func_type) => func_type,
+            _ => panic!("Expected a function type"),
+        }
+    }
+}
+pub trait FuncUser: PtrUser {
+    fn get_operand_func_type(&self) -> FuncTypeRef {
+        match self.get_operand_pointee_type() {
+            ValTypeID::Func(func_type) => func_type,
+            _ => panic!("Expected a function type"),
+        }
+    }
 }
 
+pub struct FuncData {
+    pub(super) common: GlobalDataCommon,
+    pub(super) body:   Option<FuncBody>,
+}
 
 pub struct FuncBody {
-    pub parent: GlobalRef,
-    pub blocks: slab::Slab<BlockRef>,
-    pub entry:  BlockRef,
+    pub func: GlobalRef,
+    pub body: SlabRefList<BlockRef>,
 }
 
-pub struct FuncBodyIter<'a> {
-    pub func_body: &'a FuncBody,
-    pub iter:      slab::Iter<'a, BlockRef>,
-    pub at_entry:  bool,
-}
-
-impl FuncBody {
-    pub fn new(parent: GlobalRef, entry: BlockRef) -> Self {
-        Self {
-            parent,
-            blocks: slab::Slab::new(),
-            entry,
-        }
-    }
-
-    pub fn get_parent<'a>(&'a self, module: &'a Module) -> &'a Func {
-        match self.parent
-                  .to_slabref(&module._alloc_global)
-                  .expect("FuncBody::get_parent: parent not found") {
-            Global::Func(func) => func,
-            _ => panic!("FuncBody::get_parent: not a Func"),
-        }
-    }
-    pub fn get_parent_mut<'a>(&'a mut self, module: &'a mut Module) -> &'a mut Func {
-        match self.parent
-                  .to_slabref_mut(&mut module._alloc_global)
-                  .expect("FuncBody::get_parent: parent not found") {
-            Global::Func(func) => func,
-            _ => panic!("FuncBody::get_parent: not a Func"),
-        }
-    }
-
-    pub fn iter(&self) -> FuncBodyIter {
-        FuncBodyIter {
-            func_body: self,
-            iter:      self.blocks.iter(),
-            at_entry:  true,
-        }
+impl PtrStorage for FuncData {
+    fn get_stored_pointee_type(&self) -> ValTypeID {
+        self.common.content_ty.clone()
     }
 }
+impl FuncStorage for FuncData {}
 
-impl Iterator for FuncBodyIter<'_> {
-    type Item = BlockRef;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.at_entry {
-            self.at_entry = false;
-            Some(self.func_body.entry)
-        } else {
-            self.iter.next().map(|(_,b)| b.clone())
-        }
+impl FuncData {
+    pub fn is_extern(&self) -> bool {
+        self.body.is_none()
     }
 }

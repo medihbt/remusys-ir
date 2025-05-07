@@ -2,73 +2,77 @@ use std::cell::Cell;
 
 use slab::Slab;
 
-use crate::base::slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef};
-use crate::base::slabref::SlabRef;
-use crate::base::NullableValue;
-use crate::ir::ValueRef;
+use crate::{
+    base::{
+        NullableValue,
+        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slabref::SlabRef,
+    },
+    impl_slabref,
+    ir::ValueSSA,
+};
 
 use super::InstRef;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct UseRef(usize);
-
 pub struct UseData {
-    pub node_head: Cell<SlabRefListNodeHead>,
-    pub operand:   Cell<Option<ValueRef>>,
-    pub user:      InstRef,
-}
-
-impl UseRef {
-    pub fn get_oprerand_ref(&self, alloc: &Slab<UseData>) -> Option<ValueRef> {
-        self.to_slabref(alloc)
-            .expect("Invalid reference (UAF)")
-            .operand
-            .get()
-    }
-    pub fn set_oprerand_ref(&self, alloc: &Slab<UseData>, value: Option<ValueRef>) {
-        self.to_slabref(alloc)
-            .expect("Invalid reference (UAF)")
-            .operand
-            .set(value);
-    }
-}
-
-impl SlabRef for UseRef {
-    type RefObject = UseData;
-
-    fn from_handle(handle: usize) -> Self { UseRef(handle) }
-    fn get_handle (&self) -> usize { self.0 }
-}
-
-impl SlabRefListNodeRef for UseRef {}
-
-impl UseData {
-    pub fn new(user: InstRef) -> Self {
-        Self {
-            node_head:  Cell::new(SlabRefListNodeHead::new()),
-            operand:    Cell::new(None),
-            user,
-        }
-    }
-    pub fn new_with_operand(user: InstRef, operand: ValueRef) -> Self {
-        Self {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
-            operand:   Cell::new(Some(operand)),
-            user,
-        }
-    }
+    pub(crate) _node_head: Cell<SlabRefListNodeHead>,
+    pub(crate) _operand: Cell<ValueSSA>,
+    pub(crate) _user: InstRef,
 }
 
 impl SlabRefListNode for UseData {
     fn new_guide() -> Self {
-        Self { node_head: Cell::new(SlabRefListNodeHead::new()), operand: Cell::new(None), user: InstRef::new_null() }
+        Self {
+            _node_head: Cell::new(SlabRefListNodeHead::new()),
+            _user: InstRef::new_null(),
+            _operand: Cell::new(ValueSSA::None),
+        }
     }
 
     fn load_node_head(&self) -> SlabRefListNodeHead {
-        self.node_head.get()
+        self._node_head.get()
     }
 
     fn store_node_head(&self, node_head: SlabRefListNodeHead) {
-        self.node_head.set(node_head);
+        self._node_head.set(node_head);
+    }
+}
+
+impl UseData {
+    pub fn new(parent: InstRef, operand: ValueSSA) -> Self {
+        Self {
+            _node_head: Cell::new(SlabRefListNodeHead::new()),
+            _user: parent,
+            _operand: Cell::new(operand),
+        }
+    }
+
+    pub fn get_user(&self) -> InstRef {
+        self._user
+    }
+
+    pub fn get_operand(&self) -> ValueSSA {
+        self._operand.get()
+    }
+
+    pub fn set_operand(&self, operand: ValueSSA) {
+        self._operand.set(operand);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UseRef(usize);
+impl_slabref!(UseRef, UseData);
+impl SlabRefListNodeRef for UseRef {}
+
+impl UseRef {
+    pub fn get_user(&self, alloc: &Slab<UseData>) -> InstRef {
+        self.to_slabref_unwrap(alloc).get_user()
+    }
+    pub fn get_operand(&self, alloc: &Slab<UseData>) -> ValueSSA {
+        self.to_slabref_unwrap(alloc).get_operand()
+    }
+    pub fn set_operand(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
+        self.to_slabref_unwrap(alloc).set_operand(operand);
     }
 }
