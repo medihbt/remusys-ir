@@ -20,6 +20,11 @@ pub enum ValueRef {
     Block (BlockRef),
     Global(GlobalRef),
     Inst  (InstRef),
+    FuncArg(GlobalRef, u32)
+}
+
+pub struct ValueCommon {
+    pub value_ty: ValTypeID,
 }
 
 pub trait PtrStorage {
@@ -83,6 +88,14 @@ impl ValueRef {
                     |inst| {
                         inst.get_ty()
                     }).unwrap_or(type_ctx.get_void_type())
+            }
+            ValueRef::FuncArg(funcref, index) => {
+                // funcref.to_slabref_unwrap(&module._alloc_global)
+                //        .try_as_func()
+                //        .expect("Final type error: NOT FUNCTION")
+                //        .global
+                //        .pointee_ty.
+                todo!()
             }
         }
     }

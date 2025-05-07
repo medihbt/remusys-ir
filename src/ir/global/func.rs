@@ -1,4 +1,4 @@
-use crate::{base::slabref::SlabRef, ir::{block::BlockRef, Module}, typing::id::ValTypeID};
+use crate::{base::slabref::SlabRef, ir::{block::BlockRef, Module, PtrStorage}, typing::id::ValTypeID};
 
 use super::{Global, GlobalDataCommon, GlobalRef};
 
@@ -6,6 +6,7 @@ pub struct Func {
     pub global: GlobalDataCommon,
     pub body:   Option<FuncBody>,
 }
+
 
 pub struct FuncBody {
     pub parent: GlobalRef,
@@ -65,19 +66,4 @@ impl Iterator for FuncBodyIter<'_> {
             self.iter.next().map(|(_,b)| b.clone())
         }
     }
-}
-
-pub struct FuncArg {
-    pub arg_ty:      ValTypeID,
-    pub parent_func: GlobalRef,
-    pub arg_idx:     usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FuncArgRef(pub(crate) usize);
-
-impl SlabRef for FuncArgRef {
-    type Item = FuncArg;
-    fn from_handle(handle: usize) -> Self { Self(handle) }
-    fn get_handle (&self) -> usize { self.0 }
 }

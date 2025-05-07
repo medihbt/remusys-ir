@@ -3,13 +3,16 @@ use std::{cell::RefCell, collections::BTreeMap};
 use slab::Slab;
 
 use crate::{
-    base::{slablist::SlabRefList, slabref::SlabRef, NullableValue},
-    ir::{block::BlockRef, opcode::Opcode, Module},
+    base::{NullableValue, slablist::SlabRefList, slabref::SlabRef},
+    ir::{Module, block::BlockRef, opcode::Opcode},
     typing::id::ValTypeID,
 };
 
 use super::{
-    instructions::CallOp, jump_targets::JumpTargetRef, usedef::{UseData, UseRef}, Inst, InstCommon, InstDataTrait, InstRef
+    Inst, InstCommon, InstDataTrait, InstRef,
+    callop::CallOp,
+    jump_targets::JumpTargetRef,
+    usedef::{UseData, UseRef},
 };
 
 pub trait TerminatorInst {
@@ -41,10 +44,10 @@ pub struct Br {
     pub jump_targets: SlabRefList<JumpTargetRef>,
 }
 pub struct Switch {
-    pub cond:           UseRef,
-    pub jump_targets:   SlabRefList<JumpTargetRef>,
+    pub cond: UseRef,
+    pub jump_targets: SlabRefList<JumpTargetRef>,
     pub default_target: JumpTargetRef,
-    pub cases:          RefCell<BTreeMap<i128, JumpTargetRef>>,
+    pub cases: RefCell<BTreeMap<i128, JumpTargetRef>>,
 }
 
 impl TerminatorInst for Unreachable {
@@ -130,7 +133,8 @@ pub struct TerminatorInstView<'a>(pub(crate) usize, pub(crate) &'a Slab<Inst>);
 
 impl<'a> TerminatorInstView<'a> {
     pub fn from_inst(inst_ref: InstRef, inst_alloc: &'a Slab<Inst>) -> Option<Self> {
-        let is_terminator = inst_ref.to_slabref(&inst_alloc)
+        let is_terminator = inst_ref
+            .to_slabref(&inst_alloc)
             .map(Inst::is_terminator)
             .expect("Invalid instruction reference (Use after free?)");
         if is_terminator {
@@ -141,14 +145,13 @@ impl<'a> TerminatorInstView<'a> {
     }
     pub fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
         let inst_ref = InstRef::from_handle(self.0);
-        inst_ref.to_slabref(&self.1)
-            .map(|inst| {
-                match inst {
-                    Inst::Jump  (_, j) => j.get_jump_targets(),
-                    Inst::Br    (_, b) => b.get_jump_targets(),
-                    Inst::Switch(_, s) => s.get_jump_targets(),
-                    _ => None,
-                }
+        inst_ref
+            .to_slabref(&self.1)
+            .map(|inst| match inst {
+                Inst::Jump(_, j) => j.get_jump_targets(),
+                Inst::Br(_, b) => b.get_jump_targets(),
+                Inst::Switch(_, s) => s.get_jump_targets(),
+                _ => None,
             })
             .expect("Invalid instruction reference (Use after free?)")
     }

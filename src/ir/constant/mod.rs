@@ -16,7 +16,7 @@ pub enum Constant {
 }
 
 impl SlabRef for ConstantRef {
-    type Item = Constant;
+    type RefObject = Constant;
 
     fn from_handle(handle: usize) -> Self { ConstantRef(handle) }
     fn get_handle (&self) -> usize { self.0 }

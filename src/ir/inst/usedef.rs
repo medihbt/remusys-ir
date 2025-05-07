@@ -34,7 +34,7 @@ impl UseRef {
 }
 
 impl SlabRef for UseRef {
-    type Item = UseData;
+    type RefObject = UseData;
 
     fn from_handle(handle: usize) -> Self { UseRef(handle) }
     fn get_handle (&self) -> usize { self.0 }

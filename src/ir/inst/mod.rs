@@ -1,4 +1,5 @@
 pub mod instructions;
+pub mod callop;
 pub mod jump_targets;
 pub mod phi;
 pub mod terminator;
@@ -74,11 +75,11 @@ pub enum Inst {
     IndexPtr    (InstCommon, instructions::IndexPtrOp),
 
     /// Static call operation with a known function target.
-    Call        (InstCommon, instructions::CallOp),
+    Call        (InstCommon, callop::CallOp),
 
     /// Dynamic call operation with its callee being anything that holds a
     /// function pointer.
-    DynCall     (InstCommon, instructions::CallOp),
+    DynCall     (InstCommon, callop::CallOp),
 
     /// Loads value from a pointer.
     Load        (InstCommon, instructions::LoadOp),
@@ -125,7 +126,7 @@ pub struct InstCommon {
 }
 
 impl SlabRef for InstRef {
-    type Item = Inst;
+    type RefObject = Inst;
 
     fn from_handle(handle: usize) -> Self {
         Self(handle)

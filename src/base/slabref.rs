@@ -3,21 +3,25 @@ use slab::Slab;
 use super::NullableValue;
 
 pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
-    type Item: Sized;
+    type RefObject: Sized;
 
     fn from_handle(handle: usize) -> Self;
     fn get_handle (&self) -> usize;
 
-    fn to_slabref    <'a>(&self, slab: &'a Slab<Self::Item>)     -> Option<&'a Self::Item> {
+    fn to_slabref<'a>(&self, slab: &'a Slab<Self::RefObject>) -> Option<&'a Self::RefObject> {
         slab.get(self.get_handle())
     }
-    fn to_slabref_mut<'a>(&self, slab: &'a mut Slab<Self::Item>) -> Option<&'a mut Self::Item> {
+    fn to_slabref_mut<'a>(&self, slab: &'a mut Slab<Self::RefObject>) -> Option<&'a mut Self::RefObject> {
         slab.get_mut(self.get_handle())
+    }
+    fn to_slabref_unwrap<'a>(&self, slab: &'a Slab<Self::RefObject>) -> &'a Self::RefObject {
+        slab.get(self.get_handle())
+            .expect("Invalid reference (Use after free?)")
     }
 
     fn modify_slabref<'a, R>(&self,
-                              slab:   &'a mut Slab<Self::Item>,
-                              modify: impl FnOnce(&mut Self::Item) -> R) -> Option<R> {
+                              slab:   &'a mut Slab<Self::RefObject>,
+                              modify: impl FnOnce(&mut Self::RefObject) -> R) -> Option<R> {
         if let Some(v) = slab.get_mut(self.get_handle()) {
             Some(modify(v))
         } else {
@@ -25,8 +29,8 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
         }
     }
     fn read_slabref<'a, R>(&self,
-                            slab: &'a Slab<Self::Item>,
-                            read: impl FnOnce(&Self::Item) -> R) -> Option<R> {
+                            slab: &'a Slab<Self::RefObject>,
+                            read: impl FnOnce(&Self::RefObject) -> R) -> Option<R> {
         if let Some(v) = slab.get(self.get_handle()) {
             Some(read(v))
         } else {
@@ -42,4 +46,16 @@ impl<T: SlabRef> NullableValue for T {
     fn is_null(&self) -> bool {
         self.get_handle() == usize::MAX
     }
+}
+
+#[macro_export]
+macro_rules! impl_slabref {
+    ($ref_typename:ident, $data_typename:ident) => {
+        impl $crate::base::slabref::SlabRef for $ref_typename {
+            type RefObject = $data_typename;
+
+            fn from_handle(handle: usize) -> Self { Self(handle) }
+            fn get_handle(&self) -> usize { self.0 }
+        }
+    };
 }

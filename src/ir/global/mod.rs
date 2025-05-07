@@ -14,7 +14,7 @@ pub enum Global {
 pub struct GlobalRef(pub(crate) usize);
 
 impl SlabRef for GlobalRef {
-    type Item = Global;
+    type RefObject = Global;
 
     fn from_handle(handle: usize) -> Self { GlobalRef(handle) }
     fn get_handle(&self) -> usize { self.0 }

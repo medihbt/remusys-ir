@@ -20,7 +20,7 @@ pub struct BlockData {
 }
 
 impl SlabRef for BlockRef {
-    type Item = BlockData;
+    type RefObject = BlockData;
 
     fn from_handle(handle: usize) -> Self {
         BlockRef(handle)

@@ -14,7 +14,7 @@ pub struct JumpTargetData {
 }
 
 impl SlabRef for JumpTargetRef {
-    type Item = JumpTargetData;
+    type RefObject = JumpTargetData;
 
     fn from_handle(handle: usize) -> Self {
         Self(handle)
