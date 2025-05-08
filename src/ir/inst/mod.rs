@@ -19,10 +19,11 @@ pub mod binop;
 pub mod callop;
 pub mod cmp;
 pub mod gep;
+pub mod phi;
 pub mod load_store;
+pub mod sundury_inst;
 pub mod terminator;
 pub mod usedef;
-pub mod sundury_inst;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstRef(usize);
@@ -55,7 +56,7 @@ pub enum InstData {
     // Non-terminator instructions. These instructions are put in the middle of a block
     // and do not transfer control to another block or return from a function.
     /// PHI Node. This instruction is used to select a value based on the control flow.
-    Phi(InstDataCommon),
+    Phi(InstDataCommon, phi::PhiOp),
 
     /// Load a value from memory.
     Load(InstDataCommon),
@@ -93,6 +94,7 @@ pub struct InstDataCommon {
     pub opcode: Opcode,
     pub operands: SlabRefList<UseRef>,
     pub ret_type: ValTypeID,
+    pub self_ref: InstRef,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -101,12 +103,8 @@ pub struct InstDataInner {
     pub(super) _parent_bb: BlockRef,
 }
 
-trait InstDataUnique {
-    fn update_build_common(
-        &mut self,
-        common: InstDataCommon,
-        mut_module: &Module,
-    ) -> InstDataCommon;
+trait InstDataUnique: Sized {
+    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>);
 }
 
 impl InstDataInner {
@@ -157,22 +155,44 @@ impl InstData {
         match self {
             Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
             Self::Unreachable(common) => common,
-            Self::Ret(common, _) => common,
-            Self::Jump(common, _) => common,
-            Self::Br(common, _) => common,
-            Self::Switch(common, _) => common,
+            Self::Ret(common, ..) => common,
+            Self::Jump(common, ..) => common,
+            Self::Br(common, ..) => common,
+            Self::Switch(common, ..) => common,
             Self::TailCall(common) => common,
-            Self::Phi(common) => common,
-            Self::Load(common) => common,
-            Self::Store(common) => common,
-            Self::Select(common) => common,
-            Self::BinOp(common) => common,
-            Self::Cmp(common) => common,
-            Self::Cast(common) => common,
-            Self::IndexPtr(common) => common,
-            Self::Call(common) => common,
-            Self::DynCall(common) => common,
-            Self::Intrin(common) => common,
+            Self::Phi(common, ..) => common,
+            Self::Load(common, ..) => common,
+            Self::Store(common, ..) => common,
+            Self::Select(common, ..) => common,
+            Self::BinOp(common, ..) => common,
+            Self::Cmp(common, ..) => common,
+            Self::Cast(common, ..) => common,
+            Self::IndexPtr(common, ..) => common,
+            Self::Call(common, ..) => common,
+            Self::DynCall(common, ..) => common,
+            Self::Intrin(common, ..) => common,
+        }
+    }
+    pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
+        match self {
+            Self::ListGuideNode(_) => None,
+            Self::Unreachable(common)   => Some(common),
+            Self::Ret(common, ..)       => Some(common),
+            Self::Jump(common, ..)      => Some(common),
+            Self::Br(common, ..)        => Some(common),
+            Self::Switch(common, ..)    => Some(common),
+            Self::TailCall(common)      => Some(common),
+            Self::Phi(common, ..)       => Some(common),
+            Self::Load(common, ..)      => Some(common),
+            Self::Store(common, ..)     => Some(common),
+            Self::Select(common, ..)    => Some(common),
+            Self::BinOp(common, ..)     => Some(common),
+            Self::Cmp(common, ..)       => Some(common),
+            Self::Cast(common, ..)      => Some(common),
+            Self::IndexPtr(common, ..)  => Some(common),
+            Self::Call(common, ..)      => Some(common),
+            Self::DynCall(common, ..)   => Some(common),
+            Self::Intrin(common, ..)    => Some(common),
         }
     }
     pub fn get_opcode(&self) -> Opcode {
@@ -216,6 +236,7 @@ impl InstDataCommon {
             opcode,
             operands: SlabRefList::from_slab(alloc_use),
             ret_type,
+            self_ref: InstRef::new_null(),
         }
     }
 
