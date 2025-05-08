@@ -4,11 +4,11 @@ use slab::Slab;
 
 use crate::{
     base::slabref::SlabRef,
-    ir::{ValueSSA, block::BlockRef, inst, module::Module},
+    ir::{ValueSSA, block::BlockRef, module::Module},
 };
 
 use super::{
-    InstData, InstDataCommon, InstRef,
+    InstData, InstRef,
     usedef::{UseData, UseRef},
 };
 
@@ -42,7 +42,7 @@ impl PhiOp {
     ) -> Result<(), PhiErr> {
         let x = self
             .get_from_use(from_bb)
-            .map(|u| u.set_operand(alloc_use, value));
+            .map(|u| u.set_operand_nordfg(alloc_use, value));
         match x {
             Some(_) => Ok(()),
             None => Err(PhiErr::FromBBShouldInsert(from_bb)),
@@ -63,7 +63,7 @@ impl PhiOp {
 
         match new_useref {
             Some(u) => {
-                u.set_operand(&module.borrow_use_alloc(), value);
+                u.set_operand_nordfg(&module.borrow_use_alloc(), value);
                 Ok(u)
             }
             None => {

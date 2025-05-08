@@ -13,14 +13,14 @@ use crate::{
     typing::id::ValTypeID,
 };
 
-use super::{block::BlockRef, module::Module, opcode::Opcode};
+use super::{block::BlockRef, opcode::Opcode};
 
 pub mod binop;
 pub mod callop;
 pub mod cmp;
 pub mod gep;
-pub mod phi;
 pub mod load_store;
+pub mod phi;
 pub mod sundury_inst;
 pub mod terminator;
 pub mod usedef;
@@ -176,23 +176,23 @@ impl InstData {
     pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
         match self {
             Self::ListGuideNode(_) => None,
-            Self::Unreachable(common)   => Some(common),
-            Self::Ret(common, ..)       => Some(common),
-            Self::Jump(common, ..)      => Some(common),
-            Self::Br(common, ..)        => Some(common),
-            Self::Switch(common, ..)    => Some(common),
-            Self::TailCall(common)      => Some(common),
-            Self::Phi(common, ..)       => Some(common),
-            Self::Load(common, ..)      => Some(common),
-            Self::Store(common, ..)     => Some(common),
-            Self::Select(common, ..)    => Some(common),
-            Self::BinOp(common, ..)     => Some(common),
-            Self::Cmp(common, ..)       => Some(common),
-            Self::Cast(common, ..)      => Some(common),
-            Self::IndexPtr(common, ..)  => Some(common),
-            Self::Call(common, ..)      => Some(common),
-            Self::DynCall(common, ..)   => Some(common),
-            Self::Intrin(common, ..)    => Some(common),
+            Self::Unreachable(common) => Some(common),
+            Self::Ret(common, ..) => Some(common),
+            Self::Jump(common, ..) => Some(common),
+            Self::Br(common, ..) => Some(common),
+            Self::Switch(common, ..) => Some(common),
+            Self::TailCall(common) => Some(common),
+            Self::Phi(common, ..) => Some(common),
+            Self::Load(common, ..) => Some(common),
+            Self::Store(common, ..) => Some(common),
+            Self::Select(common, ..) => Some(common),
+            Self::BinOp(common, ..) => Some(common),
+            Self::Cmp(common, ..) => Some(common),
+            Self::Cast(common, ..) => Some(common),
+            Self::IndexPtr(common, ..) => Some(common),
+            Self::Call(common, ..) => Some(common),
+            Self::DynCall(common, ..) => Some(common),
+            Self::Intrin(common, ..) => Some(common),
         }
     }
     pub fn get_opcode(&self) -> Opcode {

@@ -17,15 +17,20 @@ pub mod opcode;
 pub mod util;
 
 /// Represents a value in the intermediate representation (IR).
-/// 
+///
 /// A value can be a constant data, constant expression, function argument,
 /// block, instruction, global variable, or none (representing absence of a value).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueSSA {
+    // Variants with value semantics
+    // These variants are used by at most one instruction, so there is no need to track users.
     /// Represents no value or absence of a value.
     None,
     /// A constant data value with a specific type.
     ConstData(ConstData),
+
+    // Variants with reference semantics
+    // These variants may be used by multiple instructions, so their users need to be tracked.
     /// A constant expression that can be evaluated at compile time.
     ConstExpr(ConstExprRef),
     /// A function argument identified by the function reference and argument index.
@@ -86,7 +91,7 @@ impl ValueSSA {
 /// This allows `Value` to be treated as a nullable value where `Value::None` represents null.
 impl NullableValue for ValueSSA {
     /// Checks if the value is null (i.e., `Value::None`).
-    /// 
+    ///
     /// ### Returns
     /// `true` if the value is `Value::None`, otherwise `false`.
     fn is_null(&self) -> bool {
@@ -94,7 +99,7 @@ impl NullableValue for ValueSSA {
     }
 
     /// Creates a new null value.
-    /// 
+    ///
     /// ### Returns
     /// A `Value::None` representing a null value.
     fn new_null() -> Self {
@@ -106,7 +111,7 @@ impl NullableValue for ValueSSA {
 /// Implementors of this trait can provide information about the type pointed to.
 pub trait PtrStorage {
     /// Gets the type of the value being pointed to.
-    /// 
+    ///
     /// # Returns
     /// The value type ID of the pointee type.
     fn get_stored_pointee_type(&self) -> ValTypeID;
@@ -116,7 +121,7 @@ pub trait PtrStorage {
 /// Implementors of this trait can retrieve type information about the pointee.
 pub trait PtrUser {
     /// Gets the type of the value pointed to by an operand.
-    /// 
+    ///
     /// # Returns
     /// The value type ID of the pointee.
     fn get_operand_pointee_type(&self) -> ValTypeID;

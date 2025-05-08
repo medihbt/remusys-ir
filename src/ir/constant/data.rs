@@ -6,6 +6,7 @@ use crate::typing::{id::ValTypeID, types::FloatTypeKind};
 pub enum ConstData {
     Undef(ValTypeID),
     Zero(ValTypeID),
+    PtrNull(ValTypeID),
     Int(u8, i128),
     Float(FloatTypeKind, f64),
 }
@@ -24,6 +25,7 @@ impl ConstData {
         match self {
             ConstData::Undef(ty) => ty.clone(),
             ConstData::Zero(ty) => ty.clone(),
+            ConstData::PtrNull(_) => ValTypeID::Ptr,
             ConstData::Int(bin_bits, _) => ValTypeID::Int(bin_bits.clone()),
             ConstData::Float(fp, _) => ValTypeID::Float(fp.clone()),
         }

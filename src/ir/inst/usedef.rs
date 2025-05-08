@@ -9,7 +9,10 @@ use crate::{
         slabref::SlabRef,
     },
     impl_slabref,
-    ir::ValueSSA,
+    ir::{
+        ValueSSA,
+        module::{Module, ModuleAllocErr},
+    },
 };
 
 use super::InstRef;
@@ -69,10 +72,46 @@ impl UseRef {
     pub fn get_user(&self, alloc: &Slab<UseData>) -> InstRef {
         self.to_slabref_unwrap(alloc).get_user()
     }
+
+    /// Get the operand of this use reference.
     pub fn get_operand(&self, alloc: &Slab<UseData>) -> ValueSSA {
         self.to_slabref_unwrap(alloc).get_operand()
     }
-    pub fn set_operand(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
+
+    /// Set the operand of this use reference regardless of the def-use graph.
+    /// This method does not update the def-use graph.
+    pub fn set_operand_nordfg(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
         self.to_slabref_unwrap(alloc).set_operand(operand);
+    }
+
+    /// Set the operand of this use reference and update the def-use graph.
+    pub fn set_operand(&self, module: &Module, operand: ValueSSA) {
+        // Update the operand of this use reference.
+        let use_alloc = module.borrow_use_alloc();
+        let self_data = self.to_slabref_unwrap(&*use_alloc);
+        let old_value = self_data.get_operand();
+        if old_value == operand {
+            return;
+        }
+        self_data.set_operand(operand);
+
+        // Now update the def-use reverse graph (RDFG).
+        if !old_value.is_none() {
+            Self::_handle_setop_err(module.operand_del_use(old_value, self.clone()));
+        }
+        if !operand.is_none() {
+            Self::_handle_setop_err(module.operand_add_use(operand, self.clone()));
+        }
+    }
+
+    fn _handle_setop_err(res: Result<(), ModuleAllocErr>) {
+        match res {
+            Ok(_) => { /* Successfully inserted or deleted the use reference. */ }
+            Err(ModuleAllocErr::DfgOperandNotReferece(..))
+            | Err(ModuleAllocErr::DfgReverseTrackingNotEnabled) => {
+                /* Normal cases where the value is not a reference type or the RDFG is not enabled. */
+            }
+            _ => panic!(),
+        }
     }
 }
