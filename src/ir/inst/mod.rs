@@ -5,15 +5,13 @@ use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
-        slabref::SlabRef,
+        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, slabref::SlabRef, NullableValue
     },
     impl_slabref,
-    typing::id::ValTypeID,
+    typing::{id::ValTypeID, TypeMismatchError},
 };
 
-use super::{block::BlockRef, opcode::Opcode};
+use super::{block::BlockRef, module::Module, opcode::Opcode, ValueSSA};
 
 pub mod binop;
 pub mod callop;
@@ -24,6 +22,8 @@ pub mod phi;
 pub mod sundury_inst;
 pub mod terminator;
 pub mod usedef;
+
+mod checking;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstRef(usize);
@@ -104,8 +104,15 @@ pub struct InstDataInner {
     pub(super) _parent_bb: BlockRef,
 }
 
+pub enum InstError {
+    OperandNull,
+    OperandTypeMismatch(TypeMismatchError, ValueSSA),
+}
+
 trait InstDataUnique: Sized {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>);
+
+    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError>;
 }
 
 impl InstDataInner {

@@ -8,7 +8,8 @@ use crate::{
 };
 
 use super::{
-    InstData, InstRef,
+    InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
+    checking::check_operand_type_match,
     usedef::{UseData, UseRef},
 };
 
@@ -126,5 +127,18 @@ impl PhiOp {
                 Ok(useref)
             }
         }
+    }
+}
+
+impl InstDataUnique for PhiOp {
+    fn build_operands(&mut self, _: &mut InstDataCommon, _: &mut Slab<UseData>) {}
+
+    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
+        let self_type = common.ret_type;
+        for (_, from) in self.from.borrow().iter() {
+            let from = from.get_operand(&module.borrow_use_alloc());
+            check_operand_type_match(self_type, from, module)?;
+        }
+        Ok(())
     }
 }

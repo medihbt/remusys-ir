@@ -2,10 +2,18 @@ use slab::Slab;
 
 use crate::{
     base::slablist::SlabRefList,
-    ir::block::jump_target::{JumpTargetData, JumpTargetKind, JumpTargetRef},
+    ir::{
+        block::jump_target::{JumpTargetData, JumpTargetKind, JumpTargetRef},
+        module::Module,
+    },
+    typing::id::ValTypeID,
 };
 
-use super::usedef::UseRef;
+use super::{
+    InstDataCommon, InstDataUnique, InstError,
+    checking::{check_operand_type_kind_match, check_operand_type_match},
+    usedef::{UseData, UseRef},
+};
 
 pub trait TerminatorInst {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>>;
@@ -95,5 +103,46 @@ impl TerminatorInst for Switch {
             )
             .unwrap();
         self._common._targets = list;
+    }
+}
+
+impl InstDataUnique for Ret {
+    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
+        self._retval = common.alloc_use(alloc_use);
+    }
+
+    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
+        let retval = self._retval.get_operand(&module.borrow_use_alloc());
+        check_operand_type_match(common.ret_type, retval, module)
+    }
+}
+impl InstDataUnique for Jump {
+    fn build_operands(&mut self, _: &mut InstDataCommon, _: &mut Slab<UseData>) {}
+
+    fn check_operands(&self, _: &InstDataCommon, _: &Module) -> Result<(), InstError> {
+        Ok(())
+    }
+}
+impl InstDataUnique for Br {
+    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
+        self.0._condition = common.alloc_use(alloc_use)
+    }
+
+    fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {
+        let cond = self.0._condition.get_operand(&module.borrow_use_alloc());
+        check_operand_type_match(ValTypeID::new_boolean(), cond, module)
+    }
+}
+impl InstDataUnique for Switch {
+    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
+        self._common._condition = common.alloc_use(alloc_use)
+    }
+
+    fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {
+        let cond = self
+            ._common
+            ._condition
+            .get_operand(&module.borrow_use_alloc());
+        check_operand_type_kind_match(ValTypeID::Int(0), cond, module)
     }
 }

@@ -16,6 +16,13 @@ pub trait IValType {
     fn gc_trace(&self, gather_func: impl Fn(ValTypeID));
 }
 
+#[derive(Debug)]
+pub enum TypeMismatchError {
+    IDNotEqual(ValTypeID, ValTypeID),
+    LayoutNotEqual(ValTypeID, ValTypeID),
+    KindNotMatch(ValTypeID, ValTypeID),
+}
+
 #[cfg(test)]
 mod testing {
     use super::{context::{binary_bits_to_bytes, PlatformPolicy, TypeContext}, id::ValTypeID, types::FloatTypeKind};
