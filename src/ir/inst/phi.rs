@@ -1,10 +1,10 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
 
 use slab::Slab;
 
 use crate::{
     base::slabref::SlabRef,
-    ir::{ValueSSA, block::BlockRef, module::Module},
+    ir::{block::BlockRef, module::Module, opcode::Opcode, ValueSSA}, typing::id::ValTypeID,
 };
 
 use super::{
@@ -128,6 +128,15 @@ impl PhiOp {
             }
         }
     }
+
+    pub fn new(ret_type: ValTypeID, module: &Module) -> (InstDataCommon, Self) {
+        (
+            InstDataCommon::new(Opcode::Phi, ret_type, &mut module.borrow_use_alloc_mut()),
+            Self {
+                from: RefCell::new(Vec::new()),
+            },
+        )
+    }
 }
 
 impl InstDataUnique for PhiOp {
@@ -140,5 +149,36 @@ impl InstDataUnique for PhiOp {
             check_operand_type_match(self_type, from, module)?;
         }
         Ok(())
+    }
+}
+
+pub struct PhiOpRef(InstRef);
+
+impl PhiOpRef {
+    pub fn new(module: &Module, ret_type: ValTypeID) -> Self {
+        let (common, phi) = PhiOp::new(ret_type, module);
+        let instref = module.insert_inst(InstData::Phi(common, phi));
+        Self(instref)
+    }
+
+    pub fn from_inst_raw(instref: InstRef) -> Self {
+        Self(instref)
+    }
+    pub fn from_inst_checked(instref: InstRef, module: &Module) -> Option<Self> {
+        if let InstData::Phi(_, _) = &*module.get_inst(instref) {
+            Some(Self(instref))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_data<'a>(&self, module: &'a Module) -> Ref<'a, PhiOp> {
+        Ref::map(module.get_inst(self.0), |data| {
+            if let InstData::Phi(_, phi) = data {
+                phi
+            } else {
+                panic!("Requries PHI but got {:?}", self.0);
+            }
+        })
     }
 }

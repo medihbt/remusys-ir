@@ -20,14 +20,14 @@ use super::InstRef;
 pub struct UseData {
     pub(crate) _node_head: Cell<SlabRefListNodeHead>,
     pub(crate) _operand: Cell<ValueSSA>,
-    pub(crate) _user: InstRef,
+    pub(crate) _user: Cell<InstRef>,
 }
 
 impl SlabRefListNode for UseData {
     fn new_guide() -> Self {
         Self {
             _node_head: Cell::new(SlabRefListNodeHead::new()),
-            _user: InstRef::new_null(),
+            _user: Cell::new(InstRef::new_null()),
             _operand: Cell::new(ValueSSA::None),
         }
     }
@@ -45,13 +45,16 @@ impl UseData {
     pub fn new(parent: InstRef, operand: ValueSSA) -> Self {
         Self {
             _node_head: Cell::new(SlabRefListNodeHead::new()),
-            _user: parent,
+            _user: Cell::new(parent),
             _operand: Cell::new(operand),
         }
     }
 
     pub fn get_user(&self) -> InstRef {
-        self._user
+        self._user.get()
+    }
+    pub(crate) fn set_user(&self, user: InstRef) {
+        self._user.set(user);
     }
 
     pub fn get_operand(&self) -> ValueSSA {

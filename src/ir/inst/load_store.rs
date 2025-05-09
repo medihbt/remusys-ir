@@ -5,8 +5,9 @@ use std::{cell::Cell, num::NonZero};
 use slab::Slab;
 
 use crate::{
-    ir::{PtrUser, module::Module},
-    typing::id::ValTypeID,
+    base::NullableValue,
+    ir::{PtrUser, ValueSSA, module::Module, opcode::Opcode},
+    typing::{TypeMismatchError, id::ValTypeID},
 };
 
 use super::{
@@ -71,8 +72,44 @@ impl InstDataUnique for StoreOp {
         let target = self.target.get_operand(&alloc_use);
 
         /* target is a pointer whose pointee type should be `target_ty`.
-           So type of `self.source` is `self.target_ty`. */
+        So type of `self.source` is `self.target_ty`. */
         check_operand_type_match(ValTypeID::Ptr, target, module)?;
         check_operand_type_match(self.target_ty, source, module)
+    }
+}
+
+impl LoadOp {
+    pub fn new_raw(
+        mut_module: &Module,
+        source_ty: ValTypeID,
+        source_align: usize,
+    ) -> (InstDataCommon, Self) {
+        let mut alloc_use = mut_module.borrow_use_alloc_mut();
+        let mut common = InstDataCommon::new(Opcode::Load, source_ty, &mut alloc_use);
+        let mut load_op = Self {
+            source: UseRef::new_null(),
+            source_ty,
+            align: Cell::new(source_align),
+        };
+        load_op.build_operands(&mut common, &mut alloc_use);
+        (common, load_op)
+    }
+
+    pub fn new(
+        mut_module: &Module,
+        source_ty: ValTypeID,
+        source_align: usize,
+        source: ValueSSA,
+    ) -> Result<(InstDataCommon, Self), InstError> {
+        if source.get_value_type(mut_module) != ValTypeID::Ptr {
+            return Err(InstError::OperandTypeMismatch(
+                TypeMismatchError::IDNotEqual(ValTypeID::Ptr, source.get_value_type(mut_module)),
+                source,
+            ));
+        }
+        let (common, load_op) = Self::new_raw(mut_module, source_ty, source_align);
+        let alloc_use = mut_module.borrow_use_alloc();
+        load_op.source.set_operand_nordfg(&alloc_use, source);
+        Ok((common, load_op))
     }
 }

@@ -170,10 +170,20 @@ impl Module {
         let id = inner._alloc_inst.insert(data);
         let ret = InstRef::from_handle(id);
 
-        /* Modify the slab reference to point to this */
+        // Modify the slab reference to point to this,
         ret.to_slabref_unwrap_mut(&mut inner._alloc_inst)
             .common_mut()
             .map(|c| c.self_ref = ret.clone());
+
+        // including the slab reference of itself and its operands.
+        let use_alloc = self.borrow_use_alloc();
+        ret.to_slabref_unwrap(&inner._alloc_inst)
+            .get_common()
+            .map(|c| {
+                for u in c.operands.view(&use_alloc) {
+                    u.to_slabref_unwrap(&use_alloc).set_user(ret.clone());
+                }
+            });
 
         /* Try add this handle as operand. */
         self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
@@ -237,7 +247,27 @@ impl Module {
     /// its type context.
     ///
     /// This function cannot change the reference addresses of `Value`.
-    pub fn gc_mark_sweep(&self, _external_live_set: impl Iterator<Item = ValueSSA>) {
+    pub fn gc_mark_sweep(&self, _extern_roots: impl Iterator<Item = ValueSSA>) {
+        todo!()
+    }
+
+    /// Implement a 'mark-compact' algorithm to reduce usage of those allocators.
+    /// If the module owns its type context uniquely, it also collects garbages in
+    /// its type context.
+    ///
+    /// **WARNING**: This function WILL CHANGE the reference addresses of `Value`.
+    ///
+    /// ### Arguments
+    ///
+    /// - `extern_roots`: The roots of the module. This is used to mark the values
+    ///   that are still in use.
+    /// - `reserve_times`: The number of times to reserve the allocator. This is used
+    ///   to reserve the allocators for the next allocation.
+    pub fn gc_mark_compact(
+        &self,
+        _extern_roots: impl Iterator<Item = ValueSSA>,
+        _reserve_times: f32,
+    ) {
         todo!()
     }
 }
@@ -287,12 +317,20 @@ impl Module {
         self._alloc_reverse_dfg.borrow_mut().take()
     }
 
-    pub(crate) fn operand_add_use(&self, operand: ValueSSA, useref: UseRef) -> Result<(), ModuleAllocErr> {
+    pub(crate) fn operand_add_use(
+        &self,
+        operand: ValueSSA,
+        useref: UseRef,
+    ) -> Result<(), ModuleAllocErr> {
         self._borrow_rdfg_alloc()?
             .edit_node(operand, |v| v.push(useref))
     }
 
-    pub(crate) fn operand_del_use(&self, operand: ValueSSA, useref: UseRef) -> Result<(), ModuleAllocErr> {
+    pub(crate) fn operand_del_use(
+        &self,
+        operand: ValueSSA,
+        useref: UseRef,
+    ) -> Result<(), ModuleAllocErr> {
         self._borrow_rdfg_alloc()?.edit_node(operand, |v| {
             if let Some(pos) = v.iter().position(|x| *x == useref) {
                 v.swap_remove(pos);

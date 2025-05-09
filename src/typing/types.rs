@@ -31,6 +31,14 @@ impl IValType for FloatTypeKind {
 
     fn gc_trace(&self, _: impl Fn(ValTypeID)) {}
 }
+impl FloatTypeKind {
+    pub fn get_binary_bits(&self) -> usize {
+        match self {
+            Self::Ieee32 => 32,
+            Self::Ieee64 => 64,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ArrayTypeData {

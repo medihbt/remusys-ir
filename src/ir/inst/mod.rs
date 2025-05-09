@@ -5,16 +5,19 @@ use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, slabref::SlabRef, NullableValue
+        NullableValue,
+        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slabref::SlabRef,
     },
     impl_slabref,
-    typing::{id::ValTypeID, TypeMismatchError},
+    typing::{TypeMismatchError, id::ValTypeID},
 };
 
-use super::{block::BlockRef, module::Module, opcode::Opcode, ValueSSA};
+use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
 
 pub mod binop;
 pub mod callop;
+pub mod cast;
 pub mod cmp;
 pub mod gep;
 pub mod load_store;
@@ -60,28 +63,28 @@ pub enum InstData {
     Phi(InstDataCommon, phi::PhiOp),
 
     /// Load a value from memory.
-    Load(InstDataCommon),
+    Load(InstDataCommon, load_store::LoadOp),
 
     /// Store a value to memory.
-    Store(InstDataCommon),
+    Store(InstDataCommon, load_store::StoreOp),
 
     /// Select a value from two options based on a condition.
-    Select(InstDataCommon),
+    Select(InstDataCommon, sundury_inst::SelectOp),
 
     /// Binary operations (add, sub, mul, div, etc.).
-    BinOp(InstDataCommon),
+    BinOp(InstDataCommon, binop::BinOp),
 
     /// Compare two values and produce a boolean result.
-    Cmp(InstDataCommon),
+    Cmp(InstDataCommon, cmp::CmpOp),
 
     /// Cast a value from one type to another.
-    Cast(InstDataCommon),
+    Cast(InstDataCommon, cast::CastOp),
 
     /// Adjusts a pointer to an array or structure to the right position by indices.
-    IndexPtr(InstDataCommon),
+    IndexPtr(InstDataCommon, gep::IndexPtrOp),
 
     /// Call a function and get the result.
-    Call(InstDataCommon),
+    Call(InstDataCommon, callop::CallOp),
 
     /// Call a value and get the result.
     DynCall(InstDataCommon),
@@ -106,7 +109,17 @@ pub struct InstDataInner {
 
 pub enum InstError {
     OperandNull,
+    OperandUninit,
+    OperandOverflow,
     OperandTypeMismatch(TypeMismatchError, ValueSSA),
+    OperandError(ValueSSAError),
+    OperandNotComptimeConst(ValueSSA),
+
+    InvalidCast(cast::CastError),
+
+    InvalidArgumentCount(usize, usize),
+
+    DividedByZero,
 }
 
 trait InstDataUnique: Sized {
@@ -141,7 +154,7 @@ impl SlabRefListNode for InstData {
     fn load_node_head(&self) -> SlabRefListNodeHead {
         match self {
             Self::ListGuideNode(cell) => cell.get(),
-            _ => self.get_common().inner.get()._node_head,
+            _ => self.get_common_unwrap().inner.get()._node_head,
         }
     }
 
@@ -149,37 +162,40 @@ impl SlabRefListNode for InstData {
         match self {
             Self::ListGuideNode(cell) => cell.set(node_head),
             _ => self
-                .get_common()
+                .get_common_unwrap()
                 .inner
                 .get()
                 .insert_node_head(node_head)
-                .assign_to(&self.get_common().inner),
+                .assign_to(&self.get_common_unwrap().inner),
         }
     }
 }
 
 impl InstData {
-    pub fn get_common(&self) -> &InstDataCommon {
+    pub fn get_common_unwrap(&self) -> &InstDataCommon {
+        self.get_common().expect("Guide Node has no common data")
+    }
+    pub fn get_common(&self) -> Option<&InstDataCommon> {
         match self {
-            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
-            Self::PhiInstEnd(common) => common,
-            Self::Unreachable(common) => common,
-            Self::Ret(common, ..) => common,
-            Self::Jump(common, ..) => common,
-            Self::Br(common, ..) => common,
-            Self::Switch(common, ..) => common,
-            Self::TailCall(common) => common,
-            Self::Phi(common, ..) => common,
-            Self::Load(common, ..) => common,
-            Self::Store(common, ..) => common,
-            Self::Select(common, ..) => common,
-            Self::BinOp(common, ..) => common,
-            Self::Cmp(common, ..) => common,
-            Self::Cast(common, ..) => common,
-            Self::IndexPtr(common, ..) => common,
-            Self::Call(common, ..) => common,
-            Self::DynCall(common, ..) => common,
-            Self::Intrin(common, ..) => common,
+            Self::ListGuideNode(_) => None,
+            Self::PhiInstEnd(common) => Some(common),
+            Self::Unreachable(common) => Some(common),
+            Self::Ret(common, ..) => Some(common),
+            Self::Jump(common, ..) => Some(common),
+            Self::Br(common, ..) => Some(common),
+            Self::Switch(common, ..) => Some(common),
+            Self::TailCall(common) => Some(common),
+            Self::Phi(common, ..) => Some(common),
+            Self::Load(common, ..) => Some(common),
+            Self::Store(common, ..) => Some(common),
+            Self::Select(common, ..) => Some(common),
+            Self::BinOp(common, ..) => Some(common),
+            Self::Cmp(common, ..) => Some(common),
+            Self::Cast(common, ..) => Some(common),
+            Self::IndexPtr(common, ..) => Some(common),
+            Self::Call(common, ..) => Some(common),
+            Self::DynCall(common) => Some(common),
+            Self::Intrin(common) => Some(common),
         }
     }
     pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
@@ -212,33 +228,57 @@ impl InstData {
         !self.is_guide_node()
     }
     pub fn get_opcode(&self) -> Opcode {
-        self.get_common().opcode
+        self.get_common_unwrap().opcode
     }
     pub fn get_value_type(&self) -> ValTypeID {
-        self.get_common().ret_type.clone()
+        self.get_common_unwrap().ret_type.clone()
     }
 
     pub fn get_parent_bb(&self) -> BlockRef {
         match self {
             Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
-            _ => self.get_common().inner.get()._parent_bb,
+            _ => self.get_common_unwrap().inner.get()._parent_bb,
         }
     }
     pub fn set_parent_bb(&self, parent_bb: BlockRef) {
         match self {
             Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
             _ => self
-                .get_common()
+                .get_common_unwrap()
                 .inner
                 .get()
                 .insert_parent_bb(parent_bb)
-                .assign_to(&self.get_common().inner),
+                .assign_to(&self.get_common_unwrap().inner),
         }
     }
 
     /// Checks if this instruction ends a control flow.
     pub fn is_terminator(&self) -> bool {
         matches!(self, Self::Unreachable(_))
+    }
+
+    pub(super) fn check_operands(&self, module: &Module) -> Result<(), InstError> {
+        match self {
+            InstData::ListGuideNode(..)
+            | InstData::PhiInstEnd(..)
+            | InstData::Unreachable(..)
+            | InstData::Jump(..) => Ok(()),
+            InstData::Ret(c, r) => r.check_operands(c, module),
+            InstData::Br(c, b) => b.check_operands(c, module),
+            InstData::Switch(c, s) => s.check_operands(c, module),
+            InstData::TailCall(..) => todo!("TailCall Not Implemented and maybe will be removed"),
+            InstData::Phi(c, phi) => phi.check_operands(c, module),
+            InstData::Load(c, ldr) => ldr.check_operands(c, module),
+            InstData::Store(c, str) => str.check_operands(c, module),
+            InstData::Select(c, s) => s.check_operands(c, module),
+            InstData::BinOp(c, b) => b.check_operands(c, module),
+            InstData::Cmp(c, cmp) => cmp.check_operands(c, module),
+            InstData::Cast(c, cast) => cast.check_operands(c, module),
+            InstData::IndexPtr(c, gep) => gep.check_operands(c, module),
+            InstData::Call(c, call) => call.check_operands(c, module),
+            InstData::DynCall(c, ..) => todo!("Dyncall not implemented and maybe will be removed"),
+            InstData::Intrin(c, ..) => todo!("Intrin not implemented and maybe will be removed"),
+        }
     }
 }
 

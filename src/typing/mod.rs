@@ -21,6 +21,9 @@ pub enum TypeMismatchError {
     IDNotEqual(ValTypeID, ValTypeID),
     LayoutNotEqual(ValTypeID, ValTypeID),
     KindNotMatch(ValTypeID, ValTypeID),
+
+    NotAggregate(ValTypeID),
+    NotPrimitive(ValTypeID),
 }
 
 #[cfg(test)]

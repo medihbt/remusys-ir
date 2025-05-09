@@ -22,6 +22,7 @@ impl SlabRefListNodeRef for BlockRef {}
 /// Basic block data.
 pub struct BlockData {
     pub insructions: SlabRefList<InstRef>,
+    pub phi_node_end: Cell<InstRef>,
     pub(super) _inner: Cell<BlockDataInner>,
 }
 
@@ -63,6 +64,7 @@ impl SlabRefListNode for BlockData {
     fn new_guide() -> Self {
         Self {
             insructions: SlabRefList::new_guide(),
+            phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
                 _node_head: SlabRefListNodeHead::new(),
                 _parent_func: GlobalRef::new_null(),

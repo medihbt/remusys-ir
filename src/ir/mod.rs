@@ -14,6 +14,7 @@ pub mod global;
 pub mod inst;
 pub mod module;
 pub mod opcode;
+pub mod cmp_cond;
 pub mod util;
 
 /// Represents a value in the intermediate representation (IR).
@@ -41,6 +42,13 @@ pub enum ValueSSA {
     Inst(InstRef),
     /// A reference to a global variable or function.
     Global(GlobalRef),
+}
+
+pub enum ValueSSAError {
+    IDNotEqual(ValueSSA, ValueSSA),
+    KindNotMatch(ValueSSA, ValueSSA),
+
+    NotFunction(ValueSSA),
 }
 
 impl ValueSSA {

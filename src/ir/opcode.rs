@@ -4,7 +4,7 @@ use std::{collections::HashMap, str::FromStr};
 /// Enum representing the various opcodes in the Musys IR.
 pub enum Opcode {
     None,
-    And, Or, Xor, Shl, Lshr, Ashr,
+    BitAnd, BitOr, BitXor, Shl, Lshr, Ashr,
     Add, Sub, Mul, Sdiv, Udiv, Srem, Urem,
     Fadd, Fsub, Fmul, Fdiv, Frem,
     Jmp, Br, Switch, Ret, Unreachable,
@@ -23,25 +23,28 @@ impl Opcode {
         matches!(self, Opcode::Shl | Opcode::Lshr | Opcode::Ashr)
     }
     pub fn is_logic_op(self) -> bool {
-        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor)
+        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor)
     }
     pub fn is_int_op(self) -> bool {
-        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
     }
     pub fn is_float_op(self) -> bool {
         matches!(self, Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem)
     }
     pub fn is_binary_op(self) -> bool {
-        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
     }
     pub fn is_divrem_op(self) -> bool {
         matches!(self, Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::Frem | Opcode::Fdiv)
     }
     pub fn is_constexpr_op(self) -> bool {
-        matches!(self, Opcode::And | Opcode::Or | Opcode::Xor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::IndexExtract | Opcode::IndexInsert | Opcode::IndexPtr | Opcode::IndexOffsetOf)
+        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::IndexExtract | Opcode::IndexInsert | Opcode::IndexPtr | Opcode::IndexOffsetOf)
     }
     pub fn is_inst_op(self) -> bool {
         !matches!(self, Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec)
+    }
+    pub fn is_cast_op(self) -> bool {
+        matches!(self, Opcode::Sitofp | Opcode::Uitofp | Opcode::Fptosi | Opcode::Zext | Opcode::Sext | Opcode::Trunc | Opcode::Fpext | Opcode::Fptrunc)
     }
 
     pub fn get_name(self) -> &'static str {

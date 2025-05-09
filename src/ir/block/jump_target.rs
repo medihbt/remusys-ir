@@ -2,9 +2,11 @@
 
 use std::cell::Cell;
 
+use slab::Slab;
+
 use crate::{
     base::{
-        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, NullableValue
+        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, slabref::SlabRef, NullableValue
     }, impl_slabref, ir::inst::InstRef
 };
 
@@ -55,3 +57,14 @@ impl JumpTargetData {
 pub struct JumpTargetRef(usize);
 impl_slabref!(JumpTargetRef, JumpTargetData);
 impl SlabRefListNodeRef for JumpTargetRef {}
+
+impl JumpTargetRef {
+    pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
+        self.to_slabref_unwrap(jt_alloc)
+            ._block.get()
+    }
+    pub fn set_block(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
+        self.to_slabref_unwrap(jt_alloc)
+            ._block.set(block);
+    }
+}
