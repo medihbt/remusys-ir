@@ -1,5 +1,9 @@
+use std::cell::RefCell;
+
 use crate::{
-    base::slablist::SlabRefList, ir::{block::BlockRef, PtrStorage, PtrUser}, typing::{id::ValTypeID, types::FuncTypeRef}
+    base::slablist::SlabRefList,
+    ir::{PtrStorage, PtrUser, block::BlockRef},
+    typing::{id::ValTypeID, types::FuncTypeRef},
 };
 
 use super::{GlobalDataCommon, GlobalRef};
@@ -23,7 +27,7 @@ pub trait FuncUser: PtrUser {
 
 pub struct FuncData {
     pub(super) common: GlobalDataCommon,
-    pub(super) body:   Option<FuncBody>,
+    pub(super) body: RefCell<Option<FuncBody>>,
 }
 
 pub struct FuncBody {
@@ -40,6 +44,6 @@ impl FuncStorage for FuncData {}
 
 impl FuncData {
     pub fn is_extern(&self) -> bool {
-        self.body.is_none()
+        self.body.borrow().is_none()
     }
 }

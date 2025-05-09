@@ -5,12 +5,10 @@ use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
-        slabref::SlabRef,
+        slablist::{SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, slabref::SlabRef, NullableValue
     },
     impl_slabref,
-    typing::{TypeMismatchError, id::ValTypeID},
+    typing::{id::ValTypeID, TypeMismatchError},
 };
 
 use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
@@ -116,10 +114,12 @@ pub enum InstError {
     OperandNotComptimeConst(ValueSSA),
 
     InvalidCast(cast::CastError),
-
     InvalidArgumentCount(usize, usize),
-
     DividedByZero,
+
+    SelfNotAttached(InstRef),
+    SelfAlreadyAttached(InstRef, BlockRef),
+    ListError(SlabRefListError),
 }
 
 trait InstDataUnique: Sized {
@@ -172,6 +172,13 @@ impl SlabRefListNode for InstData {
 }
 
 impl InstData {
+    pub fn new_unreachable() -> Self {
+        Self::Unreachable(InstDataCommon::new(Opcode::Unreachable, ValTypeID::Void, &mut Slab::new()))
+    }
+    pub fn new_phi_end() -> Self {
+        Self::PhiInstEnd(InstDataCommon::new(Opcode::None, ValTypeID::Void, &mut Slab::new()))
+    }
+
     pub fn get_common_unwrap(&self) -> &InstDataCommon {
         self.get_common().expect("Guide Node has no common data")
     }
@@ -311,5 +318,51 @@ impl InstDataCommon {
         self.operands
             .unplug_node(alloc_use, use_ref)
             .expect("Failed to remove use reference from instruction");
+    }
+}
+
+impl InstRef {
+    fn _node_attach_check(&self, module: &Module, to_attach: InstRef) -> Result<BlockRef, InstError> {
+        let parent = module.get_inst(*self).get_parent_bb();
+        if parent.is_null() {
+            return Err(InstError::SelfNotAttached(*self));
+        }
+        if to_attach.is_null() {
+            return Err(InstError::OperandNull);
+        }
+        let to_attach_bb = module.get_inst(to_attach).get_parent_bb();
+        if to_attach_bb.is_nonnull() {
+            return Err(InstError::SelfAlreadyAttached(to_attach, to_attach_bb));
+        }
+        Ok(parent)
+    }
+    fn _detach_check(&self, module: &Module) -> Result<BlockRef, InstError> {
+        let parent = module.get_inst(*self).get_parent_bb();
+        if parent.is_null() {
+            return Err(InstError::SelfNotAttached(*self));
+        }
+        Ok(parent)
+    }
+
+    pub fn add_next_inst(&self, module: &Module, next: InstRef) -> Result<(), InstError> {
+        let parent = self._node_attach_check(module, next)?;
+        module.get_block(parent)
+            .insructions
+            .node_add_next(&module.borrow_value_alloc()._alloc_inst, *self, next)
+            .map_err(InstError::ListError)
+    }
+    pub fn add_prev_inst(&self, module: &Module, prev: InstRef) -> Result<(), InstError> {
+        let parent = self._node_attach_check(module, prev)?;
+        module.get_block(parent)
+            .insructions
+            .node_add_prev(&module.borrow_value_alloc()._alloc_inst, *self, prev)
+            .map_err(InstError::ListError)
+    }
+    pub fn detach_self(&self, module: &Module) -> Result<(), InstError> {
+        let parent = self._detach_check(module)?;
+        module.get_block(parent)
+            .insructions
+            .unplug_node(&module.borrow_value_alloc()._alloc_inst, *self)
+            .map_err(InstError::ListError)
     }
 }
