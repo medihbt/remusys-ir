@@ -1,5 +1,5 @@
 //! Compare instructions.
 
-use super::{binop::BinOp, InstDataUnique};
+use super::binop::BinOp;
 
-pub struct CmpOp(BinOp);
+pub struct CmpOp(pub BinOp);

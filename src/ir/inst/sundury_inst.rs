@@ -2,8 +2,6 @@
 
 use slab::Slab;
 
-use crate::{ir::opcode::Opcode, typing::id::ValTypeID};
-
 use super::{
     InstDataUnique,
     usedef::{UseData, UseRef},

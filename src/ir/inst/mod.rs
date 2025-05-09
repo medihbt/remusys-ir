@@ -32,6 +32,7 @@ impl SlabRefListNodeRef for InstRef {}
 
 pub enum InstData {
     ListGuideNode(Cell<SlabRefListNodeHead>),
+    PhiInstEnd(InstDataCommon),
 
     // Terminator instructions. These instructions are put at the end of a block and
     // transfer control to another block or return from a function.
@@ -154,6 +155,7 @@ impl InstData {
     pub fn get_common(&self) -> &InstDataCommon {
         match self {
             Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            Self::PhiInstEnd(common) => common,
             Self::Unreachable(common) => common,
             Self::Ret(common, ..) => common,
             Self::Jump(common, ..) => common,
@@ -176,6 +178,7 @@ impl InstData {
     pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
         match self {
             Self::ListGuideNode(_) => None,
+            Self::PhiInstEnd(common) => Some(common),
             Self::Unreachable(common) => Some(common),
             Self::Ret(common, ..) => Some(common),
             Self::Jump(common, ..) => Some(common),
@@ -194,6 +197,12 @@ impl InstData {
             Self::DynCall(common, ..) => Some(common),
             Self::Intrin(common, ..) => Some(common),
         }
+    }
+    pub fn is_guide_node(&self) -> bool {
+        matches!(self, Self::ListGuideNode(..) | Self::PhiInstEnd(..))
+    }
+    pub fn is_valid(&self) -> bool {
+        !self.is_guide_node()
     }
     pub fn get_opcode(&self) -> Opcode {
         self.get_common().opcode

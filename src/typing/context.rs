@@ -103,21 +103,21 @@ impl TypeContext {
         })
     }
 
-    pub fn get_struct_alias(&self, name: &str) -> Option<StructAliasRef> {
+    pub fn get_struct_alias_by_name(&self, name: &str) -> Option<StructAliasRef> {
         self._struct_alias_map
             .borrow()
             .get(name)
             .map(|sa| sa.clone())
     }
     pub fn make_struct_alias_lazy(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
-        if let Some(alias) = self.get_struct_alias(name) {
+        if let Some(alias) = self.get_struct_alias_by_name(name) {
             alias
         } else {
             self._force_insert_struct_alias(name, aliasee)
         }
     }
     pub fn make_struct_alias_force(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
-        if let Some(alias) = self.get_struct_alias(name) {
+        if let Some(alias) = self.get_struct_alias_by_name(name) {
             if alias
                 .to_slabref_unwrap(&self._inner.borrow()._alloc_struct_alias)
                 .aliasee

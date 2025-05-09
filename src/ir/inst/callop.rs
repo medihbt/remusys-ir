@@ -26,4 +26,4 @@ impl PtrUser for CallOp {
 impl FuncUser for CallOp {}
 
 
-pub struct IntrinOp(CallOp);
+pub struct IntrinOp(pub CallOp);

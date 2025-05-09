@@ -178,6 +178,10 @@ impl StructAliasRef {
     pub fn get_name(&self, type_ctx: &TypeContext) -> String {
         self.load_data(type_ctx).name
     }
+    pub fn get_aliasee(&self, type_ctx: &TypeContext) -> StructTypeRef {
+        self.to_slabref_unwrap(&type_ctx._inner.borrow()._alloc_struct_alias)
+            .aliasee
+    }
 }
 
 #[derive(Debug, Clone)]
