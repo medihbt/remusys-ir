@@ -5,10 +5,14 @@ use usedef::{UseData, UseRef};
 
 use crate::{
     base::{
-        slablist::{SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef}, slabref::SlabRef, NullableValue
+        NullableValue,
+        slablist::{
+            SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef,
+        },
+        slabref::SlabRef,
     },
     impl_slabref,
-    typing::{id::ValTypeID, TypeMismatchError},
+    typing::{TypeMismatchError, id::ValTypeID},
 };
 
 use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
@@ -32,7 +36,10 @@ impl_slabref!(InstRef, InstData);
 impl SlabRefListNodeRef for InstRef {}
 
 pub enum InstData {
-    ListGuideNode(Cell<SlabRefListNodeHead>),
+    /// Instruction list guide node containing a simple header and parent block.
+    /// The guide node will be always attached to a block, so its parent block
+    /// will be initialized when the block is allocated on `module.inner._alloc_block`.
+    ListGuideNode(Cell<SlabRefListNodeHead>, Cell<BlockRef>),
     PhiInstEnd(InstDataCommon),
 
     // Terminator instructions. These instructions are put at the end of a block and
@@ -102,7 +109,24 @@ pub struct InstDataCommon {
 #[derive(Debug, Clone, Copy)]
 pub struct InstDataInner {
     pub(super) _node_head: SlabRefListNodeHead,
-    pub(super) _parent_bb: BlockRef,
+
+    /// ## Parent Basic Block
+    ///
+    /// `None` if this instruction is not attached to any block, and `null` if
+    /// this instruction is attached to a block that is not allocated to the module.
+    ///
+    /// ### Why use `Option`
+    ///
+    /// Sometimes we need to insert an instruction into a block that is not
+    /// allocated to the module yet. Since the block has no ID, the `_parent_bb`
+    /// is `null` instead of `None`.
+    ///
+    /// If we use `BlockRef` here, it is impossible to distinguish between the case
+    /// above and the case where the instruction is not attached to any block.
+    /// The checker may return an error unexpectedly.
+    ///
+    /// So we use `Option<BlockRef>`.
+    pub(super) _parent_bb: Option<BlockRef>,
 }
 
 pub enum InstError {
@@ -120,6 +144,7 @@ pub enum InstError {
     SelfNotAttached(InstRef),
     SelfAlreadyAttached(InstRef, BlockRef),
     ListError(SlabRefListError),
+    ReplicatedTerminator(InstRef, InstRef),
 }
 
 trait InstDataUnique: Sized {
@@ -129,38 +154,37 @@ trait InstDataUnique: Sized {
 }
 
 impl InstDataInner {
-    fn insert_node_head(self, node_head: SlabRefListNodeHead) -> Self {
-        Self {
-            _node_head: node_head,
-            _parent_bb: self._parent_bb,
-        }
+    fn insert_node_head(mut self, node_head: SlabRefListNodeHead) -> Self {
+        self._node_head = node_head;
+        self
     }
-    fn insert_parent_bb(self, parent_bb: BlockRef) -> Self {
-        Self {
-            _node_head: self._node_head,
-            _parent_bb: parent_bb,
-        }
+    pub(super) fn insert_parent_bb(mut self, parent_bb: Option<BlockRef>) -> Self {
+        self._parent_bb = parent_bb;
+        self
     }
-    fn assign_to(&self, cell: &Cell<InstDataInner>) {
+    pub(super) fn assign_to(&self, cell: &Cell<InstDataInner>) {
         cell.set(*self);
     }
 }
 
 impl SlabRefListNode for InstData {
     fn new_guide() -> Self {
-        Self::ListGuideNode(Cell::new(SlabRefListNodeHead::new()))
+        Self::ListGuideNode(
+            Cell::new(SlabRefListNodeHead::new()),
+            Cell::new(BlockRef::new_null()),
+        )
     }
 
     fn load_node_head(&self) -> SlabRefListNodeHead {
         match self {
-            Self::ListGuideNode(cell) => cell.get(),
+            Self::ListGuideNode(cell, _) => cell.get(),
             _ => self.get_common_unwrap().inner.get()._node_head,
         }
     }
 
     fn store_node_head(&self, node_head: SlabRefListNodeHead) {
         match self {
-            Self::ListGuideNode(cell) => cell.set(node_head),
+            Self::ListGuideNode(cell, _) => cell.set(node_head),
             _ => self
                 .get_common_unwrap()
                 .inner
@@ -173,10 +197,20 @@ impl SlabRefListNode for InstData {
 
 impl InstData {
     pub fn new_unreachable() -> Self {
-        Self::Unreachable(InstDataCommon::new(Opcode::Unreachable, ValTypeID::Void, &mut Slab::new()))
+        Self::Unreachable(InstDataCommon::new(
+            Opcode::Unreachable,
+            ValTypeID::Void,
+            &mut Slab::new(),
+        ))
     }
-    pub fn new_phi_end() -> Self {
-        Self::PhiInstEnd(InstDataCommon::new(Opcode::None, ValTypeID::Void, &mut Slab::new()))
+    pub fn new_phi_end(parent_bb: BlockRef) -> Self {
+        let mut common = InstDataCommon::new(
+            Opcode::None,
+            ValTypeID::Void,
+            &mut Slab::new(),
+        );
+        common.inner.get_mut()._parent_bb = Some(parent_bb);
+        Self::PhiInstEnd(common)
     }
 
     pub fn get_common_unwrap(&self) -> &InstDataCommon {
@@ -184,7 +218,7 @@ impl InstData {
     }
     pub fn get_common(&self) -> Option<&InstDataCommon> {
         match self {
-            Self::ListGuideNode(_) => None,
+            Self::ListGuideNode(..) => None,
             Self::PhiInstEnd(common) => Some(common),
             Self::Unreachable(common) => Some(common),
             Self::Ret(common, ..) => Some(common),
@@ -207,7 +241,7 @@ impl InstData {
     }
     pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
         match self {
-            Self::ListGuideNode(_) => None,
+            Self::ListGuideNode(..) => None,
             Self::PhiInstEnd(common) => Some(common),
             Self::Unreachable(common) => Some(common),
             Self::Ret(common, ..) => Some(common),
@@ -241,15 +275,15 @@ impl InstData {
         self.get_common_unwrap().ret_type.clone()
     }
 
-    pub fn get_parent_bb(&self) -> BlockRef {
+    pub fn get_parent_bb(&self) -> Option<BlockRef> {
         match self {
-            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            Self::ListGuideNode(_, parent) => parent.get().to_option(),
             _ => self.get_common_unwrap().inner.get()._parent_bb,
         }
     }
-    pub fn set_parent_bb(&self, parent_bb: BlockRef) {
+    pub fn set_parent_bb(&self, parent_bb: Option<BlockRef>) {
         match self {
-            Self::ListGuideNode(_) => panic!("Invalid InstData variant"),
+            Self::ListGuideNode(..) => panic!("Inst guide node parent is immutable"),
             _ => self
                 .get_common_unwrap()
                 .inner
@@ -258,10 +292,13 @@ impl InstData {
                 .assign_to(&self.get_common_unwrap().inner),
         }
     }
+    pub fn is_attached(&self) -> bool {
+        self.get_parent_bb().is_some()
+    }
 
     /// Checks if this instruction ends a control flow.
     pub fn is_terminator(&self) -> bool {
-        matches!(self, Self::Unreachable(_))
+        matches!(self, Self::Unreachable(..) | Self::Ret(..) | Self::Br(..) | Self::Switch(..))
     }
 
     pub(super) fn check_operands(&self, module: &Module) -> Result<(), InstError> {
@@ -283,8 +320,8 @@ impl InstData {
             InstData::Cast(c, cast) => cast.check_operands(c, module),
             InstData::IndexPtr(c, gep) => gep.check_operands(c, module),
             InstData::Call(c, call) => call.check_operands(c, module),
-            InstData::DynCall(c, ..) => todo!("Dyncall not implemented and maybe will be removed"),
-            InstData::Intrin(c, ..) => todo!("Intrin not implemented and maybe will be removed"),
+            InstData::DynCall(..) => todo!("Dyncall not implemented and maybe will be removed"),
+            InstData::Intrin(..) => todo!("Intrin not implemented and maybe will be removed"),
         }
     }
 }
@@ -294,7 +331,7 @@ impl InstDataCommon {
         Self {
             inner: Cell::new(InstDataInner {
                 _node_head: SlabRefListNodeHead::new(),
-                _parent_bb: BlockRef::new_null(),
+                _parent_bb: None,
             }),
             opcode,
             operands: SlabRefList::from_slab(alloc_use),
@@ -322,45 +359,60 @@ impl InstDataCommon {
 }
 
 impl InstRef {
-    fn _node_attach_check(&self, module: &Module, to_attach: InstRef) -> Result<BlockRef, InstError> {
+    fn _node_parent_attach(
+        &self,
+        module: &Module,
+        to_attach: InstRef,
+    ) -> Result<BlockRef, InstError> {
         let parent = module.get_inst(*self).get_parent_bb();
-        if parent.is_null() {
+        let parent = if let Some(parent) = parent {
+            parent
+        } else {
             return Err(InstError::SelfNotAttached(*self));
-        }
+        };
         if to_attach.is_null() {
             return Err(InstError::OperandNull);
         }
-        let to_attach_bb = module.get_inst(to_attach).get_parent_bb();
-        if to_attach_bb.is_nonnull() {
+
+        let to_attach_data = module.get_inst(to_attach);
+        let to_attach_bb = to_attach_data.get_parent_bb();
+        if let Some(to_attach_bb) = to_attach_bb {
             return Err(InstError::SelfAlreadyAttached(to_attach, to_attach_bb));
         }
+        to_attach_data.set_parent_bb(Some(parent));
         Ok(parent)
     }
-    fn _detach_check(&self, module: &Module) -> Result<BlockRef, InstError> {
-        let parent = module.get_inst(*self).get_parent_bb();
-        if parent.is_null() {
-            return Err(InstError::SelfNotAttached(*self));
+    fn _detach_clean_parent(&self, module: &Module) -> Result<BlockRef, InstError> {
+        let self_data = module.get_inst(*self);
+        let parent = self_data.get_parent_bb();
+        if let Some(parent) = parent {
+            self_data.set_parent_bb(None);
+            Ok(parent)
+        } else {
+            Err(InstError::SelfNotAttached(*self))
         }
-        Ok(parent)
     }
 
     pub fn add_next_inst(&self, module: &Module, next: InstRef) -> Result<(), InstError> {
-        let parent = self._node_attach_check(module, next)?;
-        module.get_block(parent)
+        let parent = self._node_parent_attach(module, next)?;
+        module
+            .get_block(parent)
             .insructions
             .node_add_next(&module.borrow_value_alloc()._alloc_inst, *self, next)
             .map_err(InstError::ListError)
     }
     pub fn add_prev_inst(&self, module: &Module, prev: InstRef) -> Result<(), InstError> {
-        let parent = self._node_attach_check(module, prev)?;
-        module.get_block(parent)
+        let parent = self._node_parent_attach(module, prev)?;
+        module
+            .get_block(parent)
             .insructions
             .node_add_prev(&module.borrow_value_alloc()._alloc_inst, *self, prev)
             .map_err(InstError::ListError)
     }
     pub fn detach_self(&self, module: &Module) -> Result<(), InstError> {
-        let parent = self._detach_check(module)?;
-        module.get_block(parent)
+        let parent = self._detach_clean_parent(module)?;
+        module
+            .get_block(parent)
             .insructions
             .unplug_node(&module.borrow_value_alloc()._alloc_inst, *self)
             .map_err(InstError::ListError)

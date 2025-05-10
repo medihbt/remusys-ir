@@ -209,6 +209,12 @@ impl Module {
             BlockRef::from_handle(id)
         };
 
+        // Modify the slab reference of its instructions to point to this.
+        // Now the `parent_bb` of the instructions will not be `null` anymore.
+        let inner = self.borrow_value_alloc();
+        ret.to_slabref_unwrap(&inner._alloc_block)
+            .init_set_self_reference(ret, &inner._alloc_inst);
+
         /* Try add this handle as operand. */
         self._rdfg_alloc_node(ValueSSA::Block(ret), None).unwrap();
         ret
