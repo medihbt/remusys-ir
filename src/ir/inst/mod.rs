@@ -129,6 +129,7 @@ pub struct InstDataInner {
     pub(super) _parent_bb: Option<BlockRef>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum InstError {
     OperandNull,
     OperandUninit,
@@ -196,19 +197,24 @@ impl SlabRefListNode for InstData {
 }
 
 impl InstData {
-    pub fn new_unreachable() -> Self {
+    pub fn new_unreachable(alloc_use: &mut Slab<UseData>) -> Self {
         Self::Unreachable(InstDataCommon::new(
             Opcode::Unreachable,
             ValTypeID::Void,
-            &mut Slab::new(),
+            alloc_use,
         ))
     }
     pub fn new_phi_end(parent_bb: BlockRef) -> Self {
-        let mut common = InstDataCommon::new(
-            Opcode::None,
-            ValTypeID::Void,
-            &mut Slab::new(),
-        );
+        let mut common = InstDataCommon {
+            inner: Cell::new(InstDataInner {
+                _node_head: SlabRefListNodeHead::new(),
+                _parent_bb: None,
+            }),
+            opcode: Opcode::None,
+            operands: SlabRefList::new_guide(),
+            ret_type: ValTypeID::Void,
+            self_ref: InstRef::new_null(),
+        };
         common.inner.get_mut()._parent_bb = Some(parent_bb);
         Self::PhiInstEnd(common)
     }
@@ -298,7 +304,10 @@ impl InstData {
 
     /// Checks if this instruction ends a control flow.
     pub fn is_terminator(&self) -> bool {
-        matches!(self, Self::Unreachable(..) | Self::Ret(..) | Self::Br(..) | Self::Switch(..))
+        matches!(
+            self,
+            Self::Unreachable(..) | Self::Ret(..) | Self::Br(..) | Self::Switch(..)
+        )
     }
 
     pub(super) fn check_operands(&self, module: &Module) -> Result<(), InstError> {
@@ -322,6 +331,26 @@ impl InstData {
             InstData::Call(c, call) => call.check_operands(c, module),
             InstData::DynCall(..) => todo!("Dyncall not implemented and maybe will be removed"),
             InstData::Intrin(..) => todo!("Intrin not implemented and maybe will be removed"),
+        }
+    }
+    pub(super) fn _inst_init_self_reference(
+        &mut self,
+        self_ref: InstRef,
+        alloc_use: &Slab<UseData>,
+    ) {
+        let common = match self.common_mut() {
+            Some(common) => common,
+            None => return,
+        };
+
+        common.self_ref = self_ref;
+        let mut opref = common.operands._head;
+        while opref.is_nonnull() {
+            opref.to_slabref_unwrap(alloc_use)._user.set(self_ref);
+            opref = match opref.get_next_ref(alloc_use) {
+                Some(next) => next,
+                None => break,
+            };
         }
     }
 }

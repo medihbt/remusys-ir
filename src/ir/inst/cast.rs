@@ -12,7 +12,7 @@ use super::{
     usedef::{UseData, UseRef},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CastError {
     ExtCastOperandTooLarge(ValTypeID, ValTypeID),
     TruncCastOperandTooSmall(ValTypeID, ValTypeID),

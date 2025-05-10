@@ -44,6 +44,7 @@ pub enum ValueSSA {
     Global(GlobalRef),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum ValueSSAError {
     IDNotEqual(ValueSSA, ValueSSA),
     KindNotMatch(ValueSSA, ValueSSA),

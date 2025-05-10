@@ -1,4 +1,4 @@
-use std::{cell::Cell};
+use std::cell::Cell;
 
 use slab::Slab;
 
@@ -55,7 +55,7 @@ impl BlockDataInner {
         self._self_ref = self_ref;
         self
     }
-    fn insert_parent_func(mut self, parent_func: GlobalRef) -> Self {
+    pub(super) fn insert_parent_func(mut self, parent_func: GlobalRef) -> Self {
         self._parent_func = parent_func;
         self
     }
@@ -63,7 +63,7 @@ impl BlockDataInner {
         self._id = id;
         self
     }
-    fn assign_to(&self, cell: &Cell<BlockDataInner>) {
+    pub(super) fn assign_to(&self, cell: &Cell<BlockDataInner>) {
         cell.set(*self);
     }
 }
@@ -132,9 +132,7 @@ impl BlockData {
         if let Some(old) = self.get_termiantor(module) {
             old.detach_self(module)?;
         }
-        self.insructions
-            ._tail
-            .add_prev_inst(module, terminator)
+        self.insructions._tail.add_prev_inst(module, terminator)
     }
 
     pub fn build_add_inst(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {
@@ -180,6 +178,81 @@ impl BlockData {
             noderef = InstRef::from_option(noderef.get_next_ref(alloc_inst));
         }
     }
+
+    /// Perform a basic check on the block data.
+    ///
+    /// ### Rules
+    ///
+    /// 1. Block should be initialized with its self reference and parent function.
+    /// 2. Block should have a terminator instruction at the end.
+    /// 3. Block should contain a `PhiEnd` node to split `Phi` nodes and other instructions.
+    ///    All `Phi` nodes should be before the `PhiEnd` node while other instructions should be after it.
+    /// 4. Every instruction in the block should pass its operand check.
+    pub(super) fn perform_basic_check(&self, module: &Module) {
+        // Preparations: allocators, etc.
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_inst = &alloc_value._alloc_inst;
+
+        // 1. Check if the block is initialized with its self reference and parent function.
+        let self_ref = if self._inner.get()._self_ref.is_nonnull() {
+            self._inner.get()._self_ref
+        } else {
+            panic!("Block is not initialized with its self reference.");
+        };
+        if self._inner.get()._parent_func.is_null() {
+            panic!("Block is not initialized with its parent function.");
+        }
+
+        // 2. Check if the block has a terminator instruction at the end.
+        if self.get_termiantor(module).is_none() {
+            panic!("Block does not have a terminator instruction at the end.");
+        }
+
+        // 3. Check if the block contains a `PhiEnd` node to split `Phi` nodes and other instructions.
+        //    All `Phi` nodes should be before the `PhiEnd` node while other instructions should be after it.
+        let phi_node_end = self.phi_node_end.get();
+        if phi_node_end.is_null() {
+            panic!(
+                "Block does not contain a `PhiEnd` node to split `Phi` nodes and other instructions."
+            );
+        }
+        if !module.get_inst(phi_node_end).is_attached() {
+            panic!("`PhiEnd` node is not attached to the block.");
+        }
+
+        // 3.1. Traverse through all PHI nodes (from entry to `PhiEnd`) and check if they are valid.
+        {
+            let mut noderef = self.insructions._head.get_next_ref(alloc_inst).unwrap();
+            while noderef != phi_node_end {
+                let inst = noderef.to_slabref_unwrap(alloc_inst);
+                if !inst.is_attached() {
+                    panic!("`Phi` node is not attached to the block.");
+                }
+                match inst {
+                    InstData::Phi(..) => {}
+                    _ => panic!("Expected a `Phi` node but got {:?}", inst.get_opcode()),
+                }
+                if inst.get_parent_bb() != Some(self_ref) {
+                    panic!("`Phi` node is not attached to the block.");
+                }
+                inst.check_operands(module).unwrap();
+                noderef = InstRef::from_handle(inst.load_node_head().next);
+            }
+        }
+
+        // 4. Check if all instructions in the block pass their operand check.
+        {
+            let mut noderef = self.insructions._head.get_next_ref(alloc_inst).unwrap();
+            while noderef.is_nonnull() {
+                let inst = noderef.to_slabref_unwrap(alloc_inst);
+                if inst.get_parent_bb() != Some(self_ref) {
+                    panic!("Instruction is not attached to the block.");
+                }
+                inst.check_operands(module).unwrap();
+                noderef = InstRef::from_handle(inst.load_node_head().next);
+            }
+        }
+    }
 }
 
 impl BlockData {
@@ -195,21 +268,21 @@ impl BlockData {
             }),
         };
 
+        let phi_end = module.insert_inst(InstData::new_phi_end(BlockRef::new_null()));
         ret.insructions
-            .push_back_value(
-                &mut module.borrow_value_alloc_mut()._alloc_inst,
-                InstData::new_phi_end(BlockRef::new_null()),
-            )
+            .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, phi_end)
             .unwrap();
-
+        ret.phi_node_end.set(phi_end);
         ret
     }
 
     pub fn new_unreachable(module: &Module) -> Result<Self, SlabRefListError> {
         let ret = Self::new_empty(module);
-        ret.insructions.push_back_value(
+        let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
+        let unreachable_inst = module.insert_inst(unreachable_inst);
+        ret.insructions.push_back_ref(
             &mut module.borrow_value_alloc_mut()._alloc_inst,
-            InstData::new_unreachable(),
+            unreachable_inst,
         )?;
         Ok(ret)
     }
@@ -219,11 +292,11 @@ impl BlockData {
 
         let (ret_common, ret_inst) =
             terminator::Ret::new(module, ValueSSA::ConstData(ConstData::Zero(valtype)));
+        let ret_inst = module.insert_inst(InstData::Ret(ret_common, ret_inst));
 
-        ret_bb.insructions.push_back_value(
-            &mut module.borrow_value_alloc_mut()._alloc_inst,
-            InstData::Ret(ret_common, ret_inst),
-        )?;
+        ret_bb
+            .insructions
+            .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, ret_inst)?;
         Ok(ret_bb)
     }
 }

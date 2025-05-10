@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
@@ -23,6 +22,7 @@ use super::{
     global::{GlobalData, GlobalRef},
     inst::{
         InstData, InstRef,
+        terminator::TerminatorInst,
         usedef::{UseData, UseRef},
     },
 };
@@ -112,6 +112,17 @@ impl Module {
             let id = inner._alloc_global.insert(data);
             GlobalRef::from_handle(id)
         };
+
+        // Modify the slab reference of its instructions to point to this.
+        {
+            let inner = self.borrow_value_alloc();
+            let alloc_block = &inner._alloc_block;
+            let alloc_global = &inner._alloc_global;
+
+            ret.to_slabref_unwrap(alloc_global)
+                ._init_set_self_reference(alloc_block, ret);
+        }
+
         /* Try add this handle as operand. */
         self._rdfg_alloc_node(
             ValueSSA::Global(ret),
@@ -172,19 +183,16 @@ impl Module {
 
         // Modify the slab reference to point to this,
         ret.to_slabref_unwrap_mut(&mut inner._alloc_inst)
-            .common_mut()
-            .map(|c| c.self_ref = ret.clone());
+            ._inst_init_self_reference(ret, &self.borrow_use_alloc());
 
-        // including the slab reference of itself and its operands.
-        let use_alloc = self.borrow_use_alloc();
-        ret.to_slabref_unwrap(&inner._alloc_inst)
-            .get_common()
-            .map(|c| {
-                for u in c.operands.view(&use_alloc) {
-                    u.to_slabref_unwrap(&use_alloc).set_user(ret.clone());
-                }
-            });
-
+        // Modify the jump targets if this instruction is a terminator.
+        let mut jt_alloc = self.borrow_jt_alloc_mut();
+        match ret.to_slabref_unwrap(&inner._alloc_inst) {
+            InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut jt_alloc),
+            InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut jt_alloc),
+            InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut jt_alloc),
+            _ => {}
+        }
         /* Try add this handle as operand. */
         self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
         ret
@@ -380,6 +388,32 @@ impl Module {
     }
 }
 
+/// Module as context maintainer.
+impl Module {
+    /// Perform a basic check on the module.
+    pub fn perform_basic_check(&self) {
+        let alloc_value = self.borrow_value_alloc();
+        let alloc_global = &alloc_value._alloc_global;
+        let alloc_block = &alloc_value._alloc_block;
+
+        for (_, global) in alloc_global {
+            let func_body = match global {
+                GlobalData::Func(func) => match func.get_blocks() {
+                    Some(body) => body,
+                    None => continue,
+                },
+                _ => continue,
+            };
+
+            for block in func_body.view(alloc_block) {
+                block
+                    .to_slabref_unwrap(alloc_block)
+                    .perform_basic_check(self);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod testing {
 
@@ -405,7 +439,7 @@ mod testing {
         );
 
         module.insert_global(global_data);
-
         assert!(module.global_defs.borrow().contains_key("a"));
+        module.perform_basic_check();
     }
 }

@@ -1,7 +1,11 @@
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefList},
+    base::{
+        NullableValue,
+        slablist::{SlabRefList, SlabRefListNodeRef},
+        slabref::SlabRef,
+    },
     ir::{
         ValueSSA,
         block::{
@@ -15,13 +19,15 @@ use crate::{
 };
 
 use super::{
-    InstDataCommon, InstDataUnique, InstError,
+    InstDataCommon, InstDataUnique, InstError, InstRef,
     checking::{check_operand_type_kind_match, check_operand_type_match},
     usedef::{UseData, UseRef},
 };
 
 pub trait TerminatorInst {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>>;
+
+    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>);
 
     fn get_n_jump_targets(&self) -> usize {
         self.get_jump_targets().map_or(0, |targets| targets.len())
@@ -34,7 +40,18 @@ pub trait TerminatorInst {
         self.get_jump_targets().is_none()
     }
 
-    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>);
+    fn _jt_init_set_self_reference(&self, self_ref: InstRef, jt_alloc: &Slab<JumpTargetData>) {
+        if let Some(targets) = self.get_jump_targets() {
+            let mut curr_node = targets._head;
+            while curr_node.is_nonnull() {
+                curr_node.to_slabref_unwrap(jt_alloc)._terminator.set(self_ref);
+                curr_node = match curr_node.get_next_ref(jt_alloc) {
+                    Some(x) => x,
+                    None => break,
+                };
+            }
+        }
+    }
 }
 
 pub struct Ret {

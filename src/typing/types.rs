@@ -113,7 +113,10 @@ impl IValType for StructTypeData {
 
     fn get_display_name(&self, type_ctx: &TypeContext) -> String {
         let mut ret = String::from("{");
-        for t in &self.elemty {
+        for (index, t) in self.elemty.iter().enumerate() {
+            if index > 0 {
+                ret.push_str(", ");
+            }
             ret.push_str(t.get_display_name(type_ctx).as_str());
         }
         ret.push_str("}");
@@ -209,8 +212,10 @@ impl IValType for FuncTypeData {
         false
     }
 
+    /// Syntax: fn<(<arg1>, <arg2>, ...): <return type>>
     fn get_display_name(&self, type_ctx: &TypeContext) -> String {
         let mut ret = String::from("fn<(");
+
         for (idx, arg) in self.args.iter().enumerate() {
             if idx > 0 {
                 ret.push_str(", ");
@@ -218,6 +223,10 @@ impl IValType for FuncTypeData {
             let arg = arg.get_display_name(type_ctx);
             ret.push_str(arg.as_str());
         }
+
+        ret.push_str("):");
+        ret.push_str(self.ret_ty.get_display_name(type_ctx).as_str());
+        ret.push('>');
         ret
     }
 

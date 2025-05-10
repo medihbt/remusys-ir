@@ -8,8 +8,8 @@ use super::{
     IValType,
     id::ValTypeID,
     types::{
-        ArrayTypeData, ArrayTypeRef, FuncTypeData, StructAliasData, StructAliasRef, StructTypeData,
-        StructTypeRef,
+        ArrayTypeData, ArrayTypeRef, FuncTypeData, FuncTypeRef, StructAliasData, StructAliasRef,
+        StructTypeData, StructTypeRef,
     },
 };
 
@@ -27,7 +27,6 @@ impl PlatformPolicy {
         }
     }
 }
-
 
 pub struct TypeContext {
     pub platform_policy: PlatformPolicy,
@@ -50,9 +49,9 @@ impl TypeContext {
                 _alloc_array: Slab::new(),
                 _alloc_struct: Slab::new(),
                 _alloc_func: Slab::new(),
-                _alloc_struct_alias: Slab::new()
+                _alloc_struct_alias: Slab::new(),
             }),
-            _struct_alias_map: RefCell::new(HashMap::new())
+            _struct_alias_map: RefCell::new(HashMap::new()),
         }
     }
     pub fn new_rc(platform: PlatformPolicy) -> Rc<Self> {
@@ -121,7 +120,8 @@ impl TypeContext {
             if alias
                 .to_slabref_unwrap(&self._inner.borrow()._alloc_struct_alias)
                 .aliasee
-                .eq(&aliasee) {
+                .eq(&aliasee)
+            {
                 return alias;
             }
         }
@@ -141,6 +141,30 @@ impl TypeContext {
             .borrow_mut()
             .insert(name.to_string(), ret.clone());
         ret
+    }
+
+    pub fn get_func_type(&self, functy: FuncTypeData) -> FuncTypeRef {
+        let option_func = self
+            ._inner
+            .borrow()
+            ._alloc_func
+            .iter()
+            .find(|(_, func)| func.deep_eq(&functy))
+            .map(|(idx, _)| idx);
+
+        match option_func {
+            Some(index) => FuncTypeRef::from_handle(index),
+            None => {
+                let index = self._inner.borrow_mut()._alloc_func.insert(functy);
+                FuncTypeRef::from_handle(index)
+            }
+        }
+    }
+    pub fn make_func_type(&self, argtys: &[ValTypeID], retty: ValTypeID) -> FuncTypeRef {
+        self.get_func_type(FuncTypeData {
+            args: Box::from(argtys),
+            ret_ty: retty,
+        })
     }
 }
 

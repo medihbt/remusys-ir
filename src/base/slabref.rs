@@ -16,11 +16,11 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
     }
     fn to_slabref_unwrap<'a>(&self, slab: &'a Slab<Self::RefObject>) -> &'a Self::RefObject {
         slab.get(self.get_handle())
-            .expect("Invalid reference (Use after free?)")
+            .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }
     fn to_slabref_unwrap_mut<'a>(&self, slab: &'a mut Slab<Self::RefObject>) -> &'a mut Self::RefObject {
         slab.get_mut(self.get_handle())
-            .expect("Invalid reference (Use after free?)")
+            .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }
 
     fn modify_slabref<'a, R>(&self,

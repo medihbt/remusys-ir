@@ -53,9 +53,6 @@ impl UseData {
     pub fn get_user(&self) -> InstRef {
         self._user.get()
     }
-    pub(crate) fn set_user(&self, user: InstRef) {
-        self._user.set(user);
-    }
 
     pub fn get_operand(&self) -> ValueSSA {
         self._operand.get()

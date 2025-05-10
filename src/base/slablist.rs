@@ -48,7 +48,7 @@ impl SlabRefListNodeHead {
 /**
  * Error type for `SlabRefList` items.
  */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum SlabRefListError {
     Empty,
     InvalidRef,
@@ -277,16 +277,6 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
     pub fn push_front_ref(&self, alloc: &Slab<T::RefObject>, node_ref: T) -> Result<(), SlabRefListError> {
         self.node_add_next(alloc, self._head.clone(), node_ref)
     }
-    pub fn push_back_value(&self, alloc: &mut Slab<T::RefObject>, value: T::RefObject) -> Result<T, SlabRefListError> {
-        let node_ref = T::from_handle(alloc.insert(value));
-        self.push_back_ref(alloc, node_ref.clone()).unwrap();
-        Ok(node_ref)
-    }
-    pub fn push_front_value(&self, alloc: &mut Slab<T::RefObject>, value: T::RefObject) -> Result<T, SlabRefListError> {
-        let node_ref = T::from_handle(alloc.insert(value));
-        self.push_front_ref(alloc, node_ref.clone()).unwrap();
-        Ok(node_ref)
-    }
     pub fn pop_back(&self, alloc: &Slab<T::RefObject>) -> Result<T, SlabRefListError> {
         let tail = &self._tail;
         let prev = tail.get_prev_ref(alloc).ok_or(SlabRefListError::NodeIsHeadGuide)?;
@@ -452,7 +442,8 @@ mod testing {
         assert_eq!(list.len(), 5);
 
         for i in 6..=10 {
-            list.push_back_value(&mut slab, TestNode::new(i)).unwrap();
+            let test_ref = TestNodeRef(slab.insert(TestNode::new(i)));
+            list.push_back_ref(&mut slab, test_ref).unwrap();
         }
         assert_eq!(list.len(), 10);
         print_test_list(&list, &slab);
