@@ -5,7 +5,7 @@ use slab::Slab;
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slablist::{SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
         slabref::SlabRef,
     },
     impl_slabref,
@@ -66,7 +66,27 @@ impl UseData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseRef(usize);
 impl_slabref!(UseRef, UseData);
-impl SlabRefListNodeRef for UseRef {}
+impl SlabRefListNodeRef for UseRef {
+    fn on_node_push_next(
+        _: Self,
+        _: Self,
+        _: &Slab<UseData>,
+    ) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+
+    fn on_node_push_prev(
+        _: Self,
+        _: Self,
+        _: &Slab<UseData>,
+    ) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+
+    fn on_node_unplug(_: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+}
 
 impl UseRef {
     pub fn get_user(&self, alloc: &Slab<UseData>) -> InstRef {

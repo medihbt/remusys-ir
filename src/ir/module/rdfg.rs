@@ -1,8 +1,17 @@
 use std::cell::RefCell;
 
+use slab::Slab;
+
 use crate::{
     base::slabref::SlabRef,
-    ir::{ValueSSA, global::GlobalRef, inst::usedef::UseRef},
+    ir::{
+        ValueSSA,
+        global::GlobalRef,
+        inst::{
+            InstData, InstRef,
+            usedef::{UseData, UseRef},
+        },
+    },
     typing::{context::TypeContext, id::ValTypeID},
 };
 
@@ -64,11 +73,10 @@ impl RDFGAllocs {
         });
     }
 
-    pub(super) fn alloc_node(
+    fn _alloc_node(
         &mut self,
         operand: ValueSSA,
-        maybe_functy: ValTypeID,
-        is_function: bool,
+        maybe_func: Option<ValTypeID>,
         type_ctx: &TypeContext,
     ) -> Result<(), super::ModuleAllocErr> {
         match operand {
@@ -78,12 +86,13 @@ impl RDFGAllocs {
             ValueSSA::Global(g) => {
                 self.alloc_node_for_referenced_value(operand)?;
 
-                if is_function {
-                    let nargs = match maybe_functy {
-                        ValTypeID::Func(f) => f.get_nargs(type_ctx),
-                        _ => panic!("Type mismatch: requires Func but got {:?}", maybe_functy),
-                    };
-                    self.alloc_node_for_funcarg(g, nargs);
+                match maybe_func {
+                    Some(ValTypeID::Func(func)) => {
+                        let nargs = func.get_nargs(type_ctx);
+                        self.alloc_node_for_funcarg(g, nargs);
+                    }
+                    Some(_) => panic!("Type mismatch: requires Func but got {:?}", maybe_func),
+                    None => {}
                 }
                 Ok(())
             }
@@ -94,6 +103,49 @@ impl RDFGAllocs {
                 );
             }
             _ => Err(ModuleAllocErr::DfgOperandNotReferece(operand)),
+        }
+    }
+
+    /// Insert an instruction into the reverse DFG.
+    fn _insert_inst(
+        &mut self,
+        inst: InstRef,
+        inst_alloc: &Slab<InstData>,
+        use_alloc: &Slab<UseData>,
+    ) -> Result<(), ModuleAllocErr> {
+        self.alloc_node_for_referenced_value(ValueSSA::Inst(inst))?;
+        let inst_ref = inst.to_slabref_unwrap(inst_alloc);
+
+        let opreand_list = match inst_ref.get_common() {
+            Some(commmon) => &commmon.operands,
+            None => return Ok(()),
+        };
+
+        for useref in opreand_list.view(use_alloc) {
+            let operand = useref.get_operand(use_alloc);
+            if operand.is_none() {
+                continue;
+            }
+            self.edit_node(operand, |u| add_value_for_vecset(u, useref))?;
+        }
+
+        Ok(())
+    }
+
+    /// Insert a new node into the reverse DFG.
+    /// If this node is an instruction, it will also modify the operands of the instruction
+    /// to complete the reverse DFG.
+    pub(super) fn insert_node(
+        &mut self,
+        operand: ValueSSA,
+        maybe_func: Option<ValTypeID>,
+        type_ctx: &TypeContext,
+        inst_alloc: &Slab<InstData>,
+        use_alloc: &Slab<UseData>,
+    ) -> Result<(), ModuleAllocErr> {
+        match operand {
+            ValueSSA::Inst(inst) => self._insert_inst(inst, inst_alloc, use_alloc),
+            _ => self._alloc_node(operand, maybe_func, type_ctx),
         }
     }
 
@@ -156,5 +208,17 @@ impl RDFGAllocs {
             // Func argument RDFG nodes are allocated when the function is inserted
             _alloc_func_arg: vec![RefCell::new(None); global],
         }
+    }
+}
+
+fn add_value_for_vecset<T: PartialEq + Clone>(vec: &mut Vec<T>, value: T) {
+    if vec.iter().find(|v| **v == value).is_none() {
+        vec.push(value);
+    }
+}
+#[allow(dead_code)]
+fn remove_value_for_vecset<T: PartialEq>(vec: &mut Vec<T>, value: T) {
+    if let Some(pos) = vec.iter().position(|v| *v == value) {
+        vec.remove(pos);
     }
 }

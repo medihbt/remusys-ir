@@ -1,4 +1,4 @@
-use std::ops::Mul;
+use std::{cell::Ref, ops::Mul};
 
 use super::{IValType, context::TypeContext, id::ValTypeID};
 use crate::{base::slabref::SlabRef, impl_slabref};
@@ -259,5 +259,12 @@ impl FuncTypeRef {
     }
     pub fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
         self.read_data_ref(type_ctx, |f| f.args.len())
+    }
+
+    pub fn get_args<'a>(&self, type_ctx: &'a TypeContext) -> Ref<'a, [ValTypeID]> {
+        let alloc = type_ctx._inner.borrow();
+        Ref::map(alloc, |a| {
+            self.to_slabref_unwrap(&a._alloc_func).args.as_ref()
+        })
     }
 }

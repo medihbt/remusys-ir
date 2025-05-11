@@ -8,7 +8,8 @@ use rdfg::RDFGAllocs;
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef, typing::{context::TypeContext, id::ValTypeID}
+    base::slabref::SlabRef,
+    typing::{context::TypeContext, id::ValTypeID},
 };
 
 use super::{
@@ -192,7 +193,8 @@ impl Module {
             InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut jt_alloc),
             _ => {}
         }
-        /* Try add this handle as operand. */
+        // Try add this handle as operand.
+        // If this instruction has operands, add them to the reverse graph.
         self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
         ret
     }
@@ -370,7 +372,7 @@ impl Module {
     fn _rdfg_alloc_node(
         &self,
         operand: ValueSSA,
-        maybe_function: Option<ValTypeID>,
+        maybe_func: Option<ValTypeID>,
     ) -> Result<(), ModuleAllocErr> {
         let mut alloc_rdfg = match self._borrow_rdfg_alloc_mut() {
             Ok(alloc) => alloc,
@@ -378,12 +380,14 @@ impl Module {
             Err(e) => return Err(e),
         };
 
-        let (is_function, maybe_functy) = match maybe_function {
-            Some(tyid) => (true, tyid),
-            None => (false, ValTypeID::Void),
-        };
-
-        alloc_rdfg.alloc_node(operand, maybe_functy, is_function, &self.type_ctx)
+        // Now RDFG is enabled, we can insert the node.
+        alloc_rdfg.insert_node(
+            operand,
+            maybe_func,
+            &self.type_ctx,
+            &self.borrow_value_alloc()._alloc_inst,
+            &self.borrow_use_alloc(),
+        )
     }
 }
 

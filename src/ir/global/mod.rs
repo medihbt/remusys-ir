@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 
 use func::FuncData;
 use slab::Slab;
@@ -10,8 +10,7 @@ use crate::{
 };
 
 use super::{
-    PtrStorage, ValueSSA,
-    block::{BlockData, BlockRef},
+    block::{BlockData, BlockRef}, module::Module, PtrStorage, ValueSSA
 };
 
 pub mod func;
@@ -50,6 +49,9 @@ impl GlobalData {
             GlobalData::Var(var) => &var.common,
             GlobalData::Func(func) => &func.common,
         }
+    }
+    pub fn get_name(&self) -> &str {
+        self.get_common().name.as_str()
     }
 
     pub fn new_variable(name: String, content_ty: ValTypeID, init: ValueSSA) -> Self {
@@ -99,3 +101,12 @@ impl GlobalData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalRef(usize);
 impl_slabref!(GlobalRef, GlobalData);
+
+impl GlobalRef {
+    pub fn get_name_with_alloc<'a>(&self, slab: &'a Slab<GlobalData>) -> &'a str {
+        self.to_slabref_unwrap(slab).get_name()
+    }
+    pub fn get_name_with_module<'a>(&self, module: &'a Module) -> Ref<'a, str> {
+        Ref::map(module.get_global(*self), |g| g.get_name())
+    }
+}

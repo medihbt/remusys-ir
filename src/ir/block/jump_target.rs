@@ -62,7 +62,27 @@ impl JumpTargetData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JumpTargetRef(usize);
 impl_slabref!(JumpTargetRef, JumpTargetData);
-impl SlabRefListNodeRef for JumpTargetRef {}
+impl SlabRefListNodeRef for JumpTargetRef {
+    fn on_node_push_next(
+        _: Self,
+        _: Self,
+        _: &Slab<JumpTargetData>,
+    ) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+
+    fn on_node_push_prev(
+        _: Self,
+        _: Self,
+        _: &Slab<JumpTargetData>,
+    ) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+
+    fn on_node_unplug(_: Self, _: &Slab<JumpTargetData>) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+}
 
 impl JumpTargetRef {
     pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {

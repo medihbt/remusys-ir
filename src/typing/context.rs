@@ -102,6 +102,14 @@ impl TypeContext {
         })
     }
 
+    pub fn read_struct_aliases(&self, mut reader: impl FnMut(&str, StructTypeRef)) {
+        let inner = self._inner.borrow();
+        for (_, alias) in inner._alloc_struct_alias.iter() {
+            let name = alias.name.clone();
+            let aliasee = alias.aliasee.clone();
+            reader(name.as_str(), aliasee);
+        }
+    }
     pub fn get_struct_alias_by_name(&self, name: &str) -> Option<StructAliasRef> {
         self._struct_alias_map
             .borrow()

@@ -146,6 +146,9 @@ impl FuncData {
             Some(Ref::map(body, |body| &body.as_ref().unwrap().body))
         }
     }
+    pub fn get_name(&self) -> &str {
+        &self.common.name
+    }
 }
 
 #[cfg(test)]

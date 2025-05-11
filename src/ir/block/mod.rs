@@ -29,11 +29,48 @@ pub struct BlockRef(usize);
 
 impl_slabref!(BlockRef, BlockData);
 
-impl SlabRefListNodeRef for BlockRef {}
+impl SlabRefListNodeRef for BlockRef {
+    fn on_node_push_next(
+        curr: Self,
+        next: Self,
+        alloc: &Slab<BlockData>,
+    ) -> Result<(), SlabRefListError> {
+        if curr == next {
+            return Err(SlabRefListError::RepeatedNode(next.get_handle()));
+        }
+        let self_parent = curr.to_slabref_unwrap(alloc).get_parent_func();
+        next.to_slabref_unwrap(alloc).set_parent_func(self_parent);
+        Ok(())
+    }
+
+    fn on_node_push_prev(
+        curr: Self,
+        prev: Self,
+        alloc: &Slab<BlockData>,
+    ) -> Result<(), SlabRefListError> {
+        if curr == prev {
+            Err(SlabRefListError::RepeatedNode(prev.get_handle()))
+        } else {
+            let self_parent = curr.to_slabref_unwrap(alloc).get_parent_func();
+            prev.to_slabref_unwrap(alloc).set_parent_func(self_parent);
+            Ok(())
+        }
+    }
+
+    fn on_node_unplug(curr: Self, alloc: &Slab<BlockData>) -> Result<(), SlabRefListError> {
+        let self_data = curr.to_slabref_unwrap(alloc);
+        if self_data.get_parent_func().is_null() {
+            Err(SlabRefListError::UnpluggedItemAttached(curr.get_handle()))
+        } else {
+            self_data.set_parent_func(GlobalRef::new_null());
+            Ok(())
+        }
+    }
+}
 
 /// Basic block data.
 pub struct BlockData {
-    pub insructions: SlabRefList<InstRef>,
+    pub instructions: SlabRefList<InstRef>,
     pub phi_node_end: Cell<InstRef>,
     pub(super) _inner: Cell<BlockDataInner>,
 }
@@ -71,7 +108,7 @@ impl BlockDataInner {
 impl SlabRefListNode for BlockData {
     fn new_guide() -> Self {
         Self {
-            insructions: SlabRefList::new_guide(),
+            instructions: SlabRefList::new_guide(),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
                 _node_head: SlabRefListNodeHead::new(),
@@ -115,7 +152,7 @@ impl BlockData {
     pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
         let alloc_value = module.borrow_value_alloc();
         let alloc_inst = &alloc_value._alloc_inst;
-        let back_inst = match self.insructions.get_back_ref(alloc_inst) {
+        let back_inst = match self.instructions.get_back_ref(alloc_inst) {
             Some(inst) => inst,
             None => return None,
         };
@@ -132,7 +169,7 @@ impl BlockData {
         if let Some(old) = self.get_termiantor(module) {
             old.detach_self(module)?;
         }
-        self.insructions._tail.add_prev_inst(module, terminator)
+        self.instructions._tail.add_prev_inst(module, terminator)
     }
 
     pub fn build_add_inst(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {
@@ -144,7 +181,7 @@ impl BlockData {
             }
             terminator.add_prev_inst(module, inst)
         } else {
-            self.insructions._tail.add_prev_inst(module, inst)
+            self.instructions._tail.add_prev_inst(module, inst)
         }
     }
     pub fn build_add_phi(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {
@@ -157,12 +194,15 @@ impl BlockData {
         }
     }
 
+    /// Set the self reference of the block.
+    /// Then, initialize all instructions in the block with the self reference.
+    /// This function is called when the block is allocated into the module.
     pub(super) fn init_set_self_reference(&self, self_ref: BlockRef, alloc_inst: &Slab<InstData>) {
         self._inner
             .get()
             .insert_self_ref(self_ref)
             .assign_to(&self._inner);
-        let mut noderef = self.insructions._head;
+        let mut noderef = self.instructions._head;
         while noderef.is_nonnull() {
             let inst = noderef.to_slabref_unwrap(alloc_inst);
             match inst {
@@ -222,7 +262,7 @@ impl BlockData {
 
         // 3.1. Traverse through all PHI nodes (from entry to `PhiEnd`) and check if they are valid.
         {
-            let mut noderef = self.insructions._head.get_next_ref(alloc_inst).unwrap();
+            let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
             while noderef != phi_node_end {
                 let inst = noderef.to_slabref_unwrap(alloc_inst);
                 if !inst.is_attached() {
@@ -242,7 +282,7 @@ impl BlockData {
 
         // 4. Check if all instructions in the block pass their operand check.
         {
-            let mut noderef = self.insructions._head.get_next_ref(alloc_inst).unwrap();
+            let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
             while noderef.is_nonnull() {
                 let inst = noderef.to_slabref_unwrap(alloc_inst);
                 if inst.get_parent_bb() != Some(self_ref) {
@@ -258,7 +298,7 @@ impl BlockData {
 impl BlockData {
     pub fn new_empty(module: &Module) -> Self {
         let ret = Self {
-            insructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut()._alloc_inst),
+            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut()._alloc_inst),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
                 _node_head: SlabRefListNodeHead::new(),
@@ -268,8 +308,8 @@ impl BlockData {
             }),
         };
 
-        let phi_end = module.insert_inst(InstData::new_phi_end(BlockRef::new_null()));
-        ret.insructions
+        let phi_end = module.insert_inst(InstData::new_phi_end());
+        ret.instructions
             .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, phi_end)
             .unwrap();
         ret.phi_node_end.set(phi_end);
@@ -280,7 +320,7 @@ impl BlockData {
         let ret = Self::new_empty(module);
         let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
         let unreachable_inst = module.insert_inst(unreachable_inst);
-        ret.insructions.push_back_ref(
+        ret.instructions.push_back_ref(
             &mut module.borrow_value_alloc_mut()._alloc_inst,
             unreachable_inst,
         )?;
@@ -295,7 +335,7 @@ impl BlockData {
         let ret_inst = module.insert_inst(InstData::Ret(ret_common, ret_inst));
 
         ret_bb
-            .insructions
+            .instructions
             .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, ret_inst)?;
         Ok(ret_bb)
     }
