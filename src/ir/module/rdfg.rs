@@ -12,16 +12,16 @@ type ValueRDFGNode = Option<Vec<UseRef>>;
 type ReverseDFGAllocVec = Vec<RefCell<ValueRDFGNode>>;
 
 #[derive(Clone)]
-struct ArgRDFGNodesPerFunc {
+pub(super) struct ArgRDFGNodesPerFunc {
     arg_rdfg_nodes: Box<[RefCell<Vec<UseRef>>]>,
 }
 
 pub struct RDFGAllocs {
-    _alloc_global: ReverseDFGAllocVec,
-    _alloc_expr: ReverseDFGAllocVec,
-    _alloc_inst: ReverseDFGAllocVec,
-    _alloc_block: ReverseDFGAllocVec,
-    _alloc_func_arg: Vec<RefCell<Option<ArgRDFGNodesPerFunc>>>,
+    pub(super) _alloc_global: ReverseDFGAllocVec,
+    pub(super) _alloc_expr: ReverseDFGAllocVec,
+    pub(super) _alloc_inst: ReverseDFGAllocVec,
+    pub(super) _alloc_block: ReverseDFGAllocVec,
+    pub(super) _alloc_func_arg: Vec<RefCell<Option<ArgRDFGNodesPerFunc>>>,
 }
 
 impl RDFGAllocs {
@@ -141,6 +141,20 @@ impl RDFGAllocs {
                 Ok(())
             }
             None => Err(ModuleAllocErr::DfgReverseTrackingNotEnabled),
+        }
+    }
+}
+
+impl RDFGAllocs {
+    pub fn new_with_capacity(global: usize, expr: usize, inst: usize, block: usize) -> Self {
+        Self {
+            _alloc_global: vec![RefCell::new(None); global],
+            _alloc_expr: vec![RefCell::new(None); expr],
+            _alloc_inst: vec![RefCell::new(None); inst],
+            _alloc_block: vec![RefCell::new(None); block],
+
+            // Func argument RDFG nodes are allocated when the function is inserted
+            _alloc_func_arg: vec![RefCell::new(None); global],
         }
     }
 }

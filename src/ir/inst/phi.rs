@@ -4,7 +4,8 @@ use slab::Slab;
 
 use crate::{
     base::slabref::SlabRef,
-    ir::{block::BlockRef, module::Module, opcode::Opcode, ValueSSA}, typing::id::ValTypeID,
+    ir::{ValueSSA, block::BlockRef, module::Module, opcode::Opcode},
+    typing::id::ValTypeID,
 };
 
 use super::{
@@ -127,6 +128,26 @@ impl PhiOp {
                 Ok(useref)
             }
         }
+    }
+
+    pub fn unset_from(
+        &self,
+        common: &InstDataCommon,
+        from_bb: BlockRef,
+        module: &Module,
+    ) -> Option<UseRef> {
+        let mut from = self.from.borrow_mut();
+        let index = from.iter().position(|(b, _)| *b == from_bb);
+        let u = match index {
+            Some(i) => {
+                let (_, u) = from.swap_remove(i);
+                u.set_operand(module, ValueSSA::None);
+                common.remove_use(&module.borrow_use_alloc(), u);
+                Some(u)
+            }
+            None => None,
+        };
+        u
     }
 
     pub fn new(ret_type: ValTypeID, module: &Module) -> (InstDataCommon, Self) {

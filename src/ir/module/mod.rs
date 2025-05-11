@@ -8,8 +8,7 @@ use rdfg::RDFGAllocs;
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
-    typing::{context::TypeContext, id::ValTypeID},
+    base::slabref::SlabRef, typing::{context::TypeContext, id::ValTypeID}
 };
 
 use super::{
@@ -314,7 +313,7 @@ impl Module {
     /// mapping from the operands to the 'use' belonging to instructions
     /// who use them.
     pub fn enable_dfg_tracking(&self) -> Result<(), ModuleAllocErr> {
-        todo!("Enable DFG tracking");
+        todo!();
     }
 
     /// Disable DFG reverse-graph tracking.

@@ -380,7 +380,7 @@ impl InstDataCommon {
         self.add_use(alloc_use, UseData::new_guide())
     }
 
-    fn remove_use(&self, alloc_use: &mut Slab<UseData>, use_ref: UseRef) {
+    fn remove_use(&self, alloc_use: &Slab<UseData>, use_ref: UseRef) {
         self.operands
             .unplug_node(alloc_use, use_ref)
             .expect("Failed to remove use reference from instruction");
