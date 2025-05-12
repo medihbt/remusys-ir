@@ -165,11 +165,22 @@ impl BlockData {
     pub fn has_terminator(&self, module: &Module) -> bool {
         self.get_termiantor(module).is_some()
     }
-    pub fn set_terminator(&self, module: &Module, terminator: InstRef) -> Result<(), InstError> {
-        if let Some(old) = self.get_termiantor(module) {
-            old.detach_self(module)?;
-        }
-        self.instructions._tail.add_prev_inst(module, terminator)
+    /// Set the terminator instruction of the block and return the old terminator instruction.
+    /// If there is no old terminator instruction, return None.
+    pub fn set_terminator(
+        &self,
+        module: &Module,
+        terminator: InstRef,
+    ) -> Result<Option<InstRef>, InstError> {
+        let ret = match self.get_termiantor(module) {
+            Some(old) => {
+                old.detach_self(module)?;
+                Some(old)
+            }
+            None => None,
+        };
+        self.instructions._tail.add_prev_inst(module, terminator)?;
+        Ok(ret)
     }
 
     pub fn build_add_inst(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {

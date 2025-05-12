@@ -48,13 +48,6 @@ impl ConstExprRef {
         }
         Some(ConstAggregateView(self.clone(), module))
     }
-
-    pub fn read_accept(&self, expr_alloc: &Slab<ConstExprData>, visitor: impl IConstExprVisitor) {
-        match self.to_slabref_unwrap(expr_alloc) {
-            ConstExprData::Array(a) => visitor.read_array(*self, a),
-            ConstExprData::Struct(s) => visitor.read_struct(*self, s),
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -112,4 +105,12 @@ impl<'a> ConstAggregateView<'a> {
 pub trait IConstExprVisitor {
     fn read_array(&self, array_ref: ConstExprRef, array_data: &Array);
     fn read_struct(&self, struct_ref: ConstExprRef, struct_data: &Struct);
+
+    fn expr_visitor_dispatch(&self, expr_ref: ConstExprRef, alloc_expr: &Slab<ConstExprData>) {
+        let expr_data = expr_ref.to_slabref_unwrap(alloc_expr);
+        match expr_data {
+            ConstExprData::Array(array) => self.read_array(expr_ref, array),
+            ConstExprData::Struct(struct_data) => self.read_struct(expr_ref, struct_data),
+        }
+    }
 }

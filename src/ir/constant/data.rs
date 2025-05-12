@@ -31,14 +31,27 @@ impl ConstData {
         }
     }
 
-    pub fn value_cast_int(&self) -> Option<i128> {
+    pub fn value_cast_int_with_iconst_unsigned(&self) -> Option<i128> {
         match self {
-            ConstData::Int(_, value) => Some(*value),
+            ConstData::Int(nbits, value) => {
+                Some(Self::iconst_value_get_real_unsigned(*nbits, *value) as i128)
+            }
             ConstData::Float(_, value) => Some(*value as i128),
             ConstData::Zero(_) => Some(0),
             _ => None,
         }
     }
+    pub fn value_cast_int_with_iconst_signed(&self) -> Option<i128> {
+        match self {
+            ConstData::Int(nbits, value) => {
+                Some(Self::iconst_value_get_real_signed(*nbits, *value))
+            }
+            ConstData::Float(_, value) => Some(*value as i128),
+            ConstData::Zero(_) => Some(0),
+            _ => None,
+        }
+    }
+
     pub fn value_cast_float(&self) -> Option<f64> {
         match self {
             ConstData::Float(_, value) => Some(*value),
@@ -46,6 +59,31 @@ impl ConstData {
             ConstData::Zero(_) => Some(0.0),
             _ => None,
         }
+    }
+
+    pub fn iconst_value_get_real_unsigned(nbits: u8, value: i128) -> u128 {
+        let value = value as u128;
+        if nbits > 128 {
+            panic!("Iconst value overflow");
+        } else if nbits == 128 {
+            return value;
+        }
+        let mask = (1u128 << nbits) - 1;
+        value & mask
+    }
+    /// 按有符号整数的形式获取常量值. 被截断的前几位的值是符号位.
+    pub fn iconst_value_get_real_signed(nbits: u8, value: i128) -> i128 {
+        if nbits > 128 {
+            panic!("Iconst value overflow");
+        } else if nbits == 128 {
+            return value;
+        }
+
+        let mask = (1i128 << nbits) - 1;
+        let sign = (value >> (nbits - 1)) & 1;
+        let sign_mask = if sign == 0 { 0 } else { !mask };
+        let value = value & mask;
+        value | sign_mask
     }
 }
 
@@ -189,4 +227,22 @@ impl ConstData {
     int_const_binary_calculaton!(bitand, bitand);
     int_const_binary_calculaton!(bitor, bitor);
     int_const_binary_calculaton!(bitxor, bitxor);
+}
+
+pub trait IConstDataVisitor {
+    fn read_int_const(&self, nbits: u8, value: i128);
+    fn read_float_const(&self, fp_kind: FloatTypeKind, value: f64);
+    fn read_ptr_null(&self, ty: ValTypeID);
+    fn read_undef(&self, ty: ValTypeID);
+    fn read_zero(&self, ty: ValTypeID);
+
+    fn const_data_visitor_dispatch(&self, const_data: &ConstData) {
+        match const_data {
+            ConstData::Int(nbits, value) => self.read_int_const(*nbits, *value),
+            ConstData::Float(fp_kind, value) => self.read_float_const(*fp_kind, *value),
+            ConstData::PtrNull(ty) => self.read_ptr_null(*ty),
+            ConstData::Undef(ty) => self.read_undef(*ty),
+            ConstData::Zero(ty) => self.read_zero(*ty),
+        }
+    }
 }

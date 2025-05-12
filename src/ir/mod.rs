@@ -1,20 +1,26 @@
 use std::num::NonZero;
 
-use block::BlockRef;
-use constant::{data::ConstData, expr::ConstExprRef};
-use global::{GlobalData, GlobalRef, func::FuncStorage};
-use inst::InstRef;
-use module::Module;
+use block::{BlockData, BlockRef};
+use constant::{
+    data::{ConstData, IConstDataVisitor},
+    expr::{ConstExprRef, IConstExprVisitor},
+};
+use global::{GlobalData, GlobalRef, IGlobalObjectVisitor, func::FuncStorage};
+use inst::{InstRef, visitor::IInstVisitor};
+use module::{Module, ModuleAllocatorInner};
 
-use crate::{base::NullableValue, typing::id::ValTypeID};
+use crate::{
+    base::{NullableValue, slabref::SlabRef},
+    typing::id::ValTypeID,
+};
 
 pub mod block;
+pub mod cmp_cond;
 pub mod constant;
 pub mod global;
 pub mod inst;
 pub mod module;
 pub mod opcode;
-pub mod cmp_cond;
 pub mod util;
 
 /// Represents a value in the intermediate representation (IR).
@@ -137,4 +143,29 @@ pub trait PtrUser {
 
     /// Gets the align of this value user.
     fn get_operand_align(&self) -> Option<NonZero<usize>>;
+}
+
+pub trait IValueVisitor:
+    IConstDataVisitor + IConstExprVisitor + IGlobalObjectVisitor + IInstVisitor
+{
+    fn read_block(&self, block: BlockRef, block_data: &BlockData);
+    fn read_func_arg(&self, func: GlobalRef, index: u32);
+
+    fn value_visitor_diapatch(&self, value: ValueSSA, alloc_value: &ModuleAllocatorInner) {
+        let alloc_block = &alloc_value._alloc_block;
+        let alloc_global = &alloc_value._alloc_global;
+        let alloc_inst = &alloc_value._alloc_inst;
+        let alloc_expr = &alloc_value._alloc_expr;
+        match value {
+            ValueSSA::None => {}
+            ValueSSA::ConstData(data) => self.const_data_visitor_dispatch(&data),
+            ValueSSA::FuncArg(func, index) => self.read_func_arg(func, index),
+            ValueSSA::Block(bb) => self.read_block(bb, bb.to_slabref_unwrap(alloc_block)),
+            ValueSSA::ConstExpr(expr) => self.expr_visitor_dispatch(expr, alloc_expr),
+            ValueSSA::Inst(inst_ref) => self.inst_visitor_dispatch(inst_ref, alloc_inst),
+            ValueSSA::Global(global_ref) => {
+                self.global_object_visitor_dispatch(global_ref, alloc_global)
+            }
+        }
+    }
 }
