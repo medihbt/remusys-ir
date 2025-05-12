@@ -4,12 +4,12 @@ use std::{
     rc::Rc,
 };
 
-use rdfg::RDFGAllocs;
+use rdfg::{RDFGAllocs, add_value_for_vecset};
 use slab::Slab;
 
 use crate::{
     base::slabref::SlabRef,
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
 
 use super::{
@@ -19,7 +19,7 @@ use super::{
         jump_target::{JumpTargetData, JumpTargetRef},
     },
     constant::expr::{ConstExprData, ConstExprRef},
-    global::{GlobalData, GlobalRef},
+    global::{GlobalData, GlobalRef, func::FuncStorage},
     inst::{
         InstData, InstRef,
         terminator::TerminatorInst,
@@ -124,15 +124,16 @@ impl Module {
         }
 
         /* Try add this handle as operand. */
-        self._rdfg_alloc_node(
-            ValueSSA::Global(ret),
-            if data_is_func {
-                Some(pointee_type)
-            } else {
-                None
-            },
-        )
-        .unwrap();
+        let maybe_func = if data_is_func {
+            match pointee_type {
+                ValTypeID::Func(f) => Some(f),
+                _ => panic!("Requires function type but got {:?}", pointee_type),
+            }
+        } else {
+            None
+        };
+        self._rdfg_alloc_node(ValueSSA::Global(ret), maybe_func)
+            .unwrap();
 
         self.global_defs.borrow_mut().insert(name, ret);
 
@@ -315,7 +316,106 @@ impl Module {
     /// mapping from the operands to the 'use' belonging to instructions
     /// who use them.
     pub fn enable_dfg_tracking(&self) -> Result<(), ModuleAllocErr> {
-        todo!();
+        let type_ctx = self.type_ctx.as_ref();
+        let self_alloc = self.borrow_value_alloc();
+        let global_alloc = &self_alloc._alloc_global;
+        let expr_alloc = &self_alloc._alloc_expr;
+        let inst_alloc = &self_alloc._alloc_inst;
+        let block_alloc = &self_alloc._alloc_block;
+        let global_defs = &self.global_defs.borrow();
+        let mut rdfg_alloc = RDFGAllocs::new_with_capacity(
+            global_alloc.capacity(),
+            expr_alloc.capacity(),
+            inst_alloc.capacity(),
+            block_alloc.capacity(),
+        );
+
+        // Step 1: Allocate nodes for all referenced values
+        for (handle, _) in expr_alloc {
+            let expr_ref = ConstExprRef::from_handle(handle);
+            let expr_val = ValueSSA::ConstExpr(expr_ref);
+            rdfg_alloc.alloc_node(expr_val, None, type_ctx)?;
+        }
+        // Step 1.1: Add all live global values. For live function definition, add their bodies to
+        // `all_live_funcbody` for block scanning.
+        let mut all_live_funcbody = Vec::with_capacity(global_alloc.len());
+        for (handle, data) in global_alloc {
+            if !global_defs.contains_key(data.get_name()) {
+                continue;
+            }
+            let maybe_func = match data {
+                GlobalData::Func(f) => {
+                    if let Some(body) = f.get_blocks() {
+                        let body_view = unsafe { body.unsafe_load_readonly_view() };
+                        if !body_view.is_empty() {
+                            all_live_funcbody.push(body_view);
+                        }
+                    }
+                    Some(f.get_stored_func_type())
+                }
+                _ => None,
+            };
+            let global_ref = GlobalRef::from_handle(handle);
+            let global_val = ValueSSA::Global(global_ref);
+            rdfg_alloc.alloc_node(global_val, maybe_func, type_ctx)?;
+        }
+        // Step 1.2: Allocate nodes for all live basic blocks. If this block is not empty,
+        // add instruction list to `live_insts`
+        let mut live_insts = Vec::with_capacity(inst_alloc.len());
+        for body_view in all_live_funcbody {
+            for (blockref, block) in body_view.view(block_alloc) {
+                let blockval = ValueSSA::Block(blockref);
+                rdfg_alloc.alloc_node(blockval, None, type_ctx)?;
+
+                let insts = unsafe { block.instructions.unsafe_load_readonly_view() };
+                if !insts.is_empty() {
+                    live_insts.push(insts);
+                }
+            }
+        }
+        // Step 1.3: Allocate nodes for all live instructions. If this instruction is not empty,
+        // add operand uses to `live_opreands`.
+        let use_alloc = self.borrow_use_alloc();
+        let mut live_opreands = Vec::with_capacity(use_alloc.len());
+        for inst_list in live_insts {
+            for (instref, inst) in inst_list.view(inst_alloc) {
+                rdfg_alloc.alloc_node(ValueSSA::Inst(instref), None, type_ctx)?;
+                match inst {
+                    InstData::ListGuideNode(..) | InstData::PhiInstEnd(..) | InstData::Jump(..) => {
+                    }
+                    _ => {
+                        let operand_view = unsafe {
+                            inst.get_common_unwrap()
+                                .operands
+                                .unsafe_load_readonly_view()
+                        };
+                        if !operand_view.is_empty() {
+                            live_opreands.push(operand_view);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 2: Add instruction operands
+        let mut live_uses = Vec::with_capacity(use_alloc.len());
+        for use_list in &live_opreands {
+            for (useref, usedata) in use_list.view(&use_alloc) {
+                let operand = usedata.get_operand();
+                match operand {
+                    ValueSSA::None | ValueSSA::ConstData(..) => {}
+                    _ => live_uses.push((useref, operand)),
+                }
+            }
+        }
+        for (useref, operand) in live_uses {
+            rdfg_alloc.edit_node(operand, |v| add_value_for_vecset(v, useref))?;
+        }
+
+        // Step 3: Insert RDFG into this module
+        *self._alloc_reverse_dfg.borrow_mut() = Some(rdfg_alloc);
+
+        Ok(())
     }
 
     /// Disable DFG reverse-graph tracking.
@@ -372,7 +472,7 @@ impl Module {
     fn _rdfg_alloc_node(
         &self,
         operand: ValueSSA,
-        maybe_func: Option<ValTypeID>,
+        maybe_func: Option<FuncTypeRef>,
     ) -> Result<(), ModuleAllocErr> {
         let mut alloc_rdfg = match self._borrow_rdfg_alloc_mut() {
             Ok(alloc) => alloc,
@@ -408,10 +508,8 @@ impl Module {
                 _ => continue,
             };
 
-            for block in func_body.view(alloc_block) {
-                block
-                    .to_slabref_unwrap(alloc_block)
-                    .perform_basic_check(self);
+            for (_, block) in func_body.view(alloc_block) {
+                block.perform_basic_check(self);
             }
         }
     }

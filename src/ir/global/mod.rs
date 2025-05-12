@@ -109,4 +109,19 @@ impl GlobalRef {
     pub fn get_name_with_module<'a>(&self, module: &'a Module) -> Ref<'a, str> {
         Ref::map(module.get_global(*self), |g| g.get_name())
     }
+
+    pub fn accept_read_visitor(&self, alloc: &Slab<GlobalData>, visitor: impl IGlobalObjectVisitor) {
+        let global_data = self.to_slabref_unwrap(alloc);
+        match global_data {
+            GlobalData::Var(v) => visitor.read_global_variable(*self, v),
+            GlobalData::Alias(a) => visitor.read_global_alias(*self, a),
+            GlobalData::Func(f) => visitor.read_func(*self, f),
+        }
+    }
+}
+
+pub trait IGlobalObjectVisitor {
+    fn read_global_variable(&self, global_ref: GlobalRef, gvar: &Var);
+    fn read_global_alias(&self, global_ref: GlobalRef, galias: &Alias);
+    fn read_func(&self, global_ref: GlobalRef, gfunc: &func::FuncData);
 }

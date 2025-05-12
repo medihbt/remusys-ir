@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::{cell::Cell, marker::PhantomData};
 
 use slab::Slab;
 
@@ -354,6 +354,15 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
             _slab: alloc,
         }
     }
+
+    pub unsafe fn unsafe_load_readonly_view(&self) -> Self {
+        Self {
+            _head: self._head.clone(),
+            _tail: self._tail.clone(),
+            _size: self._size.clone(),
+            __phantom__: PhantomData,
+        }
+    }
 }
 
 pub struct SlabRefListView<'a, T: SlabRefListNodeRef> {
@@ -366,14 +375,15 @@ pub struct SlabRefListIterator<'a, T: SlabRefListNodeRef> {
     pub(crate) _slab: &'a Slab<T::RefObject>,
 }
 
-impl<T: SlabRefListNodeRef> Iterator for SlabRefListIterator<'_, T> {
-    type Item = T;
+impl<'a, T: SlabRefListNodeRef> Iterator for SlabRefListIterator<'a, T> {
+    type Item = (T, &'a T::RefObject);
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self._current?;
+        let t_data = &self._slab[current];
         let next = self._slab[current].get_next()?;
         self._current = Some(next);
-        Some(T::from_handle(current))
+        Some((T::from_handle(current), t_data))
     }
 }
 
@@ -381,7 +391,7 @@ impl<'a, T> IntoIterator for SlabRefListView<'a, T>
 where
     T: SlabRefListNodeRef,
 {
-    type Item = T;
+    type Item = (T, &'a T::RefObject);
     type IntoIter = SlabRefListIterator<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -408,7 +418,7 @@ where
                 self._list
                     .view(self._slab)
                     .into_iter()
-                    .map(|node| node.to_slabref(self._slab).unwrap()),
+                    .map(|(_, data)| data),
             )
             .finish()
     }
@@ -495,8 +505,8 @@ mod testing {
     #[allow(dead_code)]
     fn print_test_list(list: &SlabRefList<TestNodeRef>, slab: &Slab<TestNode>) {
         print!("List({} elems): [ ", list.len());
-        for i in list.view(slab) {
-            print!("{}, ", i.to_slabref(slab).unwrap().number);
+        for (_, i) in list.view(slab) {
+            print!("{}, ", i.number);
         }
         println!("]");
     }

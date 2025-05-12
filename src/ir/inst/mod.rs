@@ -27,6 +27,7 @@ pub mod phi;
 pub mod sundury_inst;
 pub mod terminator;
 pub mod usedef;
+pub mod visitor;
 
 mod checking;
 

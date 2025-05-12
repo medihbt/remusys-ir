@@ -1,6 +1,9 @@
 use std::cell::Ref;
 
+use slab::Slab;
+
 use crate::{
+    base::slabref::SlabRef,
     impl_slabref,
     ir::{ValueSSA, module::Module},
     typing::{id::ValTypeID, types::ArrayTypeRef},
@@ -41,10 +44,16 @@ impl ConstExprRef {
     }
     pub fn as_aggregate<'a>(&self, module: &'a Module) -> Option<ConstAggregateView<'a>> {
         match &*module.get_expr(self.clone()) {
-            ConstExprData::Array(..) | ConstExprData::Struct(..) => {}
-            // _ => return None
+            ConstExprData::Array(..) | ConstExprData::Struct(..) => {} // _ => return None
         }
         Some(ConstAggregateView(self.clone(), module))
+    }
+
+    pub fn read_accept(&self, expr_alloc: &Slab<ConstExprData>, visitor: impl IConstExprVisitor) {
+        match self.to_slabref_unwrap(expr_alloc) {
+            ConstExprData::Array(a) => visitor.read_array(*self, a),
+            ConstExprData::Struct(s) => visitor.read_struct(*self, s),
+        }
     }
 }
 
@@ -98,4 +107,9 @@ impl<'a> ConstAggregateView<'a> {
         self.insert_elem_to_data(index, value)
             .map(|data| self.1.insert_expr(data))
     }
+}
+
+pub trait IConstExprVisitor {
+    fn read_array(&self, array_ref: ConstExprRef, array_data: &Array);
+    fn read_struct(&self, struct_ref: ConstExprRef, struct_data: &Struct);
 }

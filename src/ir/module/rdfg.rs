@@ -12,7 +12,7 @@ use crate::{
             usedef::{UseData, UseRef},
         },
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{context::TypeContext, types::FuncTypeRef},
 };
 
 use super::ModuleAllocErr;
@@ -73,10 +73,10 @@ impl RDFGAllocs {
         });
     }
 
-    fn _alloc_node(
+    pub(super) fn alloc_node(
         &mut self,
         operand: ValueSSA,
-        maybe_func: Option<ValTypeID>,
+        maybe_func: Option<FuncTypeRef>,
         type_ctx: &TypeContext,
     ) -> Result<(), super::ModuleAllocErr> {
         match operand {
@@ -87,11 +87,10 @@ impl RDFGAllocs {
                 self.alloc_node_for_referenced_value(operand)?;
 
                 match maybe_func {
-                    Some(ValTypeID::Func(func)) => {
+                    Some(func) => {
                         let nargs = func.get_nargs(type_ctx);
                         self.alloc_node_for_funcarg(g, nargs);
                     }
-                    Some(_) => panic!("Type mismatch: requires Func but got {:?}", maybe_func),
                     None => {}
                 }
                 Ok(())
@@ -121,8 +120,8 @@ impl RDFGAllocs {
             None => return Ok(()),
         };
 
-        for useref in opreand_list.view(use_alloc) {
-            let operand = useref.get_operand(use_alloc);
+        for (useref, usedata) in opreand_list.view(use_alloc) {
+            let operand = usedata.get_operand();
             if operand.is_none() {
                 continue;
             }
@@ -138,14 +137,14 @@ impl RDFGAllocs {
     pub(super) fn insert_node(
         &mut self,
         operand: ValueSSA,
-        maybe_func: Option<ValTypeID>,
+        maybe_func: Option<FuncTypeRef>,
         type_ctx: &TypeContext,
         inst_alloc: &Slab<InstData>,
         use_alloc: &Slab<UseData>,
     ) -> Result<(), ModuleAllocErr> {
         match operand {
             ValueSSA::Inst(inst) => self._insert_inst(inst, inst_alloc, use_alloc),
-            _ => self._alloc_node(operand, maybe_func, type_ctx),
+            _ => self.alloc_node(operand, maybe_func, type_ctx),
         }
     }
 
@@ -211,13 +210,13 @@ impl RDFGAllocs {
     }
 }
 
-fn add_value_for_vecset<T: PartialEq + Clone>(vec: &mut Vec<T>, value: T) {
+pub(super) fn add_value_for_vecset<T: PartialEq + Clone>(vec: &mut Vec<T>, value: T) {
     if vec.iter().find(|v| **v == value).is_none() {
         vec.push(value);
     }
 }
 #[allow(dead_code)]
-fn remove_value_for_vecset<T: PartialEq>(vec: &mut Vec<T>, value: T) {
+pub(super) fn remove_value_for_vecset<T: PartialEq>(vec: &mut Vec<T>, value: T) {
     if let Some(pos) = vec.iter().position(|v| *v == value) {
         vec.remove(pos);
     }
