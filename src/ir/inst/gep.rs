@@ -54,6 +54,10 @@ impl InstDataUnique for IndexPtrOp {
     /// Without this assumption, it is impossible for us to allocate
     /// use edges for this instruction.
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
+        // Set the base pointer.
+        self.base_ptr = common.alloc_use(alloc_use);
+
+        // Set the indices.
         for index in self.indices.iter_mut() {
             *index = common.alloc_use(alloc_use);
         }

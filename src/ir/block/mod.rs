@@ -187,7 +187,7 @@ impl BlockData {
         if let InstData::Phi(..) = &*module.get_inst(inst) {
             self.build_add_phi(inst, module)
         } else if let Some(terminator) = self.get_termiantor(module) {
-            if module.get_inst(terminator).is_terminator() {
+            if module.get_inst(inst).is_terminator() {
                 return Err(InstError::ReplicatedTerminator(terminator, inst));
             }
             terminator.add_prev_inst(module, inst)

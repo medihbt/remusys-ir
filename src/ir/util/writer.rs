@@ -82,8 +82,8 @@ impl<'a> ModuleValueWriter<'a> {
             alloc_use: module.borrow_use_alloc(),
             alloc_jt: module.borrow_jt_alloc(),
             writer: RefCell::new(writer),
-            inst_id_map: RefCell::new(vec![usize::MAX, inst_id_map_capacity]),
-            block_id_map: RefCell::new(vec![usize::MAX, block_id_map_capcity]),
+            inst_id_map: RefCell::new(vec![usize::MAX; inst_id_map_capacity]),
+            block_id_map: RefCell::new(vec![usize::MAX; block_id_map_capcity]),
             live_func_def: RefCell::new(Vec::with_capacity(live_func_def_len)),
             current_indent: Cell::new(0),
         }
@@ -110,7 +110,7 @@ impl<'a> ModuleValueWriter<'a> {
         self.write_func_header(func);
 
         // Then write body.
-        self.write_str("{");
+        self.write_str(" {");
         for (block, block_data) in func
             .get_blocks()
             .unwrap()
@@ -119,7 +119,7 @@ impl<'a> ModuleValueWriter<'a> {
             self.wrap_indent();
             self.read_block(block, block_data);
         }
-        self.write_str("}");
+        self.write_str("\n}\n");
     }
     fn write_func_header(&self, func: &FuncData) {
         let type_ctx = self.module.type_ctx.as_ref();
@@ -127,10 +127,10 @@ impl<'a> ModuleValueWriter<'a> {
         let ret_type = self_type.get_return_type(type_ctx);
         let args_type = self_type.get_args(type_ctx);
 
-        let leading = if func.is_extern() {
-            "declare"
+        let (leading, is_funcdef) = if func.is_extern() {
+            ("declare", false)
         } else {
-            "define dso_local"
+            ("define dso_local", true)
         };
 
         self.write_fmt(format_args!(
@@ -140,7 +140,15 @@ impl<'a> ModuleValueWriter<'a> {
             func.get_name(),
             args_type
                 .iter()
-                .map(|t| t.get_display_name(type_ctx))
+                .enumerate()
+                .map(|(i, t)| {
+                    let arg_type = t.get_display_name(type_ctx);
+                    if is_funcdef {
+                        format!("{} %{}", arg_type, i)
+                    } else {
+                        arg_type
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         ));
@@ -264,10 +272,13 @@ impl IValueVisitor for ModuleValueWriter<'_> {
         let block_id = self.block_getid_unwrap(block);
         self.write_fmt(format_args!("%{}:", block_id));
         {
-            let _ = self.add_indent();
+            let _g = self.add_indent();
             let insts = block_data.instructions.view(&self.alloc_value._alloc_inst);
             for (inst_ref, inst_data) in insts {
-                self.wrap_indent();
+                match inst_data {
+                    InstData::PhiInstEnd(..) => continue,
+                    _ => self.wrap_indent(),
+                }
                 self.inst_visitor_dispatch(inst_ref, inst_data);
             }
         }
@@ -722,5 +733,184 @@ mod basic_value_formatting {
             self.write_str("%");
             self.write_str(self.inst_id_map[inst_ref.get_handle()].to_string().as_str());
         }
+    }
+}
+
+#[cfg(test)]
+mod testing {
+    use super::*;
+    use crate::{
+        ir::opcode::Opcode,
+        typing::context::{PlatformPolicy, TypeContext},
+    };
+
+    fn create_func_main(module: &Module) -> GlobalRef {
+        let type_ctx = module.type_ctx.as_ref();
+        let func_type = type_ctx.make_func_type(
+            vec![ValTypeID::Int(32), ValTypeID::Ptr].as_slice(),
+            ValTypeID::Int(32),
+        );
+        let func_main_data =
+            FuncData::new_with_unreachable(module, func_type, "main".into()).unwrap();
+        let func_main_ref = module.insert_global(GlobalData::Func(func_main_data));
+
+        // create a `return 0` instruction
+        let (c, r) = Ret::new(module, ValueSSA::ConstData(ConstData::Int(32, 0)));
+        let ret_inst = module.insert_inst(InstData::Ret(c, r));
+
+        // Add the instruction `%3 = add i32 %0, 10`
+        let (c, r) = BinOp::new_with_operands(
+            module,
+            Opcode::Add,
+            ValueSSA::FuncArg(func_main_ref, 0),
+            ValueSSA::ConstData(ConstData::Int(32, 10)),
+        )
+        .unwrap();
+        let add_inst = module.insert_inst(InstData::BinOp(c, r));
+
+        // find the entry and insert `return 0`
+        let entry_block = {
+            let func_main_data = module.get_global(func_main_ref);
+            let func_main_data = match &*func_main_data {
+                GlobalData::Func(f) => f,
+                _ => panic!("Invalid global data kind: Not Function"),
+            };
+            func_main_data.get_entry()
+        };
+
+        module
+            .get_block(entry_block)
+            .set_terminator(module, ret_inst)
+            .unwrap();
+
+        // Then add the add instruction to the entry block
+        module
+            .get_block(entry_block)
+            .build_add_inst(add_inst, module)
+            .unwrap();
+        func_main_ref
+    }
+
+    #[test]
+    fn writer_test() {
+        let platform = PlatformPolicy::new_host();
+        let type_ctx = TypeContext::new_rc(platform);
+        let module = Module::new("io.medihbt.WriterTest".into(), type_ctx);
+
+        let main_func = create_func_main(&module);
+
+        // write the module to file `io.medihbt.WriterTest.Basic.ll`
+        let mut file = std::fs::File::create("target/io.medihbt.WriterTest.Basic.ll").unwrap();
+        write_ir_module(&module, &mut file);
+
+        // Find entry block of the function `main`. we'll use it later.
+        let entry_block = {
+            let main_func_data = module.get_global(main_func);
+            let main_func_data = match &*main_func_data {
+                GlobalData::Func(f) => f,
+                _ => panic!("Invalid global data kind: Not Function"),
+            };
+            main_func_data.get_entry()
+        };
+
+        // Add an instruction to the function `main`.
+        // Source code: `char c = argv[0][10];` with load-GEP-load.
+        // Remusys IR:
+        // ```llvm
+        // %4 = load ptr, ptr %1, align 1
+        // %5 = getelementptr i8, ptr %4, i32 10
+        // %6 = load i8, ptr %5, align 1
+        // ```
+        let load_argv0 = {
+            let (c, r) =
+                LoadOp::new(&module, ValTypeID::Ptr, 8, ValueSSA::FuncArg(main_func, 1)).unwrap();
+            module.insert_inst(InstData::Load(c, r))
+        };
+        let gep_index_argv = {
+            let (c, r) = IndexPtrOp::new_from_indices(
+                &module,
+                ValTypeID::Int(8),
+                8,
+                8,
+                ValueSSA::Inst(load_argv0),
+                [ValueSSA::ConstData(ConstData::Int(32, 10))]
+                    .iter()
+                    .map(|v| *v),
+            )
+            .unwrap();
+            module.insert_inst(InstData::IndexPtr(c, r))
+        };
+        let load_argv0_10 = {
+            let (c, r) = LoadOp::new(
+                &module,
+                ValTypeID::Int(8),
+                1,
+                ValueSSA::Inst(gep_index_argv),
+            )
+            .unwrap();
+            module.insert_inst(InstData::Load(c, r))
+        };
+
+        // insert into the entry block.
+        module
+            .get_block(entry_block)
+            .build_add_inst(load_argv0, &module)
+            .unwrap();
+        module
+            .get_block(entry_block)
+            .build_add_inst(gep_index_argv, &module)
+            .unwrap();
+        module
+            .get_block(entry_block)
+            .build_add_inst(load_argv0_10, &module)
+            .unwrap();
+
+        // print the module to file `io.medihbt.WriterTest.LoadArgv.ll`
+        let mut file = std::fs::File::create("target/io.medihbt.WriterTest.LoadArgv.ll").unwrap();
+        write_ir_module(&module, &mut file);
+
+        // Now expand the result to i32 and let return instruction use this value.
+        // Source code: `return (int)c;` with cast.
+        // Remusys IR:
+        // ```llvm
+        // %7 = zext i8 %6 to i32
+        // ret i32 %7
+        // ```
+
+        let cast = {
+            let (c, r) = CastOp::new(
+                &module,
+                Opcode::Zext,
+                ValTypeID::Int(32),
+                ValueSSA::Inst(load_argv0_10),
+            )
+            .unwrap();
+            module.insert_inst(InstData::Cast(c, r))
+        };
+        module
+            .get_block(entry_block)
+            .build_add_inst(cast, &module)
+            .unwrap();
+
+        {
+            let alloc_value = module.borrow_value_alloc();
+            let alloc_inst = &alloc_value._alloc_inst;
+            let alloc_block = &alloc_value._alloc_block;
+
+            let terminator = entry_block
+                .to_slabref_unwrap(alloc_block)
+                .get_termiantor(&module)
+                .unwrap();
+
+            match terminator.to_slabref_unwrap(alloc_inst) {
+                InstData::Ret(_, r) => {
+                    r.retval.set_operand(&module, ValueSSA::Inst(cast));
+                }
+                _ => panic!("Invalid terminator type"),
+            }
+        };
+        // write the module to file `io.medihbt.WriterTest.CastReturn.ll`
+        let mut file = std::fs::File::create("target/io.medihbt.WriterTest.CastReturn.ll").unwrap();
+        write_ir_module(&module, &mut file);
     }
 }
