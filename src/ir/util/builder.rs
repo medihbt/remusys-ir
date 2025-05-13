@@ -225,7 +225,7 @@ impl IRBuilder {
         let func_data = FuncData::new_with_unreachable(&self.module, functype, name.to_string())
             .map_err(IRBuilderError::ListError)?;
 
-        let (ret, entry, inst) = {
+        let (entry, inst) = {
             let alloc_value = self.module.borrow_value_alloc();
             let alloc_block = &alloc_value._alloc_block;
             let entry = func_data
@@ -237,10 +237,10 @@ impl IRBuilder {
                 .to_slabref_unwrap(alloc_block)
                 .get_termiantor(&self.module)
                 .unwrap();
-            let ret = self.module.insert_global(GlobalData::Func(func_data));
-            (ret, entry, inst)
+            (entry, inst)
         };
 
+        let ret = self.module.insert_global(GlobalData::Func(func_data));
         self.set_focus_full(ret, entry, inst);
         Ok(ret)
     }
@@ -733,11 +733,11 @@ impl IRBuilder {
         default_block: BlockRef,
         cases: impl Iterator<Item = (i128, BlockRef)>,
     ) -> Result<(InstRef, InstRef), IRBuilderError> {
-        let (old_termi, empty_switch) = self.focus_set_empty_switch(cond, default_block)?;
+        let (old_termi, switch_inst) = self.focus_set_empty_switch(cond, default_block)?;
 
         let value_alloc = self.module.borrow_value_alloc();
         let mut jt_alloc = self.module.borrow_jt_alloc_mut();
-        match empty_switch.to_slabref_unwrap(&value_alloc._alloc_inst) {
+        match switch_inst.to_slabref_unwrap(&value_alloc._alloc_inst) {
             InstData::Switch(_, s) => {
                 for (case, block) in cases {
                     s.set_case(&mut jt_alloc, case, block)
@@ -746,6 +746,133 @@ impl IRBuilder {
             _ => unreachable!(),
         }
 
-        Ok((old_termi, empty_switch))
+        Ok((old_termi, switch_inst))
+    }
+}
+
+#[cfg(test)]
+mod testing {
+    use crate::ir::constant::data::ConstData;
+    use crate::ir::util::writer::write_ir_module;
+    use crate::typing::context::{PlatformPolicy, TypeContext};
+
+    use super::IRBuilder;
+    use super::*;
+
+    #[test]
+    fn test_ir_builder() {
+        let platform_riscv32 = PlatformPolicy {
+            ptr_nbits: 32,
+            reg_nbits: 32,
+        };
+        let type_ctx = TypeContext::new_rc(platform_riscv32);
+        let module = Rc::new(Module::new(
+            "io.medihbt.RemusysIRTesting.test_ir_builder".into(),
+            type_ctx.clone(),
+        ));
+        let mut builder = IRBuilder::new(module.clone());
+
+        // Add function "main" to the module.
+        // SysY source code:
+        // ```SysY
+        // int main(int argc, byte** argv) {
+        //     return 0;
+        // }
+        // ```
+        //
+        // Remusys-IR code (Remusys-IR does not support value naming and named pointer):
+        // ```Remusys-IR
+        // define dso_local i32 @main(i32 %0, ptr %1) {
+        // %2:
+        //     ret i32 0
+        // }
+        // ```
+        let main_func_ty = type_ctx.make_func_type(
+            &[ValTypeID::Int(32), ValTypeID::Ptr],
+            ValTypeID::Int(32)
+        );
+        builder
+            .define_function_with_unreachable("main", main_func_ty)
+            .unwrap();
+
+        builder
+            .focus_set_return(ConstData::make_int_valssa(32, 0))
+            .unwrap();
+
+        // write to file `test_ir_builder.ll`
+        let mut writer = std::fs::File::create("target/test_ir_builder.ll").unwrap();
+        write_ir_module(module.as_ref(), &mut writer);
+
+        // Now set the focus to the entry block.
+        builder.focus.inst = InstRef::new_null();
+
+        /*
+            SysY source code:
+
+            ```SysY
+            int main(int argc, byte[][] argv) {
+         -      return 0;
+         +      return argc + argv[0][1];
+            }
+            ```
+
+            Remusys-IR code (Remusys-IR does not support value naming):
+
+            ```Remusys-IR
+            define dso_local i32 @main(i32 %0, ptr %1) {
+            %2:
+                %3 = load ptr, ptr %1, align 4
+                %4 = getelementptr i8, ptr %3, i32 1
+                %5 = load i8, ptr %4, align 1
+                %6 = zext i8 %5 to i32
+                %7 = add i32 %0, %6
+                ret i32 %7
+            }
+            ```
+         */
+        let main_func_ref = builder.focus.function;
+        let load_3 = builder
+            .add_load_inst(
+                ValTypeID::Ptr,
+                4,
+                ValueSSA::FuncArg(main_func_ref, 1),
+            )
+            .unwrap();
+        let gep_4 = builder
+            .add_indexptr_inst(
+                ValTypeID::Ptr,
+                4,
+                1,
+                ValueSSA::Inst(load_3),
+                vec![ConstData::make_int_valssa(32, 1)].into_iter(),
+            )
+            .unwrap();
+        let load_5 = builder
+            .add_load_inst(
+                ValTypeID::Int(8),
+                1,
+                ValueSSA::Inst(gep_4),
+            )
+            .unwrap();
+        let zext_6 = builder
+            .add_cast_inst(
+                Opcode::Zext,
+                ValTypeID::Int(32),
+                ValueSSA::Inst(load_5),
+            )
+            .unwrap();
+        let add_7 = builder
+            .add_binop_inst(
+                Opcode::Add,
+                ValueSSA::FuncArg(main_func_ref, 0),
+                ValueSSA::Inst(zext_6),
+            )
+            .unwrap();
+        builder
+            .focus_set_return(ValueSSA::Inst(add_7))
+            .unwrap();
+        // write to file `test_ir_builder_chain_inst.ll`
+        let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();
+        write_ir_module(module.as_ref(), &mut writer);
     }
 }

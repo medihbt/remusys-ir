@@ -1,6 +1,6 @@
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 
-use crate::typing::{id::ValTypeID, types::FloatTypeKind};
+use crate::{ir::ValueSSA, typing::{id::ValTypeID, types::FloatTypeKind}};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConstData {
@@ -84,6 +84,24 @@ impl ConstData {
         let sign_mask = if sign == 0 { 0 } else { !mask };
         let value = value & mask;
         value | sign_mask
+    }
+}
+
+impl ConstData {
+    pub fn make_undef_valssa(ty: ValTypeID) -> ValueSSA {
+        ValueSSA::ConstData(ConstData::Undef(ty))
+    }
+    pub fn make_zero_valssa(ty: ValTypeID) -> ValueSSA {
+        ValueSSA::ConstData(ConstData::Zero(ty))
+    }
+    pub fn make_ptr_null_valssa(ty: ValTypeID) -> ValueSSA {
+        ValueSSA::ConstData(ConstData::PtrNull(ty))
+    }
+    pub fn make_int_valssa(nbits: u8, value: i128) -> ValueSSA {
+        ValueSSA::ConstData(ConstData::Int(nbits, value))
+    }
+    pub fn make_float_valssa(fp_kind: FloatTypeKind, value: f64) -> ValueSSA {
+        ValueSSA::ConstData(ConstData::Float(fp_kind, value))
     }
 }
 

@@ -270,7 +270,7 @@ impl IValueVisitor for ModuleValueWriter<'_> {
     fn read_block(&self, block: BlockRef, block_data: &BlockData) {
         // ID
         let block_id = self.block_getid_unwrap(block);
-        self.write_fmt(format_args!("%{}:", block_id));
+        self.write_fmt(format_args!("{}:", block_id));
         {
             let _g = self.add_indent();
             let insts = block_data.instructions.view(&self.alloc_value._alloc_inst);
