@@ -1,7 +1,3 @@
-use slab::Slab;
-
-use crate::base::slabref::SlabRef;
-
 use super::{
     InstData, InstDataCommon, InstRef,
     binop::BinOp,
@@ -38,8 +34,7 @@ pub trait IInstVisitor {
     );
     fn read_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon, call: &CallOp);
 
-    fn inst_visitor_dispatch(&self, inst_ref: InstRef, alloc_inst: &Slab<InstData>) {
-        let inst_data = inst_ref.to_slabref_unwrap(alloc_inst);
+    fn inst_visitor_dispatch(&self, inst_ref: InstRef, inst_data: &InstData) {
         match inst_data {
             InstData::ListGuideNode(..) => {}
             InstData::PhiInstEnd(..) => self.read_phi_end(inst_ref),

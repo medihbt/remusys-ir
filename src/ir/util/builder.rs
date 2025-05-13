@@ -1,14 +1,10 @@
-use core::alloc;
 use std::rc::Rc;
 
 use crate::{
     base::{NullableValue, slablist::SlabRefListError, slabref::SlabRef},
     ir::{
         block::{BlockData, BlockRef},
-        global::{
-            GlobalData, GlobalRef,
-            func::{self, FuncData},
-        },
+        global::{GlobalData, GlobalRef, func::FuncData},
         inst::{InstData, InstError, InstRef, terminator::Jump},
         module::Module,
     },

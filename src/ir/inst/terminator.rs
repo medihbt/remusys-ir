@@ -1,3 +1,5 @@
+use std::cell::{Ref, RefCell};
+
 use slab::Slab;
 
 use crate::{
@@ -44,7 +46,10 @@ pub trait TerminatorInst {
         if let Some(targets) = self.get_jump_targets() {
             let mut curr_node = targets._head;
             while curr_node.is_nonnull() {
-                curr_node.to_slabref_unwrap(jt_alloc)._terminator.set(self_ref);
+                curr_node
+                    .to_slabref_unwrap(jt_alloc)
+                    ._terminator
+                    .set(self_ref);
                 curr_node = match curr_node.get_next_ref(jt_alloc) {
                     Some(x) => x,
                     None => break,
@@ -55,7 +60,7 @@ pub trait TerminatorInst {
 }
 
 pub struct Ret {
-    _retval: UseRef,
+    pub retval: UseRef,
 }
 
 pub struct JumpCommon {
@@ -73,7 +78,7 @@ pub struct Br {
 pub struct Switch {
     _common: JumpCommon,
     _default: JumpTargetRef,
-    _cases: Vec<(i128, JumpTargetRef)>,
+    _cases: RefCell<Vec<(i128, JumpTargetRef)>>,
 }
 
 impl TerminatorInst for Ret {
@@ -138,11 +143,11 @@ impl TerminatorInst for Switch {
 
 impl InstDataUnique for Ret {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self._retval = common.alloc_use(alloc_use);
+        self.retval = common.alloc_use(alloc_use);
     }
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
-        let retval = self._retval.get_operand(&module.borrow_use_alloc());
+        let retval = self.retval.get_operand(&module.borrow_use_alloc());
         check_operand_type_match(common.ret_type, retval, module)
     }
 }
@@ -185,7 +190,7 @@ impl Ret {
         let mut commmon =
             InstDataCommon::new(Opcode::Ret, ret_ty, &mut module.borrow_use_alloc_mut());
         let mut ret = Self {
-            _retval: UseRef::new_null(),
+            retval: UseRef::new_null(),
         };
         ret.build_operands(&mut commmon, &mut module.borrow_use_alloc_mut());
         (commmon, ret)
@@ -193,7 +198,7 @@ impl Ret {
 
     pub fn new(module: &Module, retval: ValueSSA) -> (InstDataCommon, Self) {
         let (common, ret) = Self::new_raw(module, retval.get_value_type(module));
-        ret._retval
+        ret.retval
             .set_operand_nordfg(&module.borrow_use_alloc(), retval);
         (common, ret)
     }
@@ -290,7 +295,7 @@ impl Switch {
                 _condition: UseRef::new_null(),
             },
             _default: JumpTargetRef::new_null(),
-            _cases: Vec::new(),
+            _cases: RefCell::new(Vec::new()),
         };
         switch.init_jump_targets(&mut module.borrow_jt_alloc_mut());
         switch.build_operands(&mut common, &mut module.borrow_use_alloc_mut());
@@ -328,14 +333,44 @@ impl Switch {
 
     pub fn get_case(&self, jt_alloc: &Slab<JumpTargetData>, case: i128) -> Option<BlockRef> {
         self._cases
+            .borrow()
             .iter()
             .find(|(k, _)| *k == case)
             .map(|(_, v)| v.get_block(jt_alloc))
     }
-    pub fn set_existing_case(&self, jt_alloc: &Slab<JumpTargetData>, case: i128, block: BlockRef) {
+    pub fn set_existing_case(
+        &self,
+        jt_alloc: &Slab<JumpTargetData>,
+        case: i128,
+        block: BlockRef,
+    ) -> bool {
         self._cases
+            .borrow()
             .iter()
             .find(|(k, _)| *k == case)
-            .map(|(_, v)| v.set_block(jt_alloc, block));
+            .map(|(_, v)| v.set_block(jt_alloc, block))
+            .is_some()
+    }
+    pub fn set_case(&self, jt_alloc: &mut Slab<JumpTargetData>, case: i128, block: BlockRef) {
+        if self.set_existing_case(jt_alloc, case, block) {
+            return;
+        }
+        let new_jt = JumpTargetData::new_with_kind(JumpTargetKind::SwitchCase(case));
+        new_jt._block.set(block);
+
+        let new_jt = self
+            ._common
+            ._targets
+            .push_back_value(jt_alloc, new_jt)
+            .unwrap();
+
+        self._cases.borrow_mut().push((case, new_jt));
+    }
+    pub fn sort_cases(&self) {
+        let mut cases = self._cases.borrow_mut();
+        cases.sort_by(|(a, _), (b, _)| a.cmp(b));
+    }
+    pub fn borrow_cases(&self) -> Ref<[(i128, JumpTargetRef)]> {
+        Ref::map(self._cases.borrow(), Vec::as_slice)
     }
 }

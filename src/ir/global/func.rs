@@ -1,4 +1,7 @@
-use std::cell::{Cell, Ref, RefCell};
+use std::{
+    cell::{Cell, Ref, RefCell},
+    num::NonZero,
+};
 
 use crate::{
     base::{
@@ -66,6 +69,10 @@ pub struct FuncBody {
 impl PtrStorage for FuncData {
     fn get_stored_pointee_type(&self) -> ValTypeID {
         self.common.content_ty.clone()
+    }
+
+    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
+        None
     }
 }
 impl FuncStorage for FuncData {}

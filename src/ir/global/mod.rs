@@ -1,4 +1,7 @@
-use std::cell::{Cell, Ref};
+use std::{
+    cell::{Cell, Ref},
+    num::NonZero,
+};
 
 use func::FuncData;
 use slab::Slab;
@@ -36,12 +39,61 @@ pub struct Alias {
 
 pub struct Var {
     pub common: GlobalDataCommon,
-    pub init: Cell<ValueSSA>,
+    pub inner: Cell<VarInner>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VarInner {
+    pub readonly: bool,
+    pub align_log2: u8,
+    pub init: ValueSSA,
+}
+
+impl Var {
+    pub fn is_extern(&self) -> bool {
+        self.inner.get().init.is_null()
+    }
+    pub fn get_init(&self) -> Option<ValueSSA> {
+        self.inner.get().init.to_option()
+    }
+    pub fn set_init(&self, init: ValueSSA) {
+        let mut inner = self.inner.get();
+        inner.init = init;
+        self.inner.set(inner);
+    }
+    pub fn is_readonly(&self) -> bool {
+        self.inner.get().readonly
+    }
+    pub fn set_readonly(&self, readonly: bool) {
+        let mut inner = self.inner.get();
+        inner.readonly = readonly;
+        self.inner.set(inner);
+    }
+    pub fn get_stored_pointee_align(&self) -> usize {
+        1 << self.inner.get().align_log2
+    }
+    pub fn set_stored_pointee_align(&self, align: u64) {
+        if align.is_power_of_two() {
+            let mut inner = self.inner.get();
+            inner.align_log2 = align.trailing_zeros() as u8;
+            self.inner.set(inner);
+        } else {
+            panic!("Align {} NOT power of 2", align)
+        }
+    }
 }
 
 impl PtrStorage for GlobalData {
     fn get_stored_pointee_type(&self) -> ValTypeID {
         self.get_common().content_ty.clone()
+    }
+
+    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
+        match self {
+            GlobalData::Alias(_) => None,
+            GlobalData::Func(_) => None,
+            GlobalData::Var(v) => NonZero::new(v.get_stored_pointee_align()),
+        }
     }
 }
 impl GlobalData {
@@ -63,7 +115,11 @@ impl GlobalData {
                 content_ty,
                 self_ref: Cell::new(GlobalRef::new_null()),
             },
-            init: Cell::new(init),
+            inner: Cell::new(VarInner {
+                readonly: false,
+                align_log2: 3,
+                init,
+            }),
         })
     }
     pub fn new_alias(name: String, content_ty: ValTypeID, target: GlobalRef) -> Self {

@@ -1,15 +1,20 @@
 //! IR Writer implementation.
 
+use slab::Slab;
+
 use crate::{
     base::slabref::SlabRef,
     ir::{
         IValueVisitor, ValueSSA,
-        block::{BlockData, BlockRef},
+        block::{BlockData, BlockRef, jump_target::JumpTargetData},
         constant::{
             data::{ConstData, IConstDataVisitor},
             expr::{Array, ConstExprRef, IConstExprVisitor, Struct},
         },
-        global::{GlobalData, GlobalRef, IGlobalObjectVisitor, func::FuncData},
+        global::{
+            self, Alias, GlobalData, GlobalRef, IGlobalObjectVisitor,
+            func::{FuncData, FuncStorage},
+        },
         inst::{
             InstData, InstDataCommon, InstRef,
             binop::BinOp,
@@ -21,6 +26,7 @@ use crate::{
             phi::PhiOp,
             sundury_inst::SelectOp,
             terminator::{Br, Jump, Ret, Switch},
+            usedef::UseData,
             visitor::IInstVisitor,
         },
         module::{Module, ModuleAllocatorInner},
@@ -29,64 +35,245 @@ use crate::{
 };
 
 use std::{
-    cell::RefCell,
-    io::{Result as IoResult, Write as IoWrite},
+    cell::{Cell, Ref, RefCell},
+    io::Write as IoWrite,
 };
 
-pub fn write_ir_to(module: &Module, writer: &mut dyn IoWrite) -> IoResult<()> {
-    Ok(())
+pub fn write_ir_module(module: &Module, writer: &mut dyn IoWrite) {
+    let module_writer = ModuleValueWriter::new(module, writer);
+    module_writer.process_module();
 }
 
 struct ModuleValueWriter<'a> {
     module: &'a Module,
+    alloc_value: Ref<'a, ModuleAllocatorInner>,
+    alloc_use: Ref<'a, Slab<UseData>>,
+    alloc_jt: Ref<'a, Slab<JumpTargetData>>,
+
     writer: RefCell<&'a mut dyn IoWrite>,
+
     inst_id_map: RefCell<Vec<usize>>,
     block_id_map: RefCell<Vec<usize>>,
     live_func_def: RefCell<Vec<GlobalRef>>,
+
+    current_indent: Cell<usize>,
+}
+
+struct ModuleWriterIndentGuard<'a, 'b: 'a> {
+    module: &'a ModuleValueWriter<'b>,
+    prev_indent: usize,
+}
+
+impl<'a, 'b> Drop for ModuleWriterIndentGuard<'a, 'b> {
+    fn drop(&mut self) {
+        self.module.current_indent.set(self.prev_indent);
+    }
 }
 
 impl<'a> ModuleValueWriter<'a> {
+    fn new(module: &'a Module, writer: &'a mut dyn IoWrite) -> Self {
+        let alloc_value = module.borrow_value_alloc();
+        let inst_id_map_capacity = alloc_value._alloc_inst.capacity();
+        let block_id_map_capcity = alloc_value._alloc_block.capacity();
+        let live_func_def_len = alloc_value._alloc_global.len();
+        Self {
+            module: module,
+            alloc_value: alloc_value,
+            alloc_use: module.borrow_use_alloc(),
+            alloc_jt: module.borrow_jt_alloc(),
+            writer: RefCell::new(writer),
+            inst_id_map: RefCell::new(vec![usize::MAX, inst_id_map_capacity]),
+            block_id_map: RefCell::new(vec![usize::MAX, block_id_map_capcity]),
+            live_func_def: RefCell::new(Vec::with_capacity(live_func_def_len)),
+            current_indent: Cell::new(0),
+        }
+    }
+
+    fn process_module(&self) {
+        let global_defs = self.module.global_defs.borrow();
+        let globals: Vec<_> = global_defs.iter().map(|(_, gref)| gref).collect();
+        for global in globals {
+            self.global_object_visitor_dispatch(*global, &self.alloc_value._alloc_global);
+        }
+
+        let live_funcs = self.live_func_def.borrow();
+        for func in &*live_funcs {
+            let func = match func.to_slabref_unwrap(&self.alloc_value._alloc_global) {
+                GlobalData::Func(f) => f,
+                _ => panic!("Invalid global data kind: Not Function"),
+            };
+            self.write_funcdef(func);
+        }
+    }
+    fn write_funcdef(&self, func: &FuncData) {
+        // Header syntax: `define dso_local <return type> @<name>(<args>)`
+        self.write_func_header(func);
+
+        // Then write body.
+        self.write_str("{");
+        for (block, block_data) in func
+            .get_blocks()
+            .unwrap()
+            .view(&self.alloc_value._alloc_block)
+        {
+            self.wrap_indent();
+            self.read_block(block, block_data);
+        }
+        self.write_str("}");
+    }
+    fn write_func_header(&self, func: &FuncData) {
+        let type_ctx = self.module.type_ctx.as_ref();
+        let self_type = func.get_stored_func_type();
+        let ret_type = self_type.get_return_type(type_ctx);
+        let args_type = self_type.get_args(type_ctx);
+
+        let leading = if func.is_extern() {
+            "declare"
+        } else {
+            "define dso_local"
+        };
+
+        self.write_fmt(format_args!(
+            "{} {} @{}({})",
+            leading,
+            ret_type.get_display_name(type_ctx),
+            func.get_name(),
+            args_type
+                .iter()
+                .map(|t| t.get_display_name(type_ctx))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
     fn write_str(&self, s: &str) {
         self.writer.borrow_mut().write_all(s.as_bytes()).unwrap();
     }
     fn write_fmt(&self, fmtargs: std::fmt::Arguments) {
         self.writer.borrow_mut().write_fmt(fmtargs).unwrap();
     }
-
-    fn add_live_func_def(&self, func: GlobalRef) {
-        self.live_func_def.borrow_mut().push(func);
-        todo!("Scan the function and number all instructions and blocks");
+    fn wrap_indent(&self) {
+        self.write_str("\n");
+        for _ in 0..self.current_indent.get() {
+            self.write_str("  ");
+        }
+    }
+    fn add_indent<'b>(&'b self) -> ModuleWriterIndentGuard<'b, 'a>
+    where
+        'a: 'b,
+    {
+        let prev_indent = self.current_indent.get();
+        self.current_indent.set(prev_indent + 1);
+        ModuleWriterIndentGuard {
+            module: self,
+            prev_indent,
+        }
     }
 
+    fn add_def_if_live_func(&self, func: GlobalRef, func_data: &FuncData) -> bool {
+        if !func_data.is_extern() {
+            self.live_func_def.borrow_mut().push(func);
+            self.number_function(func_data);
+            true
+        } else {
+            false
+        }
+    }
     fn number_function(&self, func: &FuncData) {
-        todo!("Number all instructions and blocks in the function");
+        let nargs = func.get_nargs(&self.module.type_ctx);
+        let blocks = func.get_blocks();
+        let blocks = &*blocks.unwrap();
+
+        let mut current_id = nargs;
+        for (bb, bb_data) in blocks.view(&self.alloc_value._alloc_block) {
+            current_id = self.number_block(bb, bb_data, current_id);
+        }
     }
     fn number_block(&self, block: BlockRef, block_data: &BlockData, initial_id: usize) -> usize {
-        todo!(
-            "Number this block with initial id, and then traverse through all instructions to number them"
-        );
+        let mut block_id_map = self.block_id_map.borrow_mut();
+        let mut inst_id_map = self.inst_id_map.borrow_mut();
+
+        block_id_map[block.get_handle()] = initial_id;
+        let mut curr_id = initial_id + 1;
+
+        for (inst, inst_data) in block_data.instructions.view(&self.alloc_value._alloc_inst) {
+            match inst_data {
+                InstData::Unreachable(..)
+                | InstData::Ret(..)
+                | InstData::Jump(..)
+                | InstData::Br(..)
+                | InstData::Switch(..)
+                | InstData::PhiInstEnd(..)
+                | InstData::Store(..) => continue,
+                _ => {}
+            }
+            match inst_data.get_value_type() {
+                ValTypeID::Void => {}
+                _ => {
+                    inst_id_map[inst.get_handle()] = curr_id;
+                    curr_id += 1;
+                }
+            }
+        }
+        curr_id
+    }
+    fn block_get_id(&self, block: BlockRef) -> Option<usize> {
+        let ret = self.block_id_map.borrow()[block.get_handle()];
+        if ret == usize::MAX { None } else { Some(ret) }
+    }
+    fn inst_get_id(&self, inst: InstRef) -> Option<usize> {
+        let ret = self.inst_id_map.borrow()[inst.get_handle()];
+        if ret == usize::MAX { None } else { Some(ret) }
+    }
+    fn block_getid_unwrap(&self, block: BlockRef) -> usize {
+        match self.block_get_id(block) {
+            Some(x) => x,
+            None => panic!("Block {:?} not numbered", block),
+        }
+    }
+    fn inst_getid_unwrap(&self, inst: InstRef) -> usize {
+        match self.inst_get_id(inst) {
+            Some(x) => x,
+            None => panic!("Instruction {:?} not numbered", inst),
+        }
     }
 
-    fn write_value_by_ref(&self, value: ValueSSA) {
+    fn format_value_by_ref(&self, value: ValueSSA) -> String {
         let inner = self.module.borrow_value_alloc();
-        let content = basic_value_formatting::format_value_by_ref(
+        basic_value_formatting::format_value_by_ref(
             &inner,
             &self.inst_id_map.borrow(),
             &self.block_id_map.borrow(),
             value,
-        );
-        self.write_str(content.as_str());
+        )
     }
 }
 
 impl IValueVisitor for ModuleValueWriter<'_> {
+    /// Block syntax:
+    ///
+    /// ```llvm
+    /// %<block id>:
+    ///     inst 0
+    ///     inst 1
+    ///     ...
+    ///     terminator
+    /// ```
     fn read_block(&self, block: BlockRef, block_data: &BlockData) {
-        todo!()
+        // ID
+        let block_id = self.block_getid_unwrap(block);
+        self.write_fmt(format_args!("%{}:", block_id));
+        {
+            let _ = self.add_indent();
+            let insts = block_data.instructions.view(&self.alloc_value._alloc_inst);
+            for (inst_ref, inst_data) in insts {
+                self.wrap_indent();
+                self.inst_visitor_dispatch(inst_ref, inst_data);
+            }
+        }
     }
 
-    fn read_func_arg(&self, func: GlobalRef, index: u32) {
-        todo!()
-    }
+    fn read_func_arg(&self, _: GlobalRef, _: u32) {}
 }
 
 impl IConstDataVisitor for ModuleValueWriter<'_> {
@@ -104,19 +291,51 @@ impl IConstExprVisitor for ModuleValueWriter<'_> {
 
 impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
     /// Syntax: `@<name> = external|dso_local global <type> [initializer], align <align>`
-    fn read_global_variable(&self, global_ref: GlobalRef, gvar: &crate::ir::global::Var) {
-        todo!()
+    fn read_global_variable(&self, _: GlobalRef, gvar: &global::Var) {
+        if gvar.is_extern() {
+            self.write_fmt(format_args!(
+                "@{} = external global {}, align {}\n",
+                gvar.common.name,
+                gvar.common
+                    .content_ty
+                    .get_display_name(&self.module.type_ctx),
+                gvar.get_stored_pointee_align()
+            ));
+        } else {
+            self.write_fmt(format_args!(
+                "@{} = dso_local global {} {}, align {}\n",
+                gvar.common.name,
+                gvar.common
+                    .content_ty
+                    .get_display_name(&self.module.type_ctx),
+                self.format_value_by_ref(gvar.get_init().unwrap()),
+                gvar.get_stored_pointee_align()
+            ));
+        }
     }
 
-    /// Syntax: `@<name> = alias <type>, <target>, align <align>`
-    fn read_global_alias(&self, global_ref: GlobalRef, galias: &crate::ir::global::Alias) {
-        todo!()
+    /// Syntax: `@<name> = alias <type>, <target>`
+    fn read_global_alias(&self, _: GlobalRef, galias: &Alias) {
+        self.write_fmt(format_args!(
+            "@{} = alias {} {}",
+            galias.common.name,
+            galias
+                .common
+                .content_ty
+                .get_display_name(&self.module.type_ctx),
+            self.format_value_by_ref(ValueSSA::Global(galias.target.get()))
+        ));
     }
 
     /// Function declaration syntax: `declare <type> @<name>(<arg types>)`
     /// Function definition will be collected and handled in the other place.
-    fn read_func(&self, global_ref: GlobalRef, gfunc: &crate::ir::global::func::FuncData) {
-        todo!()
+    fn read_func(&self, global_ref: GlobalRef, func: &FuncData) {
+        if self.add_def_if_live_func(global_ref, func) {
+            // Function definitions, return.
+            return;
+        }
+        self.write_func_header(func);
+        self.wrap_indent();
     }
 }
 
@@ -126,90 +345,226 @@ impl IInstVisitor for ModuleValueWriter<'_> {
 
     /// Syntax: `%<name> = phi <type> [<value>, %<block>], ...`
     fn read_phi_inst(&self, inst_ref: InstRef, common: &InstDataCommon, phi: &PhiOp) {
-        todo!()
+        self.write_fmt(format_args!(
+            "%{} = phi {} {}",
+            self.inst_getid_unwrap(inst_ref),
+            common.ret_type.get_display_name(&self.module.type_ctx),
+            phi.get_from_all()
+                .iter()
+                .map(|(b, u)| format!(
+                    "[{}, %{}]",
+                    self.format_value_by_ref(u.get_operand(&self.alloc_use)),
+                    self.block_getid_unwrap(b.clone())
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 
     /// Syntax: `unreachable`
-    fn read_unreachable_inst(&self, inst_ref: InstRef, common: &InstDataCommon) {
-        todo!()
+    fn read_unreachable_inst(&self, _: InstRef, _: &InstDataCommon) {
+        self.write_str("unreachable");
     }
 
     /// Syntax: `ret <type> <value>`
-    fn read_ret_inst(&self, inst_ref: InstRef, common: &InstDataCommon, ret: &Ret) {
-        todo!()
+    fn read_ret_inst(&self, _: InstRef, common: &InstDataCommon, ret: &Ret) {
+        if let ValTypeID::Void = common.ret_type {
+            self.write_str("ret void");
+            return;
+        }
+        self.write_fmt(format_args!(
+            "ret {} {}",
+            common.ret_type.get_display_name(&self.module.type_ctx),
+            self.format_value_by_ref(ret.retval.get_operand(&self.alloc_use))
+        ));
     }
 
     /// Syntax: `br label %<block>`
-    fn read_jump_inst(&self, inst_ref: InstRef, common: &InstDataCommon, jump: &Jump) {
-        todo!()
+    fn read_jump_inst(&self, _: InstRef, _: &InstDataCommon, jump: &Jump) {
+        self.write_fmt(format_args!(
+            "br label %{}",
+            self.block_getid_unwrap(jump.get_block(&self.alloc_jt))
+        ));
     }
 
     /// Syntax: `br <cond>, label %<true block>, label %<false block>`
-    fn read_br_inst(&self, inst_ref: InstRef, common: &InstDataCommon, br: &Br) {
-        todo!()
+    fn read_br_inst(&self, _: InstRef, _: &InstDataCommon, br: &Br) {
+        self.write_fmt(format_args!(
+            "br i1 {}, label %{}, label %{}",
+            self.format_value_by_ref(br.get_cond(&self.alloc_use)),
+            self.block_getid_unwrap(br.if_true.get_block(&self.alloc_jt)),
+            self.block_getid_unwrap(br.if_false.get_block(&self.alloc_jt)),
+        ));
     }
 
     /// Syntax:
     /// ```llvm-ir
-    /// %<name> = switch <type> <value>, label %<default block>, [
+    /// switch <type> <value>, label %<default block>, [
     ///     <value1>, label %<case block>,
     ///     <value2>, label %<case block>,
     ///     ...
     /// ]
     /// ```
-    fn read_switch_inst(&self, inst_ref: InstRef, common: &InstDataCommon, switch: &Switch) {
-        todo!()
+    fn read_switch_inst(&self, _: InstRef, _: &InstDataCommon, switch: &Switch) {
+        let cond = switch.get_cond(&self.alloc_use);
+        let cond_type = cond.get_value_type(&self.module);
+        self.write_fmt(format_args!(
+            "switch {} {}, label %{}, [",
+            cond_type.get_display_name(&self.module.type_ctx),
+            self.format_value_by_ref(cond),
+            self.block_getid_unwrap(switch.get_default(&self.alloc_jt)),
+        ));
+
+        let grd = self.add_indent();
+        for (c, j) in &*switch.borrow_cases() {
+            self.wrap_indent();
+            self.write_fmt(format_args!(
+                "{}, label %{}",
+                c,
+                self.block_getid_unwrap(j.get_block(&self.alloc_jt))
+            ));
+        }
+        drop(grd);
+
+        self.wrap_indent();
+        self.write_str("]");
     }
 
     /// WARNING: Not implemented yet.
     /// Syntax: `tail call <type> @<name>(<args>)`
-    fn read_tail_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon) {
+    fn read_tail_call_inst(&self, _: InstRef, _: &InstDataCommon) {
         todo!()
     }
 
     /// Syntax: `%<name> = load <type>, ptr %<ptr>, align <align>`
-    fn read_load_inst(&self, inst_ref: InstRef, common: &InstDataCommon, load: &LoadOp) {
-        todo!()
+    fn read_load_inst(&self, inst_ref: InstRef, _: &InstDataCommon, load: &LoadOp) {
+        self.write_fmt(format_args!(
+            "%{} = load {}, ptr {}, align {}",
+            self.inst_getid_unwrap(inst_ref),
+            load.source_ty.get_display_name(&self.module.type_ctx),
+            self.format_value_by_ref(load.source.get_operand(&self.alloc_use)),
+            load.align.get()
+        ));
     }
 
-    /// Syntax: `store <type> <value>, ptr %<ptr>, align <align>`
-    fn read_store_inst(&self, inst_ref: InstRef, common: &InstDataCommon, store: &StoreOp) {
-        todo!()
+    /// Syntax: `store <type> <value>, ptr <ptr>, align <align>`
+    fn read_store_inst(&self, _: InstRef, _: &InstDataCommon, store: &StoreOp) {
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+        self.write_fmt(format_args!(
+            "store {} {}, ptr {}, align {}",
+            store.target_ty.get_display_name(type_ctx),
+            self.format_value_by_ref(store.source.get_operand(alloc_use)),
+            self.format_value_by_ref(store.target.get_operand(alloc_use)),
+            store.align.get()
+        ));
     }
 
-    /// Syntax: `%<name> = select <type>, <cond>, <true value>, <false value>`
+    /// Syntax: `%<name> = select <type>, i1 <cond>, <true value>, <false value>`
     fn read_select_inst(&self, inst_ref: InstRef, common: &InstDataCommon, select: &SelectOp) {
-        todo!()
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+        self.write_fmt(format_args!(
+            "%{} = select {}, i1 {}, {}, {}",
+            self.inst_getid_unwrap(inst_ref),
+            common.ret_type.get_display_name(type_ctx),
+            self.format_value_by_ref(select.cond.get_operand(alloc_use)),
+            self.format_value_by_ref(select.true_val.get_operand(alloc_use)),
+            self.format_value_by_ref(select.false_val.get_operand(alloc_use))
+        ));
     }
 
     /// Syntax: `%<name> = <op> <type> <value1>, <value2>`
     fn read_bin_op_inst(&self, inst_ref: InstRef, common: &InstDataCommon, bin_op: &BinOp) {
-        todo!()
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+        self.write_fmt(format_args!(
+            "%{} = {} {} {}, {}",
+            self.inst_getid_unwrap(inst_ref),
+            common.opcode.get_name(),
+            common.ret_type.get_display_name(type_ctx),
+            self.format_value_by_ref(bin_op.lhs.get_operand(alloc_use)),
+            self.format_value_by_ref(bin_op.rhs.get_operand(alloc_use)),
+        ));
     }
 
     /// Syntax: `%<name> = <op> <type> <value1>, <value2>`
     fn read_cmp_inst(&self, inst_ref: InstRef, common: &InstDataCommon, cmp: &CmpOp) {
-        todo!()
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+        self.write_fmt(format_args!(
+            "%{} = {} {} {}, {}",
+            self.inst_getid_unwrap(inst_ref),
+            common.opcode.get_name(),
+            common.ret_type.get_display_name(type_ctx),
+            self.format_value_by_ref(cmp.lhs.get_operand(alloc_use)),
+            self.format_value_by_ref(cmp.rhs.get_operand(alloc_use)),
+        ));
     }
 
     /// Syntax: `%<name> = <op> <type> <value> to <type>`
     fn read_cast_inst(&self, inst_ref: InstRef, common: &InstDataCommon, cast: &CastOp) {
-        todo!()
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+
+        let from_value = cast.from_op.get_operand(alloc_use);
+        let from_valuety = from_value.get_value_type(&self.module);
+
+        self.write_fmt(format_args!(
+            "%{} = {} {} {} to {}",
+            self.inst_getid_unwrap(inst_ref),
+            common.opcode.get_name(),
+            from_valuety.get_display_name(type_ctx),
+            self.format_value_by_ref(from_value),
+            common.ret_type.get_display_name(type_ctx),
+        ));
     }
 
-    /// Syntax: `%<name> = getelementptr <type>, ptr %<ptr>, <index type> <index>, ...`
-    fn read_index_ptr_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        index_ptr: &IndexPtrOp,
-    ) {
-        todo!()
+    /// Syntax: `%<name> = getelementptr <index0 type>, ptr %<ptr>, <index type> <index>, ...`
+    fn read_index_ptr_inst(&self, inst_ref: InstRef, _: &InstDataCommon, index_ptr: &IndexPtrOp) {
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+
+        self.write_fmt(format_args!(
+            "%{} = getelementptr {}, ptr {}, {}",
+            self.inst_getid_unwrap(inst_ref),
+            index_ptr.base_pointee_ty.get_display_name(type_ctx),
+            self.format_value_by_ref(index_ptr.base_ptr.get_operand(alloc_use)),
+            index_ptr
+                .indices
+                .iter()
+                .map(|uidx| {
+                    let val = uidx.get_operand(alloc_use);
+                    format!(
+                        "{} {}",
+                        val.get_value_type(&self.module).get_display_name(type_ctx),
+                        self.format_value_by_ref(val)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 
     /// Syntax: `%<name> = call <type> @<name>(<args>)`
     fn read_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon, call: &CallOp) {
-        todo!()
+        let type_ctx = self.module.type_ctx.as_ref();
+        let alloc_use = &*self.alloc_use;
+
+        match common.ret_type {
+            ValTypeID::Void => {}
+            _ => self.write_fmt(format_args!("%{} = ", self.inst_getid_unwrap(inst_ref))),
+        }
+        self.write_fmt(format_args!(
+            "call {} {}({})",
+            common.ret_type.get_display_name(type_ctx),
+            self.format_value_by_ref(call.callee.get_operand(alloc_use)),
+            call.args
+                .iter()
+                .map(|u| self.format_value_by_ref(u.get_operand(alloc_use)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 }
 
@@ -363,7 +718,7 @@ mod basic_value_formatting {
         fn read_index_ptr_inst(&self, _: InstRef, _: &InstDataCommon, _: &IndexPtrOp) {}
         fn read_call_inst(&self, _: InstRef, _: &InstDataCommon, _: &CallOp) {}
 
-        fn inst_visitor_dispatch(&self, inst_ref: InstRef, _: &Slab<InstData>) {
+        fn inst_visitor_dispatch(&self, inst_ref: InstRef, _: &InstData) {
             self.write_str("%");
             self.write_str(self.inst_id_map[inst_ref.get_handle()].to_string().as_str());
         }

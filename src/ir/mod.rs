@@ -130,6 +130,9 @@ pub trait PtrStorage {
     /// # Returns
     /// The value type ID of the pointee type.
     fn get_stored_pointee_type(&self) -> ValTypeID;
+
+    /// Gets the align of the value begin pointed to.
+    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>>;
 }
 
 /// Trait for types that use pointers as operands.
@@ -162,7 +165,9 @@ pub trait IValueVisitor:
             ValueSSA::FuncArg(func, index) => self.read_func_arg(func, index),
             ValueSSA::Block(bb) => self.read_block(bb, bb.to_slabref_unwrap(alloc_block)),
             ValueSSA::ConstExpr(expr) => self.expr_visitor_dispatch(expr, alloc_expr),
-            ValueSSA::Inst(inst_ref) => self.inst_visitor_dispatch(inst_ref, alloc_inst),
+            ValueSSA::Inst(inst_ref) => {
+                self.inst_visitor_dispatch(inst_ref, inst_ref.to_slabref_unwrap(alloc_inst))
+            }
             ValueSSA::Global(global_ref) => {
                 self.global_object_visitor_dispatch(global_ref, alloc_global)
             }

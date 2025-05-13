@@ -36,6 +36,10 @@ impl PhiOp {
             .map(|u| u.to_slabref_unwrap(alloc_use).get_operand())
     }
 
+    pub fn get_from_all(&self) -> Ref<[(BlockRef, UseRef)]> {
+        Ref::map(self.from.borrow(), Vec::as_slice)
+    }
+
     pub fn set_from_value_noinsert_nordfg(
         &self,
         from_bb: BlockRef,

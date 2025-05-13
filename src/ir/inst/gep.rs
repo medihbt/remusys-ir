@@ -6,8 +6,8 @@ use slab::Slab;
 
 use crate::{
     base::NullableValue,
-    ir::{module::Module, opcode::Opcode, PtrStorage, PtrUser, ValueSSA},
-    typing::{context::TypeContext, id::ValTypeID, types::StructTypeRef, TypeMismatchError},
+    ir::{PtrStorage, PtrUser, ValueSSA, module::Module, opcode::Opcode},
+    typing::{TypeMismatchError, context::TypeContext, id::ValTypeID, types::StructTypeRef},
 };
 
 use super::{
@@ -32,6 +32,10 @@ pub struct IndexPtrOp {
 impl PtrStorage for IndexPtrOp {
     fn get_stored_pointee_type(&self) -> ValTypeID {
         self.ret_pointee_ty
+    }
+
+    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
+        NonZero::new(self.ret_pointee_align)
     }
 }
 
