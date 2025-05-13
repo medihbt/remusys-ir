@@ -113,3 +113,42 @@ impl LoadOp {
         Ok((common, load_op))
     }
 }
+
+impl StoreOp {
+    pub fn new_raw(
+        mut_module: &Module,
+        target_ty: ValTypeID,
+        target_align: usize,
+    ) -> (InstDataCommon, Self) {
+        let mut alloc_use = mut_module.borrow_use_alloc_mut();
+        let mut common = InstDataCommon::new(Opcode::Store, target_ty, &mut alloc_use);
+        let mut store_op = Self {
+            source: UseRef::new_null(),
+            target: UseRef::new_null(),
+            target_ty,
+            align: Cell::new(target_align),
+        };
+        store_op.build_operands(&mut common, &mut alloc_use);
+        (common, store_op)
+    }
+
+    pub fn new(
+        mut_module: &Module,
+        target_ty: ValTypeID,
+        target_align: usize,
+        source: ValueSSA,
+        target: ValueSSA,
+    ) -> Result<(InstDataCommon, Self), InstError> {
+        if source.get_value_type(mut_module) != target_ty {
+            return Err(InstError::OperandTypeMismatch(
+                TypeMismatchError::IDNotEqual(target_ty, source.get_value_type(mut_module)),
+                source,
+            ));
+        }
+        let (common, store_op) = Self::new_raw(mut_module, target_ty, target_align);
+        let alloc_use = mut_module.borrow_use_alloc();
+        store_op.source.set_operand_nordfg(&alloc_use, source);
+        store_op.target.set_operand_nordfg(&alloc_use, target);
+        Ok((common, store_op))
+    }
+}

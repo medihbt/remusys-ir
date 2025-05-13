@@ -3,12 +3,26 @@ use std::rc::Rc;
 use crate::{
     base::{NullableValue, slablist::SlabRefListError, slabref::SlabRef},
     ir::{
+        ValueSSA,
         block::{BlockData, BlockRef},
+        cmp_cond::CmpCond,
         global::{GlobalData, GlobalRef, func::FuncData},
-        inst::{InstData, InstError, InstRef, terminator::Jump},
+        inst::{
+            InstData, InstError, InstRef,
+            binop::BinOp,
+            callop,
+            cast::CastOp,
+            cmp::CmpOp,
+            gep::IndexPtrOp,
+            load_store::{LoadOp, StoreOp},
+            phi::PhiOp,
+            sundury_inst::{self, SelectOp},
+            terminator::Jump,
+        },
         module::Module,
+        opcode::Opcode,
     },
-    typing::types::FuncTypeRef,
+    typing::{id::ValTypeID, types::FuncTypeRef},
 };
 
 pub struct IRBuilder {
@@ -34,6 +48,13 @@ pub enum IRBuilderError {
     SplitFocusIsGuideNode(InstRef),
 
     BlockHasNoTerminator(BlockRef),
+    InstIsTerminator(InstRef),
+    InstIsGuideNode(InstRef),
+    InstIsPhi(InstRef),
+
+    InsertPosIsPhi(InstRef),
+    InsertPosIsTerminator(InstRef),
+    InsertPosIsGuideNode(InstRef),
 }
 
 impl IRBuilder {
@@ -48,15 +69,13 @@ impl IRBuilder {
         }
     }
 
-    pub fn set_function(&mut self, function: GlobalRef) {
+    pub fn set_focus_func(&mut self, function: GlobalRef) {
         self.focus.function = function;
     }
-
-    pub fn set_block(&mut self, block: BlockRef) {
+    pub fn set_focus_block(&mut self, block: BlockRef) {
         self.focus.block = block;
     }
-
-    pub fn set_inst(&mut self, inst: InstRef) {
+    pub fn set_focus_inst(&mut self, inst: InstRef) {
         self.focus.inst = inst;
     }
 
@@ -126,8 +145,19 @@ impl IRBuilder {
         Ok(ret)
     }
 
+    /// Split the current block from the focus.
+    ///
+    /// This will split this block from the end and move all instructions from the focus to the new block.
+    /// The focus will be set to the new block, while returning the old block.
     pub fn split_current_block_from_focus(&mut self) -> Result<BlockRef, IRBuilderError> {
-        todo!("Implement split_current_block_from_focus");
+        if self.focus.block.is_null() {
+            return Err(IRBuilderError::NullFocus);
+        }
+
+        let new_bb = self.split_current_block_from_terminator()?;
+
+        // Then move all instructions from the focus to the new block.
+        todo!("Split the current block from the focus");
     }
     /// Split the current block from the terminator.
     /// This will create a new block and insert a jump to it.
@@ -171,5 +201,130 @@ impl IRBuilder {
                 _ => Err(e).expect("IR Builder cannot handle these fatal errors. STOP."),
             })?;
         Ok(new_bb)
+    }
+}
+
+/// Instruction builder
+impl IRBuilder {
+    pub fn add_inst(&mut self, inst: InstData, replaces_terminator: bool) -> Result<InstRef, IRBuilderError> {
+        todo!("Add instruction to the current block");
+    }
+
+    /// 添加 Phi 指令，不是终止子。
+    pub fn add_phi_inst(&mut self, ret_type: ValTypeID) -> Result<InstRef, IRBuilderError> {
+        let (common, phi_op) = PhiOp::new(ret_type, &self.module);
+        self.add_inst(InstData::Phi(common, phi_op), false)
+    }
+
+    /// 添加 Store 指令。
+    pub fn add_store_inst(
+        &mut self,
+        target: ValueSSA,
+        source: ValueSSA,
+        align: usize,
+    ) -> Result<InstRef, IRBuilderError> {
+        let valty = source.get_value_type(&self.module);
+        let (common, store_op) = StoreOp::new(&self.module, valty, align, source, target)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::Store(common, store_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 Select 指令。
+    pub fn add_select_inst(
+        &mut self,
+        cond: ValueSSA,
+        true_val: ValueSSA,
+        false_val: ValueSSA,
+    ) -> Result<InstRef, IRBuilderError> {
+        // 假设 sundury_inst::SelectOp 提供了 new 函数，新函数返回 (InstDataCommon, SelectOp)
+        let (common, sel_op) = SelectOp::new(&self.module, cond, true_val, false_val)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::Select(common, sel_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 Binary Operation 指令。
+    pub fn add_binop_inst(
+        &mut self,
+        opcode: Opcode,
+        lhs: ValueSSA,
+        rhs: ValueSSA,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (common, bin_op) = BinOp::new_with_operands(&self.module, opcode, lhs, rhs)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::BinOp(common, bin_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 Compare 指令。
+    pub fn add_cmp_inst(
+        &mut self,
+        cond: CmpCond,
+        lhs: ValueSSA,
+        rhs: ValueSSA,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (common, cmp_op) = CmpOp::new_with_operands(&self.module, cond, lhs, rhs)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::Cmp(common, cmp_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 Cast 指令。
+    pub fn add_cast_inst(
+        &mut self,
+        opcode: Opcode,
+        ret_type: ValTypeID,
+        from_value: ValueSSA,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (common, cast_op) = CastOp::new(&self.module, opcode, ret_type, from_value)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::Cast(common, cast_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 GetElementPtr 指令。
+    pub fn add_indexptr_inst(
+        &mut self,
+        base_pointee_ty: ValTypeID,
+        base_align: usize,
+        ret_align: usize,
+        base_ptr: ValueSSA,
+        indices: impl Iterator<Item = ValueSSA> + Clone,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (common, gep_op) = IndexPtrOp::new_from_indices(
+            &self.module,
+            base_pointee_ty,
+            base_align,
+            ret_align,
+            base_ptr,
+            indices,
+        )
+        .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::IndexPtr(common, gep_op);
+        self.add_inst(inst)
+    }
+
+    /// 添加 Call 指令。
+    pub fn add_call_inst(
+        &mut self,
+        callee: GlobalRef,
+        args: impl Iterator<Item = ValueSSA>,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (common, call_op) = callop::CallOp::new_from_func(&self.module, callee, args)
+            .map_err(IRBuilderError::InstError)?;
+        let inst = InstData::Call(common, call_op);
+        self.add_inst(inst)
+    }
+
+    pub fn add_load_inst(
+        &mut self,
+        source_ty: ValTypeID,
+        source_align: usize,
+        source: ValueSSA,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (c, l) = LoadOp::new(&self.module, source_ty, source_align, source)
+            .map_err(IRBuilderError::InstError)?;
+        self.add_inst(InstData::Load(c, l))
     }
 }

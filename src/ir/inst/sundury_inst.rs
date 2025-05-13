@@ -2,7 +2,11 @@
 
 use slab::Slab;
 
-use crate::{ir::module::Module, typing::id::ValTypeID};
+use crate::{
+    base::NullableValue,
+    ir::{ValueSSA, module::Module, opcode::Opcode},
+    typing::id::ValTypeID,
+};
 
 use super::{
     InstDataCommon, InstDataUnique, InstError,
@@ -37,5 +41,44 @@ impl InstDataUnique for SelectOp {
         check_operand_type_match(ValTypeID::new_boolean(), cond_value, module)?;
         check_operand_type_match(self_type, true_value, module)?;
         check_operand_type_match(self_type, false_value, module)
+    }
+}
+
+impl SelectOp {
+    pub fn new_raw(mut_module: &Module, valtype: ValTypeID) -> (InstDataCommon, Self) {
+        let mut alloc_use = mut_module.borrow_use_alloc_mut();
+        let mut common = InstDataCommon::new(Opcode::Select, valtype, &mut alloc_use);
+        let mut inst = SelectOp {
+            cond: UseRef::new_null(),
+            true_val: UseRef::new_null(),
+            false_val: UseRef::new_null(),
+        };
+        inst.build_operands(&mut common, &mut alloc_use);
+        (common, inst)
+    }
+
+    pub fn new(
+        mut_module: &Module,
+        cond: ValueSSA,
+        true_val: ValueSSA,
+        false_val: ValueSSA,
+    ) -> Result<(InstDataCommon, Self), InstError> {
+        match (cond, true_val, false_val) {
+            (ValueSSA::None, ..) | (_, ValueSSA::None, _) | (_, _, ValueSSA::None) => {
+                return Err(InstError::OperandNull);
+            }
+            _ => {}
+        }
+        check_operand_type_match(ValTypeID::new_boolean(), cond, mut_module)?;
+        let value_type = true_val.get_value_type(mut_module);
+        check_operand_type_match(value_type, false_val, mut_module)?;
+
+        let mut alloc_use = mut_module.borrow_use_alloc_mut();
+
+        let (c, s) = Self::new_raw(mut_module, value_type);
+        s.cond.set_operand_nordfg(&mut alloc_use, cond);
+        s.true_val.set_operand_nordfg(&mut alloc_use, true_val);
+        s.false_val.set_operand_nordfg(&mut alloc_use, false_val);
+        Ok((c, s))
     }
 }
