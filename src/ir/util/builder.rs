@@ -266,6 +266,9 @@ impl IRBuilder {
     ///
     /// The block focus will not be changed while the new block will be returned.
     /// If the instruction focus is a terminator, it will be set to the new jump instruction.
+    ///
+    /// There's no need to maintain the RCFG because RCFG connection is based on `Use`-like
+    /// object `JumpTarget`, which will remain unchanged during the split.
     pub fn split_current_block_from_terminator(&mut self) -> Result<BlockRef, IRBuilderError> {
         let module = self.module.as_ref();
         let curr_bb = self.focus.block;
@@ -467,7 +470,12 @@ impl IRBuilder {
         Ok(new_ref)
     }
 
-    /// 添加 Phi 指令，不是终止子。
+    /// Adding PHI-Node. Note that this may be a dangerous operation because nearly all
+    /// instruction focuses do not allow PHI-node insertion.
+    /// 
+    /// You can enable PHI-degrade option to degrade the illegal insertion to a block-level
+    /// insertion, or just switch the focus to a PHI-node or a block before calling this
+    /// function.
     pub fn add_phi_inst(&mut self, ret_type: ValTypeID) -> Result<InstRef, IRBuilderError> {
         let (common, phi_op) = PhiOp::new(ret_type, &self.module);
         self.add_inst(InstData::Phi(common, phi_op))
