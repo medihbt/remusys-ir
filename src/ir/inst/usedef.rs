@@ -11,7 +11,7 @@ use crate::{
     impl_slabref,
     ir::{
         ValueSSA,
-        module::{Module, ModuleAllocErr},
+        module::{Module, ModuleError, rdfg::RdfgAlloc},
     },
 };
 
@@ -58,8 +58,22 @@ impl UseData {
         self._operand.get()
     }
 
-    pub fn set_operand(&self, operand: ValueSSA) {
+    pub fn set_operand_nordfg(&self, operand: ValueSSA) {
         self._operand.set(operand);
+    }
+    pub fn set_operand_with_rdfg(&self, selfref: UseRef, rdfg: &RdfgAlloc, operand: ValueSSA) {
+        let old_value = self._operand.get();
+        if old_value == operand {
+            return;
+        }
+        self._operand.set(operand);
+
+        if old_value.is_nonnull() {
+            rdfg.get_node(old_value).remove_user_use(selfref);
+        }
+        if operand.is_nonnull() {
+            rdfg.get_node(operand).add_user_use(selfref);
+        }
     }
 }
 
@@ -67,19 +81,11 @@ impl UseData {
 pub struct UseRef(usize);
 impl_slabref!(UseRef, UseData);
 impl SlabRefListNodeRef for UseRef {
-    fn on_node_push_next(
-        _: Self,
-        _: Self,
-        _: &Slab<UseData>,
-    ) -> Result<(), SlabRefListError> {
+    fn on_node_push_next(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
         Ok(())
     }
 
-    fn on_node_push_prev(
-        _: Self,
-        _: Self,
-        _: &Slab<UseData>,
-    ) -> Result<(), SlabRefListError> {
+    fn on_node_push_prev(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
         Ok(())
     }
 
@@ -101,7 +107,7 @@ impl UseRef {
     /// Set the operand of this use reference regardless of the def-use graph.
     /// This method does not update the def-use graph.
     pub fn set_operand_nordfg(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
-        self.to_slabref_unwrap(alloc).set_operand(operand);
+        self.to_slabref_unwrap(alloc).set_operand_nordfg(operand);
     }
 
     /// Set the operand of this use reference and update the def-use graph.
@@ -113,7 +119,7 @@ impl UseRef {
         if old_value == operand {
             return;
         }
-        self_data.set_operand(operand);
+        self_data.set_operand_nordfg(operand);
 
         // Now update the def-use reverse graph (RDFG).
         if !old_value.is_none() {
@@ -124,11 +130,10 @@ impl UseRef {
         }
     }
 
-    fn _handle_setop_err(res: Result<(), ModuleAllocErr>) {
+    fn _handle_setop_err(res: Result<(), ModuleError>) {
         match res {
             Ok(_) => { /* Successfully inserted or deleted the use reference. */ }
-            Err(ModuleAllocErr::DfgOperandNotReferece(..))
-            | Err(ModuleAllocErr::DfgReverseTrackingNotEnabled) => {
+            Err(ModuleError::DfgOperandNotReferece(..)) | Err(ModuleError::RDFGNotEnabled) => {
                 /* Normal cases where the value is not a reference type or the RDFG is not enabled. */
             }
             _ => panic!(),

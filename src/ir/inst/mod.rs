@@ -1,6 +1,7 @@
 use std::cell::Cell;
 
 use slab::Slab;
+use terminator::TerminatorInst;
 use usedef::{UseData, UseRef};
 
 use crate::{
@@ -15,7 +16,12 @@ use crate::{
     typing::{TypeMismatchError, id::ValTypeID},
 };
 
-use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
+use super::{
+    ValueSSA, ValueSSAError,
+    block::{BlockRef, jump_target::JumpTargetData},
+    module::{Module, ModuleAllocatorInner},
+    opcode::Opcode,
+};
 
 pub mod binop;
 pub mod callop;
@@ -380,6 +386,32 @@ impl InstData {
             };
         }
     }
+
+    pub fn as_terminator(&self) -> Option<(&InstDataCommon, &dyn terminator::TerminatorInst)> {
+        match self {
+            Self::Unreachable(_) => None,
+            Self::Ret(common, ret) => Some((common, ret)),
+            Self::Jump(common, jump) => Some((common, jump)),
+            Self::Br(common, br) => Some((common, br)),
+            Self::Switch(common, switch) => Some((common, switch)),
+            _ => None,
+        }
+    }
+    pub unsafe fn load_operand_view(&self) -> Option<SlabRefList<UseRef>> {
+        match self {
+            Self::ListGuideNode(..)
+            | Self::PhiInstEnd(..)
+            | Self::Unreachable(..)
+            | Self::Jump(..) => None,
+            _ => unsafe {
+                Some(
+                    self.get_common_unwrap()
+                        .operands
+                        .unsafe_load_readonly_view(),
+                )
+            },
+        }
+    }
 }
 
 impl InstDataCommon {
@@ -455,7 +487,7 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .node_add_next(&module.borrow_value_alloc()._alloc_inst, *self, next)
+            .node_add_next(&module.borrow_value_alloc().alloc_inst, *self, next)
             .map_err(InstError::ListError)
     }
     pub fn add_prev_inst(&self, module: &Module, prev: InstRef) -> Result<(), InstError> {
@@ -471,7 +503,7 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .node_add_prev(&module.borrow_value_alloc()._alloc_inst, *self, prev)
+            .node_add_prev(&module.borrow_value_alloc().alloc_inst, *self, prev)
             .map_err(InstError::ListError)
     }
     pub fn detach_self(&self, module: &Module) -> Result<(), InstError> {
@@ -487,7 +519,60 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .unplug_node(&module.borrow_value_alloc()._alloc_inst, *self)
+            .unplug_node(&module.borrow_value_alloc().alloc_inst, *self)
             .map_err(InstError::ListError)
+    }
+
+    /// Finalize the instruction by removing all operands and jump targets.
+    pub fn finalize_with_module(&self, module: &Module) {
+        let alloc_value = module.borrow_value_alloc();
+        let use_alloc = module.borrow_use_alloc();
+        let jt_alloc = module.borrow_jt_alloc();
+        let self_data = self.to_slabref_unwrap(&alloc_value.alloc_inst);
+
+        // Clean up jump targets of the terminators.
+        let operands_view = match self_data {
+            InstData::Jump(_, jump) => {
+                jump.set_block(module, BlockRef::new_null());
+                return;
+            }
+            InstData::Br(_, br) => {
+                br.if_true.set_block(module, BlockRef::new_null());
+                br.if_false.set_block(module, BlockRef::new_null());
+                br.set_cond(module, ValueSSA::new_null());
+                return;
+            }
+            InstData::Switch(_, switch) => {
+                switch.set_cond(module, ValueSSA::new_null());
+                switch.set_default(module, BlockRef::new_null());
+                for (_, pred) in &*switch.borrow_cases() {
+                    pred.set_block(module, BlockRef::new_null());
+                }
+                return;
+            }
+            InstData::Unreachable(..) | InstData::PhiInstEnd(..) | InstData::ListGuideNode(..) => {
+                return;
+            }
+            _ => unsafe {
+                self_data
+                    .get_common_unwrap()
+                    .operands
+                    .unsafe_load_readonly_view()
+            },
+        };
+
+        if operands_view.is_empty() {
+            return;
+        }
+
+        // Clean up operands of the instruction.
+        for (useref, data) in operands_view.view(&use_alloc) {
+            let operand = data.get_operand();
+            data.set_operand_nordfg(ValueSSA::new_null());
+            if operand.is_null() {
+                continue;
+            }
+            module.operand_del_use(operand, useref).unwrap();
+        }
     }
 }

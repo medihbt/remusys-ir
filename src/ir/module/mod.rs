@@ -1,14 +1,15 @@
+use core::alloc;
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     rc::Rc,
 };
 
-use rdfg::{RDFGAllocs, add_value_for_vecset};
+use rdfg::{FuncArgRdfg, RdfgAlloc, RdfgPerValue};
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::{NullableValue, slabref::SlabRef},
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
 
@@ -27,6 +28,7 @@ use super::{
     },
 };
 
+pub mod rcfg;
 pub mod rdfg;
 
 pub struct Module {
@@ -36,23 +38,24 @@ pub struct Module {
     pub(super) _alloc_value: RefCell<ModuleAllocatorInner>,
     pub(super) _alloc_use: RefCell<Slab<UseData>>,
     pub(super) _alloc_jt: RefCell<Slab<JumpTargetData>>,
-    pub(super) _alloc_reverse_dfg: RefCell<Option<rdfg::RDFGAllocs>>,
+    pub(super) _rdfg_alloc: RefCell<Option<rdfg::RdfgAlloc>>,
+    pub(super) _rcfg_alloc: RefCell<Option<rcfg::RcfgAllocs>>,
 }
 
 pub struct ModuleAllocatorInner {
-    pub(super) _alloc_global: Slab<GlobalData>,
-    pub(super) _alloc_expr: Slab<ConstExprData>,
-    pub(super) _alloc_inst: Slab<InstData>,
-    pub(super) _alloc_block: Slab<BlockData>,
+    pub(crate) alloc_global: Slab<GlobalData>,
+    pub(crate) alloc_expr: Slab<ConstExprData>,
+    pub(crate) alloc_inst: Slab<InstData>,
+    pub(crate) alloc_block: Slab<BlockData>,
 }
 
 impl Module {
     pub fn new(name: String, type_ctx: Rc<TypeContext>) -> Self {
         let inner = ModuleAllocatorInner {
-            _alloc_global: Slab::with_capacity(32),
-            _alloc_expr: Slab::with_capacity(4096),
-            _alloc_inst: Slab::with_capacity(1024),
-            _alloc_block: Slab::with_capacity(512),
+            alloc_global: Slab::with_capacity(32),
+            alloc_expr: Slab::with_capacity(4096),
+            alloc_inst: Slab::with_capacity(1024),
+            alloc_block: Slab::with_capacity(512),
         };
         Self {
             name,
@@ -61,7 +64,8 @@ impl Module {
             _alloc_value: RefCell::new(inner),
             _alloc_use: RefCell::new(Slab::with_capacity(4096)),
             _alloc_jt: RefCell::new(Slab::with_capacity(1024)),
-            _alloc_reverse_dfg: RefCell::new(None),
+            _rdfg_alloc: RefCell::new(None),
+            _rcfg_alloc: RefCell::new(None),
         }
     }
 
@@ -93,13 +97,13 @@ impl Module {
     pub fn get_global(&self, global: GlobalRef) -> Ref<GlobalData> {
         let inner = self.borrow_value_alloc();
         Ref::map(inner, |inner| {
-            inner._alloc_global.get(global.get_handle()).unwrap()
+            inner.alloc_global.get(global.get_handle()).unwrap()
         })
     }
     pub fn mut_global(&self, global: GlobalRef) -> RefMut<GlobalData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner._alloc_global.get_mut(global.get_handle()).unwrap()
+            inner.alloc_global.get_mut(global.get_handle()).unwrap()
         })
     }
     pub fn insert_global(&self, data: GlobalData) -> GlobalRef {
@@ -109,15 +113,15 @@ impl Module {
 
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
-            let id = inner._alloc_global.insert(data);
+            let id = inner.alloc_global.insert(data);
             GlobalRef::from_handle(id)
         };
 
         // Modify the slab reference of its instructions to point to this.
         {
             let inner = self.borrow_value_alloc();
-            let alloc_block = &inner._alloc_block;
-            let alloc_global = &inner._alloc_global;
+            let alloc_block = &inner.alloc_block;
+            let alloc_global = &inner.alloc_global;
 
             ret.to_slabref_unwrap(alloc_global)
                 ._init_set_self_reference(alloc_block, ret);
@@ -132,101 +136,143 @@ impl Module {
         } else {
             None
         };
-        self._rdfg_alloc_node(ValueSSA::Global(ret), maybe_func)
-            .unwrap();
-
+        // Try add this handle as operand.
+        // If this is a function, also add its argument list to the reverse graph.
+        if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
+            rdfg.alloc_node(ValueSSA::Global(ret), maybe_func, &self.type_ctx)
+                .unwrap();
+        }
+        // Add the global value to the name table.
         self.global_defs.borrow_mut().insert(name, ret);
-
         ret
     }
 
     pub fn get_expr(&self, expr: ConstExprRef) -> Ref<ConstExprData> {
         let inner = self.borrow_value_alloc();
         Ref::map(inner, |inner| {
-            inner._alloc_expr.get(expr.get_handle()).unwrap()
+            inner.alloc_expr.get(expr.get_handle()).unwrap()
         })
     }
     pub fn mut_expr(&self, expr: ConstExprRef) -> RefMut<ConstExprData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner._alloc_expr.get_mut(expr.get_handle()).unwrap()
+            inner.alloc_expr.get_mut(expr.get_handle()).unwrap()
         })
     }
     pub fn insert_expr(&self, data: ConstExprData) -> ConstExprRef {
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
-            let id = inner._alloc_expr.insert(data);
+            let id = inner.alloc_expr.insert(data);
             ConstExprRef::from_handle(id)
         };
-
-        /* Try add this handle as operand. */
-        self._rdfg_alloc_node(ValueSSA::ConstExpr(ret), None)
-            .unwrap();
+        // Try add this handle as operand.
+        if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
+            rdfg.alloc_node(ValueSSA::ConstExpr(ret), None, &self.type_ctx)
+                .unwrap();
+        }
         ret
     }
 
     pub fn get_inst(&self, inst: InstRef) -> Ref<InstData> {
         let inner = self.borrow_value_alloc();
         Ref::map(inner, |inner| {
-            inner._alloc_inst.get(inst.get_handle()).unwrap()
+            inner.alloc_inst.get(inst.get_handle()).unwrap()
         })
     }
     pub fn mut_inst(&self, inst: InstRef) -> RefMut<InstData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner._alloc_inst.get_mut(inst.get_handle()).unwrap()
+            inner.alloc_inst.get_mut(inst.get_handle()).unwrap()
         })
     }
     pub fn insert_inst(&self, data: InstData) -> InstRef {
-        let mut inner = self.borrow_value_alloc_mut();
-        let id = inner._alloc_inst.insert(data);
-        let ret = InstRef::from_handle(id);
+        let operand_view = unsafe { data.load_operand_view() };
+        let jt_view = match data.as_terminator() {
+            Some((_, t)) => unsafe {
+                t.get_jump_targets()
+                    .map(|jt| jt.unsafe_load_readonly_view())
+            },
+            None => None,
+        };
 
-        // Modify the slab reference to point to this,
-        ret.to_slabref_unwrap_mut(&mut inner._alloc_inst)
-            ._inst_init_self_reference(ret, &self.borrow_use_alloc());
+        let ret = {
+            let mut inner = self.borrow_value_alloc_mut();
+            let id = inner.alloc_inst.insert(data);
+            let ret = InstRef::from_handle(id);
 
-        // Modify the jump targets if this instruction is a terminator.
-        let mut jt_alloc = self.borrow_jt_alloc_mut();
-        match ret.to_slabref_unwrap(&inner._alloc_inst) {
-            InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut jt_alloc),
-            InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut jt_alloc),
-            InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut jt_alloc),
-            _ => {}
-        }
+            // Modify the slab reference to point to this,
+            ret.to_slabref_unwrap_mut(&mut inner.alloc_inst)
+                ._inst_init_self_reference(ret, &self.borrow_use_alloc());
+
+            // Modify the jump targets if this instruction is a terminator.
+            let mut jt_alloc = self.borrow_jt_alloc_mut();
+            match ret.to_slabref_unwrap(&inner.alloc_inst) {
+                InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut jt_alloc),
+                InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut jt_alloc),
+                InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut jt_alloc),
+                _ => {}
+            }
+            ret
+        };
+
         // Try add this handle as operand.
         // If this instruction has operands, add them to the reverse graph.
-        self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
+        // self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
+        if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
+            let alloc_use = self.borrow_use_alloc();
+            if let Some(operand_view) = operand_view {
+                rdfg.insert_new_inst(ret, &operand_view, &alloc_use, &self.type_ctx)
+                    .unwrap();
+            } else {
+                rdfg.alloc_node(ValueSSA::Inst(ret), None, &self.type_ctx)
+                    .unwrap();
+            }
+        }
+
+        // If this instruction is a terminator, add its jump targets to the reverse graph.
+        if let (Some(jt_view), Some(rcfg)) = (jt_view, self.borrow_rcfg_alloc()) {
+            let alloc_jt = self.borrow_jt_alloc();
+            for (jt, jt_data) in jt_view.view(&alloc_jt) {
+                let block = jt_data._block.get();
+                if !block.is_null() {
+                    rcfg.get_node(block).add_predecessor(jt);
+                }
+            }
+        }
+
         ret
     }
 
     pub fn get_block(&self, block: BlockRef) -> Ref<BlockData> {
         let inner = self.borrow_value_alloc();
         Ref::map(inner, |inner| {
-            inner._alloc_block.get(block.get_handle()).unwrap()
+            inner.alloc_block.get(block.get_handle()).unwrap()
         })
     }
     pub fn mut_block(&self, block: BlockRef) -> RefMut<BlockData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner._alloc_block.get_mut(block.get_handle()).unwrap()
+            inner.alloc_block.get_mut(block.get_handle()).unwrap()
         })
     }
     pub fn insert_block(&self, data: BlockData) -> BlockRef {
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
-            let id = inner._alloc_block.insert(data);
+            let id = inner.alloc_block.insert(data);
             BlockRef::from_handle(id)
         };
 
         // Modify the slab reference of its instructions to point to this.
         // Now the `parent_bb` of the instructions will not be `null` anymore.
         let inner = self.borrow_value_alloc();
-        ret.to_slabref_unwrap(&inner._alloc_block)
-            .init_set_self_reference(ret, &inner._alloc_inst);
+        ret.to_slabref_unwrap(&inner.alloc_block)
+            .init_set_self_reference(ret, &inner.alloc_inst);
 
         /* Try add this handle as operand. */
-        self._rdfg_alloc_node(ValueSSA::Block(ret), None).unwrap();
+        if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
+            rdfg.alloc_node(ValueSSA::Block(ret), None, &self.type_ctx)
+                .unwrap();
+        }
         ret
     }
 
@@ -289,11 +335,14 @@ impl Module {
 }
 
 #[derive(Debug)]
-pub enum ModuleAllocErr {
+pub enum ModuleError {
     DfgOperandNotReferece(ValueSSA),
-    DfgReverseTrackingNotEnabled,
+    RDFGNotEnabled,
     OperandOverflow(usize /* required */, usize /* real */),
     FuncArgRefBroken(GlobalRef, u32 /* index */),
+
+    RCFGNotEnabled,
+    RCFGEnabled,
 }
 
 /// Module as DFG reverse map.
@@ -305,7 +354,7 @@ impl Module {
     /// - To disable DFG tracking and take out all DFG reverse-graphs for the module,
     ///   call `self.steal_tracking_dfg()`.
     pub fn dfg_tracking_enabled(&self) -> bool {
-        self._alloc_reverse_dfg.borrow().is_some()
+        self._rdfg_alloc.borrow().is_some()
     }
 
     /// Enable DFG reverse-graph tracking.
@@ -315,15 +364,15 @@ impl Module {
     /// find all the operands of each instruction, and create a reverse
     /// mapping from the operands to the 'use' belonging to instructions
     /// who use them.
-    pub fn enable_dfg_tracking(&self) -> Result<(), ModuleAllocErr> {
+    pub fn enable_dfg_tracking(&self) -> Result<(), ModuleError> {
         let type_ctx = self.type_ctx.as_ref();
         let self_alloc = self.borrow_value_alloc();
-        let global_alloc = &self_alloc._alloc_global;
-        let expr_alloc = &self_alloc._alloc_expr;
-        let inst_alloc = &self_alloc._alloc_inst;
-        let block_alloc = &self_alloc._alloc_block;
+        let global_alloc = &self_alloc.alloc_global;
+        let expr_alloc = &self_alloc.alloc_expr;
+        let inst_alloc = &self_alloc.alloc_inst;
+        let block_alloc = &self_alloc.alloc_block;
         let global_defs = &self.global_defs.borrow();
-        let mut rdfg_alloc = RDFGAllocs::new_with_capacity(
+        let mut rdfg_alloc = RdfgAlloc::new_with_capacity(
             global_alloc.capacity(),
             expr_alloc.capacity(),
             inst_alloc.capacity(),
@@ -409,11 +458,11 @@ impl Module {
             }
         }
         for (useref, operand) in live_uses {
-            rdfg_alloc.edit_node(operand, |v| add_value_for_vecset(v, useref))?;
+            rdfg_alloc.get_node(operand).add_user_use(useref);
         }
 
         // Step 3: Insert RDFG into this module
-        *self._alloc_reverse_dfg.borrow_mut() = Some(rdfg_alloc);
+        *self._rdfg_alloc.borrow_mut() = Some(rdfg_alloc);
 
         Ok(())
     }
@@ -423,71 +472,148 @@ impl Module {
     /// **WARNING**: This function will simply shut down all DFG reverse-graphs.
     /// Passes which depend on DFG reverse-graphs will be broken.
     pub fn disable_dfg_tracking(&self) {
-        *self._alloc_reverse_dfg.borrow_mut() = None;
+        *self._rdfg_alloc.borrow_mut() = None;
     }
 
     /// Disable DFG reverse-graph tracking and take out all DFG reverse-graphs
     /// for the module.
-    pub fn steal_tracking_dfg(&self) -> Option<rdfg::RDFGAllocs> {
-        self._alloc_reverse_dfg.borrow_mut().take()
+    pub fn steal_tracking_dfg(&self) -> Option<rdfg::RdfgAlloc> {
+        self._rdfg_alloc.borrow_mut().take()
     }
 
     pub(crate) fn operand_add_use(
         &self,
         operand: ValueSSA,
         useref: UseRef,
-    ) -> Result<(), ModuleAllocErr> {
-        self._borrow_rdfg_alloc()?
-            .edit_node(operand, |v| v.push(useref))
+    ) -> Result<(), ModuleError> {
+        self.borrow_rdfg_alloc()
+            .ok_or(ModuleError::RDFGNotEnabled)?
+            .get_node(operand)
+            .add_user_use(useref);
+        Ok(())
     }
 
     pub(crate) fn operand_del_use(
         &self,
         operand: ValueSSA,
         useref: UseRef,
-    ) -> Result<(), ModuleAllocErr> {
-        self._borrow_rdfg_alloc()?.edit_node(operand, |v| {
-            if let Some(pos) = v.iter().position(|x| *x == useref) {
-                v.swap_remove(pos);
-            } else {
-                panic!("Cannot find use reference in operand");
+    ) -> Result<(), ModuleError> {
+        self.borrow_rdfg_alloc()
+            .ok_or(ModuleError::RDFGNotEnabled)?
+            .get_node(operand)
+            .remove_user_use(useref);
+        Ok(())
+    }
+
+    fn borrow_rdfg_alloc(&self) -> Option<Ref<RdfgAlloc>> {
+        let alloc_rdfg = self._rdfg_alloc.borrow();
+        if let None = *alloc_rdfg {
+            return None;
+        }
+        Some(Ref::map(alloc_rdfg, |alloc| alloc.as_ref().unwrap()))
+    }
+    fn borrow_rdfg_alloc_mut(&self) -> Option<RefMut<RdfgAlloc>> {
+        let alloc_rdfg = self._rdfg_alloc.borrow_mut();
+        if let None = *alloc_rdfg {
+            return None;
+        }
+        Some(RefMut::map(alloc_rdfg, |alloc| alloc.as_mut().unwrap()))
+    }
+}
+
+/// Module as control flow graph maintainer.
+impl Module {
+    pub fn borrow_rcfg_alloc(&self) -> Option<Ref<rcfg::RcfgAllocs>> {
+        if let None = *self._rcfg_alloc.borrow() {
+            return None;
+        }
+        Some(Ref::map(self._rcfg_alloc.borrow(), |alloc| {
+            alloc.as_ref().unwrap()
+        }))
+    }
+    pub fn borrow_rcfg_alloc_mut(&self) -> Option<RefMut<rcfg::RcfgAllocs>> {
+        if let None = *self._rcfg_alloc.borrow() {
+            return None;
+        }
+        Some(RefMut::map(self._rcfg_alloc.borrow_mut(), |alloc| {
+            alloc.as_mut().unwrap()
+        }))
+    }
+
+    pub fn rcfg_enabled(&self) -> bool {
+        self._rcfg_alloc.borrow().is_some()
+    }
+    pub fn enable_rcfg_tracking(&self) -> Result<(), ModuleError> {
+        if self._rcfg_alloc.borrow().is_some() {
+            return Err(ModuleError::RCFGEnabled);
+        }
+
+        // Step 1: Collect all live blocks and allocate nodes for them.
+        let alloc_value = self.borrow_value_alloc();
+        let alloc_global = &alloc_value.alloc_global;
+        let alloc_block = &alloc_value.alloc_block;
+        let alloc_inst = &alloc_value.alloc_inst;
+        let mut live_funcbody = Vec::with_capacity(alloc_global.len());
+        for (_, global) in self.global_defs.borrow().iter() {
+            match global.to_slabref_unwrap(alloc_global) {
+                GlobalData::Func(func) => {
+                    if let Some(body) = func.get_blocks() {
+                        let body_view = unsafe { body.unsafe_load_readonly_view() };
+                        if !body_view.is_empty() {
+                            live_funcbody.push(body_view);
+                        }
+                    }
+                }
+                _ => continue,
+            };
+        }
+        let mut live_bb = Vec::with_capacity(alloc_block.len());
+        for body_view in live_funcbody {
+            for (blockref, block) in body_view.view(alloc_block) {
+                live_bb.push((
+                    blockref,
+                    block.instructions.get_back_ref(alloc_inst).unwrap(),
+                ));
             }
-        })
-    }
-
-    fn _borrow_rdfg_alloc(&self) -> Result<Ref<RDFGAllocs>, ModuleAllocErr> {
-        let alloc_rdfg = self._alloc_reverse_dfg.borrow();
-        match *alloc_rdfg {
-            None => Err(ModuleAllocErr::DfgReverseTrackingNotEnabled),
-            Some(_) => Ok(Ref::map(alloc_rdfg, |alloc| alloc.as_ref().unwrap())),
         }
-    }
-    fn _borrow_rdfg_alloc_mut(&self) -> Result<RefMut<RDFGAllocs>, ModuleAllocErr> {
-        let alloc_rdfg = self._alloc_reverse_dfg.borrow_mut();
-        match *alloc_rdfg {
-            None => Err(ModuleAllocErr::DfgReverseTrackingNotEnabled),
-            Some(_) => Ok(RefMut::map(alloc_rdfg, |alloc| alloc.as_mut().unwrap())),
-        }
-    }
-    fn _rdfg_alloc_node(
-        &self,
-        operand: ValueSSA,
-        maybe_func: Option<FuncTypeRef>,
-    ) -> Result<(), ModuleAllocErr> {
-        let mut alloc_rdfg = match self._borrow_rdfg_alloc_mut() {
-            Ok(alloc) => alloc,
-            Err(ModuleAllocErr::DfgReverseTrackingNotEnabled) => return Ok(()),
-            Err(e) => return Err(e),
-        };
 
-        // Now RDFG is enabled, we can insert the node.
-        alloc_rdfg.insert_node(
-            operand,
-            maybe_func,
-            &self.type_ctx,
-            &self.borrow_value_alloc()._alloc_inst,
-            &self.borrow_use_alloc(),
-        )
+        // Step 2: Allocate nodes for all live basic blocks.
+        let mut rcfg_alloc = rcfg::RcfgAllocs::new_with_capacity(alloc_block.capacity());
+        for (block, _) in &live_bb {
+            rcfg_alloc.alloc_node(*block);
+        }
+
+        // Step 3: Insert jump relationship for all live basic blocks.
+        let alloc_jt = self.borrow_jt_alloc();
+        for (block, inst) in &live_bb {
+            let inst_data = inst.to_slabref_unwrap(alloc_inst);
+            if !inst_data.is_terminator() {
+                panic!("Block {:?} does not contain a terminator", block);
+            }
+
+            let jts_view = if let Some((_, t)) = inst_data.as_terminator() {
+                let jts = match t.get_jump_targets() {
+                    Some(jts) => jts,
+                    None => continue,
+                };
+                unsafe { jts.unsafe_load_readonly_view() }
+            } else {
+                continue;
+            };
+
+            for (jt, jt_data) in jts_view.view(&alloc_jt) {
+                let block = jt_data._block.get();
+                if block.is_null() {
+                    continue;
+                }
+                rcfg_alloc.get_node(block).add_predecessor(jt);
+            }
+        }
+
+        // Step 4: Insert RCFG into this module
+        *self._rcfg_alloc.borrow_mut() = Some(rcfg_alloc);
+
+        Ok(())
     }
 }
 
@@ -496,8 +622,8 @@ impl Module {
     /// Perform a basic check on the module.
     pub fn perform_basic_check(&self) {
         let alloc_value = self.borrow_value_alloc();
-        let alloc_global = &alloc_value._alloc_global;
-        let alloc_block = &alloc_value._alloc_block;
+        let alloc_global = &alloc_value.alloc_global;
+        let alloc_block = &alloc_value.alloc_block;
 
         for (_, global) in alloc_global {
             let func_body = match global {

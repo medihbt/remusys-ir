@@ -155,10 +155,10 @@ pub trait IValueVisitor:
     fn read_func_arg(&self, func: GlobalRef, index: u32);
 
     fn value_visitor_diapatch(&self, value: ValueSSA, alloc_value: &ModuleAllocatorInner) {
-        let alloc_block = &alloc_value._alloc_block;
-        let alloc_global = &alloc_value._alloc_global;
-        let alloc_inst = &alloc_value._alloc_inst;
-        let alloc_expr = &alloc_value._alloc_expr;
+        let alloc_block = &alloc_value.alloc_block;
+        let alloc_global = &alloc_value.alloc_global;
+        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_expr = &alloc_value.alloc_expr;
         match value {
             ValueSSA::None => {}
             ValueSSA::ConstData(data) => self.const_data_visitor_dispatch(&data),

@@ -13,11 +13,15 @@ use crate::{
         slabref::SlabRef,
     },
     impl_slabref,
-    ir::inst::InstRef,
+    ir::{
+        inst::InstRef,
+        module::{Module, rcfg::RcfgAllocs},
+    },
 };
 
 use super::BlockRef;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JumpTargetKind {
     None,
     Jump,
@@ -57,29 +61,59 @@ impl JumpTargetData {
             _kind: kind,
         }
     }
+
+    pub fn get_kind(&self) -> JumpTargetKind {
+        self._kind
+    }
+    pub fn get_block(&self) -> BlockRef {
+        self._block.get()
+    }
+    pub fn set_block_norcfg(&self, block: BlockRef) {
+        self._block.set(block);
+    }
+    pub fn set_block_with_rcfg(&self, handle: JumpTargetRef, rcfg: &RcfgAllocs, block: BlockRef) {
+        let prev = self._block.get();
+        if prev == block {
+            return;
+        }
+        self._block.set(block);
+        if prev.is_nonnull() {
+            rcfg.get_node(prev).remove_predecessor(handle);
+        }
+        if block.is_nonnull() {
+            rcfg.get_node(block).add_predecessor(handle);
+        }
+    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JumpTargetRef(usize);
 impl_slabref!(JumpTargetRef, JumpTargetData);
 impl SlabRefListNodeRef for JumpTargetRef {
     fn on_node_push_next(
-        _: Self,
-        _: Self,
-        _: &Slab<JumpTargetData>,
+        curr: Self,
+        next: Self,
+        alloc: &Slab<JumpTargetData>,
     ) -> Result<(), SlabRefListError> {
+        let terminator = curr.to_slabref_unwrap(alloc)._terminator.get();
+        next.to_slabref_unwrap(alloc)._terminator.set(terminator);
         Ok(())
     }
 
     fn on_node_push_prev(
-        _: Self,
-        _: Self,
-        _: &Slab<JumpTargetData>,
+        curr: Self,
+        prev: Self,
+        alloc: &Slab<JumpTargetData>,
     ) -> Result<(), SlabRefListError> {
+        let terminator = curr.to_slabref_unwrap(alloc)._terminator.get();
+        prev.to_slabref_unwrap(alloc)._terminator.set(terminator);
         Ok(())
     }
 
-    fn on_node_unplug(_: Self, _: &Slab<JumpTargetData>) -> Result<(), SlabRefListError> {
+    fn on_node_unplug(curr: Self, alloc: &Slab<JumpTargetData>) -> Result<(), SlabRefListError> {
+        curr.to_slabref_unwrap(alloc)
+            ._terminator
+            .set(InstRef::new_null());
         Ok(())
     }
 }
@@ -88,8 +122,20 @@ impl JumpTargetRef {
     pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
         self.to_slabref_unwrap(jt_alloc)._block.get()
     }
-    pub fn set_block(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
+    pub fn set_block_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
         self.to_slabref_unwrap(jt_alloc)._block.set(block);
+    }
+    pub fn set_block(&self, module: &Module, block: BlockRef) {
+        let jt_alloc = module.borrow_jt_alloc();
+        let rcfg = match module.borrow_rcfg_alloc() {
+            Some(rcfg) => rcfg,
+            None => {
+                self.set_block_norcfg(&jt_alloc, block);
+                return;
+            }
+        };
+        self.to_slabref_unwrap(&jt_alloc)
+            .set_block_with_rcfg(self.clone(), &rcfg, block);
     }
 
     pub fn get_terminator(&self, jt_alloc: &Slab<JumpTargetData>) -> InstRef {

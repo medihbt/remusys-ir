@@ -73,9 +73,9 @@ impl<'a, 'b> Drop for ModuleWriterIndentGuard<'a, 'b> {
 impl<'a> ModuleValueWriter<'a> {
     fn new(module: &'a Module, writer: &'a mut dyn IoWrite) -> Self {
         let alloc_value = module.borrow_value_alloc();
-        let inst_id_map_capacity = alloc_value._alloc_inst.capacity();
-        let block_id_map_capcity = alloc_value._alloc_block.capacity();
-        let live_func_def_len = alloc_value._alloc_global.len();
+        let inst_id_map_capacity = alloc_value.alloc_inst.capacity();
+        let block_id_map_capcity = alloc_value.alloc_block.capacity();
+        let live_func_def_len = alloc_value.alloc_global.len();
         Self {
             module: module,
             alloc_value: alloc_value,
@@ -93,12 +93,12 @@ impl<'a> ModuleValueWriter<'a> {
         let global_defs = self.module.global_defs.borrow();
         let globals: Vec<_> = global_defs.iter().map(|(_, gref)| gref).collect();
         for global in globals {
-            self.global_object_visitor_dispatch(*global, &self.alloc_value._alloc_global);
+            self.global_object_visitor_dispatch(*global, &self.alloc_value.alloc_global);
         }
 
         let live_funcs = self.live_func_def.borrow();
         for func in &*live_funcs {
-            let func = match func.to_slabref_unwrap(&self.alloc_value._alloc_global) {
+            let func = match func.to_slabref_unwrap(&self.alloc_value.alloc_global) {
                 GlobalData::Func(f) => f,
                 _ => panic!("Invalid global data kind: Not Function"),
             };
@@ -114,7 +114,7 @@ impl<'a> ModuleValueWriter<'a> {
         for (block, block_data) in func
             .get_blocks()
             .unwrap()
-            .view(&self.alloc_value._alloc_block)
+            .view(&self.alloc_value.alloc_block)
         {
             self.wrap_indent();
             self.read_block(block, block_data);
@@ -193,7 +193,7 @@ impl<'a> ModuleValueWriter<'a> {
         let blocks = &*blocks.unwrap();
 
         let mut current_id = nargs;
-        for (bb, bb_data) in blocks.view(&self.alloc_value._alloc_block) {
+        for (bb, bb_data) in blocks.view(&self.alloc_value.alloc_block) {
             current_id = self.number_block(bb, bb_data, current_id);
         }
     }
@@ -204,7 +204,7 @@ impl<'a> ModuleValueWriter<'a> {
         block_id_map[block.get_handle()] = initial_id;
         let mut curr_id = initial_id + 1;
 
-        for (inst, inst_data) in block_data.instructions.view(&self.alloc_value._alloc_inst) {
+        for (inst, inst_data) in block_data.instructions.view(&self.alloc_value.alloc_inst) {
             match inst_data {
                 InstData::Unreachable(..)
                 | InstData::Ret(..)
@@ -273,7 +273,7 @@ impl IValueVisitor for ModuleValueWriter<'_> {
         self.write_fmt(format_args!("{}:", block_id));
         {
             let _g = self.add_indent();
-            let insts = block_data.instructions.view(&self.alloc_value._alloc_inst);
+            let insts = block_data.instructions.view(&self.alloc_value.alloc_inst);
             for (inst_ref, inst_data) in insts {
                 match inst_data {
                     InstData::PhiInstEnd(..) => continue,
@@ -894,8 +894,8 @@ mod testing {
 
         {
             let alloc_value = module.borrow_value_alloc();
-            let alloc_inst = &alloc_value._alloc_inst;
-            let alloc_block = &alloc_value._alloc_block;
+            let alloc_inst = &alloc_value.alloc_inst;
+            let alloc_block = &alloc_value.alloc_block;
 
             let terminator = entry_block
                 .to_slabref_unwrap(alloc_block)

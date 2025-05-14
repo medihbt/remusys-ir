@@ -14,7 +14,7 @@ use crate::{
             BlockRef,
             jump_target::{JumpTargetData, JumpTargetKind, JumpTargetRef},
         },
-        module::Module,
+        module::{Module, rcfg::RcfgAllocs},
         opcode::Opcode,
     },
     typing::id::ValTypeID,
@@ -221,7 +221,7 @@ impl Jump {
 
     pub fn new(module: &Module, block: BlockRef) -> (InstDataCommon, Self) {
         let (common, jump) = Self::new_raw(module);
-        jump.set_block(&module.borrow_jt_alloc(), block);
+        jump.set_block_norcfg(&module.borrow_jt_alloc(), block);
         (common, jump)
     }
 
@@ -231,8 +231,15 @@ impl Jump {
     pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
         self.get_jt(jt_alloc).get_block(jt_alloc)
     }
-    pub fn set_block(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
-        self.get_jt(jt_alloc).set_block(jt_alloc, block);
+    pub fn set_block_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
+        self.get_jt(jt_alloc).set_block_norcfg(jt_alloc, block);
+    }
+    pub fn set_block(&self, module: &Module, block: BlockRef) {
+        let jt = {
+            let jt_alloc = module.borrow_jt_alloc();
+            self.get_jt(&jt_alloc)
+        };
+        jt.set_block(module, block);
     }
 }
 
@@ -266,8 +273,10 @@ impl Br {
         br._common
             ._condition
             .set_operand_nordfg(&module.borrow_use_alloc(), cond);
-        br.if_true.set_block(&module.borrow_jt_alloc(), if_true);
-        br.if_false.set_block(&module.borrow_jt_alloc(), if_false);
+        br.if_true
+            .set_block_norcfg(&module.borrow_jt_alloc(), if_true);
+        br.if_false
+            .set_block_norcfg(&module.borrow_jt_alloc(), if_false);
         (common, br)
     }
 
@@ -277,8 +286,11 @@ impl Br {
     pub fn get_cond(&self, alloc: &Slab<UseData>) -> ValueSSA {
         self._common._condition.get_operand(alloc)
     }
-    pub fn set_cond(&self, alloc: &Slab<UseData>, cond: ValueSSA) {
+    pub fn set_cond_nordfg(&self, alloc: &Slab<UseData>, cond: ValueSSA) {
         self._common._condition.set_operand_nordfg(alloc, cond);
+    }
+    pub fn set_cond(&self, module: &Module, cond: ValueSSA) {
+        self._common._condition.set_operand(module, cond)
     }
 }
 
@@ -310,7 +322,7 @@ impl Switch {
             .set_operand_nordfg(&module.borrow_use_alloc(), cond);
         switch
             ._default
-            .set_block(&module.borrow_jt_alloc(), default);
+            .set_block_norcfg(&module.borrow_jt_alloc(), default);
         (common, switch)
     }
 
@@ -320,43 +332,56 @@ impl Switch {
     pub fn get_cond(&self, alloc: &Slab<UseData>) -> ValueSSA {
         self._common._condition.get_operand(alloc)
     }
-    pub fn set_cond(&self, alloc: &Slab<UseData>, cond: ValueSSA) {
+    pub fn set_cond_nordfg(&self, alloc: &Slab<UseData>, cond: ValueSSA) {
         self._common._condition.set_operand_nordfg(alloc, cond);
+    }
+    pub fn set_cond(&self, module: &Module, cond: ValueSSA) {
+        self._common._condition.set_operand(module, cond)
     }
 
     pub fn get_default(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
         self._default.get_block(jt_alloc)
     }
-    pub fn set_default(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
-        self._default.set_block(jt_alloc, block);
+    pub fn set_default_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
+        self._default.set_block_norcfg(jt_alloc, block);
+    }
+    pub fn set_default(&self, module: &Module, block: BlockRef) {
+        self._default.set_block(module, block);
     }
 
-    pub fn get_case(&self, jt_alloc: &Slab<JumpTargetData>, case: i128) -> Option<BlockRef> {
+    pub fn get_cast_target(&self, case: i128) -> Option<JumpTargetRef> {
         self._cases
             .borrow()
             .iter()
             .find(|(k, _)| *k == case)
-            .map(|(_, v)| v.get_block(jt_alloc))
+            .map(|(_, v)| *v)
     }
-    pub fn set_existing_case(
+    pub fn get_case(&self, jt_alloc: &Slab<JumpTargetData>, case: i128) -> Option<BlockRef> {
+        self.get_cast_target(case).map(|jt| jt.get_block(jt_alloc))
+    }
+    pub fn set_existing_case_norcfg(
         &self,
         jt_alloc: &Slab<JumpTargetData>,
         case: i128,
         block: BlockRef,
-    ) -> bool {
-        self._cases
-            .borrow()
-            .iter()
-            .find(|(k, _)| *k == case)
-            .map(|(_, v)| v.set_block(jt_alloc, block))
-            .is_some()
+    ) -> Option<BlockRef> {
+        self.get_cast_target(case).map(|jt| {
+            let ret = jt.get_block(jt_alloc);
+            jt.set_block_norcfg(jt_alloc, block);
+            ret
+        })
     }
-    pub fn set_case(&self, jt_alloc: &mut Slab<JumpTargetData>, case: i128, block: BlockRef) {
-        if self.set_existing_case(jt_alloc, case, block) {
-            return;
+    pub fn set_case_norcfg(
+        &self,
+        jt_alloc: &mut Slab<JumpTargetData>,
+        case: i128,
+        block: BlockRef,
+    ) -> (JumpTargetRef, BlockRef) {
+        if let Some(bb) = self.set_existing_case_norcfg(jt_alloc, case, block) {
+            return (self.get_cast_target(case).unwrap(), bb);
         }
         let new_jt = JumpTargetData::new_with_kind(JumpTargetKind::SwitchCase(case));
-        new_jt._block.set(block);
+        new_jt.set_block_norcfg(block);
 
         let new_jt = self
             ._common
@@ -365,7 +390,38 @@ impl Switch {
             .unwrap();
 
         self._cases.borrow_mut().push((case, new_jt));
+        (new_jt, BlockRef::new_null())
     }
+    /// Set a case for the switch instruction.
+    /// This may change the block of the case and CFG.
+    pub fn set_case(&self, module: &Module, case: i128, block: BlockRef) {
+        let mut jt_alloc = module.borrow_jt_alloc_mut();
+        if let Some(mut rcfg) = module.borrow_rcfg_alloc_mut() {
+            self.set_case_with_rcfg(&mut rcfg, &mut jt_alloc, case, block);
+        } else {
+            self.set_case_norcfg(&mut jt_alloc, case, block);
+        }
+    }
+    pub fn set_case_with_rcfg(
+        &self,
+        rcfg: &mut RcfgAllocs,
+        jt_alloc: &mut Slab<JumpTargetData>,
+        case: i128,
+        block: BlockRef,
+    ) {
+        let (jt, old_block) = self.set_case_norcfg(jt_alloc, case, block);
+
+        if old_block == block {
+            return;
+        }
+        if old_block.is_nonnull() {
+            rcfg.get_node(old_block).remove_predecessor(jt);
+        }
+        if block.is_nonnull() {
+            rcfg.get_node(block).add_predecessor(jt);
+        }
+    }
+
     pub fn sort_cases(&self) {
         let mut cases = self._cases.borrow_mut();
         cases.sort_by(|(a, _), (b, _)| a.cmp(b));

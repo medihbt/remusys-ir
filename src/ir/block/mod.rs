@@ -24,7 +24,7 @@ use super::{
 
 pub mod jump_target;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub struct BlockRef(usize);
 
 impl_slabref!(BlockRef, BlockData);
@@ -151,7 +151,7 @@ impl BlockData {
 
     pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value._alloc_inst;
+        let alloc_inst = &alloc_value.alloc_inst;
         let back_inst = match self.instructions.get_back_ref(alloc_inst) {
             Some(inst) => inst,
             None => return None,
@@ -242,7 +242,7 @@ impl BlockData {
     pub(super) fn perform_basic_check(&self, module: &Module) {
         // Preparations: allocators, etc.
         let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value._alloc_inst;
+        let alloc_inst = &alloc_value.alloc_inst;
 
         // 1. Check if the block is initialized with its self reference and parent function.
         let self_ref = if self._inner.get()._self_ref.is_nonnull() {
@@ -309,7 +309,7 @@ impl BlockData {
 impl BlockData {
     pub fn new_empty(module: &Module) -> Self {
         let ret = Self {
-            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut()._alloc_inst),
+            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut().alloc_inst),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
                 _node_head: SlabRefListNodeHead::new(),
@@ -321,7 +321,7 @@ impl BlockData {
 
         let phi_end = module.insert_inst(InstData::new_phi_end());
         ret.instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, phi_end)
+            .push_back_ref(&mut module.borrow_value_alloc_mut().alloc_inst, phi_end)
             .unwrap();
         ret.phi_node_end.set(phi_end);
         ret
@@ -332,7 +332,7 @@ impl BlockData {
         let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
         let unreachable_inst = module.insert_inst(unreachable_inst);
         ret.instructions.push_back_ref(
-            &mut module.borrow_value_alloc_mut()._alloc_inst,
+            &mut module.borrow_value_alloc_mut().alloc_inst,
             unreachable_inst,
         )?;
         Ok(ret)
@@ -347,7 +347,7 @@ impl BlockData {
 
         ret_bb
             .instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut()._alloc_inst, ret_inst)?;
+            .push_back_ref(&mut module.borrow_value_alloc_mut().alloc_inst, ret_inst)?;
         Ok(ret_bb)
     }
 }

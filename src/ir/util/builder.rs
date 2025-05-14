@@ -194,7 +194,7 @@ impl IRBuilder {
 
         let previous_focus = self.focus.inst;
         let alloc_value = self.module.borrow_value_alloc();
-        let alloc_block = &alloc_value._alloc_block;
+        let alloc_block = &alloc_value.alloc_block;
 
         let block = self.focus.block.to_slabref_unwrap(alloc_block);
         self.focus.inst = block
@@ -227,7 +227,7 @@ impl IRBuilder {
 
         let (entry, inst) = {
             let alloc_value = self.module.borrow_value_alloc();
-            let alloc_block = &alloc_value._alloc_block;
+            let alloc_block = &alloc_value.alloc_block;
             let entry = func_data
                 .get_blocks()
                 .unwrap()
@@ -259,8 +259,13 @@ impl IRBuilder {
         // Then move all instructions from the focus to the new block.
         todo!("Split the current block from the focus");
     }
-    /// Split the current block from the terminator.
-    /// This will create a new block and insert a jump to it.
+
+    /// Split the current block from the terminator. New block will be the successor of the
+    /// original one with the old terminator. The terminator of the new block will be changed
+    /// to a jump instruction to the new block.
+    ///
+    /// The block focus will not be changed while the new block will be returned.
+    /// If the instruction focus is a terminator, it will be set to the new jump instruction.
     pub fn split_current_block_from_terminator(&mut self) -> Result<BlockRef, IRBuilderError> {
         let module = self.module.as_ref();
         let curr_bb = self.focus.block;
@@ -300,6 +305,12 @@ impl IRBuilder {
                 InstError::ListError(le) => IRBuilderError::ListError(le),
                 _ => Err(e).expect("IR Builder cannot handle these fatal errors. STOP."),
             })?;
+        
+        // If the current focus is a terminator, we need to set the focus back to the
+        // new jump instruction of the old block.
+        if self.focus.inst == old_terminator {
+            self.focus.inst = jump_to_new_bb;
+        }
         Ok(new_bb)
     }
 }
@@ -736,11 +747,10 @@ impl IRBuilder {
         let (old_termi, switch_inst) = self.focus_set_empty_switch(cond, default_block)?;
 
         let value_alloc = self.module.borrow_value_alloc();
-        let mut jt_alloc = self.module.borrow_jt_alloc_mut();
-        match switch_inst.to_slabref_unwrap(&value_alloc._alloc_inst) {
+        match switch_inst.to_slabref_unwrap(&value_alloc.alloc_inst) {
             InstData::Switch(_, s) => {
                 for (case, block) in cases {
-                    s.set_case(&mut jt_alloc, case, block)
+                    s.set_case(&self.module, case, block);
                 }
             }
             _ => unreachable!(),
@@ -872,6 +882,7 @@ mod testing {
             .focus_set_return(ValueSSA::Inst(add_7))
             .unwrap();
         // write to file `test_ir_builder_chain_inst.ll`
+        module.enable_dfg_tracking().unwrap();
         let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();
         write_ir_module(module.as_ref(), &mut writer);
     }
