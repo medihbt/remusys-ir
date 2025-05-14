@@ -781,6 +781,7 @@ mod testing {
             type_ctx.clone(),
         ));
         let mut builder = IRBuilder::new(module.clone());
+        module.enable_dfg_tracking().unwrap();
 
         // Add function "main" to the module.
         // SysY source code:
@@ -882,7 +883,6 @@ mod testing {
             .focus_set_return(ValueSSA::Inst(add_7))
             .unwrap();
         // write to file `test_ir_builder_chain_inst.ll`
-        module.enable_dfg_tracking().unwrap();
         let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();
         write_ir_module(module.as_ref(), &mut writer);
     }

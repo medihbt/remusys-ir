@@ -1,7 +1,6 @@
 use std::cell::Cell;
 
 use slab::Slab;
-use terminator::TerminatorInst;
 use usedef::{UseData, UseRef};
 
 use crate::{
@@ -18,8 +17,8 @@ use crate::{
 
 use super::{
     ValueSSA, ValueSSAError,
-    block::{BlockRef, jump_target::JumpTargetData},
-    module::{Module, ModuleAllocatorInner},
+    block::BlockRef,
+    module::Module,
     opcode::Opcode,
 };
 
@@ -527,7 +526,6 @@ impl InstRef {
     pub fn finalize_with_module(&self, module: &Module) {
         let alloc_value = module.borrow_value_alloc();
         let use_alloc = module.borrow_use_alloc();
-        let jt_alloc = module.borrow_jt_alloc();
         let self_data = self.to_slabref_unwrap(&alloc_value.alloc_inst);
 
         // Clean up jump targets of the terminators.

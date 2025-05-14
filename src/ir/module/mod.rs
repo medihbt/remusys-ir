@@ -1,16 +1,15 @@
-use core::alloc;
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     rc::Rc,
 };
 
-use rdfg::{FuncArgRdfg, RdfgAlloc, RdfgPerValue};
+use rdfg::RdfgAlloc;
 use slab::Slab;
 
 use crate::{
     base::{NullableValue, slabref::SlabRef},
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{context::TypeContext, id::ValTypeID},
 };
 
 use super::{
@@ -458,7 +457,14 @@ impl Module {
             }
         }
         for (useref, operand) in live_uses {
-            rdfg_alloc.get_node(operand).add_user_use(useref);
+            match rdfg_alloc.get_node(operand) {
+                Ok(node) => node.add_user_use(useref),
+                Err(ModuleError::DfgOperandNotReferece(_)) => {
+                    // Every instruction may have some operands that are not references.
+                    // Just ignore the error.
+                }
+                Err(_) => todo!(),
+            };
         }
 
         // Step 3: Insert RDFG into this module
@@ -486,10 +492,18 @@ impl Module {
         operand: ValueSSA,
         useref: UseRef,
     ) -> Result<(), ModuleError> {
-        self.borrow_rdfg_alloc()
+        match self
+            .borrow_rdfg_alloc()
             .ok_or(ModuleError::RDFGNotEnabled)?
             .get_node(operand)
-            .add_user_use(useref);
+        {
+            Ok(node) => node.add_user_use(useref),
+            Err(ModuleError::DfgOperandNotReferece(_)) => {
+                // Every instruction may have some operands that are not references.
+                // Just ignore the error.
+            }
+            Err(x) => return Err(x),
+        }
         Ok(())
     }
 
@@ -498,10 +512,18 @@ impl Module {
         operand: ValueSSA,
         useref: UseRef,
     ) -> Result<(), ModuleError> {
-        self.borrow_rdfg_alloc()
+        match self
+            .borrow_rdfg_alloc()
             .ok_or(ModuleError::RDFGNotEnabled)?
             .get_node(operand)
-            .remove_user_use(useref);
+        {
+            Ok(node) => node.remove_user_use(useref),
+            Err(ModuleError::DfgOperandNotReferece(_)) => {
+                // Every instruction may have some operands that are not references.
+                // Just ignore the error.
+            }
+            Err(x) => return Err(x),
+        }
         Ok(())
     }
 

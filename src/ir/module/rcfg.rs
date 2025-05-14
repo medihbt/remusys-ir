@@ -1,20 +1,18 @@
 //! Reverse CFG (RCFG) module
 
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    vec,
-};
+use std::
+    cell::{Ref, RefCell, RefMut}
+;
 
 use slab::Slab;
 
 use crate::{
-    base::{slablist::SlabRefList, slabref::SlabRef, NullableValue},
+    base::{slabref::SlabRef, NullableValue},
     ir::block::{
-        jump_target::{JumpTargetData, JumpTargetRef}, BlockData, BlockRef
+        jump_target::{JumpTargetData, JumpTargetRef}, BlockRef
     },
 };
 
-use super::ModuleError;
 
 #[derive(Clone, Debug)]
 pub struct RcfgPerBlock {

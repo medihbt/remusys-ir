@@ -69,10 +69,18 @@ impl UseData {
         self._operand.set(operand);
 
         if old_value.is_nonnull() {
-            rdfg.get_node(old_value).remove_user_use(selfref);
+            match rdfg.get_node(old_value) {
+                Ok(node) => node.remove_user_use(selfref),
+                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
+                Err(x) => panic!("Unexpected error: {:?}", x),
+            };
         }
         if operand.is_nonnull() {
-            rdfg.get_node(operand).add_user_use(selfref);
+            match rdfg.get_node(operand) {
+                Ok(node) => node.add_user_use(selfref),
+                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
+                Err(x) => panic!("Unexpected error: {:?}", x),
+            };
         }
     }
 }

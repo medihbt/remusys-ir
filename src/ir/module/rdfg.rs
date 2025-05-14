@@ -157,18 +157,20 @@ impl RdfgAlloc {
         Ok(())
     }
 
-    pub fn get_node(&self, value: ValueSSA) -> &RdfgPerValue {
+    pub fn get_node(&self, value: ValueSSA) -> Result<&RdfgPerValue, ModuleError> {
         match value {
-            ValueSSA::Global(global) => &self.global[global.get_handle()],
-            ValueSSA::ConstExpr(expr) => &self.expr[expr.get_handle()],
-            ValueSSA::Inst(inst) => &self.inst[inst.get_handle()],
-            ValueSSA::Block(block) => &self.block[block.get_handle()],
+            ValueSSA::Global(global) => Ok(&self.global[global.get_handle()]),
+            ValueSSA::ConstExpr(expr) => Ok(&self.expr[expr.get_handle()]),
+            ValueSSA::Inst(inst) => Ok(&self.inst[inst.get_handle()]),
+            ValueSSA::Block(block) => Ok(&self.block[block.get_handle()]),
             ValueSSA::FuncArg(func_ref, index) => {
                 let func_ref = func_ref.get_handle();
                 let func_arg_rdfg = &self.func_arg[func_ref];
-                func_arg_rdfg.get_arg(index as usize).unwrap()
+                Ok(func_arg_rdfg.get_arg(index as usize).unwrap())
             }
-            _ /* Value semantoc items should not insert */ => panic!(),
+            _ /* Value semantoc items should not insert */ => {
+                Err(ModuleError::DfgOperandNotReferece(value))
+            },
         }
     }
 
@@ -183,8 +185,11 @@ impl RdfgAlloc {
 
         for (useref, usedata) in operand_view.view(alloc_use) {
             let operand = usedata.get_operand();
-            let node = self.get_node(operand);
-            node.add_user_use(useref);
+            match self.get_node(operand) {
+                Ok(node) => node.add_user_use(useref),
+                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
+                Err(x) => Err(x).unwrap(),
+            };
         }
         Ok(())
     }
