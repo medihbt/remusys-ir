@@ -24,7 +24,7 @@ use super::{
 
 pub mod jump_target;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BlockRef(usize);
 
 impl_slabref!(BlockRef, BlockData);
@@ -166,12 +166,15 @@ impl BlockData {
         self.get_termiantor(module).is_some()
     }
     /// Set the terminator instruction of the block and return the old terminator instruction.
-    /// If there is no old terminator instruction, return None.
+    /// If there is no old terminator instruction, insert the new terminator and return None.
     pub fn set_terminator(
         &self,
         module: &Module,
         terminator: InstRef,
     ) -> Result<Option<InstRef>, InstError> {
+        if terminator.is_null() {
+            panic!("Null Exception: New terminator is null.");
+        }
         let ret = match self.get_termiantor(module) {
             Some(old) => {
                 old.detach_self(module)?;

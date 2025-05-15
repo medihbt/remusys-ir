@@ -56,6 +56,16 @@ impl RdfgPerValue {
     pub fn has_user(&self) -> bool {
         self.n_users_use() > 0
     }
+
+    pub fn collect_users(&self, alloc_use: &Slab<UseData>) -> Vec<InstRef> {
+        let mut users = Vec::new();
+        for user in self.uses.borrow().iter() {
+            users.push(user.get_user(alloc_use));
+        }
+        users.sort_unstable();
+        users.dedup();
+        users
+    }
 }
 
 #[derive(Debug, Clone)]

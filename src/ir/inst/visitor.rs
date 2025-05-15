@@ -52,6 +52,7 @@ pub trait IInstVisitor {
             InstData::Cast(c, cast) => self.read_cast_inst(inst_ref, c, cast),
             InstData::IndexPtr(c, index_ptr) => self.read_index_ptr_inst(inst_ref, c, index_ptr),
             InstData::Call(c, call) => self.read_call_inst(inst_ref, c, call),
+            InstData::Phi(c, phi_op) => self.read_phi_inst(inst_ref, c, phi_op),
             _ => {}
         }
     }

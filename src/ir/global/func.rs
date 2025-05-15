@@ -133,15 +133,12 @@ impl FuncData {
     }
     pub fn add_block_ref(
         &self,
-        mut_module: &Module,
+        module: &Module,
         block_ref: BlockRef,
     ) -> Result<(), SlabRefListError> {
-        self.body
-            .borrow_mut()
-            .as_mut()
-            .unwrap()
+        self.body.borrow_mut().as_mut().unwrap()
             .body
-            .push_back_ref(&mut_module.borrow_value_alloc().alloc_block, block_ref)?;
+            .push_back_ref(&module.borrow_value_alloc().alloc_block, block_ref)?;
         Ok(())
     }
 

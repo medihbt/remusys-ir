@@ -39,8 +39,25 @@ use std::{
     io::Write as IoWrite,
 };
 
-pub fn write_ir_module(module: &Module, writer: &mut dyn IoWrite) {
-    let module_writer = ModuleValueWriter::new(module, writer);
+pub fn write_ir_module(
+    module: &Module,
+    writer: &mut dyn IoWrite,
+    prints_rdfg: bool,
+    prints_rcfg: bool,
+) {
+    let mut module_writer = ModuleValueWriter::new(module, writer);
+    module_writer.prints_rdfg = if module.rdfg_enabled() {
+        prints_rdfg
+    } else {
+        module_writer.write_str("; DFG tracking disabled, will not print\n");
+        false
+    };
+    module_writer.prints_rcfg = if module.rcfg_enabled() {
+        prints_rcfg
+    } else {
+        module_writer.write_str("; CFG tracking disabled, will not print\n");
+        false
+    };
     module_writer.process_module();
 }
 
@@ -57,6 +74,8 @@ struct ModuleValueWriter<'a> {
     live_func_def: RefCell<Vec<GlobalRef>>,
 
     current_indent: Cell<usize>,
+    prints_rdfg: bool,
+    prints_rcfg: bool,
 }
 
 struct ModuleWriterIndentGuard<'a, 'b: 'a> {
@@ -86,6 +105,8 @@ impl<'a> ModuleValueWriter<'a> {
             block_id_map: RefCell::new(vec![usize::MAX; block_id_map_capcity]),
             live_func_def: RefCell::new(Vec::with_capacity(live_func_def_len)),
             current_indent: Cell::new(0),
+            prints_rdfg: false,
+            prints_rcfg: false,
         }
     }
 
@@ -163,7 +184,7 @@ impl<'a> ModuleValueWriter<'a> {
     fn wrap_indent(&self) {
         self.write_str("\n");
         for _ in 0..self.current_indent.get() {
-            self.write_str("  ");
+            self.write_str("    ");
         }
     }
     fn add_indent<'b>(&'b self) -> ModuleWriterIndentGuard<'b, 'a>
@@ -271,20 +292,60 @@ impl IValueVisitor for ModuleValueWriter<'_> {
         // ID
         let block_id = self.block_getid_unwrap(block);
         self.write_fmt(format_args!("{}:", block_id));
-        {
-            let _g = self.add_indent();
-            let insts = block_data.instructions.view(&self.alloc_value.alloc_inst);
-            for (inst_ref, inst_data) in insts {
-                match inst_data {
-                    InstData::PhiInstEnd(..) => continue,
-                    _ => self.wrap_indent(),
-                }
-                self.inst_visitor_dispatch(inst_ref, inst_data);
+        if self.prints_rcfg {
+            self.write_block_predecessors(block);
+        }
+
+        let _g = self.add_indent();
+        let insts = block_data.instructions.view(&self.alloc_value.alloc_inst);
+        for (inst_ref, inst_data) in insts {
+            match inst_data {
+                InstData::PhiInstEnd(..) => {
+                    self.wrap_indent();
+                    self.write_str("; <Phi Ending and normal instruction beginning>");
+                    continue;
+                },
+                _ => self.wrap_indent(),
             }
+            if self.prints_rdfg {
+                self.write_inst_users(inst_ref);
+            }
+            self.inst_visitor_dispatch(inst_ref, inst_data);
         }
     }
 
     fn read_func_arg(&self, _: GlobalRef, _: u32) {}
+}
+
+impl<'a> ModuleValueWriter<'a> {
+    fn write_block_predecessors(&self, block_ref: BlockRef) {
+        let rcfg = self.module.borrow_rcfg_alloc().unwrap();
+        let pred_jt = rcfg
+            .get_node(block_ref)
+            .dump_pred_blocks(&self.alloc_jt, &self.alloc_value.alloc_inst);
+        self.write_fmt(format_args!(
+            "; Predecessors: {}",
+            pred_jt
+                .iter()
+                .map(|b| self.format_value_by_ref(ValueSSA::Block(*b)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    fn write_inst_users(&self, inst: InstRef) {
+        let rdfg = self.module.borrow_rdfg_alloc().unwrap();
+        let users = rdfg.get_node(ValueSSA::Inst(inst)).unwrap();
+        self.write_fmt(format_args!(
+            "; Users: {}",
+            users
+                .collect_users(&self.alloc_use)
+                .iter()
+                .map(|u| self.format_value_by_ref(ValueSSA::Inst(*u)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        self.wrap_indent();
+    }
 }
 
 impl IConstDataVisitor for ModuleValueWriter<'_> {
@@ -352,7 +413,10 @@ impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
 
 impl IInstVisitor for ModuleValueWriter<'_> {
     /// Hidden, no syntax
-    fn read_phi_end(&self, _: InstRef) {}
+    fn read_phi_end(&self, _: InstRef) {
+        // No syntax
+        self.write_str("; <Phi Ending and normal instruction beginning>");
+    }
 
     /// Syntax: `%<name> = phi <type> [<value>, %<block>], ...`
     fn read_phi_inst(&self, inst_ref: InstRef, common: &InstDataCommon, phi: &PhiOp) {
@@ -801,7 +865,7 @@ mod testing {
 
         // write the module to file `io.medihbt.WriterTest.Basic.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.Basic.ll").unwrap();
-        write_ir_module(&module, &mut file);
+        write_ir_module(&module, &mut file, false, false);
 
         // Find entry block of the function `main`. we'll use it later.
         let entry_block = {
@@ -867,7 +931,7 @@ mod testing {
 
         // print the module to file `io.medihbt.WriterTest.LoadArgv.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.LoadArgv.ll").unwrap();
-        write_ir_module(&module, &mut file);
+        write_ir_module(&module, &mut file, false, false);
 
         // Now expand the result to i32 and let return instruction use this value.
         // Source code: `return (int)c;` with cast.
@@ -911,6 +975,6 @@ mod testing {
         };
         // write the module to file `io.medihbt.WriterTest.CastReturn.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.CastReturn.ll").unwrap();
-        write_ir_module(&module, &mut file);
+        write_ir_module(&module, &mut file, false, false);
     }
 }

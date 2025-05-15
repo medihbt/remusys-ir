@@ -204,11 +204,11 @@ impl Module {
                 ._inst_init_self_reference(ret, &self.borrow_use_alloc());
 
             // Modify the jump targets if this instruction is a terminator.
-            let mut jt_alloc = self.borrow_jt_alloc_mut();
+            let mut alloc_jt = self.borrow_jt_alloc_mut();
             match ret.to_slabref_unwrap(&inner.alloc_inst) {
-                InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut jt_alloc),
-                InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut jt_alloc),
-                InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut jt_alloc),
+                InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut alloc_jt),
+                InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut alloc_jt),
+                InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut alloc_jt),
                 _ => {}
             }
             ret
@@ -352,7 +352,7 @@ impl Module {
     /// - To disable DFG tracking, call `self.disable_dfg_tracking()`.
     /// - To disable DFG tracking and take out all DFG reverse-graphs for the module,
     ///   call `self.steal_tracking_dfg()`.
-    pub fn dfg_tracking_enabled(&self) -> bool {
+    pub fn rdfg_enabled(&self) -> bool {
         self._rdfg_alloc.borrow().is_some()
     }
 
@@ -363,7 +363,7 @@ impl Module {
     /// find all the operands of each instruction, and create a reverse
     /// mapping from the operands to the 'use' belonging to instructions
     /// who use them.
-    pub fn enable_dfg_tracking(&self) -> Result<(), ModuleError> {
+    pub fn enable_rdfg(&self) -> Result<(), ModuleError> {
         let type_ctx = self.type_ctx.as_ref();
         let self_alloc = self.borrow_value_alloc();
         let global_alloc = &self_alloc.alloc_global;
@@ -477,7 +477,7 @@ impl Module {
     ///
     /// **WARNING**: This function will simply shut down all DFG reverse-graphs.
     /// Passes which depend on DFG reverse-graphs will be broken.
-    pub fn disable_dfg_tracking(&self) {
+    pub fn disable_rdfg(&self) {
         *self._rdfg_alloc.borrow_mut() = None;
     }
 
@@ -527,14 +527,14 @@ impl Module {
         Ok(())
     }
 
-    fn borrow_rdfg_alloc(&self) -> Option<Ref<RdfgAlloc>> {
+    pub fn borrow_rdfg_alloc(&self) -> Option<Ref<RdfgAlloc>> {
         let alloc_rdfg = self._rdfg_alloc.borrow();
         if let None = *alloc_rdfg {
             return None;
         }
         Some(Ref::map(alloc_rdfg, |alloc| alloc.as_ref().unwrap()))
     }
-    fn borrow_rdfg_alloc_mut(&self) -> Option<RefMut<RdfgAlloc>> {
+    pub fn borrow_rdfg_alloc_mut(&self) -> Option<RefMut<RdfgAlloc>> {
         let alloc_rdfg = self._rdfg_alloc.borrow_mut();
         if let None = *alloc_rdfg {
             return None;
@@ -565,7 +565,7 @@ impl Module {
     pub fn rcfg_enabled(&self) -> bool {
         self._rcfg_alloc.borrow().is_some()
     }
-    pub fn enable_rcfg_tracking(&self) -> Result<(), ModuleError> {
+    pub fn enable_rcfg(&self) -> Result<(), ModuleError> {
         if self._rcfg_alloc.borrow().is_some() {
             return Err(ModuleError::RCFGEnabled);
         }

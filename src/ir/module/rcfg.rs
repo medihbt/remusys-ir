@@ -1,18 +1,19 @@
 //! Reverse CFG (RCFG) module
 
-use std::
-    cell::{Ref, RefCell, RefMut}
-;
+use std::cell::{Ref, RefCell, RefMut};
 
 use slab::Slab;
 
 use crate::{
-    base::{slabref::SlabRef, NullableValue},
-    ir::block::{
-        jump_target::{JumpTargetData, JumpTargetRef}, BlockRef
+    base::{NullableValue, slabref::SlabRef},
+    ir::{
+        block::{
+            BlockRef,
+            jump_target::{JumpTargetData, JumpTargetRef},
+        },
+        inst::InstData,
     },
 };
-
 
 #[derive(Clone, Debug)]
 pub struct RcfgPerBlock {
@@ -41,16 +42,20 @@ impl RcfgPerBlock {
         }
     }
 
-    pub fn dump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Box<[BlockRef]> {
+    pub fn dump_pred_blocks(
+        &self,
+        alloc_jt: &Slab<JumpTargetData>,
+        alloc_inst: &Slab<InstData>,
+    ) -> Vec<BlockRef> {
         let mut blocks = Vec::new();
         for jt in self.preds.borrow().iter() {
-            let jt = jt.get_block(alloc_jt);
-            if blocks.contains(&jt) {
-                continue;
-            }
-            blocks.push(jt);
+            let jt = jt.get_terminator(alloc_jt);
+            let jt_data = jt.to_slabref_unwrap(alloc_inst);
+            blocks.push(jt_data.get_parent_bb().unwrap());
         }
-        blocks.into_boxed_slice()
+        blocks.sort_unstable();
+        blocks.dedup();
+        blocks
     }
 }
 

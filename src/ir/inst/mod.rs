@@ -15,12 +15,7 @@ use crate::{
     typing::{TypeMismatchError, id::ValTypeID},
 };
 
-use super::{
-    ValueSSA, ValueSSAError,
-    block::BlockRef,
-    module::Module,
-    opcode::Opcode,
-};
+use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
 
 pub mod binop;
 pub mod callop;
@@ -36,7 +31,7 @@ pub mod visitor;
 
 mod checking;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct InstRef(usize);
 impl_slabref!(InstRef, InstData);
 impl SlabRefListNodeRef for InstRef {
@@ -338,7 +333,11 @@ impl InstData {
     pub fn is_terminator(&self) -> bool {
         matches!(
             self,
-            Self::Unreachable(..) | Self::Ret(..) | Self::Br(..) | Self::Switch(..)
+            Self::Unreachable(..)
+                | Self::Ret(..)
+                | Self::Jump(..)
+                | Self::Br(..)
+                | Self::Switch(..)
         )
     }
 

@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{Ref, RefCell, RefMut};
 
 use slab::Slab;
 
@@ -18,6 +18,7 @@ pub struct PhiOp {
     from: RefCell<Vec<(BlockRef, UseRef)>>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum PhiErr {
     FromBBShouldInsert(BlockRef),
 }
@@ -38,6 +39,9 @@ impl PhiOp {
 
     pub fn get_from_all(&self) -> Ref<[(BlockRef, UseRef)]> {
         Ref::map(self.from.borrow(), Vec::as_slice)
+    }
+    pub fn get_from_all_mut(&self) -> RefMut<Vec<(BlockRef, UseRef)>> {
+        self.from.borrow_mut()
     }
 
     pub fn set_from_value_noinsert_nordfg(
@@ -119,7 +123,7 @@ impl PhiOp {
                 Ok(u)
             }
             None => {
-                let useref = module.insert_use(UseData::new(instref, value));
+                let useref = module.insert_use(UseData::new(instref, ValueSSA::None));
                 if let InstData::Phi(common, phi) = &*module.get_inst(instref) {
                     common
                         .operands
@@ -127,8 +131,9 @@ impl PhiOp {
                         .unwrap();
                     phi.from.borrow_mut().push((from_bb, useref));
                 } else {
-                    panic!();
+                    unreachable!()
                 }
+                useref.set_operand(&module, value);
                 Ok(useref)
             }
         }

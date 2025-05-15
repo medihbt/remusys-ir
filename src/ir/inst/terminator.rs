@@ -29,7 +29,9 @@ use super::{
 pub trait TerminatorInst {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>>;
 
-    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>);
+    fn init_jump_targets(&mut self, alloc_jt: &mut Slab<JumpTargetData>);
+
+    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef>;
 
     fn get_n_jump_targets(&self) -> usize {
         self.get_jump_targets().map_or(0, |targets| targets.len())
@@ -42,15 +44,15 @@ pub trait TerminatorInst {
         self.get_jump_targets().is_none()
     }
 
-    fn _jt_init_set_self_reference(&self, self_ref: InstRef, jt_alloc: &Slab<JumpTargetData>) {
+    fn _jt_init_set_self_reference(&self, self_ref: InstRef, alloc_jt: &Slab<JumpTargetData>) {
         if let Some(targets) = self.get_jump_targets() {
             let mut curr_node = targets._head;
             while curr_node.is_nonnull() {
                 curr_node
-                    .to_slabref_unwrap(jt_alloc)
+                    .to_slabref_unwrap(alloc_jt)
                     ._terminator
                     .set(self_ref);
-                curr_node = match curr_node.get_next_ref(jt_alloc) {
+                curr_node = match curr_node.get_next_ref(alloc_jt) {
                     Some(x) => x,
                     None => break,
                 };
@@ -86,36 +88,43 @@ impl TerminatorInst for Ret {
         None
     }
     fn init_jump_targets(&mut self, _: &mut Slab<JumpTargetData>) {}
+
+    fn collect_jump_blocks(&self, _: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        Vec::new()
+    }
 }
 impl TerminatorInst for Jump {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
         Some(&self.0._targets)
     }
-    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
-        let list = SlabRefList::from_slab(jt_alloc);
+    fn init_jump_targets(&mut self, alloc_jt: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(alloc_jt);
         list.push_back_value(
-            jt_alloc,
+            alloc_jt,
             JumpTargetData::new_with_kind(JumpTargetKind::Jump),
         )
         .unwrap();
         self.0._targets = list;
+    }
+    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        vec![self.get_block(alloc_jt)]
     }
 }
 impl TerminatorInst for Br {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
         Some(&self._common._targets)
     }
-    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
-        let list = SlabRefList::from_slab(jt_alloc);
+    fn init_jump_targets(&mut self, alloc_jt: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(alloc_jt);
         let if_true = list
             .push_back_value(
-                jt_alloc,
+                alloc_jt,
                 JumpTargetData::new_with_kind(JumpTargetKind::BrFalse),
             )
             .unwrap();
         let if_false = list
             .push_back_value(
-                jt_alloc,
+                alloc_jt,
                 JumpTargetData::new_with_kind(JumpTargetKind::BrTrue),
             )
             .unwrap();
@@ -123,21 +132,42 @@ impl TerminatorInst for Br {
         self.if_true = if_true;
         self.if_false = if_false;
     }
+    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        let if_true = self.if_true.get_block(alloc_jt);
+        let if_false = self.if_false.get_block(alloc_jt);
+        if if_true == if_false {
+            vec![if_true]
+        } else {
+            vec![if_true, if_false]
+        }
+    }
 }
 impl TerminatorInst for Switch {
     fn get_jump_targets(&self) -> Option<&SlabRefList<JumpTargetRef>> {
         Some(&self._common._targets)
     }
 
-    fn init_jump_targets(&mut self, jt_alloc: &mut Slab<JumpTargetData>) {
-        let list = SlabRefList::from_slab(jt_alloc);
+    fn init_jump_targets(&mut self, alloc_jt: &mut Slab<JumpTargetData>) {
+        let list = SlabRefList::from_slab(alloc_jt);
         self._default = list
             .push_back_value(
-                jt_alloc,
+                alloc_jt,
                 JumpTargetData::new_with_kind(JumpTargetKind::SwitchDefault),
             )
             .unwrap();
         self._common._targets = list;
+    }
+
+    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        let cases = self._cases.borrow();
+        let mut blocks = Vec::with_capacity(1 + cases.len());
+        blocks.push(self.get_default(alloc_jt));
+        for (_, j) in &*cases {
+            blocks.push(j.get_block(alloc_jt));
+        }
+        blocks.sort_unstable();
+        blocks.dedup();
+        blocks
     }
 }
 
@@ -225,19 +255,19 @@ impl Jump {
         (common, jump)
     }
 
-    pub fn get_jt(&self, jt_alloc: &Slab<JumpTargetData>) -> JumpTargetRef {
-        self.0._targets.get_back_ref(jt_alloc).unwrap()
+    pub fn get_jt(&self, alloc_jt: &Slab<JumpTargetData>) -> JumpTargetRef {
+        self.0._targets.get_back_ref(alloc_jt).unwrap()
     }
-    pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
-        self.get_jt(jt_alloc).get_block(jt_alloc)
+    pub fn get_block(&self, alloc_jt: &Slab<JumpTargetData>) -> BlockRef {
+        self.get_jt(alloc_jt).get_block(alloc_jt)
     }
-    pub fn set_block_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
-        self.get_jt(jt_alloc).set_block_norcfg(jt_alloc, block);
+    pub fn set_block_norcfg(&self, alloc_jt: &Slab<JumpTargetData>, block: BlockRef) {
+        self.get_jt(alloc_jt).set_block_norcfg(alloc_jt, block);
     }
     pub fn set_block(&self, module: &Module, block: BlockRef) {
         let jt = {
-            let jt_alloc = module.borrow_jt_alloc();
-            self.get_jt(&jt_alloc)
+            let alloc_jt = module.borrow_jt_alloc();
+            self.get_jt(&alloc_jt)
         };
         jt.set_block(module, block);
     }
@@ -339,11 +369,11 @@ impl Switch {
         self._common._condition.set_operand(module, cond)
     }
 
-    pub fn get_default(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
-        self._default.get_block(jt_alloc)
+    pub fn get_default(&self, alloc_jt: &Slab<JumpTargetData>) -> BlockRef {
+        self._default.get_block(alloc_jt)
     }
-    pub fn set_default_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
-        self._default.set_block_norcfg(jt_alloc, block);
+    pub fn set_default_norcfg(&self, alloc_jt: &Slab<JumpTargetData>, block: BlockRef) {
+        self._default.set_block_norcfg(alloc_jt, block);
     }
     pub fn set_default(&self, module: &Module, block: BlockRef) {
         self._default.set_block(module, block);
@@ -356,28 +386,28 @@ impl Switch {
             .find(|(k, _)| *k == case)
             .map(|(_, v)| *v)
     }
-    pub fn get_case(&self, jt_alloc: &Slab<JumpTargetData>, case: i128) -> Option<BlockRef> {
-        self.get_cast_target(case).map(|jt| jt.get_block(jt_alloc))
+    pub fn get_case(&self, alloc_jt: &Slab<JumpTargetData>, case: i128) -> Option<BlockRef> {
+        self.get_cast_target(case).map(|jt| jt.get_block(alloc_jt))
     }
     pub fn set_existing_case_norcfg(
         &self,
-        jt_alloc: &Slab<JumpTargetData>,
+        alloc_jt: &Slab<JumpTargetData>,
         case: i128,
         block: BlockRef,
     ) -> Option<BlockRef> {
         self.get_cast_target(case).map(|jt| {
-            let ret = jt.get_block(jt_alloc);
-            jt.set_block_norcfg(jt_alloc, block);
+            let ret = jt.get_block(alloc_jt);
+            jt.set_block_norcfg(alloc_jt, block);
             ret
         })
     }
     pub fn set_case_norcfg(
         &self,
-        jt_alloc: &mut Slab<JumpTargetData>,
+        alloc_jt: &mut Slab<JumpTargetData>,
         case: i128,
         block: BlockRef,
     ) -> (JumpTargetRef, BlockRef) {
-        if let Some(bb) = self.set_existing_case_norcfg(jt_alloc, case, block) {
+        if let Some(bb) = self.set_existing_case_norcfg(alloc_jt, case, block) {
             return (self.get_cast_target(case).unwrap(), bb);
         }
         let new_jt = JumpTargetData::new_with_kind(JumpTargetKind::SwitchCase(case));
@@ -386,7 +416,7 @@ impl Switch {
         let new_jt = self
             ._common
             ._targets
-            .push_back_value(jt_alloc, new_jt)
+            .push_back_value(alloc_jt, new_jt)
             .unwrap();
 
         self._cases.borrow_mut().push((case, new_jt));
@@ -395,21 +425,21 @@ impl Switch {
     /// Set a case for the switch instruction.
     /// This may change the block of the case and CFG.
     pub fn set_case(&self, module: &Module, case: i128, block: BlockRef) {
-        let mut jt_alloc = module.borrow_jt_alloc_mut();
+        let mut alloc_jt = module.borrow_jt_alloc_mut();
         if let Some(mut rcfg) = module.borrow_rcfg_alloc_mut() {
-            self.set_case_with_rcfg(&mut rcfg, &mut jt_alloc, case, block);
+            self.set_case_with_rcfg(&mut rcfg, &mut alloc_jt, case, block);
         } else {
-            self.set_case_norcfg(&mut jt_alloc, case, block);
+            self.set_case_norcfg(&mut alloc_jt, case, block);
         }
     }
     pub fn set_case_with_rcfg(
         &self,
         rcfg: &mut RcfgAllocs,
-        jt_alloc: &mut Slab<JumpTargetData>,
+        alloc_jt: &mut Slab<JumpTargetData>,
         case: i128,
         block: BlockRef,
     ) {
-        let (jt, old_block) = self.set_case_norcfg(jt_alloc, case, block);
+        let (jt, old_block) = self.set_case_norcfg(alloc_jt, case, block);
 
         if old_block == block {
             return;

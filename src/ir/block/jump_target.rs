@@ -119,27 +119,27 @@ impl SlabRefListNodeRef for JumpTargetRef {
 }
 
 impl JumpTargetRef {
-    pub fn get_block(&self, jt_alloc: &Slab<JumpTargetData>) -> BlockRef {
-        self.to_slabref_unwrap(jt_alloc)._block.get()
+    pub fn get_block(&self, alloc_jt: &Slab<JumpTargetData>) -> BlockRef {
+        self.to_slabref_unwrap(alloc_jt)._block.get()
     }
-    pub fn set_block_norcfg(&self, jt_alloc: &Slab<JumpTargetData>, block: BlockRef) {
-        self.to_slabref_unwrap(jt_alloc)._block.set(block);
+    pub fn set_block_norcfg(&self, alloc_jt: &Slab<JumpTargetData>, block: BlockRef) {
+        self.to_slabref_unwrap(alloc_jt)._block.set(block);
     }
     pub fn set_block(&self, module: &Module, block: BlockRef) {
-        let jt_alloc = module.borrow_jt_alloc();
+        let alloc_jt = module.borrow_jt_alloc();
         let rcfg = match module.borrow_rcfg_alloc() {
             Some(rcfg) => rcfg,
             None => {
-                self.set_block_norcfg(&jt_alloc, block);
+                self.set_block_norcfg(&alloc_jt, block);
                 return;
             }
         };
-        self.to_slabref_unwrap(&jt_alloc)
+        self.to_slabref_unwrap(&alloc_jt)
             .set_block_with_rcfg(self.clone(), &rcfg, block);
     }
 
-    pub fn get_terminator(&self, jt_alloc: &Slab<JumpTargetData>) -> InstRef {
-        self.to_slabref_unwrap(jt_alloc)._terminator.get()
+    pub fn get_terminator(&self, alloc_jt: &Slab<JumpTargetData>) -> InstRef {
+        self.to_slabref_unwrap(alloc_jt)._terminator.get()
     }
 }
 
