@@ -1,26 +1,11 @@
 use std::{cell::Ref, rc::Rc};
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefListError, slabref::SlabRef},
+    base::{slablist::{SlabRefListError, SlabRefListNodeRef}, slabref::SlabRef, NullableValue},
     ir::{
-        ValueSSA,
-        block::{BlockData, BlockRef},
-        cmp_cond::CmpCond,
-        global::{GlobalData, GlobalRef, func::FuncData},
-        inst::{
-            InstData, InstError, InstRef,
-            binop::BinOp,
-            callop,
-            cast::CastOp,
-            cmp::CmpOp,
-            gep::IndexPtrOp,
-            load_store::{LoadOp, StoreOp},
-            phi::PhiOp,
-            sundury_inst::SelectOp,
-            terminator::{Br, Jump, Ret, Switch},
-        },
-        module::Module,
-        opcode::Opcode,
+        block::{BlockData, BlockRef}, cmp_cond::CmpCond, global::{func::FuncData, GlobalData, GlobalRef}, inst::{
+            binop::BinOp, callop, cast::CastOp, cmp::CmpOp, gep::IndexPtrOp, load_store::{LoadOp, StoreOp}, phi::PhiOp, sundury_inst::SelectOp, terminator::{Br, Jump, Ret, Switch}, InstData, InstError, InstRef
+        }, module::Module, opcode::Opcode, ValueSSA
     },
     typing::{id::ValTypeID, types::FuncTypeRef},
 };
@@ -266,22 +251,130 @@ impl IRBuilder {
     ///
     /// This will split this block from the end and move all instructions from the focus to the new block.
     /// The focus will be set to the new block, while returning the old block.
+    ///
+    /// ### Instruction adjustment Rules
+    ///
+    /// If current focus is a block: Only the terminator will be moved to the new block.
+    ///
+    /// If checking is diabled while the focus is any instruction:
+    ///
+    /// - Instructions after the focus will be moved to the new block. The PHI nodes will be
+    ///   added to the PHI-area of the new block, normal instructions will be added to the
+    ///   end of the new block, while PHI-end guide node will remain unchanged.
+    ///
+    /// If current focus is a terminator:
+    ///
+    /// - When terminator degrade is enabled, the function works like a block focus.
+    /// - When terminator degrade is disabled, the function will return an error.
+    ///
+    /// If current focus is a PHI node:
+    ///
+    /// - When PHI degrade is enabled, the function will move all instructions after the
+    ///   PHI-end guide node (aka. non-PHI area) to the new block.
+    /// - When PHI degrade is disabled, the function will return an error.
+    ///
+    /// If current focus is a PHI-end guide node or a normal instruction:
+    ///
+    /// - The function will move all instructions after the focus to the new block. You can
+    ///   infer that the focus will remain unchanged.
     pub fn split_current_block_from_focus(&mut self) -> Result<BlockRef, IRBuilderError> {
         if self.focus.block.is_null() {
             return Err(IRBuilderError::NullFocus);
         }
 
+        let inst_split_pos = if self.focus.inst.is_null() {
+            // Focus is a block.
+            InstRef::new_null()
+        } else if self.focus_check == IRBuilderFocusCheckOption::Ignore {
+            self.focus.inst
+        } else {
+            // Focus is an instruction.
+            let focus_inst = self.focus.inst;
+            let focus_kind = match &*self.module.get_inst(focus_inst) {
+                InstData::Phi(..) => FocusInstKind::Phi,
+                x if x.is_terminator() => FocusInstKind::Terminator,
+                _ => FocusInstKind::Normal,
+            };
+
+            // Case 1: Focus is a terminator.
+            //
+            // - When terminator degrade is disabled, the function will return an error.
+            // - Otherwise, the function will degrade to a block-based split.
+            if focus_kind == FocusInstKind::Terminator {
+                if self.allows_terminator_degrade() {
+                    InstRef::new_null()
+                } else {
+                    return Err(IRBuilderError::InsertPosIsTerminator(focus_inst));
+                }
+            }
+            // Case 2: Focus is a PHI node.
+            //
+            // - When PHI degrade is disabled, the function will return an error.
+            // - Otherwise, see the rules above: All instructions after the
+            //   PHI-end guide node will be moved to the new block.
+            else if focus_kind == FocusInstKind::Phi {
+                if self.allows_phi_degrade() {
+                    // Focus is a PHI node, move all instructions after the PHI-end guide node.
+                    self.module.get_block(self.focus.block).phi_node_end.get()
+                } else {
+                    return Err(IRBuilderError::InsertPosIsPhi(focus_inst));
+                }
+            }
+            // Case 3: Focus is a PHI-end guide node or a normal instruction.
+            //
+            // - The function will move all instructions after the focus to the new block.
+            // - The focus will be adjusted to the new block.
+            else {
+                focus_inst
+            }
+        };
+
         let new_bb = self.split_current_block_from_terminator()?;
 
-        if self.focus.inst.is_null() {
+        if inst_split_pos.is_null() {
             // Focus is a block, degrade to a terminator-based split.
             let old_focus = self.focus.block;
             self.set_focus(IRBuilderFocus::Block(new_bb));
             return Ok(old_focus);
         }
 
-        // Then move all instructions from the focus to the new block.
-        todo!("Split the current block from the focus");
+        // Now move all instructions after the `inst_split_pos` to the new block.
+        // Step 1: Unplug all instructions after the `inst_split_pos` from the current block.
+        let to_insert: Vec<InstRef> = {
+            let alloc_inst = &self.module.borrow_value_alloc().alloc_inst;
+            let mut to_insert = Vec::new();
+
+            let mut curr_node = inst_split_pos.get_next_ref(alloc_inst);
+            while let Some(iref) = curr_node {
+                match &*self.module.get_inst(iref) {
+                    InstData::PhiInstEnd(..) => {}
+                    x if x.is_terminator() => {
+                        // If the current instruction is a terminator, we need to stop.
+                        break;
+                    }
+                    _ => to_insert.push(iref),
+                }
+                curr_node = iref.get_next_ref(alloc_inst);
+            }
+
+            // Now unplug all instructions after the `inst_split_pos` from the current block.
+            for iref in to_insert.iter() {
+                iref.detach_self(&self.module).unwrap();
+            }
+            to_insert
+        };
+
+        // Step 2: Insert all instructions to the new block.
+        let new_block = self.module.get_block(new_bb);
+        for iref in to_insert {
+            new_block.build_add_inst(iref, &self.module).unwrap();
+        }
+        drop(new_block);
+
+        // Step 3: Set the focus to the new block.
+        let old_focus = self.focus.block;
+        self.set_focus(IRBuilderFocus::Block(new_bb));
+        return Ok(old_focus);
     }
 
     /// Split the current block from the terminator. New block will be the successor of the
@@ -383,7 +476,7 @@ impl IRBuilder {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum InstInsertKind {
+enum FocusInstKind {
     Phi,
     Terminator,
     Normal,
@@ -451,30 +544,30 @@ impl IRBuilder {
 
         // Checking enabled.
         let focus_kind = match &*self.module.get_inst(focus_inst) {
-            InstData::Phi(..) => InstInsertKind::Phi,
-            x if x.is_terminator() => InstInsertKind::Terminator,
-            _ => InstInsertKind::Normal,
+            InstData::Phi(..) => FocusInstKind::Phi,
+            x if x.is_terminator() => FocusInstKind::Terminator,
+            _ => FocusInstKind::Normal,
         };
         let inst_kind = match &inst {
-            InstData::Phi(..) => InstInsertKind::Phi,
-            x if x.is_terminator() => InstInsertKind::Terminator,
-            _ => InstInsertKind::Normal,
+            InstData::Phi(..) => FocusInstKind::Phi,
+            x if x.is_terminator() => FocusInstKind::Terminator,
+            _ => FocusInstKind::Normal,
         };
 
         match (focus_kind, inst_kind) {
-            (InstInsertKind::Normal, InstInsertKind::Normal) => {
+            (FocusInstKind::Normal, FocusInstKind::Normal) => {
                 self.add_inst_after_focus_ignore_check(inst)
             }
-            (InstInsertKind::Normal, inst_kind) => {
+            (FocusInstKind::Normal, inst_kind) => {
                 let degrade_cond = match inst_kind {
-                    InstInsertKind::Terminator => degrade_terminator,
-                    InstInsertKind::Phi => degrade_phi,
+                    FocusInstKind::Terminator => degrade_terminator,
+                    FocusInstKind::Phi => degrade_phi,
                     _ => false,
                 };
                 if degrade_cond {
                     self.add_inst_on_block_focus(inst)
                 } else {
-                    Err(if inst_kind == InstInsertKind::Terminator {
+                    Err(if inst_kind == FocusInstKind::Terminator {
                         IRBuilderError::InstIsTerminator(focus_inst)
                     } else {
                         IRBuilderError::InstIsPhi(focus_inst)
@@ -482,10 +575,10 @@ impl IRBuilder {
                 }
             }
 
-            (InstInsertKind::Phi, InstInsertKind::Phi) => {
+            (FocusInstKind::Phi, FocusInstKind::Phi) => {
                 self.add_inst_after_focus_ignore_check(inst)
             }
-            (InstInsertKind::Phi, _) => {
+            (FocusInstKind::Phi, _) => {
                 if degrade_phi {
                     self.add_inst_on_block_focus(inst)
                 } else {
@@ -493,10 +586,10 @@ impl IRBuilder {
                 }
             }
 
-            (InstInsertKind::Terminator, InstInsertKind::Terminator) => self
+            (FocusInstKind::Terminator, FocusInstKind::Terminator) => self
                 .focus_replace_terminator_with(inst)
                 .map(|(_, new_termi)| new_termi),
-            (InstInsertKind::Terminator, _) => {
+            (FocusInstKind::Terminator, _) => {
                 if degrade_terminator {
                     self.add_inst_on_block_focus(inst)
                 } else {
