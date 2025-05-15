@@ -273,6 +273,13 @@ impl IRBuilder {
 
         let new_bb = self.split_current_block_from_terminator()?;
 
+        if self.focus.inst.is_null() {
+            // Focus is a block, degrade to a terminator-based split.
+            let old_focus = self.focus.block;
+            self.set_focus(IRBuilderFocus::Block(new_bb));
+            return Ok(old_focus);
+        }
+
         // Then move all instructions from the focus to the new block.
         todo!("Split the current block from the focus");
     }
