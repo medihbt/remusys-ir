@@ -121,10 +121,16 @@ mod testing {
         /* source code:
            public extern func strlen(string: byte*): int;
            public extern func foo();
+           public extern func printf(format: byte*, ...);
         */
         let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        let strlen_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32));
-        let foo_functype = type_ctx.make_func_type(&[], ValTypeID::Void);
+        let strlen_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32), false);
+        let foo_functype = type_ctx.make_func_type(&[], ValTypeID::Void, false);
+        let printf_functype = type_ctx.make_func_type(
+            &[ValTypeID::Ptr],
+            ValTypeID::Int(32),
+            true,
+        );
 
         assert_eq!(
             ValTypeID::Func(strlen_functype).get_display_name(&type_ctx),
@@ -133,6 +139,10 @@ mod testing {
         assert_eq!(
             ValTypeID::Func(foo_functype).get_display_name(&type_ctx),
             "fn<():void>"
+        );
+        assert_eq!(
+            ValTypeID::Func(printf_functype).get_display_name(&type_ctx),
+            "fn<(ptr, ...):i32>"
         );
     }
 }

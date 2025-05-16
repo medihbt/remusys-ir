@@ -35,6 +35,9 @@ pub trait FuncStorage: PtrStorage {
     fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
         self.get_stored_func_type().get_arg(type_ctx, index)
     }
+    fn is_vararg(&self, type_ctx: &TypeContext) -> bool {
+        self.get_stored_func_type().is_vararg(type_ctx)
+    }
 }
 pub trait FuncUser: PtrUser {
     fn get_operand_func_type(&self) -> FuncTypeRef {
@@ -136,7 +139,10 @@ impl FuncData {
         module: &Module,
         block_ref: BlockRef,
     ) -> Result<(), SlabRefListError> {
-        self.body.borrow_mut().as_mut().unwrap()
+        self.body
+            .borrow_mut()
+            .as_mut()
+            .unwrap()
             .body
             .push_back_ref(&module.borrow_value_alloc().alloc_block, block_ref)?;
         Ok(())
@@ -182,8 +188,11 @@ mod testing {
         let type_ctx = TypeContext::new_rc(platform);
         let module = Module::new("io.medihbt.RemusysIRTes".into(), type_ctx.clone());
 
-        let main_functy =
-            type_ctx.make_func_type(&[ValTypeID::Int(32), ValTypeID::Ptr], ValTypeID::Int(32));
+        let main_functy = type_ctx.make_func_type(
+            &[ValTypeID::Int(32), ValTypeID::Ptr],
+            ValTypeID::Int(32),
+            false,
+        );
         let main_func_data =
             FuncData::new_with_unreachable(&module, main_functy, "main".into()).unwrap();
         assert_eq!(main_func_data.is_extern(), false);

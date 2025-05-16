@@ -19,6 +19,7 @@ use super::{
 };
 
 pub mod func;
+pub mod intrin;
 
 pub enum GlobalData {
     Alias(Alias),

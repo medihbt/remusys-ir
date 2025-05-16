@@ -43,7 +43,6 @@ pub trait IInstVisitor {
             InstData::Jump(c, jump) => self.read_jump_inst(inst_ref, c, jump),
             InstData::Br(c, br) => self.read_br_inst(inst_ref, c, br),
             InstData::Switch(c, switch) => self.read_switch_inst(inst_ref, c, switch),
-            InstData::TailCall(c) => self.read_tail_call_inst(inst_ref, c),
             InstData::Load(c, load) => self.read_load_inst(inst_ref, c, load),
             InstData::Store(c, store) => self.read_store_inst(inst_ref, c, store),
             InstData::Select(c, select) => self.read_select_inst(inst_ref, c, select),

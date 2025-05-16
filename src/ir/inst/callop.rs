@@ -15,7 +15,7 @@ use crate::{
         module::Module,
         opcode::Opcode,
     },
-    typing::{id::ValTypeID, types::FuncTypeRef},
+    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
 
 use super::{
@@ -29,6 +29,8 @@ use super::InstDataUnique;
 pub struct CallOp {
     pub callee: UseRef,
     pub callee_ty: FuncTypeRef,
+    pub fixed_nargs: usize,
+    pub is_vararg: bool,
     pub args: Box<[UseRef]>,
 }
 
@@ -59,15 +61,13 @@ impl InstDataUnique for CallOp {
         let type_ctx = module.type_ctx.as_ref();
         let nargs = self.callee_ty.get_nargs(&type_ctx);
 
-        if self.args.len() != nargs {
-            return Err(InstError::InvalidArgumentCount(
-                self.callee_ty.get_nargs(&type_ctx),
-                self.args.len(),
-            ));
-        }
+        Self::_check_operand_count(type_ctx, self.callee_ty, self.args.len())?;
 
         let alloc_use = module.borrow_use_alloc();
         for (i, arg) in self.args.iter().enumerate() {
+            if i >= nargs {
+                break; // Cannot verify the vararg arguments.
+            }
             let arg = arg.get_operand(&alloc_use);
             let arg_ty = self.callee_ty.get_arg(type_ctx, i).unwrap();
             check_operand_type_kind_match(arg_ty, arg, module)?;
@@ -78,11 +78,26 @@ impl InstDataUnique for CallOp {
 }
 
 impl CallOp {
-    pub fn new_raw(
+    pub fn new_raw_fixed(
         mut_module: &Module,
         callee_func_ty: FuncTypeRef,
     ) -> Result<(InstDataCommon, Self), InstError> {
+        Self::new_raw(
+            mut_module,
+            callee_func_ty,
+            callee_func_ty.get_nargs(mut_module.type_ctx.as_ref()),
+        )
+    }
+
+    pub fn new_raw(
+        mut_module: &Module,
+        callee_func_ty: FuncTypeRef,
+        nargs: usize,
+    ) -> Result<(InstDataCommon, Self), InstError> {
         let type_ctx = mut_module.type_ctx.as_ref();
+
+        Self::_check_operand_count(type_ctx, callee_func_ty, nargs)?;
+
         let mut alloc_use = mut_module.borrow_use_alloc_mut();
         let mut common = InstDataCommon::new(
             Opcode::Call,
@@ -93,7 +108,9 @@ impl CallOp {
         let mut ret = Self {
             callee: UseRef::new_null(),
             callee_ty: callee_func_ty,
-            args: vec![UseRef::new_null(); callee_func_ty.get_nargs(type_ctx)].into_boxed_slice(),
+            fixed_nargs: nargs,
+            is_vararg: callee_func_ty.is_vararg(type_ctx),
+            args: vec![UseRef::new_null(); nargs].into_boxed_slice(),
         };
         ret.build_operands(&mut common, &mut alloc_use);
         Ok((common, ret))
@@ -103,10 +120,11 @@ impl CallOp {
         mut_module: &Module,
         callee_func_ty: FuncTypeRef,
         callee: ValueSSA,
-        args: impl Iterator<Item = ValueSSA>,
+        args: impl Iterator<Item = ValueSSA> + Clone,
     ) -> Result<(InstDataCommon, Self), InstError> {
         assert!(callee.is_null() || callee.get_value_type(&mut_module) == ValTypeID::Ptr);
-        let (common, ret) = Self::new_raw(mut_module, callee_func_ty)?;
+        let nargs = args.clone().count();
+        let (common, ret) = Self::new_raw(mut_module, callee_func_ty, nargs)?;
         let alloc_use = mut_module.borrow_use_alloc();
         ret.callee.set_operand_nordfg(&alloc_use, callee);
         for (useref, value) in ret.args.iter().zip(args) {
@@ -118,7 +136,7 @@ impl CallOp {
     pub fn new_from_func(
         mut_module: &Module,
         callee_func: GlobalRef,
-        args: impl Iterator<Item = ValueSSA>,
+        args: impl Iterator<Item = ValueSSA> + Clone,
     ) -> Result<(InstDataCommon, Self), InstError> {
         let functy = match &*mut_module.get_global(callee_func) {
             GlobalData::Func(f) => f.get_stored_func_type(),
@@ -129,5 +147,22 @@ impl CallOp {
             }
         };
         Self::new(mut_module, functy, ValueSSA::Global(callee_func), args)
+    }
+
+    fn _check_operand_count(
+        type_ctx: &TypeContext,
+        callee_func_ty: FuncTypeRef,
+        call_nargs: usize,
+    ) -> Result<(), InstError> {
+        let is_vararg = callee_func_ty.is_vararg(type_ctx);
+        let fixed_nargs = callee_func_ty.get_nargs(type_ctx);
+
+        if is_vararg && call_nargs < fixed_nargs {
+            Err(InstError::InvalidArgumentCount(fixed_nargs, call_nargs))
+        } else if call_nargs != fixed_nargs {
+            Err(InstError::InvalidArgumentCount(fixed_nargs, call_nargs))
+        } else {
+            Ok(())
+        }
     }
 }

@@ -83,9 +83,6 @@ pub enum InstData {
     /// Switch to one of multiple blocks based on a value.
     Switch(InstDataCommon, terminator::Switch),
 
-    /// Call a function while transferring control to the callee.
-    TailCall(InstDataCommon),
-
     // Non-terminator instructions. These instructions are put in the middle of a block
     // and do not transfer control to another block or return from a function.
     /// PHI Node. This instruction is used to select a value based on the control flow.
@@ -114,9 +111,6 @@ pub enum InstData {
 
     /// Call a function and get the result.
     Call(InstDataCommon, callop::CallOp),
-
-    /// Call a value and get the result.
-    DynCall(InstDataCommon),
 
     /// Call an intrinsic function and get the result.
     Intrin(InstDataCommon),
@@ -254,7 +248,6 @@ impl InstData {
             Self::Jump(common, ..) => Some(common),
             Self::Br(common, ..) => Some(common),
             Self::Switch(common, ..) => Some(common),
-            Self::TailCall(common) => Some(common),
             Self::Phi(common, ..) => Some(common),
             Self::Load(common, ..) => Some(common),
             Self::Store(common, ..) => Some(common),
@@ -264,7 +257,6 @@ impl InstData {
             Self::Cast(common, ..) => Some(common),
             Self::IndexPtr(common, ..) => Some(common),
             Self::Call(common, ..) => Some(common),
-            Self::DynCall(common) => Some(common),
             Self::Intrin(common) => Some(common),
         }
     }
@@ -277,7 +269,6 @@ impl InstData {
             Self::Jump(common, ..) => Some(common),
             Self::Br(common, ..) => Some(common),
             Self::Switch(common, ..) => Some(common),
-            Self::TailCall(common) => Some(common),
             Self::Phi(common, ..) => Some(common),
             Self::Load(common, ..) => Some(common),
             Self::Store(common, ..) => Some(common),
@@ -287,7 +278,6 @@ impl InstData {
             Self::Cast(common, ..) => Some(common),
             Self::IndexPtr(common, ..) => Some(common),
             Self::Call(common, ..) => Some(common),
-            Self::DynCall(common, ..) => Some(common),
             Self::Intrin(common, ..) => Some(common),
         }
     }
@@ -350,7 +340,6 @@ impl InstData {
             InstData::Ret(c, r) => r.check_operands(c, module),
             InstData::Br(c, b) => b.check_operands(c, module),
             InstData::Switch(c, s) => s.check_operands(c, module),
-            InstData::TailCall(..) => todo!("TailCall Not Implemented and maybe will be removed"),
             InstData::Phi(c, phi) => phi.check_operands(c, module),
             InstData::Load(c, ldr) => ldr.check_operands(c, module),
             InstData::Store(c, str) => str.check_operands(c, module),
@@ -360,7 +349,6 @@ impl InstData {
             InstData::Cast(c, cast) => cast.check_operands(c, module),
             InstData::IndexPtr(c, gep) => gep.check_operands(c, module),
             InstData::Call(c, call) => call.check_operands(c, module),
-            InstData::DynCall(..) => todo!("Dyncall not implemented and maybe will be removed"),
             InstData::Intrin(..) => todo!("Intrin not implemented and maybe will be removed"),
         }
     }

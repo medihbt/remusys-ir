@@ -199,6 +199,7 @@ impl StructAliasRef {
 pub struct FuncTypeData {
     pub args: Box<[ValTypeID]>,
     pub ret_ty: ValTypeID,
+    pub is_vararg: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FuncTypeRef(usize);
@@ -224,6 +225,12 @@ impl IValType for FuncTypeData {
             ret.push_str(arg.as_str());
         }
 
+        if self.is_vararg {
+            if !self.args.is_empty() {
+                ret.push_str(", ");
+            }
+            ret.push_str("...");
+        }
         ret.push_str("):");
         ret.push_str(self.ret_ty.get_display_name(type_ctx).as_str());
         ret.push('>');
@@ -231,7 +238,7 @@ impl IValType for FuncTypeData {
     }
 
     fn deep_eq(&self, rhs: &Self) -> bool {
-        self.ret_ty == rhs.ret_ty && self.args == rhs.args
+        self.ret_ty == rhs.ret_ty && self.args == rhs.args && self.is_vararg == rhs.is_vararg
     }
 
     fn gc_trace(&self, gather_func: impl Fn(ValTypeID)) {
@@ -257,6 +264,9 @@ impl FuncTypeRef {
     pub fn get_arg(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
         self.read_data_ref(type_ctx, |f| f.args.get(index).cloned())
     }
+
+    // Returns the number of fixed arguments.
+    // If the function is variadic, this does not include the variable arguments.
     pub fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
         self.read_data_ref(type_ctx, |f| f.args.len())
     }
@@ -266,5 +276,8 @@ impl FuncTypeRef {
         Ref::map(alloc, |a| {
             self.to_slabref_unwrap(&a._alloc_func).args.as_ref()
         })
+    }
+    pub fn is_vararg(&self, type_ctx: &TypeContext) -> bool {
+        self.read_data_ref(type_ctx, |f| f.is_vararg)
     }
 }

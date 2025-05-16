@@ -813,6 +813,7 @@ mod testing {
         let func_type = type_ctx.make_func_type(
             vec![ValTypeID::Int(32), ValTypeID::Ptr].as_slice(),
             ValTypeID::Int(32),
+            false
         );
         let func_main_data =
             FuncData::new_with_unreachable(module, func_type, "main".into()).unwrap();

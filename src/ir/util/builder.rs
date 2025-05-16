@@ -733,7 +733,7 @@ impl IRBuilder {
     pub fn add_call_inst(
         &mut self,
         callee: GlobalRef,
-        args: impl Iterator<Item = ValueSSA>,
+        args: impl Iterator<Item = ValueSSA> + Clone,
     ) -> Result<InstRef, IRBuilderError> {
         let (common, call_op) = callop::CallOp::new_from_func(&self.module, callee, args)
             .map_err(IRBuilderError::InstError)?;
@@ -948,7 +948,7 @@ mod testing {
         // }
         // ```
         let main_func_ty =
-            type_ctx.make_func_type(&[ValTypeID::Int(32), ValTypeID::Ptr], ValTypeID::Int(32));
+            type_ctx.make_func_type(&[ValTypeID::Int(32), ValTypeID::Ptr], ValTypeID::Int(32), false);
         builder
             .define_function_with_unreachable("main", main_func_ty)
             .unwrap();
