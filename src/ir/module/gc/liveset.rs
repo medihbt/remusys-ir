@@ -139,14 +139,40 @@ impl IRRefLiveSet {
         Ok(new_pos)
     }
     pub fn value_is_live(&self, value: ValueSSA) -> Result<bool, ModuleError> {
-        let (alloc, old_pos) = self._get_value_alloc(value)?;
-        if old_pos >= alloc.len() {
-            return Err(ModuleError::DfgReferenceOutOfRange(old_pos, alloc.len()));
+        Ok(self.get_value_new_pos(value)? != usize::MAX)
+    }
+
+    pub fn get_use_new_pos(&self, use_ref: UseRef) -> Result<usize, ModuleError> {
+        if use_ref.get_handle() >= self.uses.len() {
+            return Err(ModuleError::DfgReferenceOutOfRange(
+                use_ref.get_handle(),
+                self.uses.len(),
+            ));
         }
-        let new_pos = alloc[old_pos];
-        if new_pos >= alloc.len() {
-            return Err(ModuleError::DfgReferenceOutOfRange(new_pos, alloc.len()));
+        let new_pos = self.uses[use_ref.get_handle()];
+        if new_pos >= self.uses.len() {
+            return Err(ModuleError::DfgReferenceOutOfRange(new_pos, self.uses.len()));
         }
-        Ok(new_pos != usize::MAX)
+        Ok(new_pos)
+    }
+    pub fn use_is_live(&self, use_ref: UseRef) -> Result<bool, ModuleError> {
+        Ok(self.get_use_new_pos(use_ref)? != usize::MAX)
+    }
+
+    pub fn get_jt_new_pos(&self, jt_ref: JumpTargetRef) -> Result<usize, ModuleError> {
+        if jt_ref.get_handle() >= self.jts.len() {
+            return Err(ModuleError::DfgReferenceOutOfRange(
+                jt_ref.get_handle(),
+                self.jts.len(),
+            ));
+        }
+        let new_pos = self.jts[jt_ref.get_handle()];
+        if new_pos >= self.jts.len() {
+            return Err(ModuleError::DfgReferenceOutOfRange(new_pos, self.jts.len()));
+        }
+        Ok(new_pos)
+    }
+    pub fn jt_is_live(&self, jt_ref: JumpTargetRef) -> Result<bool, ModuleError> {
+        Ok(self.get_jt_new_pos(jt_ref)? != usize::MAX)
     }
 }

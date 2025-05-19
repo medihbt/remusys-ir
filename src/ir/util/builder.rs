@@ -959,7 +959,7 @@ mod testing {
 
         // write to file `test_ir_builder.ll`
         let mut writer = std::fs::File::create("target/test_ir_builder.ll").unwrap();
-        write_ir_module(module.as_ref(), &mut writer, true, true);
+        write_ir_module(module.as_ref(), &mut writer, true, true, true);
 
         // Now set the focus to the entry block.
         builder.focus.inst = InstRef::new_null();
@@ -1030,6 +1030,6 @@ mod testing {
 
         // write to file `test_ir_builder_chain_inst.ll`
         let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();
-        write_ir_module(module.as_ref(), &mut writer, true, true);
+        write_ir_module(module.as_ref(), &mut writer, true, true, true);
     }
 }

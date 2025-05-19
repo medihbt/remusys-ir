@@ -81,6 +81,20 @@ impl ValueSSA {
         matches!(self, ValueSSA::Global(_))
     }
 
+    pub fn is_reference_semantics(&self) -> bool {
+        matches!(
+            self,
+            ValueSSA::ConstExpr(_)
+                | ValueSSA::FuncArg(_, _)
+                | ValueSSA::Block(_)
+                | ValueSSA::Inst(_)
+                | ValueSSA::Global(_)
+        )
+    }
+    pub fn is_value_semantics(&self) -> bool {
+        matches!(self, ValueSSA::None | ValueSSA::ConstData(_))
+    }
+
     pub fn get_value_type(&self, module: &Module) -> ValTypeID {
         match self {
             ValueSSA::None | ValueSSA::Block(_) => ValTypeID::Void,

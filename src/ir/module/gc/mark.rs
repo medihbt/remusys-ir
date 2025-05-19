@@ -1,19 +1,17 @@
 use std::cell::RefCell;
 
+use slab::Slab;
+
 use crate::{
     base::{NullableValue, slablist::SlabRefListNodeRef, slabref::SlabRef},
     ir::{
-        IValueVisitor, ValueSSA,
-        block::{BlockData, BlockRef, jump_target::JumpTargetRef},
-        constant::{
-            data::{ConstData, IConstDataVisitor},
-            expr::{Array, ConstExprRef, IConstExprVisitor, Struct},
-        },
-        global::{Alias, GlobalRef, IGlobalObjectVisitor, Var, func::FuncData},
-        inst::{binop::*, callop::*, usedef::UseRef, visitor::IInstVisitor, *},
+        ValueSSA,
+        block::{BlockRef, jump_target::JumpTargetRef},
+        constant::expr::{ConstExprData, ConstExprRef},
+        global::{GlobalData, GlobalRef, func::FuncData},
+        inst::{terminator::TerminatorInst, usedef::UseRef, *},
         module::{Module, ModuleError},
     },
-    typing::{id::ValTypeID, types::FloatTypeKind},
 };
 
 use super::liveset::IRRefLiveSet;
@@ -33,7 +31,37 @@ struct MarkVisitorInner {
 
 #[derive(Debug, Clone)]
 enum MarkMode {
+    /// Non-compact mode: keep the original order of references.
     NoCompact,
+
+    /// ### 压缩模式
+    ///
+    /// 如果启用压缩选项并指定了空间预留函数, 该标记器将以函数体为单位为每组指令、
+    /// 基本块等预留一定量的空间, 以优化内存局部性.
+    ///
+    /// #### 压缩后的对象排序规则与空间预留规则
+    ///
+    /// 该标记器在压缩模式下, 第一次查找活跃引用时就会为对象分配新位置. 由于 Module
+    /// 中不同类型的 ValueSSA/Use/JumpTarget 对象都存储在不同的 `Slab` 分配器中,
+    /// 因此压缩后这些对象的排序规则可能不同.
+    ///
+    /// * **全局量**: 全局量按照 `module.global_defs` 哈希表中的顺序排序. 由于
+    ///   预留选项中没有针对全局量的选项, 因此全局量的排序规则与预留规则无关.
+    /// * **基本块**: 保证同一个函数体中的基本块连续排布成组, 组之间的顺序与函数
+    ///   定义顺序一致. 当预留空间的选项开启时, 基本块组之间会预留一定的空间.
+    /// * **指令**: 保证同一个函数体中所有基本块的所有指令连续排布成组. 组内各基本块
+    ///   的指令顺序与基本块内的指令顺序一致. 组之间的顺序与函数定义顺序一致.
+    ///   当预留空间的选项开启时, 指令组之间会预留一定的空间.
+    /// * **数据流边(`Use`)**: 保证同一个函数体中所有基本块的所有指令的所有数据流边
+    ///   连续排布成组. 组内各基本块的指令的所有数据流边顺序与基本块内的指令的
+    ///   所有数据流边顺序一致. 组之间的顺序与函数定义顺序一致. 当预留空间的选项
+    ///   开启时, 数据流边组之间会预留一定的空间.
+    /// * **跳转目标(`JumpTarget`)**: 保证同一个函数体中所有基本块的所有指令的所有
+    ///   跳转目标连续排布成组. 组内各基本块的指令的所有跳转目标顺序与基本块内的
+    ///   指令的所有跳转目标顺序一致. 组之间的顺序与函数定义顺序一致. 当预留空间的
+    ///   选项开启时, 跳转目标组之间会预留一定的空间.
+    /// * **表达式**: 由于表达式的标记是按照数据流图进行的, 表达式的排列可以视为无序
+    ///   紧密排布. 预留空间的选项不会影响表达式的顺序.
     Compact(MarkCompactMode),
 }
 
@@ -176,220 +204,297 @@ impl<'a> MarkVisitor<'a> {
         Ok(())
     }
 
-    pub fn mark_block(&self, block_ref: BlockRef) -> Result<(), ModuleError> {
-        self.mark_value(ValueSSA::Block(block_ref))
-    }
-    pub fn mark_inst(&self, inst_ref: InstRef) -> Result<(), ModuleError> {
-        self.mark_value(ValueSSA::Inst(inst_ref))
-    }
-    pub fn mark_global(&self, global_ref: GlobalRef) -> Result<(), ModuleError> {
-        self.mark_value(ValueSSA::Global(global_ref))
-    }
-    pub fn mark_expr(&self, expr_ref: ConstExprRef) -> Result<(), ModuleError> {
-        self.mark_value(ValueSSA::ConstExpr(expr_ref))
+    pub fn value_is_live(&self, value: ValueSSA) -> bool {
+        let inner = self.inner.borrow();
+        inner.live_set.value_is_live(value).unwrap()
     }
 
     pub fn release_live_set(self) -> IRRefLiveSet {
         let inner = self.inner.into_inner();
         inner.live_set
     }
-
-    fn mark_value_by_semantic(&self, value: ValueSSA) -> Result<(), ModuleError> {
-        match value {
-            ValueSSA::Block(block_ref) => self.mark_block(block_ref),
-            ValueSSA::Inst(inst_ref) => self.mark_inst(inst_ref),
-            ValueSSA::Global(global_ref) => self.mark_global(global_ref),
-            ValueSSA::ConstExpr(expr_ref) => {
-                self.mark_expr(expr_ref)?;
-                let alloc_value = self.module.borrow_value_alloc();
-                let alloc_expr = &alloc_value.alloc_expr;
-                self.expr_visitor_dispatch(expr_ref, alloc_expr);
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
 }
 
-impl<'a> IValueVisitor for MarkVisitor<'a> {
-    fn read_block(&self, block: BlockRef, block_data: &BlockData) {
-        // Mark the elements in the block
-        let insts = unsafe { block_data.instructions.unsafe_load_readonly_view() };
+pub(super) struct MarkFuncTreeRes {
+    live_operands: Vec<ValueSSA>,
 
+    /// The number of live blocks. Used for reserveing space
+    /// to compact the block list.
+    n_live_blocks: usize,
+
+    /// The number of live instructions. Used for reserveing space
+    /// to compact the instruction list.
+    n_live_insts: usize,
+
+    /// The number of live jump targets. Used for reserveing space
+    /// to compact the jump target list.
+    n_live_jts: usize,
+
+    /// The number of live uses. Used for reserveing space
+    /// to compact the use list.
+    n_live_uses: usize,
+}
+
+/// Mark all the values in the module
+impl<'a> MarkVisitor<'a> {
+    fn mark_operand(&self, op: ValueSSA) -> Result<(), ModuleError> {
+        // discard non-reference value
+        if !op.is_reference_semantics() {
+            return Ok(());
+        }
+        // discard live reference.
+        if self.value_is_live(op) {
+            return Ok(());
+        }
+
+        match op {
+            ValueSSA::None | ValueSSA::ConstData(_) | ValueSSA::FuncArg(..) => Ok(()),
+            ValueSSA::Block(b) => self.mark_value(ValueSSA::Block(b)),
+            ValueSSA::Inst(i) => self.mark_value(ValueSSA::Inst(i)),
+            ValueSSA::Global(g) => self.mark_value(ValueSSA::Global(g)),
+            ValueSSA::ConstExpr(e) => {
+                self.mark_value(ValueSSA::ConstExpr(e))?;
+                self.mark_expr_body(e)
+            }
+        }
+    }
+
+    fn mark_expr_body(&self, expr: ConstExprRef) -> Result<(), ModuleError> {
         let alloc_value = self.module.borrow_value_alloc();
+        let alloc_expr = &alloc_value.alloc_expr;
+        self._do_mark_expr_body(expr, alloc_expr)
+    }
+    fn _do_mark_expr_body(
+        &self,
+        expr: ConstExprRef,
+        alloc: &Slab<ConstExprData>,
+    ) -> Result<(), ModuleError> {
+        if self.value_is_live(ValueSSA::ConstExpr(expr)) {
+            return Ok(());
+        }
+        let expr_data = alloc.get(expr.get_handle()).unwrap();
+
+        // **WARNING**: Only for this situation where the expr is whether a struct or an array.
+        // If new ConstExprData is added, this code should be modified.
+        let elems = match expr_data {
+            ConstExprData::Array(a) => &a.elems,
+            ConstExprData::Struct(s) => &s.elems,
+        };
+
+        for elem in elems {
+            match elem {
+                ValueSSA::None | ValueSSA::ConstData(_) | ValueSSA::FuncArg(..) => {}
+                ValueSSA::Block(b) => self.mark_value(ValueSSA::Block(*b))?,
+                ValueSSA::Inst(i) => self.mark_value(ValueSSA::Inst(*i))?,
+                ValueSSA::Global(g) => self.mark_value(ValueSSA::Global(*g))?,
+                ValueSSA::ConstExpr(e) => {
+                    self.mark_value(ValueSSA::ConstExpr(*e))?;
+                    self._do_mark_expr_body(*e, alloc)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Mark all the global objects.
+    ///
+    /// If encounter a function definition, push the function reference to a vector
+    /// and return.
+    ///
+    /// ### Return
+    ///
+    /// * A vector of function references if `Ok`.
+    /// * A `ModuleError` if failed.
+    pub(super) fn mark_global(&self) -> Result<Vec<GlobalRef>, ModuleError> {
+        let mut live_funcdef = Vec::new();
+        let alloc_value = self.module.borrow_value_alloc();
+        let alloc_global = &alloc_value.alloc_global;
+
+        let global_map = self.module.global_defs.borrow();
+        for (_, global_ref) in global_map.iter() {
+            let global = global_ref.to_slabref_unwrap(alloc_global);
+            match global {
+                GlobalData::Func(f) => {
+                    if !f.is_extern() {
+                        live_funcdef.push(*global_ref);
+                    }
+                }
+                GlobalData::Var(v) => match v.get_init() {
+                    Some(init) => self.mark_value(init)?,
+                    None => {}
+                },
+                _ => {}
+            }
+            // mark the global reference
+            self.mark_value(ValueSSA::Global(*global_ref))?;
+        }
+        drop(global_map);
+
+        Ok(live_funcdef)
+    }
+
+    pub(super) fn mark_func_tree(&self, func: GlobalRef) -> Result<MarkFuncTreeRes, ModuleError> {
+        let alloc_value = self.module.borrow_value_alloc();
+        let alloc_global = &alloc_value.alloc_global;
+        let alloc_block = &alloc_value.alloc_block;
         let alloc_inst = &alloc_value.alloc_inst;
-        let mut node = insts._head;
-        while node.is_nonnull() {
-            self.mark_inst(node).unwrap();
 
-            let inst = node.to_slabref_unwrap(alloc_inst);
-            self.inst_visitor_dispatch(node, inst);
+        let alloc_use = self.module.borrow_use_alloc();
+        let alloc_jt = self.module.borrow_jt_alloc();
+        let func = match func.to_slabref_unwrap(alloc_global) {
+            GlobalData::Func(f) => f,
+            _ => panic!("MarkVisitor::mark_func: not a function"),
+        };
 
-            node = match node.get_next_ref(alloc_inst) {
-                Some(n) => n,
-                None => break,
+        // mark the function body
+        let body = match func.get_blocks() {
+            Some(body) => body,
+            None => panic!("MarkVisitor::mark_func: no function body"),
+        };
+
+        // mark the blocks
+        let mut n_inst_nodes = 0;
+        let mut live_blocks = Vec::with_capacity(body.len());
+        for (blockref, block) in body.view(alloc_block) {
+            self.mark_value(ValueSSA::Block(blockref))?;
+            let inst_view = unsafe { block.instructions.unsafe_load_readonly_view() };
+            n_inst_nodes += inst_view.n_nodes_with_guide();
+            live_blocks.push((blockref, unsafe {
+                block.instructions.unsafe_load_readonly_view()
+            }));
+        }
+
+        // mark the instructions per block
+        let mut live_uses = Vec::with_capacity(n_inst_nodes);
+        let mut live_jts = Vec::with_capacity(live_blocks.len());
+        let mut n_use_nodes = 0;
+        for (_, inst_view) in &live_blocks {
+            let mut inst_node = inst_view._head;
+            while inst_node.is_nonnull() {
+                // mark the instruction reference
+                self.mark_value(ValueSSA::Inst(inst_node))?;
+
+                // mark the instruction operands
+                let inst_data = inst_node.to_slabref_unwrap(alloc_inst);
+                if let Some(c) = inst_data.get_common() {
+                    let uses_view = unsafe { c.operands.unsafe_load_readonly_view() };
+                    let n_nodes = uses_view.n_nodes_with_guide();
+                    if n_nodes > 0 {
+                        // +2 for the head and tail guide node.
+                        n_use_nodes += n_nodes;
+                        live_uses.push(uses_view);
+                    }
+                }
+                inst_node = match inst_node.get_next_ref(alloc_inst) {
+                    Some(next) => next,
+                    None => break,
+                };
+
+                let jts = match inst_data {
+                    InstData::Jump(_, jmp) => jmp.get_jump_targets().unwrap(),
+                    InstData::Br(_, br) => br.get_jump_targets().unwrap(),
+                    InstData::Switch(_, s) => s.get_jump_targets().unwrap(),
+                    _ => continue,
+                };
+                live_jts.push(unsafe { jts.unsafe_load_readonly_view() });
+            }
+        }
+
+        // Mark all live uses
+        let mut live_operands = Vec::with_capacity(n_use_nodes);
+        for useref in &live_uses {
+            let mut use_node = useref._head;
+            while use_node.is_nonnull() {
+                // mark the use reference
+                self.mark_use(use_node)?;
+                let operand = use_node.to_slabref_unwrap(&alloc_use).get_operand();
+
+                match operand {
+                    ValueSSA::None | ValueSSA::FuncArg(..) | ValueSSA::ConstData(..) => {}
+                    ValueSSA::Block(_) | ValueSSA::Inst(_) => { /* marked */ }
+                    ValueSSA::ConstExpr(_) | ValueSSA::Global(_) => live_operands.push(operand),
+                }
+
+                use_node = match use_node.get_next_ref(&alloc_use) {
+                    Some(next) => next,
+                    None => break,
+                };
+            }
+        }
+
+        // Mark all live jump targets
+        for jt_ref in &live_jts {
+            let mut jt_node = jt_ref._head;
+            while jt_node.is_nonnull() {
+                // mark the jump target reference
+                self.mark_jt(jt_node)?;
+                jt_node = match jt_node.get_next_ref(&alloc_jt) {
+                    Some(next) => next,
+                    None => break,
+                };
+            }
+        }
+
+        Ok(MarkFuncTreeRes {
+            live_operands,
+            n_live_blocks: live_blocks.len(),
+            n_live_insts: n_inst_nodes,
+            n_live_jts: live_jts.len(),
+            n_live_uses: n_use_nodes,
+        })
+    }
+
+    pub(super) fn mark_module(&self) -> Result<(), ModuleError> {
+        // mark all the global objects
+        let live_funcdef = self.mark_global()?;
+
+        // mark all the function bodies
+        for func in live_funcdef {
+            let res = self.mark_func_tree(func)?;
+            let operands = &res.live_operands;
+
+            // mark all the operands
+            for op in operands {
+                self.mark_operand(*op)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn mark_module_reserve(
+        &self,
+        calc_reserve: impl Fn(&FuncData, &mut MarkFuncTreeRes),
+    ) -> Result<(), ModuleError> {
+        // mark all the global objects
+        let live_funcdef = self.mark_global()?;
+
+        // mark all the function bodies
+        for func in live_funcdef {
+            let mut res = self.mark_func_tree(func)?;
+            let func_data = self.module.get_global(func);
+            let func_data = match &*func_data {
+                GlobalData::Func(f) => f,
+                _ => panic!("MarkVisitor::mark_func: not a function"),
             };
-        }
-    }
-
-    fn read_func_arg(&self, _: GlobalRef, _: u32) {}
-}
-
-impl<'a> IConstDataVisitor for MarkVisitor<'a> {
-    fn read_int_const(&self, _: u8, _: i128) {}
-    fn read_float_const(&self, _: FloatTypeKind, _: f64) {}
-    fn read_ptr_null(&self, _: ValTypeID) {}
-    fn read_undef(&self, _: ValTypeID) {}
-    fn read_zero(&self, _: ValTypeID) {}
-    fn const_data_visitor_dispatch(&self, _: &ConstData) {}
-}
-
-impl<'a> IConstExprVisitor for MarkVisitor<'a> {
-    fn read_array(&self, _: ConstExprRef, array_data: &Array) {
-        let alloc_value = self.module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
-
-        for i in &array_data.elems {
-            self.mark_value(i.clone()).unwrap();
-            match i {
-                ValueSSA::ConstExpr(expr_ref) => {
-                    self.expr_visitor_dispatch(*expr_ref, alloc_expr);
-                }
-                _ => {}
+            for op in &res.live_operands {
+                self.mark_operand(*op)?;
+            }
+            calc_reserve(func_data, &mut res);
+            if let MarkMode::Compact(ref mut c) = self.inner.borrow_mut().mode {
+                c.expr_top += res.n_live_insts;
+                c.global_top += res.n_live_blocks;
+                c.inst_top += res.n_live_insts;
+                c.block_top += res.n_live_blocks;
+                c.jt_top += res.n_live_jts;
+                c.use_top += res.n_live_uses;
             }
         }
-    }
-    fn read_struct(&self, _: ConstExprRef, struct_data: &Struct) {
-        let alloc_value = self.module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
-
-        for i in &struct_data.elems {
-            self.mark_value(i.clone()).unwrap();
-            match i {
-                ValueSSA::ConstExpr(expr_ref) => {
-                    self.expr_visitor_dispatch(*expr_ref, alloc_expr);
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl<'a> IGlobalObjectVisitor for MarkVisitor<'a> {
-    fn read_global_variable(&self, global_ref: GlobalRef, gvar: &Var) {
-        self.mark_value(ValueSSA::Global(global_ref)).unwrap();
-        if let Some(init) = gvar.get_init() {
-            self.mark_value_by_semantic(init).unwrap();
-        }
+        Ok(())
     }
 
-    fn read_global_alias(&self, global_ref: GlobalRef, galias: &Alias) {
-        self.mark_value(ValueSSA::Global(global_ref)).unwrap();
-        let aliasee = galias.target.get();
-        if aliasee.is_nonnull()
-            && !self
-                .inner
-                .borrow()
-                .live_set
-                .value_is_live(ValueSSA::Global(aliasee))
-                .unwrap()
-        {
-            self.mark_value_by_semantic(ValueSSA::Global(aliasee)).unwrap();
-        }
-    }
-
-    fn read_func(&self, global_ref: GlobalRef, gfunc: &FuncData) {
-        todo!()
-    }
-}
-
-impl<'a> IInstVisitor for MarkVisitor<'a> {
-    fn read_phi_end(&self, inst_ref: InstRef) {
-        todo!()
-    }
-
-    fn read_phi_inst(&self, inst_ref: InstRef, common: &InstDataCommon, phi: &phi::PhiOp) {
-        todo!()
-    }
-
-    fn read_unreachable_inst(&self, inst_ref: InstRef, common: &InstDataCommon) {
-        todo!()
-    }
-
-    fn read_ret_inst(&self, inst_ref: InstRef, common: &InstDataCommon, ret: &terminator::Ret) {
-        todo!()
-    }
-
-    fn read_jump_inst(&self, inst_ref: InstRef, common: &InstDataCommon, jump: &terminator::Jump) {
-        todo!()
-    }
-
-    fn read_br_inst(&self, inst_ref: InstRef, common: &InstDataCommon, br: &terminator::Br) {
-        todo!()
-    }
-
-    fn read_switch_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        switch: &terminator::Switch,
-    ) {
-        todo!()
-    }
-
-    fn read_tail_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon) {
-        todo!()
-    }
-
-    fn read_load_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        load: &load_store::LoadOp,
-    ) {
-        todo!()
-    }
-
-    fn read_store_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        store: &load_store::StoreOp,
-    ) {
-        todo!()
-    }
-
-    fn read_select_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        select: &sundury_inst::SelectOp,
-    ) {
-        todo!()
-    }
-
-    fn read_bin_op_inst(&self, inst_ref: InstRef, common: &InstDataCommon, bin_op: &BinOp) {
-        todo!()
-    }
-
-    fn read_cmp_inst(&self, inst_ref: InstRef, common: &InstDataCommon, cmp: &cmp::CmpOp) {
-        todo!()
-    }
-
-    fn read_cast_inst(&self, inst_ref: InstRef, common: &InstDataCommon, cast: &cast::CastOp) {
-        todo!()
-    }
-
-    fn read_index_ptr_inst(
-        &self,
-        inst_ref: InstRef,
-        common: &InstDataCommon,
-        index_ptr: &gep::IndexPtrOp,
-    ) {
-        todo!()
-    }
-
-    fn read_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon, call: &CallOp) {
-        todo!()
+    pub(super) fn mark_module_reserve_double(&self) -> Result<(), ModuleError> {
+        // Keep the live value count unchanged so that the
+        // reserve space is twice the size of the live value.
+        self.mark_module_reserve(|_, _| {})
     }
 }

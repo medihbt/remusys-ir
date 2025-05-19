@@ -191,8 +191,19 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
     pub fn len(&self) -> usize {
         self._size.get()
     }
+
+    /// Returns the number of nodes in the list, including the head and tail guides.
+    /// If the list is valid and empty, it returns 2.
+    /// If the list is invalid, it returns 0.
+    pub fn n_nodes_with_guide(&self) -> usize {
+        let n = self._size.get();
+        if self.is_valid() { n + 2 } else { 0 }
+    }
     pub fn is_empty(&self) -> bool {
         self._size.get() == 0
+    }
+    pub fn is_valid(&self) -> bool {
+        self._head.is_nonnull() && self._tail.is_nonnull()
     }
 
     /**

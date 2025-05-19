@@ -44,6 +44,7 @@ pub fn write_ir_module(
     writer: &mut dyn IoWrite,
     prints_rdfg: bool,
     prints_rcfg: bool,
+    prints_slabref: bool,
 ) {
     let mut module_writer = ModuleValueWriter::new(module, writer);
     module_writer.prints_rdfg = if module.rdfg_enabled() {
@@ -58,6 +59,7 @@ pub fn write_ir_module(
         module_writer.write_str("; CFG tracking disabled, will not print\n");
         false
     };
+    module_writer.prints_slabref = prints_slabref;
     module_writer.process_module();
 }
 
@@ -76,6 +78,7 @@ struct ModuleValueWriter<'a> {
     current_indent: Cell<usize>,
     prints_rdfg: bool,
     prints_rcfg: bool,
+    prints_slabref: bool,
 }
 
 struct ModuleWriterIndentGuard<'a, 'b: 'a> {
@@ -107,6 +110,7 @@ impl<'a> ModuleValueWriter<'a> {
             current_indent: Cell::new(0),
             prints_rdfg: false,
             prints_rcfg: false,
+            prints_slabref: false,
         }
     }
 
@@ -119,6 +123,9 @@ impl<'a> ModuleValueWriter<'a> {
 
         let live_funcs = self.live_func_def.borrow();
         for func in &*live_funcs {
+            if self.prints_slabref {
+                self.write_fmt(format_args!("; {:?}\n", func));
+            }
             let func = match func.to_slabref_unwrap(&self.alloc_value.alloc_global) {
                 GlobalData::Func(f) => f,
                 _ => panic!("Invalid global data kind: Not Function"),
@@ -291,6 +298,9 @@ impl IValueVisitor for ModuleValueWriter<'_> {
     fn read_block(&self, block: BlockRef, block_data: &BlockData) {
         // ID
         let block_id = self.block_getid_unwrap(block);
+        if self.prints_slabref {
+            self.write_fmt(format_args!("\n; {:?}\n", block));
+        }
         self.write_fmt(format_args!("{}:", block_id));
         if self.prints_rcfg {
             self.write_block_predecessors(block);
@@ -299,6 +309,11 @@ impl IValueVisitor for ModuleValueWriter<'_> {
         let _g = self.add_indent();
         let insts = block_data.instructions.view(&self.alloc_value.alloc_inst);
         for (inst_ref, inst_data) in insts {
+            if self.prints_slabref {
+                self.wrap_indent();
+                self.wrap_indent();
+                self.write_fmt(format_args!("; {:?}", inst_ref));
+            }
             match inst_data {
                 InstData::PhiInstEnd(..) => {
                     self.wrap_indent();
@@ -405,6 +420,9 @@ impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
         if self.add_def_if_live_func(global_ref, func) {
             // Function definitions, return.
             return;
+        }
+        if self.prints_slabref {
+            self.write_fmt(format_args!("; {:?}\n", global_ref));
         }
         self.write_func_header(func);
         self.wrap_indent();
@@ -866,7 +884,7 @@ mod testing {
 
         // write the module to file `io.medihbt.WriterTest.Basic.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.Basic.ll").unwrap();
-        write_ir_module(&module, &mut file, false, false);
+        write_ir_module(&module, &mut file, false, false, true);
 
         // Find entry block of the function `main`. we'll use it later.
         let entry_block = {
@@ -932,7 +950,7 @@ mod testing {
 
         // print the module to file `io.medihbt.WriterTest.LoadArgv.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.LoadArgv.ll").unwrap();
-        write_ir_module(&module, &mut file, false, false);
+        write_ir_module(&module, &mut file, false, false, true);
 
         // Now expand the result to i32 and let return instruction use this value.
         // Source code: `return (int)c;` with cast.
@@ -976,6 +994,6 @@ mod testing {
         };
         // write the module to file `io.medihbt.WriterTest.CastReturn.ll`
         let mut file = std::fs::File::create("target/io.medihbt.WriterTest.CastReturn.ll").unwrap();
-        write_ir_module(&module, &mut file, false, false);
+        write_ir_module(&module, &mut file, false, false, false);
     }
 }
