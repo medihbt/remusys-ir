@@ -29,6 +29,7 @@ use super::{
 
 pub mod rcfg;
 pub mod rdfg;
+pub mod gc;
 
 pub struct Module {
     pub name: String,
@@ -335,6 +336,7 @@ impl Module {
 
 #[derive(Debug)]
 pub enum ModuleError {
+    DfgReferenceOutOfRange(usize, usize /* index */),
     DfgOperandNotReferece(ValueSSA),
     RDFGNotEnabled,
     OperandOverflow(usize /* required */, usize /* real */),
