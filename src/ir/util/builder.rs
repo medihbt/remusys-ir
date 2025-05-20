@@ -1,11 +1,30 @@
 use std::{cell::Ref, rc::Rc};
 
 use crate::{
-    base::{slablist::{SlabRefListError, SlabRefListNodeRef}, slabref::SlabRef, NullableValue},
+    base::{
+        NullableValue,
+        slablist::{SlabRefListError, SlabRefListNodeRef},
+        slabref::SlabRef,
+    },
     ir::{
-        block::{BlockData, BlockRef}, cmp_cond::CmpCond, global::{func::FuncData, GlobalData, GlobalRef}, inst::{
-            binop::BinOp, callop, cast::CastOp, cmp::CmpOp, gep::IndexPtrOp, load_store::{LoadOp, StoreOp}, phi::PhiOp, sundury_inst::SelectOp, terminator::{Br, Jump, Ret, Switch}, InstData, InstError, InstRef
-        }, module::Module, opcode::Opcode, ValueSSA
+        ValueSSA,
+        block::{BlockData, BlockRef},
+        cmp_cond::CmpCond,
+        global::{GlobalData, GlobalRef, func::FuncData},
+        inst::{
+            InstData, InstError, InstRef,
+            binop::BinOp,
+            callop,
+            cast::CastOp,
+            cmp::CmpOp,
+            gep::IndexPtrOp,
+            load_store::{LoadOp, StoreOp},
+            phi::PhiOp,
+            sundury_inst::SelectOp,
+            terminator::{Br, Jump, Ret, Switch},
+        },
+        module::Module,
+        opcode::Opcode,
     },
     typing::{id::ValTypeID, types::FuncTypeRef},
 };
@@ -947,8 +966,11 @@ mod testing {
         //     ret i32 0
         // }
         // ```
-        let main_func_ty =
-            type_ctx.make_func_type(&[ValTypeID::Int(32), ValTypeID::Ptr], ValTypeID::Int(32), false);
+        let main_func_ty = type_ctx.make_func_type(
+            &[ValTypeID::Int(32), ValTypeID::Ptr],
+            ValTypeID::Int(32),
+            false,
+        );
         builder
             .define_function_with_unreachable("main", main_func_ty)
             .unwrap();
@@ -1027,6 +1049,10 @@ mod testing {
         // Try to split again.
         builder.set_focus(IRBuilderFocus::Block(old_focus));
         let _new2_focus = builder.split_current_block_from_terminator().unwrap();
+
+        builder
+            .module
+            .gc_mark_sweep([].iter().map(|v: &ValueSSA| *v));
 
         // write to file `test_ir_builder_chain_inst.ll`
         let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();

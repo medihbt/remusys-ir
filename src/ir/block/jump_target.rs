@@ -15,7 +15,7 @@ use crate::{
     impl_slabref,
     ir::{
         inst::InstRef,
-        module::{Module, rcfg::RcfgAllocs},
+        module::{Module, rcfg::RcfgAlloc},
     },
 };
 
@@ -71,7 +71,7 @@ impl JumpTargetData {
     pub fn set_block_norcfg(&self, block: BlockRef) {
         self._block.set(block);
     }
-    pub fn set_block_with_rcfg(&self, handle: JumpTargetRef, rcfg: &RcfgAllocs, block: BlockRef) {
+    pub fn set_block_with_rcfg(&self, handle: JumpTargetRef, rcfg: &RcfgAlloc, block: BlockRef) {
         let prev = self._block.get();
         if prev == block {
             return;

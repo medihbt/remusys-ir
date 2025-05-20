@@ -17,20 +17,17 @@ use crate::{
 use super::liveset::IRRefLiveSet;
 
 pub(super) struct MarkVisitor<'a> {
-    inner: RefCell<MarkVisitorInner>,
-    module: &'a Module,
+    pub(super) inner: RefCell<MarkVisitorInner>,
+    pub(super) module: &'a Module,
 }
 
-struct MarkVisitorInner {
-    live_set: IRRefLiveSet,
-    curr_func: GlobalRef,
-    curr_block: BlockRef,
-    curr_inst: InstRef,
-    mode: MarkMode,
+pub(super) struct MarkVisitorInner {
+    pub(super) live_set: IRRefLiveSet,
+    pub(super) mode: MarkMode,
 }
 
 #[derive(Debug, Clone)]
-enum MarkMode {
+pub(super) enum MarkMode {
     /// Non-compact mode: keep the original order of references.
     NoCompact,
 
@@ -62,27 +59,24 @@ enum MarkMode {
     ///   选项开启时, 跳转目标组之间会预留一定的空间.
     /// * **表达式**: 由于表达式的标记是按照数据流图进行的, 表达式的排列可以视为无序
     ///   紧密排布. 预留空间的选项不会影响表达式的顺序.
-    Compact(MarkCompactMode),
+    Compact(CompactItemTop),
 }
 
 #[derive(Debug, Clone)]
-struct MarkCompactMode {
-    expr_top: usize,
-    global_top: usize,
-    inst_top: usize,
-    block_top: usize,
-    jt_top: usize,
-    use_top: usize,
+pub(super) struct CompactItemTop {
+    pub(super) expr_top: usize,
+    pub(super) global_top: usize,
+    pub(super) inst_top: usize,
+    pub(super) block_top: usize,
+    pub(super) jt_top: usize,
+    pub(super) use_top: usize,
 }
 
 impl<'a> MarkVisitor<'a> {
     pub fn from_module(module: &'a Module, should_compact: bool) -> Self {
         let live_set = IRRefLiveSet::from_module_empty(module);
-        let curr_func = GlobalRef::new_null();
-        let curr_block = BlockRef::new_null();
-        let curr_inst = InstRef::new_null();
         let mode = if should_compact {
-            MarkMode::Compact(MarkCompactMode {
+            MarkMode::Compact(CompactItemTop {
                 expr_top: 0,
                 global_top: 0,
                 inst_top: 0,
@@ -95,14 +89,18 @@ impl<'a> MarkVisitor<'a> {
         };
 
         Self {
-            inner: RefCell::new(MarkVisitorInner {
-                live_set,
-                curr_func,
-                curr_block,
-                curr_inst,
-                mode,
-            }),
+            inner: RefCell::new(MarkVisitorInner { live_set, mode }),
             module,
+        }
+    }
+    
+    pub(super) fn get_mode(&self) -> MarkMode {
+        self.inner.borrow().mode.clone()
+    }
+    pub(super) fn get_reference_top(&self) -> Option<CompactItemTop> {
+        match self.inner.borrow().mode {
+            MarkMode::Compact(ref c) => Some(c.clone()),
+            _ => None,
         }
     }
 
@@ -355,13 +353,19 @@ impl<'a> MarkVisitor<'a> {
         // mark the blocks
         let mut n_inst_nodes = 0;
         let mut live_blocks = Vec::with_capacity(body.len());
-        for (blockref, block) in body.view(alloc_block) {
-            self.mark_value(ValueSSA::Block(blockref))?;
+        let mut block_node = body._head;
+        while block_node.is_nonnull() {
+            let block = block_node.to_slabref_unwrap(alloc_block);
+            self.mark_value(ValueSSA::Block(block_node))?;
             let inst_view = unsafe { block.instructions.unsafe_load_readonly_view() };
             n_inst_nodes += inst_view.n_nodes_with_guide();
-            live_blocks.push((blockref, unsafe {
+            live_blocks.push((block_node, unsafe {
                 block.instructions.unsafe_load_readonly_view()
             }));
+            block_node = match block_node.get_next_ref(alloc_block) {
+                Some(next) => next,
+                None => break,
+            };
         }
 
         // mark the instructions per block

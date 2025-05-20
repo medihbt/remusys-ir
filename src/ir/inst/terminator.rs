@@ -14,7 +14,7 @@ use crate::{
             BlockRef,
             jump_target::{JumpTargetData, JumpTargetKind, JumpTargetRef},
         },
-        module::{Module, rcfg::RcfgAllocs},
+        module::{Module, rcfg::RcfgAlloc},
         opcode::Opcode,
     },
     typing::id::ValTypeID,
@@ -66,21 +66,21 @@ pub struct Ret {
 }
 
 pub struct JumpCommon {
-    _targets: SlabRefList<JumpTargetRef>,
-    _condition: UseRef,
+    pub(crate) _targets: SlabRefList<JumpTargetRef>,
+    pub(crate) _condition: UseRef,
 }
 
-pub struct Jump(JumpCommon);
+pub struct Jump(pub(crate) JumpCommon);
 pub struct Br {
-    _common: JumpCommon,
+    pub(crate) _common: JumpCommon,
     pub if_true: JumpTargetRef,
     pub if_false: JumpTargetRef,
 }
 
 pub struct Switch {
-    _common: JumpCommon,
-    _default: JumpTargetRef,
-    _cases: RefCell<Vec<(i128, JumpTargetRef)>>,
+    pub(crate) _common: JumpCommon,
+    pub(crate) _default: JumpTargetRef,
+    pub(crate) _cases: RefCell<Vec<(i128, JumpTargetRef)>>,
 }
 
 impl TerminatorInst for Ret {
@@ -434,7 +434,7 @@ impl Switch {
     }
     pub fn set_case_with_rcfg(
         &self,
-        rcfg: &mut RcfgAllocs,
+        rcfg: &mut RcfgAlloc,
         alloc_jt: &mut Slab<JumpTargetData>,
         case: i128,
         block: BlockRef,

@@ -27,9 +27,9 @@ use super::{
     },
 };
 
+pub mod gc;
 pub mod rcfg;
 pub mod rdfg;
-pub mod gc;
 
 pub struct Module {
     pub name: String,
@@ -39,7 +39,7 @@ pub struct Module {
     pub(super) _alloc_use: RefCell<Slab<UseData>>,
     pub(super) _alloc_jt: RefCell<Slab<JumpTargetData>>,
     pub(super) _rdfg_alloc: RefCell<Option<rdfg::RdfgAlloc>>,
-    pub(super) _rcfg_alloc: RefCell<Option<rcfg::RcfgAllocs>>,
+    pub(super) _rcfg_alloc: RefCell<Option<rcfg::RcfgAlloc>>,
 }
 
 pub struct ModuleAllocatorInner {
@@ -309,8 +309,8 @@ impl Module {
     /// its type context.
     ///
     /// This function cannot change the reference addresses of `Value`.
-    pub fn gc_mark_sweep(&self, _extern_roots: impl Iterator<Item = ValueSSA>) {
-        todo!()
+    pub fn gc_mark_sweep(&self, extern_roots: impl Iterator<Item = ValueSSA>) {
+        gc::module_gc_mark_sweep(self, extern_roots).unwrap();
     }
 
     /// Implement a 'mark-compact' algorithm to reduce usage of those allocators.
@@ -336,6 +336,8 @@ impl Module {
 
 #[derive(Debug)]
 pub enum ModuleError {
+    NullReference,
+
     DfgReferenceOutOfRange(usize, usize /* index */),
     DfgOperandNotReferece(ValueSSA),
     RDFGNotEnabled,
@@ -547,7 +549,7 @@ impl Module {
 
 /// Module as control flow graph maintainer.
 impl Module {
-    pub fn borrow_rcfg_alloc(&self) -> Option<Ref<rcfg::RcfgAllocs>> {
+    pub fn borrow_rcfg_alloc(&self) -> Option<Ref<rcfg::RcfgAlloc>> {
         if let None = *self._rcfg_alloc.borrow() {
             return None;
         }
@@ -555,7 +557,7 @@ impl Module {
             alloc.as_ref().unwrap()
         }))
     }
-    pub fn borrow_rcfg_alloc_mut(&self) -> Option<RefMut<rcfg::RcfgAllocs>> {
+    pub fn borrow_rcfg_alloc_mut(&self) -> Option<RefMut<rcfg::RcfgAlloc>> {
         if let None = *self._rcfg_alloc.borrow() {
             return None;
         }
@@ -602,7 +604,7 @@ impl Module {
         }
 
         // Step 2: Allocate nodes for all live basic blocks.
-        let mut rcfg_alloc = rcfg::RcfgAllocs::new_with_capacity(alloc_block.capacity());
+        let mut rcfg_alloc = rcfg::RcfgAlloc::new_with_capacity(alloc_block.capacity());
         for (block, _) in &live_bb {
             rcfg_alloc.alloc_node(*block);
         }

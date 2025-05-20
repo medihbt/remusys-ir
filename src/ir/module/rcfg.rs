@@ -28,6 +28,9 @@ impl RcfgPerBlock {
             preds: RefCell::new(Vec::new()),
         }
     }
+    pub fn new_null() -> Self {
+        Self::new(BlockRef::new_null())
+    }
 
     pub fn add_predecessor(&self, pred: JumpTargetRef) {
         let mut comes_from = self.preds.borrow_mut();
@@ -59,11 +62,11 @@ impl RcfgPerBlock {
     }
 }
 
-pub struct RcfgAllocs {
+pub struct RcfgAlloc {
     pub per_bb: Vec<RcfgPerBlock>,
 }
 
-impl RcfgAllocs {
+impl RcfgAlloc {
     pub fn new_with_capacity(block: usize) -> Self {
         Self {
             per_bb: vec![RcfgPerBlock::new(BlockRef::new_null()); block],
@@ -89,9 +92,9 @@ impl RcfgAllocs {
     pub fn free_node(&mut self, block: BlockRef) {
         let per_bb = &mut self.per_bb;
         if per_bb.len() <= block.get_handle() {
-            panic!("RcfgPerBlock not initialized");
+            return;
         }
-        per_bb[block.get_handle()].block = BlockRef::new_null();
+        per_bb[block.get_handle()] = RcfgPerBlock::new_null();
     }
 
     pub fn get_node(&self, block: BlockRef) -> &RcfgPerBlock {

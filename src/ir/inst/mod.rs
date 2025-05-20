@@ -1,6 +1,7 @@
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 
 use slab::Slab;
+use terminator::TerminatorInst;
 use usedef::{UseData, UseRef};
 
 use crate::{
@@ -15,7 +16,12 @@ use crate::{
     typing::{TypeMismatchError, id::ValTypeID},
 };
 
-use super::{ValueSSA, ValueSSAError, block::BlockRef, module::Module, opcode::Opcode};
+use super::{
+    ValueSSA, ValueSSAError,
+    block::BlockRef,
+    module::{Module, rcfg::RcfgAlloc, rdfg::RdfgAlloc},
+    opcode::Opcode,
+};
 
 pub mod binop;
 pub mod callop;
@@ -397,6 +403,50 @@ impl InstData {
                 )
             },
         }
+    }
+
+    pub(super) fn on_gc_cleanup(
+        &self,
+        rcfg: &Option<Ref<RcfgAlloc>>,
+        rdfg: &Option<Ref<RdfgAlloc>>,
+        alloc_use: &Slab<UseData>,
+        alloc_jt: &Slab<super::block::jump_target::JumpTargetData>,
+    ) {
+        // Clean up operands.
+        if let Some(common) = self.get_common() {
+            let operands = &common.operands;
+            if !operands.is_valid() || operands.is_empty() {
+                return;
+            }
+            for (use_ref, use_data) in operands.view(alloc_use) {
+                if let Some(rdfg) = rdfg {
+                    use_data.set_operand_with_rdfg(use_ref, &rdfg, ValueSSA::new_null());
+                } else {
+                    use_data.set_operand_nordfg(ValueSSA::new_null());
+                }
+            }
+        }
+
+        // Clean up jump targets.
+        let jts = match self {
+            Self::Jump(_, j) => j.get_jump_targets(),
+            Self::Br(_, b) => b.get_jump_targets(),
+            Self::Switch(_, s) => s.get_jump_targets(),
+            _ => None,
+        };
+
+        if let Some(jts) = jts {
+            for (jt_ref, jt_data) in jts.view(alloc_jt) {
+                if let Some(rcfg) = rcfg {
+                    jt_data.set_block_with_rcfg(jt_ref, &rcfg, BlockRef::new_null());
+                } else {
+                    jt_data.set_block_norcfg(BlockRef::new_null());
+                }
+            }
+        }
+
+        // Clean up the instruction itself.
+        // However, there is nothing special to do here.
     }
 }
 

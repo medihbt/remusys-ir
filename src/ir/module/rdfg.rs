@@ -167,6 +167,35 @@ impl RdfgAlloc {
         Ok(())
     }
 
+    pub fn free_node(&mut self, value: ValueSSA) -> Result<(), ModuleError> {
+        match value {
+            ValueSSA::Global(global) => {
+                self.global[global.get_handle()] = RdfgPerValue::new_null();
+                if self.func_arg.len() > global.get_handle() {
+                    return Ok(());
+                }
+                let func_arg_rdfg = &mut self.func_arg[global.get_handle()];
+                if func_arg_rdfg.is_null() {
+                    return Ok(());
+                }
+                *func_arg_rdfg = FuncArgRdfg::new_null();
+            }
+            ValueSSA::ConstExpr(expr) => {
+                self.expr[expr.get_handle()] = RdfgPerValue::new_null();
+            }
+            ValueSSA::Inst(inst) => {
+                self.inst[inst.get_handle()] = RdfgPerValue::new_null();
+            }
+            ValueSSA::Block(block) => {
+                self.block[block.get_handle()] = RdfgPerValue::new_null();
+            }
+            _ /* Value semantoc items should not insert */ => {
+                return Err(ModuleError::DfgOperandNotReferece(value));
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_node(&self, value: ValueSSA) -> Result<&RdfgPerValue, ModuleError> {
         match value {
             ValueSSA::Global(global) => Ok(&self.global[global.get_handle()]),
