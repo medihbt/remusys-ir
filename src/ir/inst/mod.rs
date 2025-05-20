@@ -23,6 +23,7 @@ use super::{
     opcode::Opcode,
 };
 
+pub mod alloca;
 pub mod binop;
 pub mod callop;
 pub mod cast;
@@ -93,6 +94,9 @@ pub enum InstData {
     // and do not transfer control to another block or return from a function.
     /// PHI Node. This instruction is used to select a value based on the control flow.
     Phi(InstDataCommon, phi::PhiOp),
+
+    /// Alloca: Allocate memory for a variable.
+    Alloca(InstDataCommon, alloca::Alloca),
 
     /// Load a value from memory.
     Load(InstDataCommon, load_store::LoadOp),
@@ -255,6 +259,7 @@ impl InstData {
             Self::Br(common, ..) => Some(common),
             Self::Switch(common, ..) => Some(common),
             Self::Phi(common, ..) => Some(common),
+            Self::Alloca(common, ..) => Some(common),
             Self::Load(common, ..) => Some(common),
             Self::Store(common, ..) => Some(common),
             Self::Select(common, ..) => Some(common),
@@ -276,6 +281,7 @@ impl InstData {
             Self::Br(common, ..) => Some(common),
             Self::Switch(common, ..) => Some(common),
             Self::Phi(common, ..) => Some(common),
+            Self::Alloca(common, ..) => Some(common),
             Self::Load(common, ..) => Some(common),
             Self::Store(common, ..) => Some(common),
             Self::Select(common, ..) => Some(common),
@@ -347,6 +353,7 @@ impl InstData {
             InstData::Br(c, b) => b.check_operands(c, module),
             InstData::Switch(c, s) => s.check_operands(c, module),
             InstData::Phi(c, phi) => phi.check_operands(c, module),
+            InstData::Alloca(c, alloca) => alloca.check_operands(c, module),
             InstData::Load(c, ldr) => ldr.check_operands(c, module),
             InstData::Store(c, str) => str.check_operands(c, module),
             InstData::Select(c, s) => s.check_operands(c, module),

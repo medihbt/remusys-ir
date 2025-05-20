@@ -1,9 +1,16 @@
 use crate::{
     base::{
-        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead}, slabref::SlabRef, NullableValue
+        NullableValue,
+        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead},
+        slabref::SlabRef,
     },
     ir::{
-        block::{jump_target::JumpTargetRef, BlockRef}, constant::expr::{ConstExprData, ConstExprRef}, global::{GlobalData, GlobalRef}, inst::{terminator::JumpCommon, usedef::UseRef, InstData, InstDataCommon, InstRef}, module::{Module, ModuleError}, ValueSSA
+        ValueSSA,
+        block::{BlockRef, jump_target::JumpTargetRef},
+        constant::expr::{ConstExprData, ConstExprRef},
+        global::{GlobalData, GlobalRef},
+        inst::{InstData, InstDataCommon, InstRef, terminator::JumpCommon, usedef::UseRef},
+        module::{Module, ModuleError},
     },
 };
 
@@ -45,7 +52,11 @@ impl<'a> Redirector<'a> {
             _ => Ok(()),
         }
     }
-    fn _redirect_inst_ref(&self, inst_ref: &mut InstRef, nullable: bool) -> Result<(), ModuleError> {
+    fn _redirect_inst_ref(
+        &self,
+        inst_ref: &mut InstRef,
+        nullable: bool,
+    ) -> Result<(), ModuleError> {
         if inst_ref.is_null() {
             if nullable {
                 return Ok(());
@@ -57,7 +68,11 @@ impl<'a> Redirector<'a> {
         *inst_ref = InstRef::from_handle(new_pos);
         Ok(())
     }
-    fn _redirect_block_ref(&self, block_ref: &mut BlockRef, nullable: bool) -> Result<(), ModuleError> {
+    fn _redirect_block_ref(
+        &self,
+        block_ref: &mut BlockRef,
+        nullable: bool,
+    ) -> Result<(), ModuleError> {
         if block_ref.is_null() {
             if nullable {
                 return Ok(());
@@ -71,7 +86,11 @@ impl<'a> Redirector<'a> {
         *block_ref = BlockRef::from_handle(new_pos);
         Ok(())
     }
-    fn _redirect_global_ref(&self, global_ref: &mut GlobalRef, nullable: bool) -> Result<(), ModuleError> {
+    fn _redirect_global_ref(
+        &self,
+        global_ref: &mut GlobalRef,
+        nullable: bool,
+    ) -> Result<(), ModuleError> {
         if global_ref.is_null() {
             if nullable {
                 return Ok(());
@@ -167,6 +186,7 @@ impl<'a> Redirector<'a> {
                         self._redirect_use_ref(useref)?;
                     }
                 }
+                InstData::Alloca(..) => { /* Alloca instruction has no managed value */ }
                 InstData::Load(_, load_op) => {
                     self._redirect_use_ref(&mut load_op.source)?;
                 }
@@ -268,7 +288,8 @@ impl<'a> Redirector<'a> {
 
             let inner = oldpos_data._inner.get_mut();
             inner._self_ref = newpos;
-            self._redirect_global_ref(&mut inner._parent_func, true).unwrap();
+            self._redirect_global_ref(&mut inner._parent_func, true)
+                .unwrap();
             self._redirect_block_node_header(&mut inner._node_head)
                 .unwrap();
         }
@@ -318,7 +339,8 @@ impl<'a> Redirector<'a> {
 
             match &mut *oldpos_data {
                 GlobalData::Alias(alias) => {
-                    self._redirect_global_ref(alias.target.get_mut(), false).unwrap();
+                    self._redirect_global_ref(alias.target.get_mut(), false)
+                        .unwrap();
                 }
                 GlobalData::Var(v) => {
                     let inner = v.inner.get_mut();
@@ -331,8 +353,10 @@ impl<'a> Redirector<'a> {
                     if let Some(body) = body.as_mut() {
                         body.func = newpos;
                         self._redirect_block_ref(&mut body.entry, false).unwrap();
-                        self._redirect_block_ref(&mut body.body._head, false).unwrap();
-                        self._redirect_block_ref(&mut body.body._tail, false).unwrap();
+                        self._redirect_block_ref(&mut body.body._head, false)
+                            .unwrap();
+                        self._redirect_block_ref(&mut body.body._tail, false)
+                            .unwrap();
                     }
                 }
             }

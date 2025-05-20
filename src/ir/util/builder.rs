@@ -13,6 +13,7 @@ use crate::{
         global::{GlobalData, GlobalRef, func::FuncData},
         inst::{
             InstData, InstError, InstRef,
+            alloca::Alloca,
             binop::BinOp,
             callop,
             cast::CastOp,
@@ -748,7 +749,6 @@ impl IRBuilder {
         self.add_inst(inst)
     }
 
-    /// 添加 Call 指令。
     pub fn add_call_inst(
         &mut self,
         callee: GlobalRef,
@@ -757,6 +757,16 @@ impl IRBuilder {
         let (common, call_op) = callop::CallOp::new_from_func(&self.module, callee, args)
             .map_err(IRBuilderError::InstError)?;
         let inst = InstData::Call(common, call_op);
+        self.add_inst(inst)
+    }
+
+    pub fn add_alloca_inst(
+        &mut self,
+        pointee_ty: ValTypeID,
+        align_log2: u8,
+    ) -> Result<InstRef, IRBuilderError> {
+        let (alloca_op, common) = Alloca::from_module(&self.module, pointee_ty, align_log2);
+        let inst = InstData::Alloca(common, alloca_op);
         self.add_inst(inst)
     }
 
@@ -1001,40 +1011,50 @@ mod testing {
            ```Remusys-IR
            define dso_local i32 @main(i32 %0, ptr %1) {
            %2:
-               %3 = load ptr, ptr %1, align 4
-               %4 = getelementptr i8, ptr %3, i32 1
-               %5 = load i8, ptr %4, align 1
-               %6 = zext i8 %5 to i32
-               %7 = add i32 %0, %6
+               %3 = alloca i32, align 4
+               store i32 %0, ptr %3, align 4
+               %4 = load i32, ptr %3, align 4
+               %5 = load ptr, ptr %1, align 4
+               %6 = getelementptr i8, ptr %3, i32 1
+               %7 = load i8, ptr %4, align 1
+               %8 = zext i8 %5 to i32
+               %9 = add i32 %4, %6
                ret i32 %7
            }
            ```
         */
         let main_func_ref = builder.focus.function;
-        let load_3 = builder
+        let alloca_3 = builder.add_alloca_inst(ValTypeID::Int(32), 2).unwrap();
+        let _store_3x = builder
+            .add_store_inst(
+                ValueSSA::FuncArg(main_func_ref, 0),
+                ValueSSA::Inst(alloca_3),
+                4,
+            )
+            .unwrap();
+        let load_4 = builder
+            .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_3))
+            .unwrap();
+        let load_5 = builder
             .add_load_inst(ValTypeID::Ptr, 4, ValueSSA::FuncArg(main_func_ref, 1))
             .unwrap();
-        let gep_4 = builder
+        let gep_6 = builder
             .add_indexptr_inst(
                 ValTypeID::Ptr,
                 4,
                 1,
-                ValueSSA::Inst(load_3),
+                ValueSSA::Inst(load_5),
                 vec![ConstData::make_int_valssa(32, 1)].into_iter(),
             )
             .unwrap();
-        let load_5 = builder
-            .add_load_inst(ValTypeID::Int(8), 1, ValueSSA::Inst(gep_4))
+        let load_7 = builder
+            .add_load_inst(ValTypeID::Int(8), 1, ValueSSA::Inst(gep_6))
             .unwrap();
-        let zext_6 = builder
-            .add_cast_inst(Opcode::Zext, ValTypeID::Int(32), ValueSSA::Inst(load_5))
+        let zext_8 = builder
+            .add_cast_inst(Opcode::Zext, ValTypeID::Int(32), ValueSSA::Inst(load_7))
             .unwrap();
-        let add_7 = builder
-            .add_binop_inst(
-                Opcode::Add,
-                ValueSSA::FuncArg(main_func_ref, 0),
-                ValueSSA::Inst(zext_6),
-            )
+        let add_9 = builder
+            .add_binop_inst(Opcode::Add, ValueSSA::Inst(load_4), ValueSSA::Inst(zext_8))
             .unwrap();
 
         // Try to split the current block from the terminator.
@@ -1042,7 +1062,7 @@ mod testing {
         let new_focus = builder.split_current_block_from_terminator().unwrap();
         builder.set_focus(IRBuilderFocus::Block(new_focus));
         let phi_9 = builder.add_phi_inst(ValTypeID::Int(32)).unwrap();
-        PhiOp::insert_from_value(phi_9, &module, old_focus, ValueSSA::Inst(add_7)).unwrap();
+        PhiOp::insert_from_value(phi_9, &module, old_focus, ValueSSA::Inst(add_9)).unwrap();
 
         builder.focus_set_return(ValueSSA::Inst(phi_9)).unwrap();
 

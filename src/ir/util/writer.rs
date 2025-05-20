@@ -17,6 +17,7 @@ use crate::{
         },
         inst::{
             InstData, InstDataCommon, InstRef,
+            alloca::Alloca,
             binop::BinOp,
             callop::CallOp,
             cast::CastOp,
@@ -319,7 +320,7 @@ impl IValueVisitor for ModuleValueWriter<'_> {
                     self.wrap_indent();
                     self.write_str("; <Phi Ending and normal instruction beginning>");
                     continue;
-                },
+                }
                 _ => self.wrap_indent(),
             }
             if self.prints_rdfg {
@@ -523,10 +524,15 @@ impl IInstVisitor for ModuleValueWriter<'_> {
         self.write_str("]");
     }
 
-    /// WARNING: Not implemented yet.
-    /// Syntax: `tail call <type> @<name>(<args>)`
-    fn read_tail_call_inst(&self, _: InstRef, _: &InstDataCommon) {
-        todo!()
+    /// Syntax: `%<name> = alloca <type>, align <align>`
+    fn read_alloca_inst(&self, inst_ref: InstRef, _: &InstDataCommon, alloca: &Alloca) {
+        let type_ctx = self.module.type_ctx.as_ref();
+        self.write_fmt(format_args!(
+            "%{} = alloca {}, align {}",
+            self.inst_getid_unwrap(inst_ref),
+            alloca.pointee_ty.get_display_name(type_ctx),
+            1 << alloca.align_log2
+        ));
     }
 
     /// Syntax: `%<name> = load <type>, ptr %<ptr>, align <align>`
@@ -801,7 +807,7 @@ mod basic_value_formatting {
         fn read_jump_inst(&self, _: InstRef, _: &InstDataCommon, _: &Jump) {}
         fn read_br_inst(&self, _: InstRef, _: &InstDataCommon, _: &Br) {}
         fn read_switch_inst(&self, _: InstRef, _: &InstDataCommon, _: &Switch) {}
-        fn read_tail_call_inst(&self, _: InstRef, _: &InstDataCommon) {}
+        fn read_alloca_inst(&self, _: InstRef, _: &InstDataCommon, _: &Alloca) {}
         fn read_load_inst(&self, _: InstRef, _: &InstDataCommon, _: &LoadOp) {}
         fn read_store_inst(&self, _: InstRef, _: &InstDataCommon, _: &StoreOp) {}
         fn read_select_inst(&self, _: InstRef, _: &InstDataCommon, _: &SelectOp) {}
@@ -831,7 +837,7 @@ mod testing {
         let func_type = type_ctx.make_func_type(
             vec![ValTypeID::Int(32), ValTypeID::Ptr].as_slice(),
             ValTypeID::Int(32),
-            false
+            false,
         );
         let func_main_data =
             FuncData::new_with_unreachable(module, func_type, "main".into()).unwrap();

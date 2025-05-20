@@ -1,5 +1,6 @@
 use super::{
     InstData, InstDataCommon, InstRef,
+    alloca::Alloca,
     binop::BinOp,
     callop::CallOp,
     cast::CastOp,
@@ -19,7 +20,7 @@ pub trait IInstVisitor {
     fn read_jump_inst(&self, inst_ref: InstRef, common: &InstDataCommon, jump: &Jump);
     fn read_br_inst(&self, inst_ref: InstRef, common: &InstDataCommon, br: &Br);
     fn read_switch_inst(&self, inst_ref: InstRef, common: &InstDataCommon, switch: &Switch);
-    fn read_tail_call_inst(&self, inst_ref: InstRef, common: &InstDataCommon);
+    fn read_alloca_inst(&self, inst_ref: InstRef, common: &InstDataCommon, alloca: &Alloca);
     fn read_load_inst(&self, inst_ref: InstRef, common: &InstDataCommon, load: &LoadOp);
     fn read_store_inst(&self, inst_ref: InstRef, common: &InstDataCommon, store: &StoreOp);
     fn read_select_inst(&self, inst_ref: InstRef, common: &InstDataCommon, select: &SelectOp);
@@ -43,6 +44,7 @@ pub trait IInstVisitor {
             InstData::Jump(c, jump) => self.read_jump_inst(inst_ref, c, jump),
             InstData::Br(c, br) => self.read_br_inst(inst_ref, c, br),
             InstData::Switch(c, switch) => self.read_switch_inst(inst_ref, c, switch),
+            InstData::Alloca(c, alloca) => self.read_alloca_inst(inst_ref, c, alloca),
             InstData::Load(c, load) => self.read_load_inst(inst_ref, c, load),
             InstData::Store(c, store) => self.read_store_inst(inst_ref, c, store),
             InstData::Select(c, select) => self.read_select_inst(inst_ref, c, select),

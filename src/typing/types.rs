@@ -213,7 +213,7 @@ impl IValType for FuncTypeData {
         false
     }
 
-    /// Syntax: fn<(<arg1>, <arg2>, ...): <return type>>
+    /// Syntax: `fn<(<arg1>, <arg2>, ...): <return type>>`
     fn get_display_name(&self, type_ctx: &TypeContext) -> String {
         let mut ret = String::from("fn<(");
 
