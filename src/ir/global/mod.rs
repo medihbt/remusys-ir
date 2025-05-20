@@ -102,7 +102,14 @@ impl GlobalData {
         match self {
             GlobalData::Alias(alias) => &alias.common,
             GlobalData::Var(var) => &var.common,
-            GlobalData::Func(func) => &func.common,
+            GlobalData::Func(func) => &func._common,
+        }
+    }
+    pub fn common_mut(&mut self) -> &mut GlobalDataCommon {
+        match self {
+            GlobalData::Alias(alias) => &mut alias.common,
+            GlobalData::Var(var) => &mut var.common,
+            GlobalData::Func(func) => &mut func._common,
         }
     }
     pub fn get_name(&self) -> &str {
@@ -143,7 +150,7 @@ impl GlobalData {
             return;
         };
 
-        if let Some(body) = func.body.borrow().as_ref() {
+        if let Some(body) = func._body.borrow().as_ref() {
             let mut curr_node = body.body._head;
             while curr_node.is_nonnull() {
                 let bb = curr_node.to_slabref_unwrap(alloc_bb);

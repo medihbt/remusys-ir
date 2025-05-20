@@ -569,6 +569,9 @@ impl Module {
     pub fn rcfg_enabled(&self) -> bool {
         self._rcfg_alloc.borrow().is_some()
     }
+    pub fn disable_rcfg(&self) {
+        *self._rcfg_alloc.borrow_mut() = None;
+    }
     pub fn enable_rcfg(&self) -> Result<(), ModuleError> {
         if self._rcfg_alloc.borrow().is_some() {
             return Err(ModuleError::RCFGEnabled);

@@ -4,9 +4,10 @@ use crate::ir::ValueSSA;
 
 use super::{Module, ModuleError};
 
-pub mod redirect;
+pub mod compact;
 pub mod liveset;
 pub mod mark;
+pub mod redirect;
 pub mod sweep;
 
 pub(super) fn module_gc_mark_sweep(

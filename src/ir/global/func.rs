@@ -59,8 +59,8 @@ pub trait FuncUser: PtrUser {
 }
 
 pub struct FuncData {
-    pub(super) common: GlobalDataCommon,
-    pub(super) body: RefCell<Option<FuncBody>>,
+    pub(crate) _common: GlobalDataCommon,
+    pub(crate) _body: RefCell<Option<FuncBody>>,
 }
 
 pub struct FuncBody {
@@ -71,7 +71,7 @@ pub struct FuncBody {
 
 impl PtrStorage for FuncData {
     fn get_stored_pointee_type(&self) -> ValTypeID {
-        self.common.content_ty.clone()
+        self._common.content_ty.clone()
     }
 
     fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
@@ -83,12 +83,12 @@ impl FuncStorage for FuncData {}
 impl FuncData {
     pub fn new_extern(functy: FuncTypeRef, name: String) -> Self {
         Self {
-            common: GlobalDataCommon {
+            _common: GlobalDataCommon {
                 name,
                 content_ty: ValTypeID::Func(functy),
                 self_ref: Cell::new(GlobalRef::new_null()),
             },
-            body: RefCell::new(None),
+            _body: RefCell::new(None),
         }
     }
     pub fn new_with_unreachable(
@@ -108,12 +108,12 @@ impl FuncData {
         };
 
         Ok(Self {
-            common: GlobalDataCommon {
+            _common: GlobalDataCommon {
                 name,
                 content_ty: ValTypeID::Func(functy),
                 self_ref: Cell::new(GlobalRef::new_null()),
             },
-            body: RefCell::new(Some(FuncBody {
+            _body: RefCell::new(Some(FuncBody {
                 func: GlobalRef::new_null(),
                 body: blocks,
                 entry: unreachable_bb_ref,
@@ -122,7 +122,7 @@ impl FuncData {
     }
 
     pub fn is_extern(&self) -> bool {
-        self.body.borrow().is_none()
+        self._body.borrow().is_none()
     }
 
     pub fn add_block_data(
@@ -139,7 +139,7 @@ impl FuncData {
         module: &Module,
         block_ref: BlockRef,
     ) -> Result<(), SlabRefListError> {
-        self.body
+        self._body
             .borrow_mut()
             .as_mut()
             .unwrap()
@@ -149,7 +149,7 @@ impl FuncData {
     }
 
     pub fn get_blocks(&self) -> Option<Ref<SlabRefList<BlockRef>>> {
-        let body = self.body.borrow();
+        let body = self._body.borrow();
         if body.is_none() {
             None
         } else {
@@ -157,10 +157,10 @@ impl FuncData {
         }
     }
     pub fn get_entry(&self) -> BlockRef {
-        self.body.borrow().as_ref().unwrap().entry
+        self._body.borrow().as_ref().unwrap().entry
     }
     pub fn get_name(&self) -> &str {
-        &self.common.name
+        &self._common.name
     }
 }
 
@@ -208,7 +208,7 @@ mod testing {
 
         match &*module.get_global(main_func_ref) {
             GlobalData::Func(func_data) => {
-                let entry = func_data.body.borrow().as_ref().unwrap().entry;
+                let entry = func_data._body.borrow().as_ref().unwrap().entry;
                 module
                     .get_block(entry)
                     .set_terminator(&module, ret_inst)
