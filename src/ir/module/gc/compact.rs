@@ -1,5 +1,3 @@
-use core::alloc;
-
 use slab::Slab;
 
 use crate::{
@@ -7,16 +5,8 @@ use crate::{
     ir::{
         ValueSSA,
         block::jump_target::{JumpTargetData, JumpTargetRef},
-        constant::{
-            data::ConstData,
-            expr::{ConstExprData, ConstExprRef},
-        },
-        global::{GlobalData, GlobalRef},
-        inst::{
-            InstData,
-            usedef::{UseData, UseRef},
-        },
-        module::{Module, ModuleAllocatorInner, ModuleError, rcfg},
+        inst::usedef::{UseData, UseRef},
+        module::{Module, ModuleAllocatorInner},
     },
 };
 
@@ -97,7 +87,7 @@ impl<'a> CompactAlloc<'a> {
                 .get_value_new_pos(make_valuessa(T::from_handle(*index)))
                 .unwrap();
         }
-        values.drain(0..values.len()).collect::<Slab<_>>()
+        Slab::from_iter(values.drain(..))
     }
     fn build_use_alloc(&self, alloc_use: &mut Slab<UseData>) -> Slab<UseData> {
         let live_set = &self.redirector.live_set;
@@ -109,7 +99,7 @@ impl<'a> CompactAlloc<'a> {
                 .get_use_new_pos(UseRef::from_handle(*index))
                 .unwrap();
         }
-        uses.drain(0..uses.len()).collect::<Slab<_>>()
+        Slab::from_iter(uses.drain(..))
     }
     fn build_jt_alloc(&self, alloc_jt: &mut Slab<JumpTargetData>) -> Slab<JumpTargetData> {
         let live_set = &self.redirector.live_set;
@@ -123,6 +113,6 @@ impl<'a> CompactAlloc<'a> {
                 .get_jt_new_pos(JumpTargetRef::from_handle(*index))
                 .unwrap();
         }
-        jts.drain(0..jts.len()).collect::<Slab<_>>()
+        Slab::from_iter(jts.drain(..))
     }
 }

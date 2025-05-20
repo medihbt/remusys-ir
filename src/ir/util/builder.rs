@@ -1052,7 +1052,7 @@ mod testing {
 
         builder
             .module
-            .gc_mark_sweep([].iter().map(|v: &ValueSSA| *v));
+            .gc_mark_compact([].iter().map(|v: &ValueSSA| *v));
 
         // write to file `test_ir_builder_chain_inst.ll`
         let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();

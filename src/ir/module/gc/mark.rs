@@ -6,7 +6,7 @@ use crate::{
     base::{NullableValue, slablist::SlabRefListNodeRef, slabref::SlabRef},
     ir::{
         ValueSSA,
-        block::{BlockRef, jump_target::JumpTargetRef},
+        block::jump_target::JumpTargetRef,
         constant::expr::{ConstExprData, ConstExprRef},
         global::{GlobalData, GlobalRef, func::FuncData},
         inst::{terminator::TerminatorInst, usedef::UseRef, *},
@@ -91,16 +91,6 @@ impl<'a> MarkVisitor<'a> {
         Self {
             inner: RefCell::new(MarkVisitorInner { live_set, mode }),
             module,
-        }
-    }
-    
-    pub(super) fn get_mode(&self) -> MarkMode {
-        self.inner.borrow().mode.clone()
-    }
-    pub(super) fn get_reference_top(&self) -> Option<CompactItemTop> {
-        match self.inner.borrow().mode {
-            MarkMode::Compact(ref c) => Some(c.clone()),
-            _ => None,
         }
     }
 
@@ -218,19 +208,19 @@ pub(super) struct MarkFuncTreeRes {
 
     /// The number of live blocks. Used for reserveing space
     /// to compact the block list.
-    n_live_blocks: usize,
+    _n_live_blocks: usize,
 
     /// The number of live instructions. Used for reserveing space
     /// to compact the instruction list.
-    n_live_insts: usize,
+    _n_live_insts: usize,
 
     /// The number of live jump targets. Used for reserveing space
     /// to compact the jump target list.
-    n_live_jts: usize,
+    _n_live_jts: usize,
 
     /// The number of live uses. Used for reserveing space
     /// to compact the use list.
-    n_live_uses: usize,
+    _n_live_uses: usize,
 }
 
 /// Mark all the values in the module
@@ -441,10 +431,10 @@ impl<'a> MarkVisitor<'a> {
 
         Ok(MarkFuncTreeRes {
             live_operands,
-            n_live_blocks: live_blocks.len(),
-            n_live_insts: n_inst_nodes,
-            n_live_jts: live_jts.len(),
-            n_live_uses: n_use_nodes,
+            _n_live_blocks: live_blocks.len(),
+            _n_live_insts: n_inst_nodes,
+            _n_live_jts: live_jts.len(),
+            _n_live_uses: n_use_nodes,
         })
     }
 
@@ -485,12 +475,12 @@ impl<'a> MarkVisitor<'a> {
             }
             calc_reserve(func_data, &mut res);
             if let MarkMode::Compact(ref mut c) = self.inner.borrow_mut().mode {
-                c.expr_top += res.n_live_insts;
-                c.global_top += res.n_live_blocks;
-                c.inst_top += res.n_live_insts;
-                c.block_top += res.n_live_blocks;
-                c.jt_top += res.n_live_jts;
-                c.use_top += res.n_live_uses;
+                c.expr_top += res._n_live_insts;
+                c.global_top += res._n_live_blocks;
+                c.inst_top += res._n_live_insts;
+                c.block_top += res._n_live_blocks;
+                c.jt_top += res._n_live_jts;
+                c.use_top += res._n_live_uses;
             }
         }
         Ok(())

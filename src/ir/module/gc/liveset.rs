@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-pub(super) struct IRRefLiveSet {
+pub struct IRRefLiveSet {
     pub blocks: Box<[usize]>,
     pub insts: Box<[usize]>,
     pub exprs: Box<[usize]>,

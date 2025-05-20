@@ -1,85 +1,84 @@
 use crate::{
     base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabRefListNodeHead},
-        slabref::SlabRef,
+        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead}, slabref::SlabRef, NullableValue
     },
     ir::{
-        ValueSSA,
-        block::{BlockRef, jump_target::JumpTargetRef},
-        constant::expr::{ConstExprData, ConstExprRef},
-        global::{GlobalData, GlobalRef},
-        inst::{InstData, InstDataCommon, InstRef, terminator::JumpCommon, usedef::UseRef},
-        module::{Module, ModuleError},
+        block::{jump_target::JumpTargetRef, BlockRef}, constant::expr::{ConstExprData, ConstExprRef}, global::{GlobalData, GlobalRef}, inst::{terminator::JumpCommon, usedef::UseRef, InstData, InstDataCommon, InstRef}, module::{Module, ModuleError}, ValueSSA
     },
 };
 
-use super::{
-    liveset::IRRefLiveSet,
-    mark::{CompactItemTop, MarkMode, MarkVisitor},
-};
+use super::{liveset::IRRefLiveSet, mark::MarkVisitor};
 
 pub(super) struct Redirector<'a> {
     pub(super) module: &'a Module,
     pub(super) live_set: IRRefLiveSet,
-    pub(super) ref_top: CompactItemTop,
 }
 
 impl<'a> Redirector<'a> {
     pub(super) fn from_marker(marker: MarkVisitor<'a>) -> Self {
         let module = marker.module;
         let marker_inner = marker.inner.into_inner();
-        let ref_top = match &marker_inner.mode {
-            MarkMode::NoCompact => {
-                panic!("Marker should be in compact mode when performing a mark-compact operation")
-            }
-            MarkMode::Compact(top) => top.clone(),
-        };
         let live_set = marker_inner.live_set;
-
-        Self {
-            module,
-            live_set,
-            ref_top,
-        }
+        Self { module, live_set }
     }
 }
 
 impl<'a> Redirector<'a> {
     pub(super) fn redirect_module(&self) -> Result<(), ModuleError> {
-        self.redirect_insts()?;
-        self.redirect_blocks()?;
-        self.redirect_global_alloc()?;
-        self.redirect_exprs()?;
-        self.redirect_use()?;
-        self.redirect_jt()?;
-        self.redirect_global_def()?;
+        self.redirect_insts().unwrap();
+        self.redirect_blocks().unwrap();
+        self.redirect_global_alloc().unwrap();
+        self.redirect_exprs().unwrap();
+        self.redirect_use().unwrap();
+        self.redirect_jt().unwrap();
+        self.redirect_global_def().unwrap();
         Ok(())
     }
 
     fn _redirect_value_ref(&self, value: &mut ValueSSA) -> Result<(), ModuleError> {
         match value {
-            ValueSSA::Inst(inst) => self._redirect_inst_ref(inst),
-            ValueSSA::Block(block) => self._redirect_block_ref(block),
-            ValueSSA::Global(global) => self._redirect_global_ref(global),
+            ValueSSA::Inst(inst) => self._redirect_inst_ref(inst, false),
+            ValueSSA::Block(block) => self._redirect_block_ref(block, false),
+            ValueSSA::Global(global) => self._redirect_global_ref(global, false),
             ValueSSA::ConstExpr(expr) => self._redirect_expr_ref(expr),
-            ValueSSA::FuncArg(func, _) => self._redirect_global_ref(func),
+            ValueSSA::FuncArg(func, _) => self._redirect_global_ref(func, false),
             _ => Ok(()),
         }
     }
-    fn _redirect_inst_ref(&self, inst_ref: &mut InstRef) -> Result<(), ModuleError> {
+    fn _redirect_inst_ref(&self, inst_ref: &mut InstRef, nullable: bool) -> Result<(), ModuleError> {
+        if inst_ref.is_null() {
+            if nullable {
+                return Ok(());
+            } else {
+                panic!("InstRef is null, but not nullable");
+            }
+        }
         let new_pos = self.live_set.get_value_new_pos(ValueSSA::Inst(*inst_ref))?;
         *inst_ref = InstRef::from_handle(new_pos);
         Ok(())
     }
-    fn _redirect_block_ref(&self, block_ref: &mut BlockRef) -> Result<(), ModuleError> {
+    fn _redirect_block_ref(&self, block_ref: &mut BlockRef, nullable: bool) -> Result<(), ModuleError> {
+        if block_ref.is_null() {
+            if nullable {
+                return Ok(());
+            } else {
+                panic!("BlockRef is null, but not nullable");
+            }
+        }
         let new_pos = self
             .live_set
             .get_value_new_pos(ValueSSA::Block(*block_ref))?;
         *block_ref = BlockRef::from_handle(new_pos);
         Ok(())
     }
-    fn _redirect_global_ref(&self, global_ref: &mut GlobalRef) -> Result<(), ModuleError> {
+    fn _redirect_global_ref(&self, global_ref: &mut GlobalRef, nullable: bool) -> Result<(), ModuleError> {
+        if global_ref.is_null() {
+            if nullable {
+                return Ok(());
+            } else {
+                panic!("GlobalRef is null, but not nullable");
+            }
+        }
         let new_pos = self
             .live_set
             .get_value_new_pos(ValueSSA::Global(*global_ref))?;
@@ -95,7 +94,7 @@ impl<'a> Redirector<'a> {
     }
     fn _redirect_parent_bb(&self, parent_bb: &mut Option<BlockRef>) -> Result<(), ModuleError> {
         if let Some(bb) = parent_bb {
-            self._redirect_block_ref(bb)?;
+            self._redirect_block_ref(bb, true)?;
         }
         Ok(())
     }
@@ -140,7 +139,7 @@ impl<'a> Redirector<'a> {
             match &mut *oldpos_data {
                 InstData::ListGuideNode(head, parent) => {
                     self.redirect_inst_node_header(head.get_mut())?;
-                    self._redirect_block_ref(parent.get_mut())?;
+                    self._redirect_block_ref(parent.get_mut(), false)?;
                 }
                 InstData::PhiInstEnd(_) | InstData::Unreachable(_) => {}
                 InstData::Ret(_, ret) => {
@@ -164,7 +163,7 @@ impl<'a> Redirector<'a> {
                 }
                 InstData::Phi(_, phi_op) => {
                     for (from_bb, useref) in &mut *phi_op.get_from_all_mut() {
-                        self._redirect_block_ref(from_bb)?;
+                        self._redirect_block_ref(from_bb, false)?;
                         self._redirect_use_ref(useref)?;
                     }
                 }
@@ -260,15 +259,18 @@ impl<'a> Redirector<'a> {
             let newpos = BlockRef::from_handle(*newpos);
             let mut oldpos_data = self.module.mut_block(oldpos);
 
-            self._redirect_inst_reflist_controller(&mut oldpos_data.instructions)?;
-            self._redirect_inst_ref(oldpos_data.phi_node_end.get_mut())?;
+            if !oldpos_data.is_guide() {
+                self._redirect_inst_reflist_controller(&mut oldpos_data.instructions)
+                    .unwrap();
+                self._redirect_inst_ref(oldpos_data.phi_node_end.get_mut(), true)
+                    .unwrap();
+            }
 
             let inner = oldpos_data._inner.get_mut();
             inner._self_ref = newpos;
-            if inner._parent_func.is_nonnull() {
-                self._redirect_global_ref(&mut inner._parent_func)?;
-            }
-            self._redirect_block_node_header(&mut inner._node_head)?;
+            self._redirect_global_ref(&mut inner._parent_func, true).unwrap();
+            self._redirect_block_node_header(&mut inner._node_head)
+                .unwrap();
         }
         Ok(())
     }
@@ -280,8 +282,8 @@ impl<'a> Redirector<'a> {
         if !insts.is_valid() {
             return Ok(());
         }
-        self._redirect_inst_ref(&mut insts._head)?;
-        self._redirect_inst_ref(&mut insts._tail)?;
+        self._redirect_inst_ref(&mut insts._head, false)?;
+        self._redirect_inst_ref(&mut insts._tail, false)?;
         Ok(())
     }
     fn _redirect_block_node_header(
@@ -316,21 +318,21 @@ impl<'a> Redirector<'a> {
 
             match &mut *oldpos_data {
                 GlobalData::Alias(alias) => {
-                    self._redirect_global_ref(alias.target.get_mut())?;
+                    self._redirect_global_ref(alias.target.get_mut(), false).unwrap();
                 }
                 GlobalData::Var(v) => {
                     let inner = v.inner.get_mut();
                     if inner.init.is_nonnull() {
-                        self._redirect_value_ref(&mut inner.init)?;
+                        self._redirect_value_ref(&mut inner.init).unwrap();
                     }
                 }
                 GlobalData::Func(func) => {
                     let mut body = func._body.borrow_mut();
                     if let Some(body) = body.as_mut() {
-                        self._redirect_block_ref(&mut body.entry)?;
-                        self._redirect_global_ref(&mut body.func)?;
-                        self._redirect_block_ref(&mut body.body._head)?;
-                        self._redirect_block_ref(&mut body.body._tail)?;
+                        body.func = newpos;
+                        self._redirect_block_ref(&mut body.entry, false).unwrap();
+                        self._redirect_block_ref(&mut body.body._head, false).unwrap();
+                        self._redirect_block_ref(&mut body.body._tail, false).unwrap();
                     }
                 }
             }
@@ -341,7 +343,7 @@ impl<'a> Redirector<'a> {
     pub(super) fn redirect_global_def(&self) -> Result<(), ModuleError> {
         let mut global_def = self.module.global_defs.borrow_mut();
         for (_, pos) in global_def.iter_mut() {
-            self._redirect_global_ref(pos)?;
+            self._redirect_global_ref(pos, false)?;
         }
         Ok(())
     }
@@ -376,7 +378,7 @@ impl<'a> Redirector<'a> {
             let oldpos = UseRef::from_handle(oldpos);
             let mut oldpos_data = self.module.mut_use(oldpos);
 
-            self._redirect_inst_ref(oldpos_data._user.get_mut())?;
+            self._redirect_inst_ref(oldpos_data._user.get_mut(), false)?;
             self._redirect_value_ref(oldpos_data._operand.get_mut())?;
             self._redirect_use_node_head(oldpos_data._node_head.get_mut())?;
         }
@@ -391,8 +393,8 @@ impl<'a> Redirector<'a> {
             let oldpos = JumpTargetRef::from_handle(oldpos);
             let mut oldpos_data = self.module.mut_jt(oldpos);
 
-            self._redirect_block_ref(oldpos_data._block.get_mut())?;
-            self._redirect_inst_ref(oldpos_data._terminator.get_mut())?;
+            self._redirect_block_ref(oldpos_data._block.get_mut(), true)?;
+            self._redirect_inst_ref(oldpos_data._terminator.get_mut(), false)?;
             self._redirect_jt_node_head(oldpos_data._node_head.get_mut())?;
         }
         Ok(())

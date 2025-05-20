@@ -4,6 +4,7 @@ use std::{
     rc::Rc,
 };
 
+use gc::liveset::IRRefLiveSet;
 use rdfg::RdfgAlloc;
 use slab::Slab;
 
@@ -114,7 +115,21 @@ impl Module {
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
             let id = inner.alloc_global.insert(data);
-            GlobalRef::from_handle(id)
+            let ret = GlobalRef::from_handle(id);
+
+            let ret_data = ret.to_slabref_unwrap(&inner.alloc_global);
+            ret_data.get_common().self_ref.set(ret);
+
+            // If this is a function, set its storage to the reference of this function.
+            match ret_data {
+                GlobalData::Func(f) => {
+                    if let Some(body) = f._body.borrow_mut().as_mut() {
+                        body.func = ret;
+                    }
+                }
+                _ => {}
+            }
+            ret
         };
 
         // Modify the slab reference of its instructions to point to this.
@@ -323,14 +338,17 @@ impl Module {
     ///
     /// - `extern_roots`: The roots of the module. This is used to mark the values
     ///   that are still in use.
-    /// - `reserve_times`: The number of times to reserve the allocator. This is used
-    ///   to reserve the allocators for the next allocation.
-    pub fn gc_mark_compact(
-        &self,
-        _extern_roots: impl Iterator<Item = ValueSSA>,
-        _reserve_times: f32,
-    ) {
-        todo!()
+    ///
+    /// ### Returns
+    ///
+    /// - `IRRefLiveSet`: The mapping from old references to new references.
+    ///   The returned live set is used to update the references of the extern roots.
+    ///
+    /// ### WARNING
+    ///
+    /// `NOT TESTED`
+    pub fn gc_mark_compact(&self, extern_roots: impl Iterator<Item = ValueSSA>) -> IRRefLiveSet {
+        gc::module_gc_mark_compact(self, extern_roots).unwrap()
     }
 }
 
