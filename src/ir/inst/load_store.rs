@@ -121,7 +121,7 @@ impl StoreOp {
         target_align: usize,
     ) -> (InstDataCommon, Self) {
         let mut alloc_use = mut_module.borrow_use_alloc_mut();
-        let mut common = InstDataCommon::new(Opcode::Store, target_ty, &mut alloc_use);
+        let mut common = InstDataCommon::new(Opcode::Store, ValTypeID::Void, &mut alloc_use);
         let mut store_op = Self {
             source: UseRef::new_null(),
             target: UseRef::new_null(),
