@@ -55,7 +55,7 @@ impl ToString for CmpCond {
         let basic_name = match self.get_basic_cond() {
             Self::LT => "lt",
             Self::EQ => return "eq".into(),
-            Self::GT => "ge",
+            Self::GT => "gt",
             Self::LE => "le",
             Self::NE => return "ne".into(),
             Self::GE => "ge",
