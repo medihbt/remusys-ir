@@ -18,7 +18,10 @@ use super::{
     ValueSSA,
     constant::data::ConstData,
     global::GlobalRef,
-    inst::{InstData, InstError, InstRef, terminator},
+    inst::{
+        InstData, InstError, InstRef,
+        terminator::{self, TerminatorInstRef},
+    },
     module::Module,
 };
 
@@ -161,6 +164,9 @@ impl BlockData {
         } else {
             None
         }
+    }
+    pub fn get_terminator_subref(&self, module: &Module) -> Option<TerminatorInstRef> {
+        self.get_termiantor(module).map(TerminatorInstRef)
     }
     pub fn has_terminator(&self, module: &Module) -> bool {
         self.get_termiantor(module).is_some()

@@ -1,4 +1,7 @@
-use std::cell::{Ref, RefCell};
+use std::{
+    cell::{Ref, RefCell},
+    collections::BTreeSet,
+};
 
 use slab::Slab;
 
@@ -21,7 +24,7 @@ use crate::{
 };
 
 use super::{
-    InstDataCommon, InstDataUnique, InstError, InstRef,
+    InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
     checking::{check_operand_type_kind_match, check_operand_type_match},
     usedef::{UseData, UseRef},
 };
@@ -161,12 +164,17 @@ impl TerminatorInst for Switch {
     fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         let cases = self._cases.borrow();
         let mut blocks = Vec::with_capacity(1 + cases.len());
+        let mut block_set = BTreeSet::new();
+
         blocks.push(self.get_default(alloc_jt));
+        block_set.insert(blocks[0]);
+
         for (_, j) in &*cases {
-            blocks.push(j.get_block(alloc_jt));
+            let block = j.get_block(alloc_jt);
+            if block_set.insert(block) {
+                blocks.push(block);
+            }
         }
-        blocks.sort_unstable();
-        blocks.dedup();
         blocks
     }
 }
@@ -420,6 +428,7 @@ impl Switch {
             .unwrap();
 
         self._cases.borrow_mut().push((case, new_jt));
+        self.sort_cases();
         (new_jt, BlockRef::new_null())
     }
     /// Set a case for the switch instruction.
@@ -458,5 +467,130 @@ impl Switch {
     }
     pub fn borrow_cases(&self) -> Ref<[(i128, JumpTargetRef)]> {
         Ref::map(self._cases.borrow(), Vec::as_slice)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TerminatorInstRef(pub InstRef);
+
+impl TerminatorInstRef {
+    pub fn from_inst(inst: InstRef, alloc_inst: &Slab<InstData>) -> Self {
+        let inst_data = inst.to_slabref_unwrap(alloc_inst);
+        match inst_data.get_opcode() {
+            Opcode::Ret | Opcode::Jmp | Opcode::Br | Opcode::Switch | Opcode::Unreachable => {
+                Self(inst)
+            }
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+
+    pub fn get_inst(&self) -> InstRef {
+        self.0
+    }
+
+    pub fn get_jump_targets_from_alloc_inst<'a>(
+        &self,
+        alloc_inst: &'a Slab<InstData>,
+    ) -> Option<&'a SlabRefList<JumpTargetRef>> {
+        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        match inst_data {
+            InstData::Ret(_, r) => r.get_jump_targets(),
+            InstData::Jump(_, j) => j.get_jump_targets(),
+            InstData::Br(_, br) => br.get_jump_targets(),
+            InstData::Switch(_, sw) => sw.get_jump_targets(),
+            InstData::Unreachable(_) => None,
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+    pub fn get_jump_targets<'a>(
+        &self,
+        module: &'a Module,
+    ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
+        let inst_data = module.get_inst(self.0);
+        match &*inst_data {
+            InstData::Ret(..) | InstData::Unreachable(_) => return None,
+            InstData::Jump(..) | InstData::Br(..) | InstData::Switch(..) => {}
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        };
+
+        Some(Ref::map(inst_data, |inst_data| {
+            match inst_data {
+                InstData::Ret(_, r) => r.get_jump_targets(),
+                InstData::Jump(_, j) => j.get_jump_targets(),
+                InstData::Br(_, br) => br.get_jump_targets(),
+                InstData::Switch(_, sw) => sw.get_jump_targets(),
+                _ => unreachable!(),
+            }
+            .unwrap()
+        }))
+    }
+    pub fn collect_jump_blocks(
+        &self,
+        alloc_inst: &Slab<InstData>,
+        alloc_jt: &Slab<JumpTargetData>,
+    ) -> Vec<BlockRef> {
+        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        match inst_data {
+            InstData::Ret(_, r) => r.collect_jump_blocks(alloc_jt),
+            InstData::Jump(_, j) => j.collect_jump_blocks(alloc_jt),
+            InstData::Br(_, br) => br.collect_jump_blocks(alloc_jt),
+            InstData::Switch(_, sw) => sw.collect_jump_blocks(alloc_jt),
+            InstData::Unreachable(_) => Vec::new(),
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+    pub fn collect_jump_blocks_from_module(&self, module: &Module) -> Vec<BlockRef> {
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_jt = &module.borrow_jt_alloc();
+        let alloc_inst = &alloc_value.alloc_inst;
+        self.collect_jump_blocks(alloc_inst, alloc_jt)
+    }
+    pub fn terminates_function(&self, alloc_inst: &Slab<InstData>) -> bool {
+        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        match inst_data {
+            InstData::Ret(_, r) => r.terminates_function(),
+            InstData::Jump(_, j) => j.terminates_function(),
+            InstData::Br(_, br) => br.terminates_function(),
+            InstData::Switch(_, sw) => sw.terminates_function(),
+            InstData::Unreachable(_) => true,
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+}
+
+impl Into<InstRef> for TerminatorInstRef {
+    fn into(self) -> InstRef {
+        self.0
+    }
+}
+
+impl From<InstRef> for TerminatorInstRef {
+    fn from(inst: InstRef) -> Self {
+        Self(inst)
+    }
+}
+
+impl SlabRef for TerminatorInstRef {
+    type RefObject = InstData;
+    fn from_handle(handle: usize) -> Self {
+        Self(InstRef::from_handle(handle))
+    }
+    fn get_handle(&self) -> usize {
+        self.0.get_handle()
     }
 }

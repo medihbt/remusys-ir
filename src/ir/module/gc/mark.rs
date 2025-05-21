@@ -455,6 +455,7 @@ impl<'a> MarkVisitor<'a> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(super) fn mark_module_reserve(
         &self,
         calc_reserve: impl Fn(&FuncData, &mut MarkFuncTreeRes),
@@ -486,6 +487,7 @@ impl<'a> MarkVisitor<'a> {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(super) fn mark_module_reserve_double(&self) -> Result<(), ModuleError> {
         // Keep the live value count unchanged so that the
         // reserve space is twice the size of the live value.

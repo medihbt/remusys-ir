@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 
 bitflags! {
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub struct CmpCond: u8 {
         const LT = 0b00_001;
         const EQ = 0b00_010;
@@ -41,5 +41,36 @@ impl CmpCond {
     }
     pub fn switch_to_int(&self) -> Self {
         *self & !Self::FLOAT_SWITCH
+    }
+
+    pub fn get_basic_cond(&self) -> Self {
+        let mut ret = self.clone();
+        ret.remove(Self::SIGNED_ORDERED | Self::FLOAT_SWITCH);
+        ret
+    }
+}
+
+impl ToString for CmpCond {
+    fn to_string(&self) -> String {
+        let basic_name = match self.get_basic_cond() {
+            Self::LT => "lt",
+            Self::EQ => return "eq".into(),
+            Self::GT => "ge",
+            Self::LE => "le",
+            Self::NE => return "ne".into(),
+            Self::GE => "ge",
+            Self::ALWAYS => "true",
+            Self::NEVER => "false",
+            _ => unreachable!(),
+        };
+        if self.is_float() && self.is_signed_ordered() {
+            format!("o{}", basic_name)
+        } else if self.is_int() && self.is_signed_ordered() {
+            format!("s{}", basic_name)
+        } else if self.is_float() {
+            format!("f{}", basic_name)
+        } else {
+            basic_name.to_string()
+        }
     }
 }

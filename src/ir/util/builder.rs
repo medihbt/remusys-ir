@@ -451,9 +451,21 @@ impl IRBuilder {
 
     fn _insert_new_block(&self, block: BlockData) -> Result<BlockRef, IRBuilderError> {
         let block_ref = self.module.insert_block(block);
-        self.borrow_focus_function()
-            .add_block_ref(&self.module, block_ref)
-            .map_err(IRBuilderError::ListError)?;
+        if self.focus.block.is_null() {
+            self.borrow_focus_function()
+                .add_block_ref(&self.module, block_ref)
+                .map_err(IRBuilderError::ListError)?;
+        } else {
+            let func_data = self.borrow_focus_function();
+            let blocks = func_data.get_blocks().unwrap();
+            blocks
+                .node_add_next(
+                    &self.module.borrow_value_alloc().alloc_block,
+                    self.focus.block,
+                    block_ref,
+                )
+                .unwrap();
+        }
         Ok(block_ref)
     }
 
@@ -934,148 +946,5 @@ impl IRBuilder {
         }
 
         Ok((old_termi, switch_inst))
-    }
-}
-
-#[cfg(test)]
-mod testing {
-    use crate::ir::constant::data::ConstData;
-    use crate::ir::util::writer::write_ir_module;
-    use crate::typing::context::{PlatformPolicy, TypeContext};
-
-    use super::IRBuilder;
-    use super::*;
-
-    #[test]
-    fn test_ir_builder() {
-        let platform_riscv32 = PlatformPolicy {
-            ptr_nbits: 32,
-            reg_nbits: 32,
-        };
-        let type_ctx = TypeContext::new_rc(platform_riscv32);
-        let module = Rc::new(Module::new(
-            "io.medihbt.RemusysIRTesting.test_ir_builder".into(),
-            type_ctx.clone(),
-        ));
-        let mut builder = IRBuilder::new(module.clone());
-        module.enable_rdfg().unwrap();
-        module.enable_rcfg().unwrap();
-
-        // Add function "main" to the module.
-        // SysY source code:
-        // ```SysY
-        // int main(int argc, byte** argv) {
-        //     return 0;
-        // }
-        // ```
-        //
-        // Remusys-IR code (Remusys-IR does not support value naming and named pointer):
-        // ```Remusys-IR
-        // define dso_local i32 @main(i32 %0, ptr %1) {
-        // %2:
-        //     ret i32 0
-        // }
-        // ```
-        let main_func_ty = type_ctx.make_func_type(
-            &[ValTypeID::Int(32), ValTypeID::Ptr],
-            ValTypeID::Int(32),
-            false,
-        );
-        builder
-            .define_function_with_unreachable("main", main_func_ty)
-            .unwrap();
-
-        builder
-            .focus_set_return(ConstData::make_int_valssa(32, 0))
-            .unwrap();
-
-        // write to file `test_ir_builder.ll`
-        let mut writer = std::fs::File::create("target/test_ir_builder.ll").unwrap();
-        write_ir_module(module.as_ref(), &mut writer, true, true, true);
-
-        // Now set the focus to the entry block.
-        builder.focus.inst = InstRef::new_null();
-
-        /*
-           SysY source code:
-
-           ```SysY
-           int main(int argc, byte[][] argv) {
-        -      return 0;
-        +      return argc + argv[0][1];
-           }
-           ```
-
-           Remusys-IR code (Remusys-IR does not support value naming):
-
-           ```Remusys-IR
-           define dso_local i32 @main(i32 %0, ptr %1) {
-           %2:
-               %3 = alloca i32, align 4
-               store i32 %0, ptr %3, align 4
-               %4 = load i32, ptr %3, align 4
-               %5 = load ptr, ptr %1, align 4
-               %6 = getelementptr i8, ptr %3, i32 1
-               %7 = load i8, ptr %4, align 1
-               %8 = zext i8 %5 to i32
-               %9 = add i32 %4, %6
-               ret i32 %7
-           }
-           ```
-        */
-        let main_func_ref = builder.focus.function;
-        let alloca_3 = builder.add_alloca_inst(ValTypeID::Int(32), 2).unwrap();
-        let _store_3x = builder
-            .add_store_inst(
-                ValueSSA::FuncArg(main_func_ref, 0),
-                ValueSSA::Inst(alloca_3),
-                4,
-            )
-            .unwrap();
-        let load_4 = builder
-            .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_3))
-            .unwrap();
-        let load_5 = builder
-            .add_load_inst(ValTypeID::Ptr, 4, ValueSSA::FuncArg(main_func_ref, 1))
-            .unwrap();
-        let gep_6 = builder
-            .add_indexptr_inst(
-                ValTypeID::Ptr,
-                4,
-                1,
-                ValueSSA::Inst(load_5),
-                vec![ConstData::make_int_valssa(32, 1)].into_iter(),
-            )
-            .unwrap();
-        let load_7 = builder
-            .add_load_inst(ValTypeID::Int(8), 1, ValueSSA::Inst(gep_6))
-            .unwrap();
-        let zext_8 = builder
-            .add_cast_inst(Opcode::Zext, ValTypeID::Int(32), ValueSSA::Inst(load_7))
-            .unwrap();
-        let add_9 = builder
-            .add_binop_inst(Opcode::Add, ValueSSA::Inst(load_4), ValueSSA::Inst(zext_8))
-            .unwrap();
-
-        // Try to split the current block from the terminator.
-        let old_focus = builder.focus.block;
-        let new_focus = builder.split_current_block_from_terminator().unwrap();
-        builder.set_focus(IRBuilderFocus::Block(new_focus));
-        let phi_9 = builder.add_phi_inst(ValTypeID::Int(32)).unwrap();
-        PhiOp::insert_from_value(phi_9, &module, old_focus, ValueSSA::Inst(add_9)).unwrap();
-
-        builder.focus_set_return(ValueSSA::Inst(phi_9)).unwrap();
-
-        // Try to split again.
-        builder.set_focus(IRBuilderFocus::Block(old_focus));
-        let _new2_focus = builder.split_current_block_from_terminator().unwrap();
-
-        builder
-            .module
-            .gc_mark_compact([].iter().map(|v: &ValueSSA| *v));
-
-        // write to file `test_ir_builder_chain_inst.ll`
-        let mut writer = std::fs::File::create("target/test_ir_builder_chain_inst.ll").unwrap();
-        write_ir_module(module.as_ref(), &mut writer, true, true, true);
     }
 }

@@ -587,15 +587,16 @@ impl IInstVisitor for ModuleValueWriter<'_> {
         ));
     }
 
-    /// Syntax: `%<name> = <op> <type> <value1>, <value2>`
+    /// Syntax: `%<name> = <op> <cond> <type> <value1>, <value2>`
     fn read_cmp_inst(&self, inst_ref: InstRef, common: &InstDataCommon, cmp: &CmpOp) {
         let type_ctx = self.module.type_ctx.as_ref();
         let alloc_use = &*self.alloc_use;
         self.write_fmt(format_args!(
-            "%{} = {} {} {}, {}",
+            "%{} = {} {} {} {}, {}",
             self.inst_getid_unwrap(inst_ref),
             common.opcode.get_name(),
-            common.ret_type.get_display_name(type_ctx),
+            cmp.cond.to_string(),
+            cmp.cmp_ty.get_display_name(type_ctx),
             self.format_value_by_ref(cmp.lhs.get_operand(alloc_use)),
             self.format_value_by_ref(cmp.rhs.get_operand(alloc_use)),
         ));
