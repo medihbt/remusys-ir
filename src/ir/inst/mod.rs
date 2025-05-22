@@ -517,6 +517,13 @@ impl InstRef {
         }
     }
 
+    pub fn get_parent_from_alloc(self, alloc_inst: &Slab<InstData>) -> Option<BlockRef> {
+        self.to_slabref_unwrap(alloc_inst).get_parent_bb()
+    }
+    pub fn get_parent(self, module: &Module) -> Option<BlockRef> {
+        module.get_inst(self).get_parent_bb()
+    }
+
     pub fn add_next_inst(&self, module: &Module, next: InstRef) -> Result<(), InstError> {
         let self_data = module.get_inst(*self);
         let parent = match self_data.get_parent_bb() {

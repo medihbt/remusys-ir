@@ -10,6 +10,8 @@ use crate::{
     opt::util::DfsOrder,
 };
 
+use super::snapshot::CfgSnapshot;
+
 #[derive(Debug, Clone)]
 pub struct CfgDfsNode {
     pub block: BlockRef,
@@ -18,6 +20,7 @@ pub struct CfgDfsNode {
 }
 
 /// The DFS-generated sequence and tree of CFG.
+#[derive(Debug, Clone)]
 pub struct CfgDfsSeq {
     pub nodes: Vec<CfgDfsNode>,
     pub dfn: BTreeMap<BlockRef, usize>,
@@ -25,6 +28,13 @@ pub struct CfgDfsSeq {
 }
 
 impl CfgDfsSeq {
+    pub fn get_nnodes(&self) -> usize {
+        self.nodes.len()
+    }
+    pub fn get_root(&self) -> BlockRef {
+        self.nodes[0].block
+    }
+
     pub fn block_get_dfn(&self, block: BlockRef) -> Option<usize> {
         self.dfn.get(&block).copied()
     }
@@ -159,6 +169,7 @@ impl CfgDfsSeq {
         if dfn_map.contains_key(&block) {
             return;
         }
+        dfn_map.insert(block, usize::MAX);
         let terminator = {
             let block_data = module.get_block(block);
             block_data
@@ -180,5 +191,88 @@ impl CfgDfsSeq {
             let block = blocks_seq[i].block;
             dfn.insert(block, nblocks - i - 1);
         }
+    }
+
+    pub fn new_from_snapshot(snapshot: &CfgSnapshot, order: DfsOrder) -> Self {
+        let mut nodes = Vec::with_capacity(snapshot.nodes.len());
+        let mut dfn = BTreeMap::new();
+
+        match order.get_first_step() {
+            DfsOrder::Pre => Self::build_pre_order_from_snapshot(
+                snapshot,
+                snapshot.entry,
+                BlockRef::new_null(),
+                &mut nodes,
+                &mut dfn,
+            ),
+            DfsOrder::Post => Self::build_post_order_from_snapshot(
+                snapshot,
+                snapshot.entry,
+                BlockRef::new_null(),
+                &mut nodes,
+                &mut dfn,
+            ),
+            _ => unreachable!(),
+        }
+        if order.should_reverse() {
+            Self::reverse_dfs_order(&mut nodes, &mut dfn);
+        }
+        Self { nodes, dfn, order }
+    }
+
+    fn build_pre_order_from_snapshot(
+        snapshot: &CfgSnapshot,
+        block: BlockRef,
+        parent: BlockRef,
+        node_seq: &mut Vec<CfgDfsNode>,
+        dfn_map: &mut BTreeMap<BlockRef, usize>,
+    ) {
+        if dfn_map.contains_key(&block) {
+            return;
+        }
+        let dfn = node_seq.len();
+        dfn_map.insert(block, dfn);
+        node_seq.push(CfgDfsNode { block, parent, dfn });
+
+        let succ = match snapshot.block_get_node(block) {
+            Some(node) => &node.next_seq,
+            None => return,
+        };
+        for (_, succ_block) in succ {
+            Self::build_pre_order_from_snapshot(
+                snapshot,
+                succ_block.clone(),
+                block,
+                node_seq,
+                dfn_map,
+            );
+        }
+    }
+
+    fn build_post_order_from_snapshot(
+        snapshot: &CfgSnapshot,
+        block: BlockRef,
+        parent: BlockRef,
+        node_seq: &mut Vec<CfgDfsNode>,
+        dfn_map: &mut BTreeMap<BlockRef, usize>,
+    ) {
+        if dfn_map.contains_key(&block) {
+            return;
+        }
+        dfn_map.insert(block, usize::MAX);
+        if let Some(node) = snapshot.block_get_node(block) {
+            for (_, succ_block) in node.next_seq.iter() {
+                Self::build_post_order_from_snapshot(
+                    snapshot,
+                    succ_block.clone(),
+                    block,
+                    node_seq,
+                    dfn_map,
+                );
+            }
+        }
+        let dfn = node_seq.len();
+        dfn_map.insert(block, dfn);
+        node_seq.push(CfgDfsNode { block, parent, dfn });
     }
 }

@@ -122,6 +122,33 @@ pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
         Self::from_handle(prev).to_option()
     }
 
+    fn comes_after_node(self, maybe_before: Self, alloc: &Slab<Self::RefObject>) -> bool {
+        if self == maybe_before {
+            return false;
+        }
+        let mut curr = self;
+        while let Some(prev) = curr.get_prev_ref(alloc) {
+            if prev == maybe_before {
+                return true;
+            }
+            curr = prev;
+        }
+        false
+    }
+    fn comes_before_node(self, maybe_after: Self, alloc: &Slab<Self::RefObject>) -> bool {
+        if self == maybe_after {
+            return false;
+        }
+        let mut curr = self;
+        while let Some(next) = curr.get_next_ref(alloc) {
+            if next == maybe_after {
+                return true;
+            }
+            curr = next;
+        }
+        false
+    }
+
     fn on_node_push_next(
         curr: Self,
         next: Self,
