@@ -1,6 +1,5 @@
 struct DSUNode {
     parent: usize,
-    rank: usize,
 }
 
 pub struct DSU {
@@ -11,7 +10,7 @@ impl DSU {
     pub fn new(size: usize) -> Self {
         let mut nodes = Vec::with_capacity(size);
         for i in 0..size {
-            nodes.push(DSUNode { parent: i, rank: 0 });
+            nodes.push(DSUNode { parent: i });
         }
         Self { nodes }
     }
@@ -22,11 +21,32 @@ impl DSU {
         }
         self.nodes[x].parent
     }
+    pub fn find_when<T>(&mut self, x: usize, mut on_update: T) -> usize
+    where
+        T: FnMut(/* x: */ usize, /* old parent */ usize, /* new parent */ usize),
+    {
+        if self.nodes[x].parent == x {
+            return x;
+        }
+        let old_parent = self.nodes[x].parent;
+        self.nodes[x].parent = self.find(self.nodes[x].parent);
+        let new_parent = self.nodes[x].parent;
+        on_update(x, old_parent, new_parent);
+        new_parent
+    }
+
     pub fn readonly_find(&self, x: usize) -> usize {
         if self.nodes[x].parent != x {
             return self.readonly_find(self.nodes[x].parent);
         }
         self.nodes[x].parent
+    }
+    pub fn get_direct_parent(&self, x: usize) -> usize {
+        self.nodes[x].parent
+    }
+    pub fn set_direct_parent(&mut self, x: usize, parent: usize) {
+        assert!(parent < self.nodes.len());
+        self.nodes[x].parent = parent;
     }
 
     pub fn is_connected(&mut self, x: usize, y: usize) -> bool {
@@ -40,18 +60,8 @@ impl DSU {
         x = self.find(x);
         y = self.find(y);
 
-        if x == y {
-            return;
-        }
-
-        if self.nodes[x].rank < self.nodes[y].rank {
-            std::mem::swap(&mut x, &mut y);
-        }
-
-        self.nodes[y].parent = x;
-
-        if self.nodes[x].rank == self.nodes[y].rank {
-            self.nodes[x].rank += 1;
+        if x != y {
+            self.nodes[x].parent = y;
         }
     }
 }

@@ -17,6 +17,7 @@ pub struct CfgDfsNode {
     pub block: BlockRef,
     pub parent: BlockRef,
     pub dfn: usize,
+    pub parent_dfn: usize,
 }
 
 /// The DFS-generated sequence and tree of CFG.
@@ -59,7 +60,12 @@ impl CfgDfsSeq {
         self.dfn_get_node(dfn).map(|node| node.block)
     }
     pub fn dfn_get_parent(&self, dfn: usize) -> Option<BlockRef> {
-        self.dfn_get_node(dfn).map(|node| node.parent)
+        self.dfn_get_node(dfn)
+            .map(|node| node.parent.to_option())
+            .flatten()
+    }
+    pub fn dfn_get_parent_dfn(&self, dfn: usize) -> Option<usize> {
+        self.dfn_get_node(dfn).map(|node| node.parent_dfn)
     }
     pub fn dfn_is_root(&self, dfn: usize) -> bool {
         self.dfn_get_parent(dfn)
@@ -111,6 +117,7 @@ impl CfgDfsSeq {
                     module,
                     entry,
                     BlockRef::new_null(),
+                    usize::MAX,
                     &mut blocks_seq,
                     &mut dfn,
                 );
@@ -138,6 +145,7 @@ impl CfgDfsSeq {
         module: &Module,
         block: BlockRef,
         parent: BlockRef,
+        parent_dfn: usize,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
     ) {
@@ -152,10 +160,15 @@ impl CfgDfsSeq {
         };
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode { block, parent, dfn });
+        node_seq.push(CfgDfsNode {
+            block,
+            parent,
+            dfn,
+            parent_dfn,
+        });
 
         for succ in terminator.collect_jump_blocks_from_module(module) {
-            Self::build_pre_order(module, succ, block, node_seq, dfn_map);
+            Self::build_pre_order(module, succ, block, dfn, node_seq, dfn_map);
         }
     }
 
@@ -165,9 +178,9 @@ impl CfgDfsSeq {
         parent: BlockRef,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
-    ) {
+    ) -> Option<usize> {
         if dfn_map.contains_key(&block) {
-            return;
+            return None;
         }
         dfn_map.insert(block, usize::MAX);
         let terminator = {
@@ -176,12 +189,27 @@ impl CfgDfsSeq {
                 .get_terminator_subref(module)
                 .expect("Block should have a terminator")
         };
+        let mut succ_dfns = Vec::new();
         for succ in terminator.collect_jump_blocks_from_module(module) {
-            Self::build_post_order(module, succ, block, node_seq, dfn_map);
+            let succ_dfn = match Self::build_post_order(module, succ, block, node_seq, dfn_map) {
+                Some(dfn) => dfn,
+                None => continue,
+            };
+            succ_dfns.push(succ_dfn);
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode { block, parent, dfn });
+        node_seq.push(CfgDfsNode {
+            block,
+            parent,
+            dfn,
+            parent_dfn: usize::MAX,
+        });
+
+        for succ_dfn in succ_dfns {
+            node_seq[succ_dfn].parent_dfn = dfn;
+        }
+        Some(dfn)
     }
 
     fn reverse_dfs_order(blocks_seq: &mut Vec<CfgDfsNode>, dfn: &mut BTreeMap<BlockRef, usize>) {
@@ -202,16 +230,19 @@ impl CfgDfsSeq {
                 snapshot,
                 snapshot.entry,
                 BlockRef::new_null(),
+                usize::MAX,
                 &mut nodes,
                 &mut dfn,
             ),
-            DfsOrder::Post => Self::build_post_order_from_snapshot(
-                snapshot,
-                snapshot.entry,
-                BlockRef::new_null(),
-                &mut nodes,
-                &mut dfn,
-            ),
+            DfsOrder::Post => {
+                Self::build_post_order_from_snapshot(
+                    snapshot,
+                    snapshot.entry,
+                    BlockRef::new_null(),
+                    &mut nodes,
+                    &mut dfn,
+                );
+            }
             _ => unreachable!(),
         }
         if order.should_reverse() {
@@ -224,6 +255,7 @@ impl CfgDfsSeq {
         snapshot: &CfgSnapshot,
         block: BlockRef,
         parent: BlockRef,
+        parent_dfn: usize,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
     ) {
@@ -232,7 +264,12 @@ impl CfgDfsSeq {
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode { block, parent, dfn });
+        node_seq.push(CfgDfsNode {
+            block,
+            parent,
+            dfn,
+            parent_dfn,
+        });
 
         let succ = match snapshot.block_get_node(block) {
             Some(node) => &node.next_seq,
@@ -243,6 +280,7 @@ impl CfgDfsSeq {
                 snapshot,
                 succ_block.clone(),
                 block,
+                dfn,
                 node_seq,
                 dfn_map,
             );
@@ -255,24 +293,38 @@ impl CfgDfsSeq {
         parent: BlockRef,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
-    ) {
+    ) -> Option<usize> {
         if dfn_map.contains_key(&block) {
-            return;
+            return None;
         }
         dfn_map.insert(block, usize::MAX);
+
+        let mut succ_dfns = Vec::new();
         if let Some(node) = snapshot.block_get_node(block) {
             for (_, succ_block) in node.next_seq.iter() {
-                Self::build_post_order_from_snapshot(
+                let succ_dfn = Self::build_post_order_from_snapshot(
                     snapshot,
                     succ_block.clone(),
                     block,
                     node_seq,
                     dfn_map,
                 );
+                if let Some(succ_dfn) = succ_dfn {
+                    succ_dfns.push(succ_dfn);
+                }
             }
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode { block, parent, dfn });
+        node_seq.push(CfgDfsNode {
+            block,
+            parent,
+            dfn,
+            parent_dfn: usize::MAX,
+        });
+        for succ_dfn in succ_dfns {
+            node_seq[succ_dfn].parent_dfn = dfn;
+        }
+        Some(dfn)
     }
 }
