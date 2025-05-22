@@ -1,3 +1,4 @@
+pub mod dsu;
 pub mod slabref;
 pub mod slablist;
 
