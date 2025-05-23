@@ -86,11 +86,26 @@ pub trait IRGraphEdgeHolder: SlabRef {
 
 pub trait IRGraphNode: SlabRefListNodeRef {
     type OperandT;
+    type ReverseGraphNodeT;
     type EdgeHolderT: IRGraphEdgeHolder<EdgeT = Self::EdgeT>;
     type EdgeT: IRGraphEdge<UserT = Self::EdgeHolderT, OperandT = Self::OperandT>;
 
     fn module_borrow_self_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<Self::RefObject>>;
-    fn graph_collect_operands_from_module(self, module: &Module, dedup: bool) -> Vec<Self::OperandT>;
+
+    /// Collects all operands from the module into a vector.
+    /// If `dedup` is true, it will remove duplicates.
+    fn graph_collect_operands_from_module(
+        self,
+        module: &Module,
+        dedup: bool,
+    ) -> Vec<Self::OperandT>;
+
+    /// Get the reverse graph node of the operand from the module.
+    fn get_opreand_reverse_graph<'a>(
+        module: &'a Module,
+        operand: &Self::OperandT,
+    ) -> Option<Ref<'a, Self::ReverseGraphNodeT>>;
+
     fn edge_holder_from_allocs(
         &self,
         alloc_self: &Slab<Self::RefObject>,

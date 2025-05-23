@@ -10,7 +10,7 @@ use crate::{
             InstData, InstRef,
             usedef::{UseData, UseRef},
         },
-        module::Module,
+        module::{Module, rdfg::RdfgPerValue},
     },
 };
 
@@ -52,6 +52,7 @@ impl IRGraphNode for InstRef {
     type OperandT = ValueSSA;
     type EdgeHolderT = Self;
     type EdgeT = UseRef;
+    type ReverseGraphNodeT = RdfgPerValue;
 
     fn module_borrow_self_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<InstData>> {
         Ref::map(module.borrow_value_alloc(), |alloc_value| {
@@ -79,5 +80,21 @@ impl IRGraphNode for InstRef {
             operands.push(operand);
         }
         operands
+    }
+
+    fn get_opreand_reverse_graph<'a>(
+        module: &'a Module,
+        operand: &ValueSSA,
+    ) -> Option<Ref<'a, RdfgPerValue>> {
+        if operand.is_value_semantics() {
+            return None;
+        }
+        let rdfg_alloc = match module.borrow_rdfg_alloc() {
+            Some(alloc) => alloc,
+            None => return None,
+        };
+        Some(Ref::map(rdfg_alloc, |rdfg| {
+            rdfg.get_node(*operand).unwrap()
+        }))
     }
 }

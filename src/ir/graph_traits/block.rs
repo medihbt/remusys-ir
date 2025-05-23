@@ -13,7 +13,7 @@ use crate::{
             InstData,
             terminator::{TerminatorInst, TerminatorInstRef},
         },
-        module::Module,
+        module::{Module, rcfg::RcfgPerBlock},
     },
 };
 
@@ -82,5 +82,20 @@ impl IRGraphNode for BlockRef {
             self.edge_holder_from_module(module)
                 .collect_jump_blocks_from_module_nodedup(module)
         }
+    }
+
+    type ReverseGraphNodeT = RcfgPerBlock;
+
+    fn get_opreand_reverse_graph<'a>(
+        module: &'a Module,
+        operand: &Self::OperandT,
+    ) -> Option<Ref<'a, RcfgPerBlock>> {
+        let rcfg_alloc = match module.borrow_rcfg_alloc() {
+            Some(alloc) => alloc,
+            None => return None,
+        };
+        Some(Ref::map(rcfg_alloc, |rcfg_alloc| {
+            rcfg_alloc.get_node(*operand)
+        }))
     }
 }
