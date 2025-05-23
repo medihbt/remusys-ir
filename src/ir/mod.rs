@@ -18,6 +18,7 @@ pub mod block;
 pub mod cmp_cond;
 pub mod constant;
 pub mod global;
+pub mod graph_traits;
 pub mod inst;
 pub mod module;
 pub mod opcode;
@@ -27,7 +28,7 @@ pub mod util;
 ///
 /// A value can be a constant data, constant expression, function argument,
 /// block, instruction, global variable, or none (representing absence of a value).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueSSA {
     // Variants with value semantics
     // These variants are used by at most one instruction, so there is no need to track users.

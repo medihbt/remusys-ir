@@ -27,7 +27,7 @@ pub struct Struct {
     pub elems: Vec<ValueSSA>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConstExprRef(usize);
 impl_slabref!(ConstExprRef, ConstExprData);
 

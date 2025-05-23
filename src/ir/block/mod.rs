@@ -27,7 +27,7 @@ use super::{
 
 pub mod jump_target;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockRef(usize);
 
 impl_slabref!(BlockRef, BlockData);
@@ -152,18 +152,28 @@ impl BlockData {
         self._inner.get().insert_id(id).assign_to(&self._inner);
     }
 
-    pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+    pub fn get_terminator_from_alloc(&self, alloc_inst: &Slab<InstData>) -> Option<InstRef> {
         let back_inst = match self.instructions.get_back_ref(alloc_inst) {
             Some(inst) => inst,
             None => return None,
         };
-        if module.get_inst(back_inst).is_terminator() {
+        if back_inst.to_slabref_unwrap(alloc_inst).is_terminator() {
             Some(back_inst)
         } else {
             None
         }
+    }
+    pub fn get_terminator_subref_from_alloc(
+        &self,
+        alloc_inst: &Slab<InstData>,
+    ) -> Option<TerminatorInstRef> {
+        self.get_terminator_from_alloc(alloc_inst)
+            .map(TerminatorInstRef)
+    }
+    pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_inst = &alloc_value.alloc_inst;
+        self.get_terminator_from_alloc(alloc_inst)
     }
     pub fn get_terminator_subref(&self, module: &Module) -> Option<TerminatorInstRef> {
         self.get_termiantor(module).map(TerminatorInstRef)

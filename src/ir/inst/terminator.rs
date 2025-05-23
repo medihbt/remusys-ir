@@ -34,7 +34,8 @@ pub trait TerminatorInst {
 
     fn init_jump_targets(&mut self, alloc_jt: &mut Slab<JumpTargetData>);
 
-    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef>;
+    fn collect_jump_blocks_dedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef>;
+    fn collect_jump_blocks_nodedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef>;
 
     fn get_n_jump_targets(&self) -> usize {
         self.get_jump_targets().map_or(0, |targets| targets.len())
@@ -92,7 +93,10 @@ impl TerminatorInst for Ret {
     }
     fn init_jump_targets(&mut self, _: &mut Slab<JumpTargetData>) {}
 
-    fn collect_jump_blocks(&self, _: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+    fn collect_jump_blocks_dedup(&self, _: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        Vec::new()
+    }
+    fn collect_jump_blocks_nodedup(&self, _: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         Vec::new()
     }
 }
@@ -109,7 +113,10 @@ impl TerminatorInst for Jump {
         .unwrap();
         self.0._targets = list;
     }
-    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+    fn collect_jump_blocks_dedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        vec![self.get_block(alloc_jt)]
+    }
+    fn collect_jump_blocks_nodedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         vec![self.get_block(alloc_jt)]
     }
 }
@@ -135,7 +142,7 @@ impl TerminatorInst for Br {
         self.if_true = if_true;
         self.if_false = if_false;
     }
-    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+    fn collect_jump_blocks_dedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         let if_true = self.if_true.get_block(alloc_jt);
         let if_false = self.if_false.get_block(alloc_jt);
         if if_true == if_false {
@@ -143,6 +150,12 @@ impl TerminatorInst for Br {
         } else {
             vec![if_true, if_false]
         }
+    }
+    fn collect_jump_blocks_nodedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        vec![
+            self.if_true.get_block(alloc_jt),
+            self.if_false.get_block(alloc_jt),
+        ]
     }
 }
 impl TerminatorInst for Switch {
@@ -161,7 +174,7 @@ impl TerminatorInst for Switch {
         self._common._targets = list;
     }
 
-    fn collect_jump_blocks(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+    fn collect_jump_blocks_dedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         let cases = self._cases.borrow();
         let mut blocks = Vec::with_capacity(1 + cases.len());
         let mut block_set = BTreeSet::new();
@@ -174,6 +187,14 @@ impl TerminatorInst for Switch {
             if block_set.insert(block) {
                 blocks.push(block);
             }
+        }
+        blocks
+    }
+    fn collect_jump_blocks_nodedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
+        let mut blocks = Vec::with_capacity(1 + self._cases.borrow().len());
+        blocks.push(self.get_default(alloc_jt));
+        for (_, j) in self._cases.borrow().iter() {
+            blocks.push(j.get_block(alloc_jt));
         }
         blocks
     }
@@ -540,10 +561,10 @@ impl TerminatorInstRef {
     ) -> Vec<BlockRef> {
         let inst_data = self.0.to_slabref_unwrap(alloc_inst);
         match inst_data {
-            InstData::Ret(_, r) => r.collect_jump_blocks(alloc_jt),
-            InstData::Jump(_, j) => j.collect_jump_blocks(alloc_jt),
-            InstData::Br(_, br) => br.collect_jump_blocks(alloc_jt),
-            InstData::Switch(_, sw) => sw.collect_jump_blocks(alloc_jt),
+            InstData::Ret(_, r) => r.collect_jump_blocks_dedup(alloc_jt),
+            InstData::Jump(_, j) => j.collect_jump_blocks_dedup(alloc_jt),
+            InstData::Br(_, br) => br.collect_jump_blocks_dedup(alloc_jt),
+            InstData::Switch(_, sw) => sw.collect_jump_blocks_dedup(alloc_jt),
             InstData::Unreachable(_) => Vec::new(),
             _ => panic!(
                 "InstRef {:?} is not a terminator instruction",
@@ -556,6 +577,30 @@ impl TerminatorInstRef {
         let alloc_jt = &module.borrow_jt_alloc();
         let alloc_inst = &alloc_value.alloc_inst;
         self.collect_jump_blocks(alloc_inst, alloc_jt)
+    }
+    pub fn collect_jump_blocks_nodedup(
+        &self,
+        alloc_inst: &Slab<InstData>,
+        alloc_jt: &Slab<JumpTargetData>,
+    ) -> Vec<BlockRef> {
+        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        match inst_data {
+            InstData::Ret(_, r) => r.collect_jump_blocks_nodedup(alloc_jt),
+            InstData::Jump(_, j) => j.collect_jump_blocks_nodedup(alloc_jt),
+            InstData::Br(_, br) => br.collect_jump_blocks_nodedup(alloc_jt),
+            InstData::Switch(_, sw) => sw.collect_jump_blocks_nodedup(alloc_jt),
+            InstData::Unreachable(_) => Vec::new(),
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+    pub fn collect_jump_blocks_from_module_nodedup(&self, module: &Module) -> Vec<BlockRef> {
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_jt = &module.borrow_jt_alloc();
+        let alloc_inst = &alloc_value.alloc_inst;
+        self.collect_jump_blocks_nodedup(alloc_inst, alloc_jt)
     }
     pub fn terminates_function(&self, alloc_inst: &Slab<InstData>) -> bool {
         let inst_data = self.0.to_slabref_unwrap(alloc_inst);

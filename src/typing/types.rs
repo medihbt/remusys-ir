@@ -3,7 +3,7 @@ use std::{cell::Ref, ops::Mul};
 use super::{IValType, context::TypeContext, id::ValTypeID};
 use crate::{base::slabref::SlabRef, impl_slabref};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatTypeKind {
     Ieee32,
     Ieee64,
@@ -45,7 +45,7 @@ pub struct ArrayTypeData {
     pub length: usize,
     pub elemty: ValTypeID,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ArrayTypeRef(usize);
 impl_slabref!(ArrayTypeRef, ArrayTypeData);
 impl IValType for ArrayTypeData {
@@ -96,7 +96,7 @@ impl ArrayTypeRef {
 pub struct StructTypeData {
     pub elemty: Box<[ValTypeID]>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StructTypeRef(usize);
 impl_slabref!(StructTypeRef, StructTypeData);
 impl IValType for StructTypeData {
@@ -155,7 +155,7 @@ pub struct StructAliasData {
     pub name: String,
     pub aliasee: StructTypeRef,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StructAliasRef(usize);
 impl_slabref!(StructAliasRef, StructAliasData);
 impl IValType for StructAliasData {
@@ -201,7 +201,7 @@ pub struct FuncTypeData {
     pub ret_ty: ValTypeID,
     pub is_vararg: bool,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FuncTypeRef(usize);
 impl_slabref!(FuncTypeRef, FuncTypeData);
 impl IValType for FuncTypeData {

@@ -164,7 +164,7 @@ impl GlobalData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlobalRef(usize);
 impl_slabref!(GlobalRef, GlobalData);
 

@@ -1,6 +1,12 @@
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
+use std::{
+    hash::Hash,
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
+};
 
-use crate::{ir::ValueSSA, typing::{id::ValTypeID, types::FloatTypeKind}};
+use crate::{
+    ir::ValueSSA,
+    typing::{id::ValTypeID, types::FloatTypeKind},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ConstData {
@@ -19,6 +25,25 @@ pub enum ConstDataErr {
 }
 
 impl Eq for ConstData {}
+
+impl Hash for ConstData {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            ConstData::Undef(ty) => ty.hash(state),
+            ConstData::Zero(ty) => ty.hash(state),
+            ConstData::PtrNull(ty) => ty.hash(state),
+            ConstData::Int(nbits, value) => {
+                nbits.hash(state);
+                value.hash(state);
+            }
+            ConstData::Float(fp_kind, value) => {
+                fp_kind.hash(state);
+                value.to_bits().hash(state);
+            }
+        }
+    }
+}
 
 impl ConstData {
     pub fn get_value_type(&self) -> ValTypeID {

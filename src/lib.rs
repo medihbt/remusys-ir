@@ -4,6 +4,7 @@
 
 pub mod base;
 pub mod ir;
+pub mod mir;
 pub mod opt;
 pub mod typing;
 

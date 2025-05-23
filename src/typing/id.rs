@@ -6,7 +6,7 @@ use super::{
     types::{ArrayTypeRef, FloatTypeKind, FuncTypeRef, StructAliasRef, StructTypeRef},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValTypeID {
     Void,
     Ptr,

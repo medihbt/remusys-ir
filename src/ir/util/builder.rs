@@ -480,7 +480,7 @@ impl IRBuilder {
             let alloc_jt = module.borrow_jt_alloc();
 
             if let Some((_, t)) = terminator_data.as_terminator() {
-                t.collect_jump_blocks(&alloc_jt)
+                t.collect_jump_blocks_dedup(&alloc_jt)
             } else {
                 Vec::new()
             }
