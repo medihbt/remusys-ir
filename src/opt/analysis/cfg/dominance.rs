@@ -14,6 +14,7 @@ use crate::{
         block::BlockRef,
         inst::{InstData, InstRef},
         module::Module,
+        util::numbering::IRValueNumberMap,
     },
     opt::util::DfsOrder,
 };
@@ -179,7 +180,17 @@ impl DominatorTree {
 }
 
 impl DominatorTree {
-    pub fn new_empty(dfs_pre: Rc<CfgDfsSeq>) -> Self {
+    /// `Remusys-IR` uses Semi-NCA algorithm to build dominator tree.
+    /// Relavent notes can be found in the documentation of `Remusys-IR`.
+    pub fn new_from_snapshot(snapshot: &CfgSnapshot) -> Self {
+        let dfs_seq_pre = Rc::new(CfgDfsSeq::new_from_snapshot(snapshot, DfsOrder::Pre));
+        let mut dominator_tree = Self::new_empty(dfs_seq_pre);
+        dominator_tree._build_semidom_from_snapshot(snapshot);
+        dominator_tree._build_idom_semi_nca();
+        dominator_tree
+    }
+
+    fn new_empty(dfs_pre: Rc<CfgDfsSeq>) -> Self {
         let mut nodes = Vec::with_capacity(dfs_pre.get_nnodes());
         for pre_dfn in 0..dfs_pre.get_nnodes() {
             nodes.push(DominatorTreeNode {
@@ -199,16 +210,6 @@ impl DominatorTree {
             nodes: nodes,
             root,
         }
-    }
-
-    /// `Remusys-IR` uses Semi-NCA algorithm to build dominator tree.
-    /// Relavent notes can be found in the documentation of `Remusys-IR`.
-    pub fn new_from_snapshot(snapshot: &CfgSnapshot) -> Self {
-        let dfs_seq_pre = Rc::new(CfgDfsSeq::new_from_snapshot(snapshot, DfsOrder::Pre));
-        let mut dominator_tree = Self::new_empty(dfs_seq_pre);
-        dominator_tree._build_semidom_from_snapshot(snapshot);
-        dominator_tree._build_idom_semi_nca();
-        dominator_tree
     }
 
     fn _build_semidom_from_snapshot(&mut self, snapshot: &CfgSnapshot) -> DSU {
@@ -273,5 +274,33 @@ impl DominatorTree {
                 node.idom_pre_dfn = idom;
             });
         }
+    }
+
+    pub fn write_to_graphviz(
+        &self,
+        number_map: &IRValueNumberMap,
+        writer: &mut dyn std::io::Write,
+    ) {
+        writeln!(writer, "digraph dominator_tree {{").unwrap();
+        writeln!(writer, "  rankdir=TB;").unwrap();
+        writeln!(writer, "  node [shape=circle];").unwrap();
+
+        for i in self.nodes.iter() {
+            writeln!(
+                writer,
+                "  {} [label=\"{}\"];",
+                i.dfn_pre,
+                number_map.block_get_number(i.blockref).unwrap()
+            )
+            .unwrap();
+        }
+
+        for i in self.nodes.iter() {
+            let idom_dfn = i.idom_pre_dfn;
+            if idom_dfn != usize::MAX {
+                writeln!(writer, "  {} -> {};", idom_dfn, i.dfn_pre).unwrap();
+            }
+        }
+        writeln!(writer, "}}").unwrap();
     }
 }
