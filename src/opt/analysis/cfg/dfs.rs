@@ -29,11 +29,35 @@ pub struct CfgDfsSeq {
 }
 
 impl CfgDfsSeq {
-    pub fn get_nnodes(&self) -> usize {
+    pub fn n_logical_nodes(&self) -> usize {
         self.nodes.len()
     }
+    pub fn n_real_nodes(&self) -> usize {
+        if self.root_is_virtual() {
+            self.nodes.len() - 1
+        } else {
+            self.nodes.len()
+        }
+    }
+    pub fn get_root_dfn(&self) -> usize {
+        match self.order {
+            DfsOrder::Pre | DfsOrder::ReversePost => 0,
+            DfsOrder::Post | DfsOrder::ReversePre => self.nodes.len() - 1,
+        }
+    }
     pub fn get_root(&self) -> BlockRef {
-        self.nodes[0].block
+        match self.order {
+            DfsOrder::Pre | DfsOrder::ReversePost => self.nodes[0].block,
+            DfsOrder::Post | DfsOrder::ReversePre => self.nodes.last().unwrap().block,
+        }
+    }
+    /// Since a CFG in a function may contain multiple exit blocks,
+    /// we always add a virtual root block to the CFG.
+    pub fn root_is_virtual(&self) -> bool {
+        self.get_root().is_null()
+    }
+    pub fn is_from_reverse_cfg(&self) -> bool {
+        self.root_is_virtual()
     }
 
     pub fn block_get_dfn(&self, block: BlockRef) -> Option<usize> {
@@ -233,6 +257,7 @@ impl CfgDfsSeq {
                 usize::MAX,
                 &mut nodes,
                 &mut dfn,
+                &CfgSnapshot::block_get_next,
             ),
             DfsOrder::Post => {
                 Self::build_post_order_from_snapshot(
@@ -241,6 +266,7 @@ impl CfgDfsSeq {
                     BlockRef::new_null(),
                     &mut nodes,
                     &mut dfn,
+                    &CfgSnapshot::block_get_next,
                 );
             }
             _ => unreachable!(),
@@ -251,13 +277,14 @@ impl CfgDfsSeq {
         Self { nodes, dfn, order }
     }
 
-    fn build_pre_order_from_snapshot(
-        snapshot: &CfgSnapshot,
+    fn build_pre_order_from_snapshot<'a>(
+        snapshot: &'a CfgSnapshot,
         block: BlockRef,
         parent: BlockRef,
         parent_dfn: usize,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
+        get_succ: &impl Fn(&'a CfgSnapshot, BlockRef) -> Option<&'a [(usize, BlockRef)]>,
     ) {
         if dfn_map.contains_key(&block) {
             return;
@@ -271,8 +298,8 @@ impl CfgDfsSeq {
             parent_dfn,
         });
 
-        let succ = match snapshot.block_get_node(block) {
-            Some(node) => &node.next_seq,
+        let succ = match get_succ(snapshot, block) {
+            Some(node) => node,
             None => return,
         };
         for (_, succ_block) in succ {
@@ -283,16 +310,18 @@ impl CfgDfsSeq {
                 dfn,
                 node_seq,
                 dfn_map,
+                get_succ,
             );
         }
     }
 
-    fn build_post_order_from_snapshot(
-        snapshot: &CfgSnapshot,
+    fn build_post_order_from_snapshot<'a>(
+        snapshot: &'a CfgSnapshot,
         block: BlockRef,
         parent: BlockRef,
         node_seq: &mut Vec<CfgDfsNode>,
         dfn_map: &mut BTreeMap<BlockRef, usize>,
+        get_succ: &impl Fn(&'a CfgSnapshot, BlockRef) -> Option<&'a [(usize, BlockRef)]>,
     ) -> Option<usize> {
         if dfn_map.contains_key(&block) {
             return None;
@@ -300,14 +329,15 @@ impl CfgDfsSeq {
         dfn_map.insert(block, usize::MAX);
 
         let mut succ_dfns = Vec::new();
-        if let Some(node) = snapshot.block_get_node(block) {
-            for (_, succ_block) in node.next_seq.iter() {
+        if let Some(succ) = get_succ(snapshot, block) {
+            for (_, succ_block) in succ {
                 let succ_dfn = Self::build_post_order_from_snapshot(
                     snapshot,
                     succ_block.clone(),
                     block,
                     node_seq,
                     dfn_map,
+                    get_succ,
                 );
                 if let Some(succ_dfn) = succ_dfn {
                     succ_dfns.push(succ_dfn);
@@ -326,5 +356,93 @@ impl CfgDfsSeq {
             node_seq[succ_dfn].parent_dfn = dfn;
         }
         Some(dfn)
+    }
+}
+
+impl CfgDfsSeq {
+    pub fn new_from_snapshot_reverse(
+        snapshot: &CfgSnapshot,
+        order: DfsOrder,
+    ) -> (Self, Box<[BlockRef]>) {
+        // +1 for the virtual root.
+        let mut nodes = Vec::with_capacity(snapshot.nodes.len() + 1);
+        let mut dfn_map = BTreeMap::new();
+
+        let real_exits = Self::dump_real_exits(snapshot);
+        assert!(real_exits.is_sorted());
+
+        match order.get_first_step() {
+            DfsOrder::Pre => {
+                // push a virtual root block.
+                nodes.push(CfgDfsNode {
+                    block: BlockRef::new_null(),
+                    parent: BlockRef::new_null(),
+                    dfn: 0,
+                    parent_dfn: usize::MAX,
+                });
+                for &block in &real_exits {
+                    Self::build_pre_order_from_snapshot(
+                        snapshot,
+                        block,
+                        BlockRef::new_null(),
+                        0,
+                        &mut nodes,
+                        &mut dfn_map,
+                        &CfgSnapshot::block_get_prev,
+                    );
+                }
+            }
+            DfsOrder::Post => {
+                let mut succ_dfns = Vec::new();
+                for &block in &real_exits {
+                    let dfn = Self::build_post_order_from_snapshot(
+                        snapshot,
+                        block,
+                        BlockRef::new_null(),
+                        &mut nodes,
+                        &mut dfn_map,
+                        &CfgSnapshot::block_get_prev,
+                    );
+                    if let Some(dfn) = dfn {
+                        succ_dfns.push(dfn);
+                    }
+                }
+                // push a virtual root block.
+                let root_dfn = nodes.len();
+                nodes.push(CfgDfsNode {
+                    block: BlockRef::new_null(),
+                    parent: BlockRef::new_null(),
+                    dfn: root_dfn,
+                    parent_dfn: usize::MAX,
+                });
+                for succ_dfn in succ_dfns {
+                    nodes[succ_dfn].parent_dfn = root_dfn;
+                }
+            }
+            _ => unreachable!(),
+        }
+
+        if order.should_reverse() {
+            Self::reverse_dfs_order(&mut nodes, &mut dfn_map);
+        }
+        (
+            Self {
+                nodes,
+                dfn: dfn_map,
+                order,
+            },
+            real_exits,
+        )
+    }
+
+    /// NOTE: Since the CFG snapshot nodes are already sorted by `BlockRef` order,
+    /// the return value is also sorted.
+    fn dump_real_exits(snapshot: &CfgSnapshot) -> Box<[BlockRef]> {
+        snapshot
+            .nodes
+            .iter()
+            .filter(|node| node.next_seq.is_empty())
+            .map(|node| node.block)
+            .collect()
     }
 }
