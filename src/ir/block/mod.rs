@@ -32,6 +32,17 @@ pub struct BlockRef(usize);
 
 impl_slabref!(BlockRef, BlockData);
 
+impl BlockRef {
+    /// Virtual exit block reference, used for post-dominance analysis.
+    /// This block is not a real block, but a placeholder for the virtual exit.
+    pub const fn new_vexit() -> Self {
+        Self(usize::MAX - 1)
+    }
+    pub const fn is_vexit(self) -> bool {
+        self.0 == usize::MAX - 1
+    }
+}
+
 impl SlabRefListNodeRef for BlockRef {
     fn on_node_push_next(
         curr: Self,

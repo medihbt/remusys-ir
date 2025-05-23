@@ -360,7 +360,7 @@ impl CfgDfsSeq {
 }
 
 impl CfgDfsSeq {
-    pub fn new_from_snapshot_reverse(
+    pub fn new_from_rcfg_snapshot(
         snapshot: &CfgSnapshot,
         order: DfsOrder,
     ) -> (Self, Box<[BlockRef]>) {
@@ -375,16 +375,17 @@ impl CfgDfsSeq {
             DfsOrder::Pre => {
                 // push a virtual root block.
                 nodes.push(CfgDfsNode {
-                    block: BlockRef::new_null(),
+                    block: BlockRef::new_vexit(),
                     parent: BlockRef::new_null(),
                     dfn: 0,
                     parent_dfn: usize::MAX,
                 });
+                dfn_map.insert(BlockRef::new_vexit(), 0);
                 for &block in &real_exits {
                     Self::build_pre_order_from_snapshot(
                         snapshot,
                         block,
-                        BlockRef::new_null(),
+                        BlockRef::new_vexit(),
                         0,
                         &mut nodes,
                         &mut dfn_map,
@@ -394,11 +395,12 @@ impl CfgDfsSeq {
             }
             DfsOrder::Post => {
                 let mut succ_dfns = Vec::new();
+                dfn_map.insert(BlockRef::new_vexit(), usize::MAX);
                 for &block in &real_exits {
                     let dfn = Self::build_post_order_from_snapshot(
                         snapshot,
                         block,
-                        BlockRef::new_null(),
+                        BlockRef::new_vexit(),
                         &mut nodes,
                         &mut dfn_map,
                         &CfgSnapshot::block_get_prev,
@@ -410,11 +412,12 @@ impl CfgDfsSeq {
                 // push a virtual root block.
                 let root_dfn = nodes.len();
                 nodes.push(CfgDfsNode {
-                    block: BlockRef::new_null(),
+                    block: BlockRef::new_vexit(),
                     parent: BlockRef::new_null(),
                     dfn: root_dfn,
                     parent_dfn: usize::MAX,
                 });
+                dfn_map.insert(BlockRef::new_vexit(), root_dfn);
                 for succ_dfn in succ_dfns {
                     nodes[succ_dfn].parent_dfn = root_dfn;
                 }

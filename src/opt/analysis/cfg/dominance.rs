@@ -185,13 +185,22 @@ impl DominatorTree {
         writeln!(writer, "  node [shape=circle];").unwrap();
 
         for i in self.nodes.iter() {
-            writeln!(
-                writer,
-                "  {} [label=\"{}\"];",
-                i.dfn,
-                number_map.block_get_number(i.blockref).unwrap()
-            )
-            .unwrap();
+            if i.blockref.is_vexit() {
+                writeln!(
+                    writer,
+                    "  {} [label=\"%VEXIT\" shape=box];",
+                    i.dfn,
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    writer,
+                    "  {} [label=\"{}\"];",
+                    i.dfn,
+                    number_map.block_get_number(i.blockref).unwrap()
+                )
+                .unwrap();
+            }
         }
 
         for i in self.nodes.iter() {
@@ -217,13 +226,10 @@ impl DominatorTree {
 
     /// **WARNING**: NOT TESTED
     pub fn new_postdom_from_snapshot(snapshot: &CfgSnapshot) -> Self {
-        let (dfs_seq, exits) = CfgDfsSeq::new_from_snapshot_reverse(snapshot, DfsOrder::Post);
-        let root_only = [(dfs_seq.get_root_dfn(), BlockRef::new_null())];
+        let (dfs_seq, exits) = CfgDfsSeq::new_from_rcfg_snapshot(snapshot, DfsOrder::Pre);
+        let root_only = [(dfs_seq.get_root_dfn(), BlockRef::new_vexit())];
         let mut dominator_tree = Self::new_empty(Rc::new(dfs_seq), true);
         dominator_tree._build_semidom_from_snapshot(snapshot, &|snapshot, block| {
-            if block.is_null() {
-                return None;
-            }
             if exits.binary_search(&block).is_ok() {
                 return Some(&root_only);
             }
@@ -296,11 +302,11 @@ impl DominatorTree {
             dfn_dsu.set_direct_parent(u, parent);
         }
 
-        for (node, &semidom) in semidom.iter().enumerate() {
-            let semidom_bb = self.dfn_get_block(semidom).unwrap();
+        for (node, &sdom) in semidom.iter().enumerate() {
+            let semidom_bb = self.dfn_get_block(sdom).unwrap();
             let node = self.dfn_node_mut(node).unwrap();
             node.semidom_block = semidom_bb;
-            node.semidom_dfn = semidom;
+            node.semidom_dfn = sdom;
         }
 
         dfn_dsu

@@ -5,10 +5,13 @@
 
 use std::collections::BTreeMap;
 
-use crate::ir::{
-    global::{GlobalData, GlobalRef},
-    module::Module,
-    util::numbering::{IRValueNumberMap, NumberOption},
+use crate::{
+    base::slabref::SlabRef,
+    ir::{
+        global::{GlobalData, GlobalRef},
+        module::Module,
+        util::numbering::{IRValueNumberMap, NumberOption},
+    },
 };
 
 pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io::Write) {
@@ -36,8 +39,10 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
         block_order_map.insert(block_ref, order);
         writer
             .write_fmt(format_args!(
-                "    {} [label=\"%{}\" shape=box];\n",
-                order, block_id
+                "    {} [label=\"%{}({})\" shape=box];\n",
+                order,
+                block_id,
+                block_ref.get_handle()
             ))
             .unwrap();
         let terminator = block.get_terminator_subref(module).unwrap();
