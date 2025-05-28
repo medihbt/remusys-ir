@@ -708,6 +708,7 @@ mod testing {
         // translate SysY source `int a = 0;` to IR: Create an integer global variable `a` and initialize it to 0.
         let global_data = GlobalData::new_variable(
             "a".to_string(),
+            false,
             ValTypeID::Int(32),
             ValueSSA::ConstData(ConstData::Int(32, 0)),
         );

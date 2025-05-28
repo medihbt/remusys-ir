@@ -10,7 +10,7 @@ use crate::{
         ValueSSA,
         block::{BlockData, BlockRef},
         cmp_cond::CmpCond,
-        global::{GlobalData, GlobalRef, func::FuncData},
+        global::{self, GlobalData, GlobalRef, func::FuncData},
         inst::{
             InstData, InstError, InstRef,
             alloca::Alloca,
@@ -265,6 +265,25 @@ impl IRBuilder {
         let ret = self.module.insert_global(GlobalData::Func(func_data));
         self.set_focus_full(ret, entry, inst);
         Ok(ret)
+    }
+
+    pub fn declare_var(&self, name: &str, is_const: bool, content_ty: ValTypeID) -> GlobalRef {
+        let ir_var =
+            global::GlobalData::new_variable(name.into(), is_const, content_ty, ValueSSA::None);
+        self.module.insert_global(ir_var)
+    }
+    pub fn definne_var(
+        &mut self,
+        name: &str,
+        is_const: bool,
+        content_ty: ValTypeID,
+        init: ValueSSA,
+    ) -> Result<GlobalRef, IRBuilderError> {
+        if let Some(global) = self.module.global_defs.borrow().get(name) {
+            return Err(IRBuilderError::GlobalDefExists(name.to_string(), *global));
+        }
+        let ir_var = global::GlobalData::new_variable(name.into(), is_const, content_ty, init);
+        Ok(self.module.insert_global(ir_var))
     }
 
     /// Split the current block from the focus.

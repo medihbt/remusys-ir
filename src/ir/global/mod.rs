@@ -116,7 +116,7 @@ impl GlobalData {
         self.get_common().name.as_str()
     }
 
-    pub fn new_variable(name: String, content_ty: ValTypeID, init: ValueSSA) -> Self {
+    pub fn new_variable(name: String, is_const: bool, content_ty: ValTypeID, init: ValueSSA) -> Self {
         GlobalData::Var(Var {
             common: GlobalDataCommon {
                 name,
@@ -124,7 +124,7 @@ impl GlobalData {
                 self_ref: Cell::new(GlobalRef::new_null()),
             },
             inner: Cell::new(VarInner {
-                readonly: false,
+                readonly: is_const,
                 align_log2: 3,
                 init,
             }),
