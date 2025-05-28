@@ -272,7 +272,7 @@ impl IRBuilder {
             global::GlobalData::new_variable(name.into(), is_const, content_ty, ValueSSA::None);
         self.module.insert_global(ir_var)
     }
-    pub fn definne_var(
+    pub fn define_var(
         &mut self,
         name: &str,
         is_const: bool,

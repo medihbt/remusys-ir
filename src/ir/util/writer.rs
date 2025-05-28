@@ -1,5 +1,6 @@
 //! IR Writer implementation.
 
+use basic_value_formatting::format_value_by_ref;
 use slab::Slab;
 
 use crate::{
@@ -62,6 +63,20 @@ pub fn write_ir_module(
     };
     module_writer.prints_slabref = prints_slabref;
     module_writer.process_module();
+}
+
+pub fn write_ir_expr(module: &Module, writer: &mut dyn IoWrite, expr: ConstExprRef) {
+    writeln!(
+        writer,
+        "{}",
+        format_value_by_ref(
+            &module.borrow_value_alloc(),
+            &[],
+            &[],
+            ValueSSA::ConstExpr(expr)
+        )
+    )
+    .unwrap();
 }
 
 struct ModuleValueWriter<'a> {
