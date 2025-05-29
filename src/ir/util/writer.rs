@@ -670,15 +670,20 @@ impl IInstVisitor for ModuleValueWriter<'_> {
             ValTypeID::Void => {}
             _ => self.write_fmt(format_args!("%{} = ", self.inst_getid_unwrap(inst_ref))),
         }
+        #[rustfmt::skip]
         self.write_fmt(format_args!(
             "call {} {}({})",
             common.ret_type.get_display_name(type_ctx),
             self.format_value_by_ref(call.callee.get_operand(alloc_use)),
-            call.args
-                .iter()
-                .map(|u| self.format_value_by_ref(u.get_operand(alloc_use)))
-                .collect::<Vec<_>>()
-                .join(", ")
+            call.args.iter().map(|u| {
+                let operand = u.get_operand(alloc_use);
+                let operand_ty = operand.get_value_type(&self.module);
+                format!(
+                    "{} {}",
+                    operand_ty.get_display_name(type_ctx),
+                    self.format_value_by_ref(operand)
+                )
+            }).collect::<Vec<_>>().join(", ")
         ));
     }
 }
@@ -688,6 +693,8 @@ mod basic_value_formatting {
         cell::RefCell,
         io::{Cursor, Read, Write},
     };
+
+    use crate::typing::context::TypeContext;
 
     use super::*;
     use slab::Slab;
@@ -784,6 +791,10 @@ mod basic_value_formatting {
 
     impl IConstExprVisitor for BasicValueFormatter<'_> {
         fn read_array(&self, _: ConstExprRef, array_data: &Array) {
+            if let Some(str_literal) = self.try_format_string_literal(&array_data.elems) {
+                self.write_str(&str_literal);
+                return;
+            }
             self.write_str("[");
             for (i, item) in array_data.elems.iter().enumerate() {
                 if i > 0 {
@@ -803,6 +814,33 @@ mod basic_value_formatting {
                 self.value_visitor_diapatch(item.clone(), self.module);
             }
             self.write_str("}");
+        }
+    }
+
+    impl<'a> BasicValueFormatter<'a> {
+        fn try_format_string_literal(&self, elems: &[ValueSSA]) -> Option<String> {
+            if elems.is_empty() {
+                return Some("\"\"".to_string());
+            }
+            let mut ret = String::with_capacity(elems.len() + 2);
+            ret.push('"');
+            for i in elems {
+                let c: char = if let ValueSSA::ConstData(ConstData::Int(8, c)) = i {
+                    let c = ConstData::iconst_value_get_real_unsigned(8, *c);
+                    (c as u8).into()
+                } else {
+                    return None; // Not a valid string literal
+                };
+                if c.is_ascii_alphabetic() || c.is_ascii_digit() || c.is_ascii_punctuation() {
+                    ret.push(c);
+                } else {
+                    let hex_str = format!("{:02x}", c as u32);
+                    ret.push('\\');
+                    ret.push_str(&hex_str);
+                }
+            }
+            ret.push('"');
+            Some(ret)
         }
     }
 

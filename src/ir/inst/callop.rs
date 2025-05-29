@@ -157,8 +157,12 @@ impl CallOp {
         let is_vararg = callee_func_ty.is_vararg(type_ctx);
         let fixed_nargs = callee_func_ty.get_nargs(type_ctx);
 
-        if is_vararg && call_nargs < fixed_nargs {
-            Err(InstError::InvalidArgumentCount(fixed_nargs, call_nargs))
+        if is_vararg {
+            if call_nargs < fixed_nargs {
+                Err(InstError::InvalidArgumentCount(fixed_nargs, call_nargs))
+            } else {
+                Ok(())
+            }
         } else if call_nargs != fixed_nargs {
             Err(InstError::InvalidArgumentCount(fixed_nargs, call_nargs))
         } else {
