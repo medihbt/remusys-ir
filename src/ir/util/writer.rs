@@ -580,12 +580,14 @@ impl IInstVisitor for ModuleValueWriter<'_> {
     fn read_select_inst(&self, inst_ref: InstRef, common: &InstDataCommon, select: &SelectOp) {
         let type_ctx = self.module.type_ctx.as_ref();
         let alloc_use = &*self.alloc_use;
+        let inst_ty = common.ret_type.get_display_name(type_ctx);
         self.write_fmt(format_args!(
-            "%{} = select {}, i1 {}, {}, {}",
+            "%{} = select i1 {}, {} {}, {} {}",
             self.inst_getid_unwrap(inst_ref),
-            common.ret_type.get_display_name(type_ctx),
             self.format_value_by_ref(select.cond.get_operand(alloc_use)),
+            inst_ty,
             self.format_value_by_ref(select.true_val.get_operand(alloc_use)),
+            inst_ty,
             self.format_value_by_ref(select.false_val.get_operand(alloc_use))
         ));
     }
@@ -767,8 +769,8 @@ mod basic_value_formatting {
 
         fn read_float_const(&self, fp_kind: FloatTypeKind, value: f64) {
             match fp_kind {
-                FloatTypeKind::Ieee32 => self.write_str((value as f32).to_string().as_str()),
-                FloatTypeKind::Ieee64 => self.write_str(value.to_string().as_str()),
+                FloatTypeKind::Ieee32 => self.write_str(format!("{:.32e}", value as f32).as_str()),
+                FloatTypeKind::Ieee64 => self.write_str(format!("{:.32e}", value).as_str()),
             }
         }
 
