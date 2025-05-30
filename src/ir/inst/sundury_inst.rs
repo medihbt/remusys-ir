@@ -73,9 +73,9 @@ impl SelectOp {
         let value_type = true_val.get_value_type(mut_module);
         check_operand_type_match(value_type, false_val, mut_module)?;
 
-        let mut alloc_use = mut_module.borrow_use_alloc_mut();
-
         let (c, s) = Self::new_raw(mut_module, value_type);
+
+        let mut alloc_use = mut_module.borrow_use_alloc_mut();
         s.cond.set_operand_nordfg(&mut alloc_use, cond);
         s.true_val.set_operand_nordfg(&mut alloc_use, true_val);
         s.false_val.set_operand_nordfg(&mut alloc_use, false_val);

@@ -71,6 +71,7 @@ pub fn write_ir_expr(module: &Module, writer: &mut dyn IoWrite, expr: ConstExprR
         "{}",
         format_value_by_ref(
             &module.borrow_value_alloc(),
+            &module.type_ctx,
             &[],
             &[],
             ValueSSA::ConstExpr(expr)
@@ -294,6 +295,7 @@ impl<'a> ModuleValueWriter<'a> {
         let inner = self.module.borrow_value_alloc();
         basic_value_formatting::format_value_by_ref(
             &inner,
+            &self.module.type_ctx,
             &self.inst_id_map.borrow(),
             &self.block_id_map.borrow(),
             value,
@@ -694,17 +696,21 @@ mod basic_value_formatting {
         io::{Cursor, Read, Write},
     };
 
+    use crate::typing::context::TypeContext;
+
     use super::*;
     use slab::Slab;
 
     pub fn format_value_by_ref(
         module: &ModuleAllocatorInner,
+        type_ctx: &TypeContext,
         inst_id_map: &[usize],
         block_id_map: &[usize],
         value: ValueSSA,
     ) -> String {
         let formatter = BasicValueFormatter {
             module,
+            type_ctx,
             inst_id_map,
             block_id_map,
             str_writer: RefCell::new(Cursor::new(vec![])),
@@ -715,6 +721,7 @@ mod basic_value_formatting {
 
     struct BasicValueFormatter<'a> {
         pub module: &'a ModuleAllocatorInner,
+        pub type_ctx: &'a TypeContext,
         pub inst_id_map: &'a [usize],
         pub block_id_map: &'a [usize],
         pub str_writer: RefCell<Cursor<Vec<u8>>>,
@@ -798,6 +805,8 @@ mod basic_value_formatting {
                 if i > 0 {
                     self.write_str(", ");
                 }
+                let elem_ty = array_data.arrty.get_element_type(self.type_ctx);
+                self.write_fmt(format_args!("{} ", elem_ty.get_display_name(self.type_ctx)));
                 self.value_visitor_diapatch(item.clone(), self.module);
             }
             self.write_str("]");
@@ -809,6 +818,15 @@ mod basic_value_formatting {
                 if i > 0 {
                     self.write_str(", ");
                 }
+                let struct_ty = match s.structty {
+                    ValTypeID::Struct(s) => s,
+                    ValTypeID::StructAlias(sa) => sa.get_aliasee(self.type_ctx),
+                    _ => panic!("Invalid type in constant expression"),
+                };
+                let elem_ty = struct_ty
+                    .get_element_type(self.type_ctx, i)
+                    .expect("index out of bounds in struct type");
+                self.write_fmt(format_args!("{} ", elem_ty.get_display_name(self.type_ctx)));
                 self.value_visitor_diapatch(item.clone(), self.module);
             }
             self.write_str("}");
