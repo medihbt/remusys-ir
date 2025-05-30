@@ -694,8 +694,6 @@ mod basic_value_formatting {
         io::{Cursor, Read, Write},
     };
 
-    use crate::typing::context::TypeContext;
-
     use super::*;
     use slab::Slab;
 
