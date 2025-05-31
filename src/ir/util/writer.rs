@@ -397,10 +397,16 @@ impl IConstExprVisitor for ModuleValueWriter<'_> {
 impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
     /// Syntax: `@<name> = external|dso_local global <type> [initializer], align <align>`
     fn read_global_variable(&self, _: GlobalRef, gvar: &global::Var) {
+        let gvar_kind = if gvar.is_readonly() {
+            "constant"
+        } else {
+            "global"
+        };
         if gvar.is_extern() {
             self.write_fmt(format_args!(
-                "@{} = external global {}, align {}\n",
+                "@{} = external {} {}, align {}\n",
                 gvar.common.name,
+                gvar_kind,
                 gvar.common
                     .content_ty
                     .get_display_name(&self.module.type_ctx),
@@ -408,8 +414,9 @@ impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
             ));
         } else {
             self.write_fmt(format_args!(
-                "@{} = dso_local global {} {}, align {}\n",
+                "@{} = dso_local {} {} {}, align {}\n",
                 gvar.common.name,
+                gvar_kind,
                 gvar.common
                     .content_ty
                     .get_display_name(&self.module.type_ctx),
