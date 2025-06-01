@@ -11,6 +11,7 @@ use crate::{
     impl_slabref,
     ir::{
         ValueSSA,
+        block::BlockRef,
         module::{Module, ModuleError, rdfg::RdfgAlloc},
     },
 };
@@ -21,6 +22,7 @@ pub struct UseData {
     pub(crate) _node_head: Cell<SlabRefListNodeHead>,
     pub(crate) _operand: Cell<ValueSSA>,
     pub(crate) _user: Cell<InstRef>,
+    pub kind: Cell<UseKind>,
 }
 
 impl SlabRefListNode for UseData {
@@ -29,6 +31,7 @@ impl SlabRefListNode for UseData {
             _node_head: Cell::new(SlabRefListNodeHead::new()),
             _user: Cell::new(InstRef::new_null()),
             _operand: Cell::new(ValueSSA::None),
+            kind: Cell::new(UseKind::GuideNode),
         }
     }
 
@@ -42,11 +45,12 @@ impl SlabRefListNode for UseData {
 }
 
 impl UseData {
-    pub fn new(parent: InstRef, operand: ValueSSA) -> Self {
+    pub fn new(kind: UseKind, parent: InstRef, operand: ValueSSA) -> Self {
         Self {
             _node_head: Cell::new(SlabRefListNodeHead::new()),
             _user: Cell::new(parent),
             _operand: Cell::new(operand),
+            kind: Cell::new(kind),
         }
     }
 
@@ -147,4 +151,32 @@ impl UseRef {
             _ => panic!(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UseKind {
+    GuideNode,
+    BinOpLhs,
+    BinOpRhs,
+    CallOpCallee,
+    CallOpArg(usize),
+    CastOpFrom,
+    CmpLhs,
+    CmpRhs,
+    GepBase,
+    GepIndex(usize),
+    LoadSource,
+    StoreSource,
+    StoreTarget,
+    PhiIncomingBlock(UseRef),
+    PhiIncomingValue {
+        from_bb: BlockRef,
+        from_bb_use: UseRef,
+    },
+    SelectCond,
+    SelectTrueVal,
+    SelectFalseVal,
+    BranchCond,
+    SwitchCond,
+    RetValue,
 }

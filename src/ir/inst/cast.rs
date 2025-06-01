@@ -2,14 +2,14 @@ use slab::Slab;
 
 use crate::{
     base::NullableValue,
-    ir::{module::Module, opcode::Opcode, ValueSSA},
-    typing::{id::ValTypeID, types::FloatTypeKind, TypeMismatchError},
+    ir::{ValueSSA, module::Module, opcode::Opcode},
+    typing::{TypeMismatchError, id::ValTypeID, types::FloatTypeKind},
 };
 
 use super::{
     InstDataCommon, InstDataUnique, InstError,
     checking::check_type_kind_match,
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -25,7 +25,7 @@ pub struct CastOp {
 
 impl InstDataUnique for CastOp {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.from_op = common.alloc_use(alloc_use);
+        self.from_op = common.alloc_use(alloc_use, UseKind::CastOpFrom);
     }
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
@@ -145,7 +145,7 @@ impl CastOp {
         mut_module: &Module,
         opcode: Opcode,
         ret_ty: ValTypeID,
-        from_value: ValueSSA
+        from_value: ValueSSA,
     ) -> Result<(InstDataCommon, Self), InstError> {
         let (common, ret) = Self::new_raw(mut_module, opcode, ret_ty)?;
         let alloc_use = mut_module.borrow_use_alloc();

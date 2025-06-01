@@ -3,9 +3,7 @@
 use slab::Slab;
 
 use super::{
-    InstDataCommon, InstDataUnique, InstError,
-    checking::{check_operand_type_kind_match, check_operand_type_match},
-    usedef::{UseData, UseRef},
+    checking::{check_operand_type_kind_match, check_operand_type_match}, usedef::{UseData, UseKind, UseRef}, InstDataCommon, InstDataUnique, InstError
 };
 
 use crate::{
@@ -21,8 +19,8 @@ pub struct BinOp {
 
 impl InstDataUnique for BinOp {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.lhs = common.alloc_use(alloc_use);
-        self.rhs = common.alloc_use(alloc_use);
+        self.lhs = common.alloc_use(alloc_use, UseKind::BinOpLhs);
+        self.rhs = common.alloc_use(alloc_use, UseKind::BinOpRhs);
     }
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {

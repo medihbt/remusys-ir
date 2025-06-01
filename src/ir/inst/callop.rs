@@ -21,7 +21,7 @@ use crate::{
 use super::{
     InstDataCommon, InstError,
     checking::check_operand_type_kind_match,
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 use super::InstDataUnique;
@@ -46,9 +46,9 @@ impl FuncUser for CallOp {}
 
 impl InstDataUnique for CallOp {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.callee = common.alloc_use(alloc_use);
-        for arg in self.args.iter_mut() {
-            *arg = common.alloc_use(alloc_use);
+        self.callee = common.alloc_use(alloc_use, UseKind::CallOpCallee);
+        for (i, arg) in self.args.iter_mut().enumerate() {
+            *arg = common.alloc_use(alloc_use, UseKind::CallOpArg(i));
         }
     }
 

@@ -21,8 +21,9 @@ use crate::{
             gep::IndexPtrOp,
             load_store::{LoadOp, StoreOp},
             phi::PhiOp,
-            sundury_inst::SelectOp,
+            select::SelectOp,
             terminator::{Br, Jump, Ret, Switch},
+            usedef::UseKind,
         },
         module::Module,
         opcode::Opcode,
@@ -516,9 +517,19 @@ impl IRBuilder {
                     InstData::Phi(_, phi) => phi.get_from_all_mut(),
                     _ => break,
                 };
-                for (b, _) in phi_ops.iter_mut() {
-                    if *b == old_block {
-                        *b = new_block
+                for phi_op in phi_ops.iter_mut() {
+                    if phi_op.from_bb == old_block {
+                        phi_op.from_bb = new_block;
+                        phi_op
+                            .from_bb_use
+                            .set_operand(module, ValueSSA::Block(new_block));
+                        module
+                            .get_use(phi_op.from_value_use)
+                            .kind
+                            .set(UseKind::PhiIncomingValue {
+                                from_bb: new_block,
+                                from_bb_use: phi_op.from_bb_use,
+                            });
                     }
                 }
             }

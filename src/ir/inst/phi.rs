@@ -3,7 +3,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::{NullableValue, slabref::SlabRef},
     ir::{ValueSSA, block::BlockRef, module::Module, opcode::Opcode},
     typing::id::ValTypeID,
 };
@@ -11,11 +11,17 @@ use crate::{
 use super::{
     InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
     checking::check_operand_type_match,
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
+pub struct PhiOperand {
+    pub from_bb: BlockRef,
+    pub from_bb_use: UseRef,
+    pub from_value_use: UseRef,
+}
+
 pub struct PhiOp {
-    from: RefCell<Vec<(BlockRef, UseRef)>>,
+    from: RefCell<Vec<PhiOperand>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -28,8 +34,8 @@ impl PhiOp {
         self.from
             .borrow()
             .iter()
-            .find(|(b, _)| *b == from_bb)
-            .map(|(_, u)| u.clone())
+            .find(|op| op.from_bb == from_bb)
+            .map(|op| op.from_bb_use)
     }
 
     pub fn get_from_value(&self, from_bb: BlockRef, alloc_use: &Slab<UseData>) -> Option<ValueSSA> {
@@ -37,10 +43,10 @@ impl PhiOp {
             .map(|u| u.to_slabref_unwrap(alloc_use).get_operand())
     }
 
-    pub fn get_from_all(&self) -> Ref<[(BlockRef, UseRef)]> {
+    pub fn get_from_all(&self) -> Ref<[PhiOperand]> {
         Ref::map(self.from.borrow(), Vec::as_slice)
     }
-    pub fn get_from_all_mut(&self) -> RefMut<Vec<(BlockRef, UseRef)>> {
+    pub fn get_from_all_mut(&self) -> RefMut<Vec<PhiOperand>> {
         self.from.borrow_mut()
     }
 
@@ -91,17 +97,21 @@ impl PhiOp {
                 Ok(u)
             }
             None => {
-                let useref = module.insert_use(UseData::new(instref, value));
+                let (block_useref, value_useref) = Self::insert_value_build_uses(module, from_bb);
                 if let InstData::Phi(common, phi) = &*module.get_inst(instref) {
                     common
                         .operands
-                        .push_back_ref(&*module.borrow_use_alloc(), useref)
+                        .push_back_ref(&*module.borrow_use_alloc(), value_useref)
                         .unwrap();
-                    phi.from.borrow_mut().push((from_bb, useref));
+                    phi.from.borrow_mut().push(PhiOperand {
+                        from_bb,
+                        from_bb_use: block_useref,
+                        from_value_use: value_useref,
+                    });
                 } else {
                     panic!();
                 }
-                Ok(useref)
+                Ok(value_useref)
             }
         }
     }
@@ -123,20 +133,45 @@ impl PhiOp {
                 Ok(u)
             }
             None => {
-                let useref = module.insert_use(UseData::new(instref, ValueSSA::None));
+                let (block_useref, value_useref) = Self::insert_value_build_uses(module, from_bb);
                 if let InstData::Phi(common, phi) = &*module.get_inst(instref) {
                     common
                         .operands
-                        .push_back_ref(&*module.borrow_use_alloc(), useref)
+                        .push_back_ref(&*module.borrow_use_alloc(), value_useref)
                         .unwrap();
-                    phi.from.borrow_mut().push((from_bb, useref));
+                    phi.from.borrow_mut().push(PhiOperand {
+                        from_bb,
+                        from_bb_use: block_useref,
+                        from_value_use: value_useref,
+                    });
                 } else {
                     unreachable!()
                 }
-                useref.set_operand(&module, value);
-                Ok(useref)
+                value_useref.set_operand(&module, value);
+                Ok(value_useref)
             }
         }
+    }
+
+    fn insert_value_build_uses(module: &Module, from_bb: BlockRef) -> (UseRef, UseRef) {
+        let block_useref = module.insert_use(UseData::new(
+            UseKind::PhiIncomingBlock(UseRef::new_null()),
+            InstRef::new_null(),
+            ValueSSA::None,
+        ));
+        let value_useref = module.insert_use(UseData::new(
+            UseKind::PhiIncomingValue {
+                from_bb,
+                from_bb_use: block_useref,
+            },
+            InstRef::new_null(),
+            ValueSSA::None,
+        ));
+        match module.mut_use(block_useref).kind.get_mut() {
+            UseKind::PhiIncomingBlock(related_value_use) => *related_value_use = value_useref,
+            _ => unreachable!("Expected PhiIncomingBlock use kind"),
+        };
+        (block_useref, value_useref)
     }
 
     pub fn unset_from(
@@ -144,15 +179,15 @@ impl PhiOp {
         common: &InstDataCommon,
         from_bb: BlockRef,
         module: &Module,
-    ) -> Option<UseRef> {
+    ) -> Option<(UseRef, UseRef)> {
         let mut from = self.from.borrow_mut();
-        let index = from.iter().position(|(b, _)| *b == from_bb);
+        let index = from.iter().position(|op| op.from_bb == from_bb);
         let u = match index {
             Some(i) => {
-                let (_, u) = from.swap_remove(i);
-                u.set_operand(module, ValueSSA::None);
-                common.remove_use(&module.borrow_use_alloc(), u);
-                Some(u)
+                let op = from.swap_remove(i);
+                op.from_value_use.set_operand(module, ValueSSA::None);
+                common.remove_use(&module.borrow_use_alloc(), op.from_bb_use);
+                Some((op.from_bb_use, op.from_value_use))
             }
             None => None,
         };
@@ -174,8 +209,8 @@ impl InstDataUnique for PhiOp {
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
         let self_type = common.ret_type;
-        for (_, from) in self.from.borrow().iter() {
-            let from = from.get_operand(&module.borrow_use_alloc());
+        for op in self.from.borrow().iter() {
+            let from = op.from_value_use.get_operand(&module.borrow_use_alloc());
             check_operand_type_match(self_type, from, module)?;
         }
         Ok(())

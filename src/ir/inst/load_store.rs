@@ -13,7 +13,7 @@ use crate::{
 use super::{
     InstDataCommon, InstDataUnique, InstError,
     checking::check_operand_type_match,
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 pub struct LoadOp {
@@ -51,7 +51,7 @@ impl PtrUser for StoreOp {
 
 impl InstDataUnique for LoadOp {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.source = common.alloc_use(alloc_use)
+        self.source = common.alloc_use(alloc_use, UseKind::LoadSource)
     }
 
     fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {
@@ -62,8 +62,8 @@ impl InstDataUnique for LoadOp {
 
 impl InstDataUnique for StoreOp {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.source = common.alloc_use(alloc_use);
-        self.target = common.alloc_use(alloc_use);
+        self.source = common.alloc_use(alloc_use, UseKind::StoreSource);
+        self.target = common.alloc_use(alloc_use, UseKind::StoreTarget);
     }
 
     fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {

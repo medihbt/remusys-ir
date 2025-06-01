@@ -8,7 +8,7 @@ use super::{
     gep::IndexPtrOp,
     load_store::{LoadOp, StoreOp},
     phi::PhiOp,
-    sundury_inst::SelectOp,
+    select::SelectOp,
     terminator::{Br, Jump, Ret, Switch},
 };
 

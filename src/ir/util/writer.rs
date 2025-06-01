@@ -26,7 +26,7 @@ use crate::{
             gep::IndexPtrOp,
             load_store::{LoadOp, StoreOp},
             phi::PhiOp,
-            sundury_inst::SelectOp,
+            select::SelectOp,
             terminator::{Br, Jump, Ret, Switch},
             usedef::UseData,
             visitor::IInstVisitor,
@@ -320,6 +320,9 @@ impl IValueVisitor for ModuleValueWriter<'_> {
             self.write_fmt(format_args!("\n; {:?}\n", block));
         }
         self.write_fmt(format_args!("{}:", block_id));
+        if self.prints_rdfg {
+            self.write_value_users(ValueSSA::Block(block));
+        }
         if self.prints_rcfg {
             self.write_block_predecessors(block);
         }
@@ -341,7 +344,7 @@ impl IValueVisitor for ModuleValueWriter<'_> {
                 _ => self.wrap_indent(),
             }
             if self.prints_rdfg {
-                self.write_inst_users(inst_ref);
+                self.write_value_users(ValueSSA::Inst(inst_ref));
             }
             self.inst_visitor_dispatch(inst_ref, inst_data);
         }
@@ -365,9 +368,9 @@ impl<'a> ModuleValueWriter<'a> {
                 .join(", ")
         ));
     }
-    fn write_inst_users(&self, inst: InstRef) {
+    fn write_value_users(&self, value: ValueSSA) {
         let rdfg = self.module.borrow_rdfg_alloc().unwrap();
-        let users = rdfg.get_node(ValueSSA::Inst(inst)).unwrap();
+        let users = rdfg.get_node(value).unwrap();
         self.write_fmt(format_args!(
             "; Users: {}",
             users
@@ -469,10 +472,10 @@ impl IInstVisitor for ModuleValueWriter<'_> {
             common.ret_type.get_display_name(&self.module.type_ctx),
             phi.get_from_all()
                 .iter()
-                .map(|(b, u)| format!(
+                .map(|po| format!(
                     "[{}, %{}]",
-                    self.format_value_by_ref(u.get_operand(&self.alloc_use)),
-                    self.block_getid_unwrap(b.clone())
+                    self.format_value_by_ref(po.from_value_use.get_operand(&self.alloc_use)),
+                    self.block_getid_unwrap(po.from_bb)
                 ))
                 .collect::<Vec<_>>()
                 .join(", ")

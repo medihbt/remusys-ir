@@ -11,7 +11,7 @@ use crate::{
 use super::{
     InstDataCommon, InstDataUnique, InstError,
     checking::check_operand_type_match,
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 pub struct SelectOp {
@@ -26,9 +26,9 @@ impl InstDataUnique for SelectOp {
         common: &mut super::InstDataCommon,
         alloc_use: &mut Slab<UseData>,
     ) {
-        self.cond = common.alloc_use(alloc_use);
-        self.true_val = common.alloc_use(alloc_use);
-        self.false_val = common.alloc_use(alloc_use);
+        self.cond = common.alloc_use(alloc_use, UseKind::SelectCond);
+        self.true_val = common.alloc_use(alloc_use, UseKind::SelectTrueVal);
+        self.false_val = common.alloc_use(alloc_use, UseKind::SelectFalseVal);
     }
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {

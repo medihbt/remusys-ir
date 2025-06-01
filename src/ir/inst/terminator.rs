@@ -26,7 +26,7 @@ use crate::{
 use super::{
     InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
     checking::{check_operand_type_kind_match, check_operand_type_match},
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 pub trait TerminatorInst {
@@ -202,7 +202,7 @@ impl TerminatorInst for Switch {
 
 impl InstDataUnique for Ret {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.retval = common.alloc_use(alloc_use);
+        self.retval = common.alloc_use(alloc_use, UseKind::RetValue);
     }
 
     fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
@@ -219,7 +219,7 @@ impl InstDataUnique for Jump {
 }
 impl InstDataUnique for Br {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self._common._condition = common.alloc_use(alloc_use)
+        self._common._condition = common.alloc_use(alloc_use, UseKind::BranchCond)
     }
 
     fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {
@@ -232,7 +232,7 @@ impl InstDataUnique for Br {
 }
 impl InstDataUnique for Switch {
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self._common._condition = common.alloc_use(alloc_use)
+        self._common._condition = common.alloc_use(alloc_use, UseKind::SwitchCond);
     }
 
     fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {

@@ -9,7 +9,11 @@ use crate::{
         block::{BlockRef, jump_target::JumpTargetRef},
         constant::expr::{ConstExprData, ConstExprRef},
         global::{GlobalData, GlobalRef},
-        inst::{InstData, InstDataCommon, InstRef, terminator::JumpCommon, usedef::UseRef},
+        inst::{
+            InstData, InstDataCommon, InstRef,
+            terminator::JumpCommon,
+            usedef::{UseKind, UseRef},
+        },
         module::{Module, ModuleError},
     },
 };
@@ -181,9 +185,10 @@ impl<'a> Redirector<'a> {
                     switch.sort_cases();
                 }
                 InstData::Phi(_, phi_op) => {
-                    for (from_bb, useref) in &mut *phi_op.get_from_all_mut() {
-                        self._redirect_block_ref(from_bb, false)?;
-                        self._redirect_use_ref(useref)?;
+                    for phi_operand in &mut *phi_op.get_from_all_mut() {
+                        self._redirect_block_ref(&mut phi_operand.from_bb, false)?;
+                        self._redirect_use_ref(&mut phi_operand.from_bb_use)?;
+                        self._redirect_use_ref(&mut phi_operand.from_value_use)?;
                     }
                 }
                 InstData::Alloca(..) => { /* Alloca instruction has no managed value */ }
@@ -405,6 +410,20 @@ impl<'a> Redirector<'a> {
             self._redirect_inst_ref(oldpos_data._user.get_mut(), false)?;
             self._redirect_value_ref(oldpos_data._operand.get_mut())?;
             self._redirect_use_node_head(oldpos_data._node_head.get_mut())?;
+
+            match oldpos_data.kind.get_mut() {
+                UseKind::PhiIncomingBlock(rela_value_use) => {
+                    self._redirect_use_ref(rela_value_use)?;
+                }
+                UseKind::PhiIncomingValue {
+                    from_bb,
+                    from_bb_use,
+                } => {
+                    self._redirect_block_ref(from_bb, false)?;
+                    self._redirect_use_ref(from_bb_use)?;
+                }
+                _ => {}
+            }
         }
         Ok(())
     }

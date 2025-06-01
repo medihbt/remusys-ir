@@ -15,7 +15,7 @@ use super::{
     checking::{
         check_operand_integral_const, check_operand_type_kind_match, check_operand_type_match,
     },
-    usedef::{UseData, UseRef},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 pub struct IndexPtrOp {
@@ -55,11 +55,11 @@ impl InstDataUnique for IndexPtrOp {
     /// use edges for this instruction.
     fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
         // Set the base pointer.
-        self.base_ptr = common.alloc_use(alloc_use);
+        self.base_ptr = common.alloc_use(alloc_use, UseKind::GepBase);
 
         // Set the indices.
-        for index in self.indices.iter_mut() {
-            *index = common.alloc_use(alloc_use);
+        for (i, index) in self.indices.iter_mut().enumerate() {
+            *index = common.alloc_use(alloc_use, UseKind::GepIndex(i));
         }
     }
 

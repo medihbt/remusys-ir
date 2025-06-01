@@ -2,7 +2,7 @@ use std::cell::{Cell, Ref};
 
 use slab::Slab;
 use terminator::TerminatorInst;
-use usedef::{UseData, UseRef};
+use usedef::{UseData, UseKind, UseRef};
 
 use crate::{
     base::{
@@ -31,7 +31,7 @@ pub mod cmp;
 pub mod gep;
 pub mod load_store;
 pub mod phi;
-pub mod sundury_inst;
+pub mod select;
 pub mod terminator;
 pub mod usedef;
 pub mod visitor;
@@ -105,7 +105,7 @@ pub enum InstData {
     Store(InstDataCommon, load_store::StoreOp),
 
     /// Select a value from two options based on a condition.
-    Select(InstDataCommon, sundury_inst::SelectOp),
+    Select(InstDataCommon, select::SelectOp),
 
     /// Binary operations (add, sub, mul, div, etc.).
     BinOp(InstDataCommon, binop::BinOp),
@@ -478,8 +478,11 @@ impl InstDataCommon {
             .expect("Failed to add use reference to instruction");
         UseRef::from_handle(use_ref)
     }
-    fn alloc_use(&self, alloc_use: &mut Slab<UseData>) -> UseRef {
-        self.add_use(alloc_use, UseData::new_guide())
+    fn alloc_use(&self, alloc_use: &mut Slab<UseData>, kind: UseKind) -> UseRef {
+        self.add_use(
+            alloc_use,
+            UseData::new(kind, self.self_ref, ValueSSA::new_null()),
+        )
     }
 
     fn remove_use(&self, alloc_use: &Slab<UseData>, use_ref: UseRef) {
