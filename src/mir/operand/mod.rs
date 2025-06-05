@@ -8,8 +8,9 @@ pub mod constant;
 pub mod virtreg;
 pub mod physreg;
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum MachineOperand {
+    None,
     VirtReg(VirtReg),
     PhysReg(PhysReg),
     ImmConst(ImmConst),

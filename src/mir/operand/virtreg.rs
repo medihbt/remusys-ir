@@ -1,9 +1,20 @@
 use std::fmt::Debug;
 
+use bitflags::bitflags;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtReg {
-    General(u32, SubRegIndex),
-    Float  (u32, SubRegIndex),
+    General(u32, SubRegIndex, RegUseFlags),
+    Float  (u32, SubRegIndex, RegUseFlags),
+}
+
+impl VirtReg {
+    pub fn new_general(reg_id: u32) -> Self {
+        VirtReg::General(reg_id, SubRegIndex::new(3, 0), RegUseFlags::NONE)
+    }
+    pub fn new_float(reg_id: u32) -> Self {
+        VirtReg::Float(reg_id, SubRegIndex::new(3, 0), RegUseFlags::NONE)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -73,4 +84,24 @@ pub struct RegShift {
     pub reg: VirtReg,
     pub shift_opcode: ShiftOpcode,
     pub shift_amount: u8, // 0-63
+}
+
+pub struct RegExt {
+    pub reg: VirtReg,
+    // TODO: Implement extension type
+}
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+    pub struct RegUseFlags: u16 {
+        const NONE = 0b0000_0000_0000_0000;
+        /// This register is defined in this instruction
+        const DEF  = 0b0000_0000_0000_0001;
+        /// This register is defined but not used in this instruction
+        const DEAD = 0b0000_0000_0000_0010;
+        /// The last use of this register in this instruction
+        const KILL = 0b0000_0000_0000_0100;
+        /// This register is defined implicitly in this instruction
+        const IMPLICIT_DEF = 0b0000_0000_0000_1000;
+    }
 }
