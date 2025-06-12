@@ -38,4 +38,8 @@ impl BinaryOP {
             panic!("This BinaryOP does not have a CSR operand");
         }
     }
+
+    pub fn get_rd(&self) -> &MachineOperand {
+        &self.0.operand_arr[0]
+    }
 }

@@ -8,7 +8,9 @@ use crate::{
     },
 };
 
-pub mod binary;
+pub mod branch;
+pub mod data_process;
+pub mod load_store;
 
 pub struct FixOPInst {
     pub common: MachineInstCommonBase,
