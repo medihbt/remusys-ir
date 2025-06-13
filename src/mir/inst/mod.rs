@@ -4,8 +4,7 @@ use crate::{
     base::slablist::SlabRefListNodeHead,
     ir::cmp_cond::CmpCond,
     mir::inst::fixop::{
-        FixOPInst,
-        branch::{BLink, BrRegCond, CondBr, UncondBr},
+        branch::{BLink, BrRegCond, CondBr, UncondBr}, data_process::BinOP, FixOPInst
     },
 };
 use opcode::AArch64OP;
@@ -24,6 +23,8 @@ pub enum MachineInst {
     BrRegCond(BrRegCond),
 
     LoadStoreReg(FixOPInst), // Load/Store with register
+
+    BinOP(BinOP),
 }
 
 pub struct MachineInstCommonBase {
@@ -70,5 +71,21 @@ impl BrCondFlag {
             CmpCond::NEVER  => Self::NV,
             _ => unreachable!(),
         };
+    }
+
+    pub fn get_name(self) -> &'static str {
+        #[rustfmt::skip]
+        return match self {
+            Self::EQ => "EQ", Self::NE => "NE", Self::CS => "CS", Self::CC => "CC",
+            Self::MI => "MI", Self::PL => "PL", Self::VS => "VS", Self::VC => "VC",
+            Self::HI => "HI", Self::LS => "LS", Self::GE => "GE", Self::LT => "LT",
+            Self::GT => "GT", Self::LE => "LE", Self::AL => "AL", Self::NV => "NV",
+        };
+    }
+}
+
+impl ToString for BrCondFlag {
+    fn to_string(&self) -> String {
+        self.get_name().to_string()
     }
 }

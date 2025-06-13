@@ -3,9 +3,9 @@ use crate::mir::{
     operand::MachineOperand,
 };
 
-pub struct BinaryOP(pub FixOPInst);
+pub struct BinOP(pub FixOPInst);
 
-impl BinaryOP {
+impl BinOP {
     pub fn new(opcode: AArch64OP, has_csr: bool) -> Self {
         let noperands = if has_csr { 3 } else { 2 };
         Self(FixOPInst::new(opcode, noperands))

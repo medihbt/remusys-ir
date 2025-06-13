@@ -83,7 +83,7 @@ pub enum AArch64OP {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpcodeNOperands {
+pub enum NumOperand {
     /// AArch64 文档规定了就这么多操作数
     Fix(u32),
     /// 操作数数量不定
@@ -265,9 +265,9 @@ impl AArch64OP {
     /// 例如 `Add` 指令有 3 个操作数（2个源操作数和 1 个目的操作数）, 而
     /// `AddS` `AddC` `AddCS` 这样的指令有 4 个操作数——
     /// AddS 会写、AddC 会读、AddCS 会读写 CSR.
-    pub const fn get_n_operands(self) -> OpcodeNOperands {
+    pub const fn get_n_operands(self) -> NumOperand {
         type O = AArch64OP;
-        type N = OpcodeNOperands;
+        type N = NumOperand;
         #[rustfmt::skip]
         return match self {
             O::BCond | O::BCCond => N::MustCSR(1), // 会读取 CSR
@@ -309,7 +309,7 @@ impl AArch64OP {
             O::CSel | O::CSInc | O::CSInv | O::CSNeg => N::MustCSR(3),
             O::CSet | O::CSetM => N::MustCSR(1),
             O::CInc | O::CInv | O::CNeg | O::CCmpN | O::CCmp => N::MustCSR(2),
-            
+
             _ => todo!("not implemented")
         };
     }
