@@ -3,19 +3,23 @@ use crate::mir::{
     operand::MachineOperand,
 };
 
+#[derive(Debug, Clone)]
 pub struct CondBr {
     pub common: MachineInstCommonBase,
     pub oprnds: [MachineOperand; 2],
     pub cond: BrCondFlag,
 }
+#[derive(Debug, Clone)]
 pub struct UncondBr {
     pub common: MachineInstCommonBase,
     pub oprnds: [MachineOperand; 1],
 }
+#[derive(Debug, Clone)]
 pub struct BLink {
     pub common: MachineInstCommonBase,
     pub oprnds: [MachineOperand; 2],
 }
+#[derive(Debug, Clone)]
 pub struct BrRegCond {
     pub common: MachineInstCommonBase,
     pub oprnds: [MachineOperand; 2],

@@ -310,7 +310,17 @@ impl AArch64OP {
             O::CSet | O::CSetM => N::MustCSR(1),
             O::CInc | O::CInv | O::CNeg | O::CCmpN | O::CCmp => N::MustCSR(2),
 
-            _ => todo!("not implemented")
+            _ => todo!()
         };
+    }
+
+    pub const fn is_load(self) -> bool {
+        matches!(self, AArch64OP::Ldr | AArch64OP::LdrB | AArch64OP::LdrSB |
+                  AArch64OP::LdrH | AArch64OP::LdrSH | AArch64OP::LdrSW |
+                  AArch64OP::Ldp | AArch64OP::LdpSW)
+    }
+    pub const fn is_store(self) -> bool {
+        matches!(self, AArch64OP::Str | AArch64OP::StrB | AArch64OP::StrH |
+                  AArch64OP::Stp)
     }
 }

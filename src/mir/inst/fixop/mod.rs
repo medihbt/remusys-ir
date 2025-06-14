@@ -12,9 +12,10 @@ pub mod branch;
 pub mod data_process;
 pub mod load_store;
 
+#[derive(Debug, Clone)]
 pub struct FixOPInst {
     pub common: MachineInstCommonBase,
-    operand_arr: [MachineOperand; 6],
+    operand_arr: [Cell<MachineOperand>; 6],
     operand_len: usize,
 }
 
@@ -27,14 +28,14 @@ impl FixOPInst {
                 opcode,
             },
             operand_len: noperands,
-            operand_arr: [MachineOperand::None; 6],
+            operand_arr: [const { Cell::new(MachineOperand::None) }; 6],
         }
     }
 
-    pub fn get_operands(&self) -> &[MachineOperand] {
+    pub fn get_operands(&self) -> &[Cell<MachineOperand>] {
         &self.operand_arr[..self.operand_len]
     }
-    pub fn operands_mut(&mut self) -> &mut [MachineOperand] {
+    pub fn operands_mut(&mut self) -> &mut [Cell<MachineOperand>] {
         &mut self.operand_arr[..self.operand_len]
     }
     pub fn get_noperands(&self) -> usize {

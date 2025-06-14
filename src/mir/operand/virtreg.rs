@@ -1,107 +1,85 @@
 use std::fmt::Debug;
 
-use bitflags::bitflags;
+use crate::{
+    mir::operand::{RegUseFlags, SubRegIndex},
+    typing::{id::ValTypeID, types::FloatTypeKind},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VirtReg {
     General(u32, SubRegIndex, RegUseFlags),
-    Float  (u32, SubRegIndex, RegUseFlags),
+    Float(u32, SubRegIndex, RegUseFlags),
+    Zero(RegUseFlags),
+    SP(RegUseFlags),
 }
 
 impl VirtReg {
-    pub fn new_general(reg_id: u32) -> Self {
-        VirtReg::General(reg_id, SubRegIndex::new(3, 0), RegUseFlags::NONE)
+    pub fn new_long(reg_id: u32) -> Self {
+        VirtReg::General(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+    }
+    pub fn new_int(reg_id: u32) -> Self {
+        VirtReg::General(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
+    }
+    pub fn new_double(reg_id: u32) -> Self {
+        VirtReg::Float(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub fn new_float(reg_id: u32) -> Self {
-        VirtReg::Float(reg_id, SubRegIndex::new(3, 0), RegUseFlags::NONE)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SubRegIndex(pub u8);
-
-impl SubRegIndex {
-    pub fn new(bits_log2: u8, index: u8) -> Self {
-        assert!(bits_log2 >= 3 && bits_log2 <= 6);
-        assert!(index < 64);
-        let bits_log2_flag = bits_log2 - 3;
-        SubRegIndex((bits_log2_flag & 0b11) | ((index as u8) << 2))
+        VirtReg::Float(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
     }
 
-    /// bits[0..2] is sub-register binary bits flag:
-    ///
-    /// 00 => 8
-    /// 01 => 16
-    /// 10 => 32
-    /// 11 => 64
-    pub const fn get_bits_log2(self) -> u8 {
-        let bits_log2_flag = self.0 & 0b11;
-        bits_log2_flag + 3
-    }
-    pub const fn insert_bits_log2(self, bits_log2: u8) -> Self {
-        assert!(bits_log2 >= 3 && bits_log2 <= 6);
-        let bits_log2_flag = bits_log2 - 3;
-        SubRegIndex((self.0 & !0b11) | bits_log2_flag)
-    }
-    pub fn set_bits_log2(&mut self, bits_log2: u8) {
-        *self = self.insert_bits_log2(bits_log2);
+    pub fn new_from_type(ir_type: ValTypeID, reg_id: u32) -> Self {
+        match ir_type {
+            ValTypeID::Void => VirtReg::Zero(RegUseFlags::NONE),
+            ValTypeID::Ptr => VirtReg::new_long(reg_id),
+            ValTypeID::Int(bits) => {
+                if bits <= 32 {
+                    VirtReg::new_int(reg_id)
+                } else {
+                    VirtReg::new_long(reg_id)
+                }
+            }
+            ValTypeID::Float(fp_kind) => match fp_kind {
+                FloatTypeKind::Ieee32 => VirtReg::new_float(reg_id),
+                FloatTypeKind::Ieee64 => VirtReg::new_double(reg_id),
+            },
+            ValTypeID::Array(_)
+            | ValTypeID::Struct(_)
+            | ValTypeID::StructAlias(_)
+            | ValTypeID::Func(_) => panic!(
+                "Cannot create VirtReg from non-primitive type: {:?}",
+                ir_type
+            ),
+        }
     }
 
-    /// bits[2..8] is sub-register index.
-    pub const fn get_index(self) -> u8 {
-        (self.0 >> 2) & 0b111111
+    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
+        match self {
+            VirtReg::General(_, _, uf)
+            | VirtReg::Float(_, _, uf)
+            | VirtReg::Zero(uf)
+            | VirtReg::SP(uf) => uf,
+        }
     }
-    pub const fn insert_index(self, index: u8) -> Self {
-        assert!(index < 64);
-        SubRegIndex((self.0 & !0b11111100) | ((index as u8) << 2))
+    pub fn get_use_flags(&self) -> RegUseFlags {
+        match self {
+            VirtReg::General(_, _, uf)
+            | VirtReg::Float(_, _, uf)
+            | VirtReg::Zero(uf)
+            | VirtReg::SP(uf) => *uf,
+        }
     }
-    pub fn set_index(&mut self, index: u8) {
-        *self = self.insert_index(index);
+    pub fn add_use_flag(&mut self, flag: RegUseFlags) {
+        self.use_flags_mut().insert(flag);
     }
-}
-
-impl Debug for SubRegIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "SubRegIndex(bits_log2: {}, index: {}, value: {})",
-            self.get_bits_log2(),
-            self.get_index(),
-            self.0
-        )
+    pub fn insert_use_flags(mut self, flag: RegUseFlags) -> Self {
+        self.add_use_flag(flag);
+        self
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ShiftOpcode {
-    LSL, // Logical Shift Left
-    LSR, // Logical Shift Right
-    ASR, // Arithmetic Shift Right
-    ROR, // Rotate Right
-}
-
-pub struct RegShift {
-    pub reg: VirtReg,
-    pub shift_opcode: ShiftOpcode,
-    pub shift_amount: u8, // 0-63
-}
-
-pub struct RegExt {
-    pub reg: VirtReg,
-    // TODO: Implement extension type
-}
-
-bitflags! {
-    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-    pub struct RegUseFlags: u16 {
-        const NONE = 0b0000_0000_0000_0000;
-        /// This register is defined in this instruction
-        const DEF  = 0b0000_0000_0000_0001;
-        /// This register is defined but not used in this instruction
-        const DEAD = 0b0000_0000_0000_0010;
-        /// The last use of this register in this instruction
-        const KILL = 0b0000_0000_0000_0100;
-        /// This register is defined implicitly in this instruction
-        const IMPLICIT_DEF = 0b0000_0000_0000_1000;
+    pub fn del_use_flag(&mut self, flag: RegUseFlags) {
+        self.use_flags_mut().remove(flag);
+    }
+    pub fn extract_use_flag(mut self, flag: RegUseFlags) -> Self {
+        self.del_use_flag(flag);
+        self
     }
 }
