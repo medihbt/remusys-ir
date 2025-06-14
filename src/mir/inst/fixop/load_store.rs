@@ -130,13 +130,13 @@ impl LoadStoreRX {
     }
     pub fn new_base_only(opcode: AArch64OP, rd: RegOperand, rn: RegOperand) -> Self {
         let inst = LoadStoreRX::new(opcode, AddressMode::BaseOnly);
-        inst.0.get_operands()[0].set(rd.into());
-        inst.0.get_operands()[1].set(rn.into());
+        inst.0.operands()[0].set(rd.into());
+        inst.0.operands()[1].set(rn.into());
         inst
     }
     pub fn new_base_offset(opcode: AArch64OP, rd: RegOperand, rn: RegOperand, imm: i64) -> Self {
         let inst = LoadStoreRX::new(opcode, AddressMode::BaseOffset);
-        let operands = inst.0.get_operands();
+        let operands = inst.0.operands();
         operands[0].set(rd.into());
         operands[1].set(rn.into());
         operands[2].set(MachineOperand::ImmConst(ImmConst::I64(imm)));
@@ -144,7 +144,7 @@ impl LoadStoreRX {
     }
     pub fn new_pre_index(opcode: AArch64OP, rd: RegOperand, rn: RegOperand, imm: i64) -> Self {
         let inst = LoadStoreRX::new(opcode, AddressMode::PreIndex);
-        let operands = inst.0.get_operands();
+        let operands = inst.0.operands();
         operands[0].set(rd.into());
         operands[1].set(rn.into());
         operands[2].set(MachineOperand::ImmConst(ImmConst::I64(imm)));
@@ -157,7 +157,7 @@ impl LoadStoreRX {
         rm: RegOperand,
     ) -> Self {
         let inst = LoadStoreRX::new(opcode, AddressMode::PostIndex);
-        let operands = inst.0.get_operands();
+        let operands = inst.0.operands();
         operands[0].set(rd.into());
         operands[1].set(rn.into());
         operands[2].set(rm.into());
@@ -165,14 +165,14 @@ impl LoadStoreRX {
     }
     pub fn new_literal(opcode: AArch64OP, rd: RegOperand, label: MachineBlockRef) -> Self {
         let inst = LoadStoreRX::new(opcode, AddressMode::Literal);
-        let operands = inst.0.get_operands();
+        let operands = inst.0.operands();
         operands[0].set(rd.into());
         operands[1].set(MachineOperand::Label(label));
         inst
     }
 
     pub fn get_rt(&self) -> &Cell<MachineOperand> {
-        &self.0.get_operands()[0]
+        &self.0.operands()[0]
     }
     pub fn get_rt_reg(&self) -> RegOperand {
         match self.get_rt().get() {
@@ -192,7 +192,7 @@ impl LoadStoreRX {
     }
 
     pub fn get_rn_or_label(&self) -> &Cell<MachineOperand> {
-        &self.0.get_operands()[1]
+        &self.0.operands()[1]
     }
     pub fn get_rn(&self) -> Option<RegOperand> {
         match self.get_rn_or_label().get() {
@@ -225,7 +225,7 @@ impl LoadStoreRX {
     pub fn get_imm(&self) -> Option<&Cell<MachineOperand>> {
         match self.1 {
             AddressMode::BaseOffset | AddressMode::PreIndex | AddressMode::PostIndex => {
-                Some(&self.0.get_operands()[2])
+                Some(&self.0.operands()[2])
             }
             _ => None,
         }

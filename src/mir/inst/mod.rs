@@ -6,11 +6,13 @@ use crate::{
         slabref::SlabRef,
     },
     ir::cmp_cond::CmpCond,
-    mir::inst::fixop::{
-        FixOPInst,
-        branch::{BLink, BrRegCond, CondBr, UncondBr},
-        data_process::BinOP,
-        load_store::{LoadStoreRRR, LoadStoreRX},
+    mir::{
+        inst::fixop::{
+            branch::{BLink, BrRegCond, CondBr, UncondBr},
+            data_process::{BFMOp, BinOP, CmpOP, UnaryOP},
+            load_store::{LoadStoreRRR, LoadStoreRX},
+        },
+        operand::MachineOperand,
     },
 };
 use opcode::AArch64OP;
@@ -21,27 +23,39 @@ pub mod opcode;
 
 #[derive(Debug, Clone)]
 pub enum MachineInst {
-    GuideNode(MachineInstCommonBase), // A guide node for the instruction list, used for padding.
-    NOP(FixOPInst),                   // No operation, used for padding.
+    /// A guide node for the instruction list, used for padding
+    GuideNode(MachineInstCommonBase, [Cell<MachineOperand>; 0]),
 
-    Nullary(MachineInstCommonBase),
+    /// Nullary instruction, e.g., NOP, used for padding
+    Nullary(MachineInstCommonBase, [Cell<MachineOperand>; 0]),
     CondBr(CondBr),
     UncondBr(UncondBr),
     BLink(BLink),
     BrRegCond(BrRegCond),
 
-    LoadStoreRRR(LoadStoreRRR), // Load/Store with register
-    LoadStoreRX(LoadStoreRX),   // Load/Store with immediate or label
+    /// Load/Store with register
+    LoadStoreRRR(LoadStoreRRR),
+    /// Load/Store with immediate or label
+    LoadStoreRX(LoadStoreRX),
 
+    /// Binary operation instruction, with or without using CSR
     BinOP(BinOP),
+
+    /// Compare and Test instruction, e.g., CMP, TST
+    Cmp(CmpOP),
+
+    /// Unary instruction, e.g. Move
+    Unary(UnaryOP),
+
+    /// BFM operation
+    BFM(BFMOp),
 }
 
 impl MachineInst {
     pub fn get_common(&self) -> &MachineInstCommonBase {
         match self {
-            MachineInst::GuideNode(common) => common,
-            MachineInst::NOP(nop) => &nop.common,
-            MachineInst::Nullary(common) => common,
+            MachineInst::GuideNode(common, _) => common,
+            MachineInst::Nullary(common, _) => common,
             MachineInst::CondBr(cond_br) => &cond_br.common,
             MachineInst::UncondBr(uncond_br) => &uncond_br.common,
             MachineInst::BLink(blink) => &blink.common,
@@ -49,13 +63,39 @@ impl MachineInst {
             MachineInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
             MachineInst::LoadStoreRX(load_store_rx) => &load_store_rx.0.common,
             MachineInst::BinOP(bin_op) => &bin_op.common,
+            MachineInst::Cmp(cmp_op) => &cmp_op.common,
+            MachineInst::Unary(unary_op) => &unary_op.common,
+            MachineInst::BFM(bfmop) =>  &bfmop.common,
+        }
+    }
+
+    pub fn get_opcode(&self) -> AArch64OP {
+        self.get_common().opcode
+    }
+    pub fn operands(&self) -> &[Cell<MachineOperand>] {
+        match self {
+            MachineInst::GuideNode(_, operands) => operands,
+            MachineInst::Nullary(_, operands) => operands,
+
+            MachineInst::CondBr(cond_br) => &cond_br.operands,
+            MachineInst::UncondBr(uncond_br) => &uncond_br.operands,
+            MachineInst::BLink(blink) => &blink.operands,
+            MachineInst::BrRegCond(brcond) => &brcond.operands,
+
+            MachineInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.operands,
+            MachineInst::LoadStoreRX(load_store_rx) => load_store_rx.0.operands(),
+
+            MachineInst::BinOP(bin_op) => bin_op.operands(),
+            MachineInst::Cmp(cmp_op) => &cmp_op.operands,
+            MachineInst::Unary(unary_op) => unary_op.get_operands(),
+            MachineInst::BFM(bfmop) => &bfmop.operands,
         }
     }
 }
 
 impl SlabRefListNode for MachineInst {
     fn new_guide() -> Self {
-        MachineInst::GuideNode(MachineInstCommonBase::new(AArch64OP::Nop))
+        MachineInst::GuideNode(MachineInstCommonBase::new(AArch64OP::Nop), [])
     }
     fn load_node_head(&self) -> SlabRefListNodeHead {
         self.get_common().self_head.get()

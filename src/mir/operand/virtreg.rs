@@ -82,4 +82,11 @@ impl VirtReg {
         self.del_use_flag(flag);
         self
     }
+
+    pub fn get_bits(&self) -> u8 {
+        match self {
+            VirtReg::General(_, si, _) | VirtReg::Float(_, si, _) => 1 << si.get_bits_log2(),
+            VirtReg::Zero(_) | VirtReg::SP(_) => 64
+        }
+    }
 }

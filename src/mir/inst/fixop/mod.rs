@@ -32,11 +32,8 @@ impl FixOPInst {
         }
     }
 
-    pub fn get_operands(&self) -> &[Cell<MachineOperand>] {
+    pub fn operands(&self) -> &[Cell<MachineOperand>] {
         &self.operand_arr[..self.operand_len]
-    }
-    pub fn operands_mut(&mut self) -> &mut [Cell<MachineOperand>] {
-        &mut self.operand_arr[..self.operand_len]
     }
     pub fn get_noperands(&self) -> usize {
         self.operand_len

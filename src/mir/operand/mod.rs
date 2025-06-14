@@ -1,15 +1,15 @@
 use std::fmt::Debug;
 
 use bitflags::bitflags;
+use constant::ImmConst;
 use physreg::PhysReg;
 use virtreg::VirtReg;
-use constant::ImmConst;
 
 use super::block::MachineBlockRef;
 
 pub mod constant;
-pub mod virtreg;
 pub mod physreg;
+pub mod virtreg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum MachineOperand {
@@ -61,6 +61,13 @@ impl RegOperand {
     pub fn del_use_flags(&mut self, flags: RegUseFlags) {
         self.use_flags_mut().remove(flags);
     }
+
+    pub fn get_bits(&self) -> u8 {
+        match self {
+            RegOperand::VirtReg(vreg) => vreg.get_bits(),
+            RegOperand::PhysReg(preg) => preg.get_bits(),
+        }
+    }
 }
 
 impl Into<MachineOperand> for RegOperand {
@@ -77,7 +84,10 @@ pub struct SubRegIndex(pub u8);
 
 impl SubRegIndex {
     pub const fn new(bits_log2: u8, index: u8) -> Self {
-        assert!(bits_log2 >= 3 && bits_log2 <= 7, "bits_log2 must be in range [3, 7]");
+        assert!(
+            bits_log2 >= 3 && bits_log2 <= 7,
+            "bits_log2 must be in range [3, 7]"
+        );
         assert!(index < 64, "index must be less than 64");
         let bits_log2_flag = bits_log2 - 3; // Convert to [0,4] range
         SubRegIndex((bits_log2_flag & 0b111) | ((index as u8) << 3))
@@ -92,7 +102,7 @@ impl SubRegIndex {
     /// * 100 => 128  (Vn)
     pub const fn get_bits_log2(self) -> u8 {
         let bits_log2_flag = self.0 & 0b111;
-        bits_log2_flag +  3
+        bits_log2_flag + 3
     }
     pub const fn insert_bits_log2(self, bits_log2: u8) -> Self {
         assert!(bits_log2 >= 3 && bits_log2 <= 7);
@@ -146,10 +156,40 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegShiftOP { LSL, LSR, ASR }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegOP {
-    Shift(RegShiftOP, u8),
-    UXTW, SXTW, SXTX,
+    LSL(u8),
+    LSR(u8),
+    ASR(u8),
+    UXTB,
+    UXTH,
+    UXTW,
+    SXTB,
+    SXTH,
+    SXTW,
+    SXTX,
+}
+
+impl RegOP {
+    pub const fn get_shift_bits(self) -> u8 {
+        match self {
+            Self::LSL(bits) | Self::LSR(bits) | Self::ASR(bits) => bits,
+            _ => 0,
+        }
+    }
+
+    pub const fn is_shift(self) -> bool {
+        matches!(self, Self::LSL(_) | Self::LSR(_) | Self::ASR(_))
+    }
+    pub const fn is_ext(self) -> bool {
+        matches!(
+            self,
+            Self::UXTB
+                | Self::UXTH
+                | Self::UXTW
+                | Self::SXTW
+                | Self::SXTX
+                | Self::SXTB
+                | Self::SXTH
+        )
+    }
 }

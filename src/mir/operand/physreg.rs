@@ -7,6 +7,7 @@ pub enum PhysReg {
     X(u8, SubRegIndex, RegUseFlags), // General-purpose registers, e.g., X0, X1, ..., X31
     V(u8, SubRegIndex, RegUseFlags), // Vector registers: V[0:31], D[0:31], S[0:31]
     PC(SubRegIndex, RegUseFlags),    // Program Counter
+    PState(RegUseFlags),             // Processor state register (e.g., PSTATE)
 }
 
 impl PhysReg {
@@ -76,12 +77,30 @@ impl PhysReg {
 
     pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
         match self {
-            PhysReg::X(_, _, flags) | PhysReg::V(_, _, flags) | PhysReg::PC(_, flags) => flags,
+            PhysReg::X(_, _, flags)
+            | PhysReg::V(_, _, flags)
+            | PhysReg::PC(_, flags)
+            | PhysReg::PState(flags) => flags,
         }
     }
     pub fn get_use_flags(&self) -> RegUseFlags {
         match self {
-            PhysReg::X(_, _, flags) | PhysReg::V(_, _, flags) | PhysReg::PC(_, flags) => *flags,
+            PhysReg::X(_, _, flags)
+            | PhysReg::V(_, _, flags)
+            | PhysReg::PC(_, flags)
+            | PhysReg::PState(flags) => *flags,
+        }
+    }
+    pub fn add_use_flag(&mut self, flag: RegUseFlags) {
+        self.use_flags_mut().insert(flag);
+    }
+
+    pub fn get_bits(&self) -> u8 {
+        match self {
+            PhysReg::X(_, si, _) | PhysReg::V(_, si, _) | PhysReg::PC(si, _) => {
+                1 << si.get_bits_log2()
+            }
+            PhysReg::PState(_) => 0, // PState is not a register with bits
         }
     }
 }
