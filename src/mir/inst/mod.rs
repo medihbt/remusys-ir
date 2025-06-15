@@ -9,7 +9,7 @@ use crate::{
     mir::{
         inst::fixop::{
             branch::{BLink, BrRegCond, CondBr, UncondBr},
-            data_process::{BFMOp, BinOP, CmpOP, UnaryOP},
+            data_process::{BFMOp, BinOP, CmpOP, CondCmp, CondSel, CondSet, CondUnary, TriOP, UnaryOP},
             load_store::{LoadStoreRRR, LoadStoreRX},
         },
         operand::MachineOperand,
@@ -40,32 +40,44 @@ pub enum MachineInst {
 
     /// Binary operation instruction, with or without using CSR
     BinOP(BinOP),
-
     /// Compare and Test instruction, e.g., CMP, TST
     Cmp(CmpOP),
-
     /// Unary instruction, e.g. Move
     Unary(UnaryOP),
-
     /// BFM operation
     BFM(BFMOp),
+    /// Tenary operation
+    TriOP(TriOP),
+    /// Condition Select
+    CondSel(CondSel),
+    /// Condition Unary
+    CondUnary(CondUnary),
+    /// Condition Set
+    CondSet(CondSet),
+    /// Condition Compare
+    CondCmp(CondCmp),
 }
 
 impl MachineInst {
     pub fn get_common(&self) -> &MachineInstCommonBase {
         match self {
-            MachineInst::GuideNode(common, _) => common,
-            MachineInst::Nullary(common, _) => common,
-            MachineInst::CondBr(cond_br) => &cond_br.common,
-            MachineInst::UncondBr(uncond_br) => &uncond_br.common,
-            MachineInst::BLink(blink) => &blink.common,
-            MachineInst::BrRegCond(brcond) => &brcond.common,
-            MachineInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
-            MachineInst::LoadStoreRX(load_store_rx) => &load_store_rx.0.common,
-            MachineInst::BinOP(bin_op) => &bin_op.common,
-            MachineInst::Cmp(cmp_op) => &cmp_op.common,
-            MachineInst::Unary(unary_op) => &unary_op.common,
-            MachineInst::BFM(bfmop) =>  &bfmop.common,
+            Self::GuideNode(common, _) => common,
+            Self::Nullary(common, _) => common,
+            Self::CondBr(cond_br) => &cond_br.common,
+            Self::UncondBr(uncond_br) => &uncond_br.common,
+            Self::BLink(blink) => &blink.common,
+            Self::BrRegCond(brcond) => &brcond.common,
+            Self::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
+            Self::LoadStoreRX(load_store_rx) => &load_store_rx.0.common,
+            Self::BinOP(bin_op) => &bin_op.common,
+            Self::Cmp(cmp_op) => &cmp_op.common,
+            Self::Unary(unary_op) => &unary_op.common,
+            Self::BFM(bfmop) => &bfmop.common,
+            Self::TriOP(tri_op) => &tri_op.common,
+            Self::CondSel(cond_sel) => &cond_sel.common,
+            Self::CondUnary(cond_unary) => &cond_unary.common,
+            Self::CondSet(cond_set) => &cond_set.common,
+            Self::CondCmp(cond_cmp) => &cond_cmp.common,
         }
     }
 
@@ -74,21 +86,23 @@ impl MachineInst {
     }
     pub fn operands(&self) -> &[Cell<MachineOperand>] {
         match self {
-            MachineInst::GuideNode(_, operands) => operands,
-            MachineInst::Nullary(_, operands) => operands,
-
-            MachineInst::CondBr(cond_br) => &cond_br.operands,
-            MachineInst::UncondBr(uncond_br) => &uncond_br.operands,
-            MachineInst::BLink(blink) => &blink.operands,
-            MachineInst::BrRegCond(brcond) => &brcond.operands,
-
-            MachineInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.operands,
-            MachineInst::LoadStoreRX(load_store_rx) => load_store_rx.0.operands(),
-
-            MachineInst::BinOP(bin_op) => bin_op.operands(),
-            MachineInst::Cmp(cmp_op) => &cmp_op.operands,
-            MachineInst::Unary(unary_op) => unary_op.get_operands(),
-            MachineInst::BFM(bfmop) => &bfmop.operands,
+            Self::GuideNode(_, operands) => operands,
+            Self::Nullary(_, operands) => operands,
+            Self::CondBr(cond_br) => &cond_br.operands,
+            Self::UncondBr(uncond_br) => &uncond_br.operands,
+            Self::BLink(blink) => &blink.operands,
+            Self::BrRegCond(brcond) => &brcond.operands,
+            Self::LoadStoreRRR(load_store_rrr) => &load_store_rrr.operands,
+            Self::LoadStoreRX(load_store_rx) => load_store_rx.0.operands(),
+            Self::BinOP(bin_op) => bin_op.operands(),
+            Self::Cmp(cmp_op) => &cmp_op.operands,
+            Self::Unary(unary_op) => unary_op.get_operands(),
+            Self::BFM(bfmop) => &bfmop.operands,
+            Self::TriOP(tri_op) => &tri_op.operands,
+            Self::CondSel(cond_sel) => &cond_sel.operands,
+            Self::CondUnary(cond_unary) => &cond_unary.operands,
+            Self::CondSet(cond_set) => &cond_set.operands,
+            Self::CondCmp(cond_cmp) => &cond_cmp.operands,
         }
     }
 }

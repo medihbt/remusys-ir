@@ -1,8 +1,10 @@
 use std::{cell::Cell, ops::Range};
 
+use bitflags::bitflags;
+
 use crate::mir::{
     inst::{
-        MachineInstCommonBase,
+        BrCondFlag, MachineInstCommonBase,
         opcode::{AArch64OP, NumOperand},
     },
     operand::{
@@ -35,7 +37,12 @@ use crate::mir::{
  ```aarch64
  add sub
  smax smin umax umin
- and eor orr
+ and bic eon eor orr orn
+ asr lsl lsr ror
+ asrv lslv lsrv rorv
+ mul mneg smnegl umnegl smull smulh umull umulhn sdiv udiv
+
+ fadd fsub fmul fdiv fnmul fmax fmin fmaxnm fminnm
  ```
 
  3-operand with CSR mode accepts opcode:
@@ -43,7 +50,7 @@ use crate::mir::{
  ```aarch64
  adds subs
  adc adcs sbc sbcs
- ands
+ ands bics
  ```
 */
 #[derive(Debug, Clone)]
@@ -207,6 +214,7 @@ impl BinOP {
 
   ```aarch64
   cmp cmn tst
+  fcmp fcmpe
   ```
 */
 #[derive(Debug, Clone)]
@@ -280,6 +288,24 @@ impl CmpOP {
 /// ```aarch64
 /// movz movn movk mov
 /// adrp adr
+/// sxtb sxth sxtw uxtb uxth
+/// abs neg
+/// cls clz cnt ctz rbit rev{16, 32, 64}
+/// 
+/// fmov fcvt
+/// fcvtas fcvtau fcvtms fcvtmu
+/// fcvtns fcvtnu fcvtps fcvtpu
+/// fcvtzs fcvtzu fjcvt.zs
+/// scvtf  ucvtf
+/// 
+/// frint(a,i,m,n,p,x,z,32x,32z,64x,64z)
+/// fabs fneg fsqrt
+/// ```
+///
+/// Accepts the following opcodes with CSR:
+///
+/// ```aarch64
+/// negs ngc ngcs
 /// ```
 #[derive(Debug, Clone)]
 pub struct UnaryOP {
@@ -499,13 +525,13 @@ impl BFMOp {
 }
 
 /// Extended Register Operation (ExtROp)
-/// 
+///
 /// AArch64 assembly syntax:
-/// 
+///
 /// * `extr rd, rn, rm, #imm`
-/// 
+///
 /// These syntaxes are mapped to the following Remusys-MIR syntaxes:
-/// 
+///
 /// * `extr %rd, %rn, %rm, #imm`
 #[derive(Debug, Clone)]
 pub struct ExtROp {
@@ -523,7 +549,8 @@ impl ExtROp {
         inst.ref_rd().set(rd.into());
         inst.ref_rn().set(rn.into());
         inst.ref_rm().set(rm.into());
-        inst.ref_imm().set(MachineOperand::ImmConst(ImmConst::I32(imm as i32)));
+        inst.ref_imm()
+            .set(MachineOperand::ImmConst(ImmConst::I32(imm as i32)));
         inst
     }
 
@@ -555,6 +582,315 @@ impl ExtROp {
         match self.operands[3].get() {
             MachineOperand::ImmConst(ImmConst::I32(imm)) => imm as i8,
             _ => panic!("Expected an immediate operand for imm"),
+        }
+    }
+}
+
+/// Ternary Operation Instruction
+///
+/// used for some instructions like multiplication or division.
+///
+/// AArch64 (same as Remusys-MIR) assembly syntax:
+///
+/// * `triop rd, rn, rm, ra`
+///
+/// Accepts the following opcodes:
+///
+/// ```aarch64
+/// madd msub smaddl smsubl umaddl umsubl
+/// fmadd fmsub fnmadd fnmsub
+/// ```
+#[derive(Debug, Clone)]
+pub struct TriOP {
+    pub common: MachineInstCommonBase,
+    /// Order: `[rd, rn, rm, ra]`; has no CSR operand.
+    pub operands: [Cell<MachineOperand>; 4],
+}
+
+impl TriOP {
+    pub fn new(
+        opcode: AArch64OP,
+        rd: RegOperand,
+        rn: RegOperand,
+        rm: RegOperand,
+        ra: RegOperand,
+    ) -> Self {
+        assert_eq!(opcode.get_n_operands(), NumOperand::Fix(4));
+        let inst = Self {
+            common: MachineInstCommonBase::new(opcode),
+            operands: [const { Cell::new(MachineOperand::None) }; 4],
+        };
+        inst.ref_rd().set(rd.into());
+        inst.ref_rn().set(rn.into());
+        inst.ref_rm().set(rm.into());
+        inst.ref_ra().set(ra.into());
+        inst
+    }
+
+    pub fn ref_rd(&self) -> &Cell<MachineOperand> {
+        &self.operands[0]
+    }
+    pub fn get_rd(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[0].get())
+    }
+
+    pub fn ref_rn(&self) -> &Cell<MachineOperand> {
+        &self.operands[1]
+    }
+    pub fn get_rn(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[1].get())
+    }
+
+    pub fn ref_rm(&self) -> &Cell<MachineOperand> {
+        &self.operands[2]
+    }
+    pub fn get_rm(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[2].get())
+    }
+
+    pub fn ref_ra(&self) -> &Cell<MachineOperand> {
+        &self.operands[3]
+    }
+    pub fn get_ra(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[3].get())
+    }
+}
+
+/// Conditional Select Operation (CSelOP)
+///
+/// AArch64 assembly syntax:
+///
+/// * `csel rd, rn, rm, <cond>`
+///
+/// These syntaxes are mapped to the following Remusys-MIR syntaxes:
+///
+/// * `csel %rd, %rn, %rm, <cond>, implicit-def $PState`
+/// 
+/// Accepts the following opcodes:
+/// 
+/// ```aarch64
+/// csel csinc csinv csneg
+/// fcsel
+/// ```
+#[derive(Debug, Clone)]
+pub struct CondSel {
+    pub common: MachineInstCommonBase,
+    /// `[rd, rn, rm, implicit-def $PState]`
+    pub operands: [Cell<MachineOperand>; 4],
+    pub cond: BrCondFlag,
+}
+
+impl CondSel {
+    pub fn new(opcode: AArch64OP, rd: RegOperand, rn: RegOperand, rm: RegOperand, cond: BrCondFlag) -> Self {
+        assert_eq!(opcode.get_n_operands(), NumOperand::Fix(4));
+        let inst = Self {
+            common: MachineInstCommonBase::new(opcode),
+            operands: [const { Cell::new(MachineOperand::None) }; 4],
+            cond,
+        };
+        inst.ref_rd().set(rd.into());
+        inst.ref_rn().set(rn.into());
+        inst.ref_rm().set(rm.into());
+        inst.ref_csr()
+            .set(MachineOperand::PhysReg(PhysReg::PState(RegUseFlags::IMPLICIT_DEF)));
+        inst
+    }
+
+    pub fn ref_rd(&self) -> &Cell<MachineOperand> {
+        &self.operands[0]
+    }
+    pub fn get_rd(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[0].get())
+    }
+
+    pub fn ref_rn(&self) -> &Cell<MachineOperand> {
+        &self.operands[1]
+    }
+    pub fn get_rn(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[1].get())
+    }
+
+    pub fn ref_rm(&self) -> &Cell<MachineOperand> {
+        &self.operands[2]
+    }
+    pub fn get_rm(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[2].get())
+    }
+
+    pub fn ref_csr(&self) -> &Cell<MachineOperand> {
+        &self.operands[3]
+    }
+    pub fn get_csr(&self) -> PhysReg {
+        match self.operands[3].get() {
+            MachineOperand::PhysReg(PhysReg::PState(f)) => PhysReg::PState(f),
+            _ => panic!("Expected a physical register operand"),
+        }
+    }
+}
+
+
+/// Conditional Unary Operation
+/// 
+#[derive(Debug, Clone)]
+pub struct CondUnary {
+    pub common: MachineInstCommonBase,
+    /// `[rd, rn, implicit-def $PState]`
+    pub operands: [Cell<MachineOperand>; 3],
+    pub cond: BrCondFlag,
+}
+
+impl CondUnary {
+    pub fn new(opcode: AArch64OP, rd: RegOperand, rn: RegOperand, cond: BrCondFlag) -> Self {
+        assert_eq!(opcode.get_n_operands(), NumOperand::Fix(3));
+        let inst = Self {
+            common: MachineInstCommonBase::new(opcode),
+            operands: [const { Cell::new(MachineOperand::None) }; 3],
+            cond,
+        };
+        inst.ref_rd().set(rd.into());
+        inst.ref_rn().set(rn.into());
+        inst.ref_csr()
+            .set(MachineOperand::PhysReg(PhysReg::PState(RegUseFlags::IMPLICIT_DEF)));
+        inst
+    }
+
+    pub fn ref_rd(&self) -> &Cell<MachineOperand> {
+        &self.operands[0]
+    }
+    pub fn get_rd(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[0].get())
+    }
+
+    pub fn ref_rn(&self) -> &Cell<MachineOperand> {
+        &self.operands[1]
+    }
+    pub fn get_rn(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[1].get())
+    }
+
+    pub fn ref_csr(&self) -> &Cell<MachineOperand> {
+        &self.operands[2]
+    }
+    pub fn get_csr(&self) -> PhysReg {
+        match self.operands[2].get() {
+            MachineOperand::PhysReg(PhysReg::PState(f)) => PhysReg::PState(f),
+            _ => panic!("Expected a physical register operand"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CondSet {
+    pub common: MachineInstCommonBase,
+    /// `[rd, implicit-def $PState]`
+    pub operands: [Cell<MachineOperand>; 2],
+    pub cond: BrCondFlag,
+}
+
+impl CondSet {
+    pub fn new(opcode: AArch64OP, rd: RegOperand, cond: BrCondFlag) -> Self {
+        assert_eq!(opcode.get_n_operands(), NumOperand::Fix(2));
+        let inst = Self {
+            common: MachineInstCommonBase::new(opcode),
+            operands: [const { Cell::new(MachineOperand::None) }; 2],
+            cond,
+        };
+        inst.ref_rd().set(rd.into());
+        inst.ref_csr()
+            .set(MachineOperand::PhysReg(PhysReg::PState(RegUseFlags::IMPLICIT_DEF)));
+        inst
+    }
+
+    pub fn ref_rd(&self) -> &Cell<MachineOperand> {
+        &self.operands[0]
+    }
+    pub fn get_rd(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[0].get())
+    }
+
+    pub fn ref_csr(&self) -> &Cell<MachineOperand> {
+        &self.operands[1]
+    }
+    pub fn get_csr(&self) -> PhysReg {
+        match self.operands[1].get() {
+            MachineOperand::PhysReg(PhysReg::PState(f)) => PhysReg::PState(f),
+            _ => panic!("Expected a physical register operand"),
+        }
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct NZCV: u8 {
+        const N = 0b0001; // Negative flag
+        const Z = 0b0010; // Zero flag
+        const C = 0b0100; // Carry flag
+        const V = 0b1000; // Overflow flag
+    }
+}
+
+/// Conditional comparation
+/// 
+/// AArch64 assembly syntax:
+/// 
+/// * `condcmp-op rn, rhs, #<nzcv>, cond`
+/// 
+/// These syntaxes are mapped to the following Remusys-MIR syntaxes:
+/// 
+/// * `condcmp-op %rn, %rm, #<nzcv>, <cond>, implicit-def $PState`
+/// 
+/// Accepts the following opcodes:
+/// 
+/// ```aarch64
+/// fccmp fccmpe ccmn ccmp
+/// ```
+#[derive(Debug, Clone)]
+pub struct CondCmp {
+    pub common: MachineInstCommonBase,
+    /// `[rn, rm, implicit-def $PState]`
+    pub operands: [Cell<MachineOperand>; 3],
+    pub cond: BrCondFlag,
+    /// `[0] = N, [1] = Z, [2] = C, [3] = V`
+    pub nzcv: NZCV,
+}
+
+impl CondCmp {
+    pub fn new(opcode: AArch64OP, rn: RegOperand, rm: RegOperand, cond: BrCondFlag) -> Self {
+        assert_eq!(opcode.get_n_operands(), NumOperand::Fix(3));
+        let inst = Self {
+            common: MachineInstCommonBase::new(opcode),
+            operands: [const { Cell::new(MachineOperand::None) }; 3],
+            cond,
+            nzcv: NZCV::empty(),
+        };
+        inst.ref_rn().set(rn.into());
+        inst.ref_rm().set(rm.into());
+        inst.ref_csr()
+            .set(MachineOperand::PhysReg(PhysReg::PState(RegUseFlags::IMPLICIT_DEF)));
+        inst
+    }
+
+    pub fn ref_rn(&self) -> &Cell<MachineOperand> {
+        &self.operands[0]
+    }
+    pub fn get_rn(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[0].get())
+    }
+
+    pub fn ref_rm(&self) -> &Cell<MachineOperand> {
+        &self.operands[1]
+    }
+    pub fn get_rm(&self) -> RegOperand {
+        RegOperand::from_machine_operand_unwrap(self.operands[1].get())
+    }
+
+    pub fn ref_csr(&self) -> &Cell<MachineOperand> {
+        &self.operands[2]
+    }
+    pub fn get_csr(&self) -> PhysReg {
+        match self.operands[2].get() {
+            MachineOperand::PhysReg(PhysReg::PState(f)) => PhysReg::PState(f),
+            _ => panic!("Expected a physical register operand"),
         }
     }
 }
