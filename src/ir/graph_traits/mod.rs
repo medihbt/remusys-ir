@@ -70,15 +70,13 @@ pub trait IRGraphEdgeHolder: SlabRef {
         &self,
         alloc: &Slab<Self::RefObject>,
     ) -> Option<SlabListRange<Self::EdgeT>> {
-        self.graph_edges_from_alloc(alloc)
-            .map(|l| l.load_range())
+        self.graph_edges_from_alloc(alloc).map(|l| l.load_range())
     }
     fn graph_load_edges_range_from_module(
         &self,
         module: &Module,
     ) -> Option<SlabListRange<Self::EdgeT>> {
-        self.graph_edges_from_module(module)
-            .map(|l| l.load_range())
+        self.graph_edges_from_module(module).map(|l| l.load_range())
     }
 }
 
@@ -99,7 +97,7 @@ pub trait IRGraphNode: SlabRefListNodeRef {
     ) -> Vec<Self::OperandT>;
 
     /// Get the reverse graph node of the operand from the module.
-    fn get_opreand_reverse_graph<'a>(
+    fn get_operand_reverse_graph<'a>(
         module: &'a Module,
         operand: &Self::OperandT,
     ) -> Option<Ref<'a, Self::ReverseGraphNodeT>>;

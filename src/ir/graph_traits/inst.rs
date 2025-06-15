@@ -64,13 +64,11 @@ impl IRGraphNode for InstRef {
     }
 
     fn graph_collect_operands_from_module(self, module: &Module, dedup: bool) -> Vec<ValueSSA> {
-        let edges = unsafe {
-            match self.graph_load_edges_from_module(module) {
-                Some(edges) => edges,
-                None => return vec![],
-            }
+        let (edges, len) = match self.graph_edges_from_module(module) {
+            Some(edges) => (edges.load_range(), edges.len()),
+            None => return vec![],
         };
-        let mut operands = Vec::with_capacity(edges.len());
+        let mut operands = Vec::with_capacity(len);
         let mut dedup_set = HashSet::new();
         for (_, usedata) in edges.view(&module.borrow_use_alloc()) {
             let operand = usedata.get_operand();
@@ -82,7 +80,7 @@ impl IRGraphNode for InstRef {
         operands
     }
 
-    fn get_opreand_reverse_graph<'a>(
+    fn get_operand_reverse_graph<'a>(
         module: &'a Module,
         operand: &ValueSSA,
     ) -> Option<Ref<'a, RdfgPerValue>> {

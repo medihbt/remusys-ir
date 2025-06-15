@@ -2,7 +2,7 @@ use core::panic;
 use std::cell::Cell;
 
 use crate::mir::{
-    block::MachineBlockRef,
+    symbol::block::MachineBlockRef,
     inst::{MachineInstCommonBase, fixop::FixOPInst, opcode::AArch64OP},
     operand::{
         MachineOperand, RegOP, RegOperand, RegUseFlags, constant::ImmConst, physreg::PhysReg,

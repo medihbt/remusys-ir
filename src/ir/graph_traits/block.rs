@@ -86,7 +86,7 @@ impl IRGraphNode for BlockRef {
 
     type ReverseGraphNodeT = RcfgPerBlock;
 
-    fn get_opreand_reverse_graph<'a>(
+    fn get_operand_reverse_graph<'a>(
         module: &'a Module,
         operand: &Self::OperandT,
     ) -> Option<Ref<'a, RcfgPerBlock>> {

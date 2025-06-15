@@ -53,6 +53,37 @@ impl ValTypeID {
         }
     }
 
+    pub fn get_instance_align(&self, type_ctx: &TypeContext) -> Option<usize> {
+        let inner_ref = type_ctx._inner.borrow();
+        match self {
+            ValTypeID::Ptr => Some(type_ctx.platform_policy.ptr_nbits / 8),
+            ValTypeID::Int(binbits) => {
+                let bytes = binary_bits_to_bytes(*binbits as usize);
+                Some(if bytes.is_power_of_two() {
+                    bytes
+                } else {
+                    bytes.next_power_of_two()
+                })
+            }
+            ValTypeID::Float(fp) => match fp {
+                FloatTypeKind::Ieee32 => Some(4),
+                FloatTypeKind::Ieee64 => Some(8),
+            },
+            ValTypeID::Array(arr) => arr.get_element_type(type_ctx).get_instance_align(type_ctx),
+            ValTypeID::Struct(st) => st
+                .to_slabref_unwrap(&inner_ref._alloc_struct)
+                .elemty
+                .iter()
+                .map(|vty| vty.get_instance_align(type_ctx).unwrap())
+                .max(),
+            ValTypeID::StructAlias(sa) => {
+                let sty = sa.get_aliasee(type_ctx);
+                ValTypeID::Struct(sty).get_instance_align(type_ctx)
+            }
+            ValTypeID::Void | ValTypeID::Func(_) => None,
+        }
+    }
+
     pub fn makes_instance(&self) -> bool {
         !matches!(self, Self::Void | Self::Func(_))
     }

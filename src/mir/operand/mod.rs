@@ -5,7 +5,7 @@ use constant::ImmConst;
 use physreg::PhysReg;
 use virtreg::VirtReg;
 
-use super::block::MachineBlockRef;
+use crate::mir::symbol::block::MachineBlockRef;
 
 pub mod constant;
 pub mod physreg;
