@@ -347,11 +347,9 @@ impl<'a> MarkVisitor<'a> {
         while block_node.is_nonnull() {
             let block = block_node.to_slabref_unwrap(alloc_block);
             self.mark_value(ValueSSA::Block(block_node))?;
-            let inst_view = unsafe { block.instructions.unsafe_load_readonly_view() };
-            n_inst_nodes += inst_view.n_nodes_with_guide();
-            live_blocks.push((block_node, unsafe {
-                block.instructions.unsafe_load_readonly_view()
-            }));
+            let (inst_range, node_cnt) = block.instructions.load_range_and_full_node_count();
+            n_inst_nodes += node_cnt;
+            live_blocks.push((block_node, inst_range));
             block_node = match block_node.get_next_ref(alloc_block) {
                 Some(next) => next,
                 None => break,
@@ -363,7 +361,7 @@ impl<'a> MarkVisitor<'a> {
         let mut live_jts = Vec::with_capacity(live_blocks.len());
         let mut n_use_nodes = 0;
         for (_, inst_view) in &live_blocks {
-            let mut inst_node = inst_view._head;
+            let mut inst_node = inst_view.node_head;
             while inst_node.is_nonnull() {
                 // mark the instruction reference
                 self.mark_value(ValueSSA::Inst(inst_node))?;
@@ -371,12 +369,11 @@ impl<'a> MarkVisitor<'a> {
                 // mark the instruction operands
                 let inst_data = inst_node.to_slabref_unwrap(alloc_inst);
                 if let Some(c) = inst_data.get_common() {
-                    let uses_view = unsafe { c.operands.unsafe_load_readonly_view() };
-                    let n_nodes = uses_view.n_nodes_with_guide();
+                    let (use_range, n_nodes) =
+                        c.operands.load_range_and_full_node_count();
                     if n_nodes > 0 {
-                        // +2 for the head and tail guide node.
                         n_use_nodes += n_nodes;
-                        live_uses.push(uses_view);
+                        live_uses.push(use_range);
                     }
                 }
                 inst_node = match inst_node.get_next_ref(alloc_inst) {
@@ -390,14 +387,14 @@ impl<'a> MarkVisitor<'a> {
                     InstData::Switch(_, s) => s.get_jump_targets().unwrap(),
                     _ => continue,
                 };
-                live_jts.push(unsafe { jts.unsafe_load_readonly_view() });
+                live_jts.push(jts.load_range());
             }
         }
 
         // Mark all live uses
         let mut live_operands = Vec::with_capacity(n_use_nodes);
         for useref in &live_uses {
-            let mut use_node = useref._head;
+            let mut use_node = useref.node_head;
             while use_node.is_nonnull() {
                 // mark the use reference
                 self.mark_use(use_node)?;
@@ -418,7 +415,7 @@ impl<'a> MarkVisitor<'a> {
 
         // Mark all live jump targets
         for jt_ref in &live_jts {
-            let mut jt_node = jt_ref._head;
+            let mut jt_node = jt_ref.node_head;
             while jt_node.is_nonnull() {
                 // mark the jump target reference
                 self.mark_jt(jt_node)?;

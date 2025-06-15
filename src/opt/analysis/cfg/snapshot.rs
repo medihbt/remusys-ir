@@ -126,11 +126,11 @@ impl CfgSnapshot {
     }
 
     pub fn new_from_func(module: &Module, func: GlobalRef) -> Self {
-        let (blocks_view, entry) = {
+        let (blocks_range, entry) = {
             let func_data = module.get_global(func);
             if let GlobalData::Func(f) = &*func_data {
                 match f.get_blocks() {
-                    Some(blocks) => (unsafe { blocks.unsafe_load_readonly_view() }, f.get_entry()),
+                    Some(blocks) => (blocks.load_range(), f.get_entry()),
                     None => panic!("Function has no blocks"),
                 }
             } else {
@@ -147,7 +147,7 @@ impl CfgSnapshot {
         let mut succ_map: BTreeMap<BlockRef, Vec<BlockRef>> = BTreeMap::new();
         let mut pred_map: BTreeMap<BlockRef, BTreeSet<BlockRef>> = BTreeMap::new();
 
-        for (blockref, block) in blocks_view.view(alloc_block) {
+        for (blockref, block) in blocks_range.view(alloc_block) {
             let terminator = block
                 .get_terminator_subref(module)
                 .expect("Block has no terminator");

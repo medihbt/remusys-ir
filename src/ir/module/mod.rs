@@ -201,14 +201,13 @@ impl Module {
         })
     }
     pub fn insert_inst(&self, data: InstData) -> InstRef {
-        let operand_view = unsafe { data.load_operand_view() };
-        let jt_view = match data.as_terminator() {
-            Some((_, t)) => unsafe {
-                t.get_jump_targets()
-                    .map(|jt| jt.unsafe_load_readonly_view())
-            },
-            None => None,
-        };
+        let operand_range = data
+            .load_operand_range_and_node_count()
+            .map(|(range, _)| range);
+        let jt_range = data
+            .as_terminator()
+            .and_then(|(_, t)| t.get_jump_targets())
+            .map(|jts| jts.load_range());
 
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
@@ -232,11 +231,10 @@ impl Module {
 
         // Try add this handle as operand.
         // If this instruction has operands, add them to the reverse graph.
-        // self._rdfg_alloc_node(ValueSSA::Inst(ret), None).unwrap();
         if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
             let alloc_use = self.borrow_use_alloc();
-            if let Some(operand_view) = operand_view {
-                rdfg.insert_new_inst(ret, &operand_view, &alloc_use, &self.type_ctx)
+            if let Some(operand_range) = operand_range {
+                rdfg.insert_new_inst_range(ret, operand_range, &alloc_use, &self.type_ctx)
                     .unwrap();
             } else {
                 rdfg.alloc_node(ValueSSA::Inst(ret), None, &self.type_ctx)
@@ -245,9 +243,9 @@ impl Module {
         }
 
         // If this instruction is a terminator, add its jump targets to the reverse graph.
-        if let (Some(jt_view), Some(rcfg)) = (jt_view, self.borrow_rcfg_alloc()) {
+        if let (Some(jt_range), Some(rcfg)) = (jt_range, self.borrow_rcfg_alloc()) {
             let alloc_jt = self.borrow_jt_alloc();
-            for (jt, jt_data) in jt_view.view(&alloc_jt) {
+            for (jt, jt_data) in jt_range.view(&alloc_jt) {
                 let block = jt_data._block.get();
                 if !block.is_null() {
                     rcfg.get_node(block).add_predecessor(jt);
@@ -416,9 +414,9 @@ impl Module {
             let maybe_func = match data {
                 GlobalData::Func(f) => {
                     if let Some(body) = f.get_blocks() {
-                        let body_view = unsafe { body.unsafe_load_readonly_view() };
-                        if !body_view.is_empty() {
-                            all_live_funcbody.push(body_view);
+                        let (body_range, n_nodes) = body.load_range_and_full_node_count();
+                        if n_nodes > 0 {
+                            all_live_funcbody.push(body_range);
                         }
                     }
                     Some(f.get_stored_func_type())
@@ -432,44 +430,43 @@ impl Module {
         // Step 1.2: Allocate nodes for all live basic blocks. If this block is not empty,
         // add instruction list to `live_insts`
         let mut live_insts = Vec::with_capacity(inst_alloc.len());
-        for body_view in all_live_funcbody {
-            for (blockref, block) in body_view.view(block_alloc) {
+        for body_range in all_live_funcbody {
+            for (blockref, block) in body_range.view(block_alloc) {
                 let blockval = ValueSSA::Block(blockref);
                 rdfg_alloc.alloc_node(blockval, None, type_ctx)?;
 
-                let insts = unsafe { block.instructions.unsafe_load_readonly_view() };
-                if !insts.is_empty() {
-                    live_insts.push(insts);
+                let (inst_range, n_nodes) = block.instructions.load_range_and_full_node_count();
+                if n_nodes > 0 {
+                    live_insts.push(inst_range);
                 }
             }
         }
         // Step 1.3: Allocate nodes for all live instructions. If this instruction is not empty,
         // add operand uses to `live_opreands`.
         let use_alloc = self.borrow_use_alloc();
-        let mut live_opreands = Vec::with_capacity(use_alloc.len());
+        let mut live_operands = Vec::with_capacity(use_alloc.len());
         for inst_list in live_insts {
             for (instref, inst) in inst_list.view(inst_alloc) {
                 rdfg_alloc.alloc_node(ValueSSA::Inst(instref), None, type_ctx)?;
-                match inst {
-                    InstData::ListGuideNode(..) | InstData::PhiInstEnd(..) | InstData::Jump(..) => {
-                    }
-                    _ => {
-                        let operand_view = unsafe {
-                            inst.get_common_unwrap()
-                                .operands
-                                .unsafe_load_readonly_view()
-                        };
-                        if !operand_view.is_empty() {
-                            live_opreands.push(operand_view);
-                        }
-                    }
+                if matches!(
+                    inst,
+                    InstData::ListGuideNode(..) | InstData::PhiInstEnd(..) | InstData::Jump(..)
+                ) {
+                    continue;
+                }
+                let (operand_range, node_cnt) = inst
+                    .get_common_unwrap()
+                    .operands
+                    .load_range_and_full_node_count();
+                if node_cnt > 0 {
+                    live_operands.push(operand_range);
                 }
             }
         }
 
         // Step 2: Add instruction operands
         let mut live_uses = Vec::with_capacity(use_alloc.len());
-        for use_list in &live_opreands {
+        for use_list in &live_operands {
             for (useref, usedata) in use_list.view(&use_alloc) {
                 let operand = usedata.get_operand();
                 match operand {
@@ -605,9 +602,9 @@ impl Module {
             match global.to_slabref_unwrap(alloc_global) {
                 GlobalData::Func(func) => {
                     if let Some(body) = func.get_blocks() {
-                        let body_view = unsafe { body.unsafe_load_readonly_view() };
-                        if !body_view.is_empty() {
-                            live_funcbody.push(body_view);
+                        let (body_range, nnodes) = body.load_range_and_full_node_count();
+                        if nnodes > 0 {
+                            live_funcbody.push(body_range);
                         }
                     }
                 }
@@ -615,8 +612,8 @@ impl Module {
             };
         }
         let mut live_bb = Vec::with_capacity(alloc_block.len());
-        for body_view in live_funcbody {
-            for (blockref, block) in body_view.view(alloc_block) {
+        for body_range in live_funcbody {
+            for (blockref, block) in body_range.view(alloc_block) {
                 live_bb.push((
                     blockref,
                     block.instructions.get_back_ref(alloc_inst).unwrap(),
@@ -643,7 +640,7 @@ impl Module {
                     Some(jts) => jts,
                     None => continue,
                 };
-                unsafe { jts.unsafe_load_readonly_view() }
+                jts.load_range()
             } else {
                 continue;
             };

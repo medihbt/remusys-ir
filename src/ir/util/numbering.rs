@@ -44,12 +44,12 @@ impl IRValueNumberMap {
             _ => panic!("Expected a function"),
         };
 
-        let blocks_view = match func_data.get_blocks() {
-            Some(b) => unsafe { b.unsafe_load_readonly_view() },
+        let blocks_range = match func_data.get_blocks() {
+            Some(b) => b.load_range(),
             None => panic!("Function has no blocks"),
         };
         let mut curr_number = func_data.get_nargs(&module.type_ctx);
-        for (block_ref, block) in blocks_view.view(alloc_block) {
+        for (block_ref, block) in blocks_range.view(alloc_block) {
             block_map.insert(block_ref, curr_number);
             curr_number += 1;
 

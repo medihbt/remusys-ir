@@ -117,22 +117,19 @@ impl CfgDfsSeq {
     }
 
     pub fn build_from_func(&mut self, module: &Module, func: GlobalRef) -> Result<(), String> {
-        let (blocks_view, entry) = {
+        let (nblocks, entry) = {
             let func_data = module.get_global(func);
             let func_data = match &*func_data {
                 GlobalData::Func(f) => f,
                 _ => return Err("Expected function".into()),
             };
             match func_data.get_blocks() {
-                Some(blocks) => (
-                    unsafe { blocks.unsafe_load_readonly_view() },
-                    func_data.get_entry(),
-                ),
+                Some(blocks) => (blocks.len(), func_data.get_entry()),
                 None => return Err("Function has no blocks".into()),
             }
         };
 
-        let mut blocks_seq = Vec::with_capacity(blocks_view.len());
+        let mut blocks_seq = Vec::with_capacity(nblocks);
         let mut dfn = BTreeMap::new();
 
         match self.order.get_first_step() {

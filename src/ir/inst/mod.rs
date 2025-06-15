@@ -8,7 +8,8 @@ use crate::{
     base::{
         NullableValue,
         slablist::{
-            SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef,
+            SlabListRange, SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead,
+            SlabRefListNodeRef,
         },
         slabref::SlabRef,
     },
@@ -396,19 +397,21 @@ impl InstData {
             _ => None,
         }
     }
-    pub unsafe fn load_operand_view(&self) -> Option<SlabRefList<UseRef>> {
+    pub fn load_operand_range(&self) -> Option<SlabListRange<UseRef>> {
+        self.load_operand_range_and_node_count()
+            .map(|(range, _)| range)
+    }
+    pub fn load_operand_range_and_node_count(&self) -> Option<(SlabListRange<UseRef>, usize)> {
         match self {
             Self::ListGuideNode(..)
             | Self::PhiInstEnd(..)
             | Self::Unreachable(..)
             | Self::Jump(..) => None,
-            _ => unsafe {
-                Some(
-                    self.get_common_unwrap()
-                        .operands
-                        .unsafe_load_readonly_view(),
-                )
-            },
+            _ => Some(
+                self.get_common_unwrap()
+                    .operands
+                    .load_range_and_full_node_count(),
+            ),
         }
     }
 
@@ -583,7 +586,7 @@ impl InstRef {
         let self_data = self.to_slabref_unwrap(&alloc_value.alloc_inst);
 
         // Clean up jump targets of the terminators.
-        let operands_view = match self_data {
+        let (operands_range, len) = match self_data {
             InstData::Jump(_, jump) => {
                 jump.set_block(module, BlockRef::new_null());
                 return;
@@ -605,20 +608,18 @@ impl InstRef {
             InstData::Unreachable(..) | InstData::PhiInstEnd(..) | InstData::ListGuideNode(..) => {
                 return;
             }
-            _ => unsafe {
-                self_data
-                    .get_common_unwrap()
-                    .operands
-                    .unsafe_load_readonly_view()
-            },
+            _ => self_data
+                .get_common_unwrap()
+                .operands
+                .load_range_and_length(),
         };
 
-        if operands_view.is_empty() {
+        if len == 0 {
             return;
         }
 
         // Clean up operands of the instruction.
-        for (useref, data) in operands_view.view(&use_alloc) {
+        for (useref, data) in operands_range.view(&use_alloc) {
             let operand = data.get_operand();
             data.set_operand_nordfg(ValueSSA::new_null());
             if operand.is_null() {

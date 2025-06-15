@@ -3,7 +3,7 @@ use std::{cell::Ref, ops::Deref};
 use slab::Slab;
 
 use crate::base::{
-    slablist::{SlabRefList, SlabRefListNodeRef},
+    slablist::{SlabListRange, SlabRefList, SlabRefListNodeRef},
     slabref::SlabRef,
 };
 
@@ -61,26 +61,24 @@ pub trait IRGraphEdgeHolder: SlabRef {
         }))
     }
 
-    unsafe fn graph_load_edges_from_data(
+    fn graph_load_edges_range_from_data(
         data: &Self::RefObject,
-    ) -> Option<SlabRefList<Self::EdgeT>> {
-        Self::graph_edges_from_data(data).map(|l| unsafe { l.unsafe_load_readonly_view() })
+    ) -> Option<SlabListRange<Self::EdgeT>> {
+        Self::graph_edges_from_data(data).map(|l| l.load_range())
     }
-    unsafe fn graph_load_edges_from_alloc(
+    fn graph_load_edges_range_from_alloc(
         &self,
         alloc: &Slab<Self::RefObject>,
-    ) -> Option<SlabRefList<Self::EdgeT>> {
+    ) -> Option<SlabListRange<Self::EdgeT>> {
         self.graph_edges_from_alloc(alloc)
-            .map(|l| unsafe { l.unsafe_load_readonly_view() })
+            .map(|l| l.load_range())
     }
-    unsafe fn graph_load_edges_from_module(
+    fn graph_load_edges_range_from_module(
         &self,
         module: &Module,
-    ) -> Option<SlabRefList<Self::EdgeT>> {
-        unsafe {
-            self.graph_edges_from_module(module)
-                .map(|l| l.unsafe_load_readonly_view())
-        }
+    ) -> Option<SlabListRange<Self::EdgeT>> {
+        self.graph_edges_from_module(module)
+            .map(|l| l.load_range())
     }
 }
 

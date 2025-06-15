@@ -3,14 +3,11 @@ use std::cell::RefCell;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefList, slabref::SlabRef},
+    base::{slablist::{SlabListRange, SlabRefList}, slabref::SlabRef, NullableValue},
     ir::{
-        ValueSSA,
-        global::GlobalRef,
-        inst::{
-            InstRef,
-            usedef::{UseData, UseRef},
-        },
+        global::GlobalRef, inst::{
+            usedef::{UseData, UseRef}, InstRef
+        }, ValueSSA
     },
     typing::{context::TypeContext, types::FuncTypeRef},
 };
@@ -213,7 +210,7 @@ impl RdfgAlloc {
         }
     }
 
-    pub fn insert_new_inst(
+    pub fn insert_new_inst_view(
         &mut self,
         inst: InstRef,
         operand_view: &SlabRefList<UseRef>,
@@ -223,6 +220,25 @@ impl RdfgAlloc {
         self.alloc_node(ValueSSA::Inst(inst), None, type_ctx)?;
 
         for (useref, usedata) in operand_view.view(alloc_use) {
+            let operand = usedata.get_operand();
+            match self.get_node(operand) {
+                Ok(node) => node.add_user_use(useref),
+                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
+                Err(x) => Err(x).unwrap(),
+            };
+        }
+        Ok(())
+    }
+    pub fn insert_new_inst_range(
+        &mut self,
+        inst: InstRef,
+        operand_range: SlabListRange<UseRef>,
+        alloc_use: &Slab<UseData>,
+        type_ctx: &TypeContext,
+    ) -> Result<(), ModuleError> {
+        self.alloc_node(ValueSSA::Inst(inst), None, type_ctx)?;
+
+        for (useref, usedata) in operand_range.view(alloc_use) {
             let operand = usedata.get_operand();
             match self.get_node(operand) {
                 Ok(node) => node.add_user_use(useref),

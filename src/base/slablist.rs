@@ -388,9 +388,25 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
 
     pub fn view<'a>(&'a self, alloc: &'a Slab<T::RefObject>) -> SlabRefListView<'a, T> {
         SlabRefListView {
-            _list: self,
-            _slab: alloc,
+            _list_range: SlabListRange {
+                node_head: self._head.clone(),
+                node_tail: self._tail.clone(),
+            },
+            _slab_alloc: alloc,
         }
+    }
+
+    pub fn load_range(&self) -> SlabListRange<T> {
+        SlabListRange {
+            node_head: self._head.clone(),
+            node_tail: self._tail.clone(),
+        }
+    }
+    pub fn load_range_and_length(&self) -> (SlabListRange<T>, usize) {
+        (self.load_range(), self._size.get())
+    }
+    pub fn load_range_and_full_node_count(&self) -> (SlabListRange<T>, usize) {
+        (self.load_range(), self.n_nodes_with_guide())
     }
 
     pub unsafe fn unsafe_load_readonly_view(&self) -> Self {
@@ -403,9 +419,34 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlabListRange<T: SlabRefListNodeRef> {
+    pub node_head: T,
+    pub node_tail: T,
+}
+
+impl<T: SlabRefListNodeRef> SlabListRange<T> {
+    pub fn view<'a>(&'a self, slab: &'a Slab<T::RefObject>) -> SlabRefListView<'a, T> {
+        SlabRefListView {
+            _list_range: self.clone(),
+            _slab_alloc: slab,
+        }
+    }
+
+    pub fn calc_length(&self, slab: &Slab<T::RefObject>) -> usize {
+        let mut length = 0;
+        let mut current = self.node_head.get_next_ref(slab);
+        while let Some(node) = current {
+            length += 1;
+            current = node.get_next_ref(slab);
+        }
+        length
+    }
+}
+
 pub struct SlabRefListView<'a, T: SlabRefListNodeRef> {
-    pub(crate) _list: &'a SlabRefList<T>,
-    pub(crate) _slab: &'a Slab<T::RefObject>,
+    pub(crate) _list_range: SlabListRange<T>,
+    pub(crate) _slab_alloc: &'a Slab<T::RefObject>,
 }
 
 pub struct SlabRefListIterator<'a, T: SlabRefListNodeRef> {
@@ -434,14 +475,14 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         let current = self
-            ._list
-            ._head
-            .get_next_ref(self._slab)
+            ._list_range
+            .node_head
+            .get_next_ref(self._slab_alloc)
             .expect("Head node should have a next node")
             .get_handle();
         SlabRefListIterator {
             _current: Some(current),
-            _slab: &self._slab,
+            _slab: &self._slab_alloc,
         }
     }
 }
@@ -453,8 +494,8 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
             .entries(
-                self._list
-                    .view(self._slab)
+                self._list_range
+                    .view(self._slab_alloc)
                     .into_iter()
                     .map(|(_, data)| data),
             )

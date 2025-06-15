@@ -20,8 +20,8 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
         GlobalData::Func(f) => f,
         _ => panic!("Expected a function"),
     };
-    let blocks_view = match func_data.get_blocks() {
-        Some(b) => unsafe { b.unsafe_load_readonly_view() },
+    let blocks_range = match func_data.get_blocks() {
+        Some(b) => b.load_range(),
         None => panic!("Function has no blocks"),
     };
     let value_number = IRValueNumberMap::from_func(module, func, NumberOption::ignore_all());
@@ -34,7 +34,7 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
     let alloc_block = &alloc_value.alloc_block;
     let mut cfg_edges = Vec::new();
     let mut block_order_map = BTreeMap::new();
-    for (order, (block_ref, block)) in blocks_view.view(alloc_block).into_iter().enumerate() {
+    for (order, (block_ref, block)) in blocks_range.view(alloc_block).into_iter().enumerate() {
         let block_id = value_number.block_get_number(block_ref).unwrap();
         block_order_map.insert(block_ref, order);
         writer
