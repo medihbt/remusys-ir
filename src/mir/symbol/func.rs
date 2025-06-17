@@ -1,13 +1,12 @@
 use crate::{
     base::slablist::SlabRefList,
-    mir::{inst::MachineInstRef, operand::virtreg::VirtReg},
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    mir::{operand::virtreg::VirtReg, symbol::block::MachineBlockRef},
+    typing::{context::TypeContext, id::ValTypeID},
 };
 
 pub struct MachineFunc {
     pub name: String,
-    pub func_ty: FuncTypeRef,
-    pub body: SlabRefList<MachineInstRef>,
+    pub body: SlabRefList<MachineBlockRef>,
     pub virt_reg_alloc: VirtRegAlloc,
     pub stack_size: usize,
     pub stack_align: usize,
@@ -33,7 +32,7 @@ impl MachineFunc {
         self.body.is_empty()
     }
 
-    pub fn push_alloca(&mut self, val_type: ValTypeID, type_ctx: &TypeContext) -> usize {
+    pub fn push_spilled(&mut self, val_type: ValTypeID, type_ctx: &TypeContext) -> usize {
         let size_bytes = match val_type.get_instance_size(type_ctx) {
             Some(size) => size,
             None => panic!("Cannot allocate memory for type: {:?}", val_type),

@@ -1,8 +1,13 @@
+use crate::ir::block::BlockRef;
+
 pub mod block;
 pub mod func;
 
-pub enum Symbol {
-    Label,
-    Func,
-    GlobalRef,
+pub enum SymbolRef {
+    Block(BlockRef),
+    Global(usize),
+}
+
+pub enum GlobalSymbol {
+
 }
