@@ -7,7 +7,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct MirStackItem {
-    pub vreg: VirtReg,
+    pub vreg:   VirtReg,
     pub irtype: ValTypeID,
     /// offset from `SP` in bytes.
     pub offset: i64,

@@ -110,6 +110,7 @@ impl<'a> AsmWriter<'a> {
                 ModuleItem::Variable(gvar) => self.write_variable(gvar),
                 ModuleItem::UnnamedData(gdata) => self.write_global_data(gdata),
                 ModuleItem::Function(func) => self.write_function(module, func),
+                _ => {}
             }
         }
     }
@@ -143,9 +144,16 @@ impl<'a> AsmWriter<'a> {
         self.wrap_indent();
         self.write_str(gvar.get_name()).write_str(":");
         self.indent_level.set(1);
+        let mut size = 0;
         for initval in &gvar.initval {
             self.wrap_indent();
             self.write_global_data(initval);
+            size += initval.data.len();
+        }
+        if matches!(gvar.common.linkage, Linkage::Extern | Linkage::Global) {
+            // For extern/global variables, we need to write the size of the variable.
+            self.wrap_indent();
+            self.write_fmt(format_args!(".size {}, {}", gvar.get_name(), size));
         }
     }
 
@@ -192,15 +200,19 @@ impl<'a> AsmWriter<'a> {
     }
 
     fn write_function(&self, module: &MirModule, func: &Rc<MirFunc>) {
+        let func_name = func.common.name.as_str();
+        let func_name_len = func_name.len();
+
         self.indent_level.set(0);
         self.wrap_indent();
-        self.write_str(&func.common.name).write_str(":");
+        self.write_str(func_name).write_str(":");
 
         let istat = InstWriteStatus {
             parent_func: func.clone(),
             module,
         };
 
+        // Write function body
         self.indent_level.set(1);
         let alloc_bb = module.borrow_alloc_block();
         for (index, (_, block)) in func.blocks.view(&alloc_bb).into_iter().enumerate() {
@@ -208,8 +220,12 @@ impl<'a> AsmWriter<'a> {
             self.write_block(&istat, block, writes_name);
         }
 
-        let func_name = func.common.name.as_str();
-        let func_name_len = func_name.len();
+        // For extern functions, we need to write the size of the function.
+        if matches!(func.common.linkage, Linkage::Extern | Linkage::Global) {
+            self.wrap_indent();
+            self.write_fmt(format_args!(".size {}, .-{}", func_name, func_name));
+        }
+
         for vec_switch_tab in &func.vec_switch_tabs {
             self.indent_level.set(0);
             self.wrap_indent();
@@ -238,7 +254,9 @@ impl<'a> AsmWriter<'a> {
         if writes_name {
             self.indent_level.set(0);
             self.wrap_indent();
-            self.write_str(block.name.as_str()).write_str(":");
+            self.write_str(".Lbb_")
+                .write_str(block.name.as_str())
+                .write_str(":");
             self.indent_level.set(1);
         }
         for inst in block.insts.iter() {
@@ -288,7 +306,7 @@ impl<'a> AsmWriter<'a> {
                     .write_str(" ")
                     .write_operand(istat, load_store_literal.rt().get())
                     .write_str(", ")
-                    .write_operand(istat, load_store_literal.literal().get());
+                    .write_load_store_immediate(istat, load_store_literal.literal().get());
             }
             MirInst::Bin(bin_op) => {
                 self.write_str(opcode.asm_name())
@@ -482,16 +500,15 @@ impl<'a> AsmWriter<'a> {
     ) {
         self.write_str(opcode.asm_name())
             .write_str(" ")
-            .write_operand(istat, ldst_rrr.operands[0].get())
+            .write_operand(istat, ldst_rrr.rt().get())
             .write_str(", [")
-            .write_operand(istat, ldst_rrr.operands[1].get());
+            .write_operand(istat, ldst_rrr.rn().get())
+            .write_str(", ")
+            .write_operand(istat, ldst_rrr.rm().get());
         if let Some(rm_op) = &ldst_rrr.rm_op {
-            self.write_str(", ")
-                .write_fmt(format_args!("{}", rm_op))
-                .write_str("]");
-        } else {
-            self.write_str("]");
+            self.write_str(", ").write_fmt(format_args!("{}", rm_op));
         }
+        self.write_str("]");
     }
 
     /// Load/store instruction, with its mem address made of a base register and an offset.
@@ -516,26 +533,70 @@ impl<'a> AsmWriter<'a> {
     ) {
         self.write_str(opcode.asm_name())
             .write_str(" ")
-            .write_operand(istat, ldst_rri.operands[0].get())
+            .write_operand(istat, ldst_rri.rt().get())
             .write_str(", [")
-            .write_operand(istat, ldst_rri.operands[1].get());
+            .write_operand(istat, ldst_rri.rn().get());
         match ldst_rri.get_addr_mode() {
             AddressMode::BaseOnly => self.write_str("]"),
             AddressMode::BaseOffset => self
                 .write_str(", ")
-                .write_operand(istat, ldst_rri.operands[2].get())
+                .write_load_store_immediate(istat, ldst_rri.offset().get())
                 .write_str("]"),
             AddressMode::PreIndex => self
                 .write_str("], ")
-                .write_operand(istat, ldst_rri.operands[2].get()),
+                .write_load_store_immediate(istat, ldst_rri.offset().get()),
             AddressMode::PostIndex => self
-                .write_operand(istat, ldst_rri.operands[2].get())
+                .write_load_store_immediate(istat, ldst_rri.offset().get())
                 .write_str("]!"),
             AddressMode::Literal => panic!(
                 "Cannot write literal address mode for load/store RRI instruction: {:?}",
                 ldst_rri
             ),
         };
+    }
+
+    fn write_load_store_immediate(&self, istat: &InstWriteStatus, imm: MirOperand) -> &Self {
+        type M = MirOperand;
+        type S = SymbolOperand;
+        match imm {
+            MirOperand::ImmConst(value) => self.write_fmt(format_args!("#{}", value)),
+            MirOperand::Symbol(SymbolOperand::Global(index)) => {
+                let global = &istat.module.items[index as usize];
+                if global.is_extern() {
+                    self.write_str(":got");
+                }
+                self.write_str(":lo12:")
+                    .write_str(global.get_name().unwrap_or("<unnnamed>"))
+            }
+            M::Symbol(S::Label(label)) | M::Label(label) => {
+                let alloc_bb = istat.module.borrow_alloc_block();
+                self.write_str(":lo12:")
+                    .write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
+            }
+            MirOperand::VecSwitchTab(index) => {
+                let vec_switch_tab = &istat.parent_func.vec_switch_tabs[index];
+                self.write_fmt(format_args!(
+                    ":lo12:_Z{}switch_tab.v{}",
+                    istat.parent_func.common.name.len(),
+                    vec_switch_tab.tab_index.get()
+                ))
+            }
+            MirOperand::BinSwitchTab(index) => {
+                let bin_switch_tab = &istat.parent_func.bin_switch_tabs[index];
+                self.write_fmt(format_args!(
+                    ":lo12:_Z{}switch_tab.b{}",
+                    istat.parent_func.common.name.len(),
+                    bin_switch_tab.tab_index.get()
+                ))
+            }
+
+            MirOperand::None | MirOperand::VirtReg(_) | MirOperand::PhysReg(_) => {
+                panic!(
+                    "Cannot write immediate operand for load/store RRI instruction: {:?}",
+                    imm
+                );
+            }
+        }
     }
 }
 

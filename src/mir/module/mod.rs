@@ -1,17 +1,24 @@
-use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
+};
 
 use slab::Slab;
 
-use crate::{base::slabref::SlabRef, mir::module::{
-    block::{MirBlock, MirBlockRef},
-    func::MirFunc,
-    global::{Linkage, MirGlobalCommon, MirGlobalData, MirGlobalVariable},
-}};
+use crate::{
+    base::slabref::SlabRef,
+    mir::module::{
+        block::{MirBlock, MirBlockRef},
+        func::MirFunc,
+        global::{Linkage, MirGlobalCommon, MirGlobalData, MirGlobalVariable},
+    },
+};
 
 pub mod block;
 pub mod func;
 pub mod global;
 pub mod stack;
+pub mod stack_new;
 
 /// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
 #[derive(Debug)]
@@ -19,6 +26,7 @@ pub enum ModuleItem {
     Variable(Rc<MirGlobalVariable>),
     UnnamedData(MirGlobalData),
     Function(Rc<MirFunc>),
+    Useless,
 }
 
 impl ModuleItem {
@@ -27,6 +35,7 @@ impl ModuleItem {
             ModuleItem::Variable(var) => &var.common,
             ModuleItem::UnnamedData(data) => &data.common,
             ModuleItem::Function(func) => &func.common,
+            _ => panic!("Attempted to access common data of a useless item"),
         }
     }
     pub fn get_name(&self) -> Option<&str> {
@@ -77,9 +86,24 @@ impl MirModule {
     pub fn borrow_alloc_block_mut(&self) -> RefMut<Slab<MirBlock>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.block)
     }
+
     pub fn insert_block(&self, block: MirBlock) -> MirBlockRef {
         let mut allocs = self.borrow_alloc_block_mut();
         let index = allocs.insert(block);
         MirBlockRef::from_handle(index)
+    }
+    pub fn borrow_block(&self, block_ref: MirBlockRef) -> Ref<MirBlock> {
+        Ref::map(self.borrow_alloc_block(), |allocs| {
+            allocs
+                .get(block_ref.get_handle())
+                .expect("Block reference is invalid")
+        })
+    }
+    pub fn borrow_block_mut(&self, block_ref: MirBlockRef) -> RefMut<MirBlock> {
+        RefMut::map(self.borrow_alloc_block_mut(), |allocs| {
+            allocs
+                .get_mut(block_ref.get_handle())
+                .expect("Block reference is invalid")
+        })
     }
 }
