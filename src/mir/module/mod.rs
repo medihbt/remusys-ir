@@ -1,127 +1,85 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    path::{Path, PathBuf},
-};
+use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
 
-use bitflags::bitflags;
 use slab::Slab;
 
-use crate::mir::{
-    inst::MachineInst,
-    symbol::{block::MachineBlock, global::MachineGlobalData},
-};
+use crate::{base::slabref::SlabRef, mir::module::{
+    block::{MirBlock, MirBlockRef},
+    func::MirFunc,
+    global::{Linkage, MirGlobalCommon, MirGlobalData, MirGlobalVariable},
+}};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MIRFormatMode {
-    MIR,
-    Assembly,
+pub mod block;
+pub mod func;
+pub mod global;
+pub mod stack;
+
+/// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
+#[derive(Debug)]
+pub enum ModuleItem {
+    Variable(Rc<MirGlobalVariable>),
+    UnnamedData(MirGlobalData),
+    Function(Rc<MirFunc>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SectionKind {
-    Bss,
-    Data,
-    ROData,
-    Text,
-}
-
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Permission: u8 {
-        const READ  = 0b0001;
-        const WRITE = 0b0010;
-        const EXEC  = 0b0100;
-    }
-}
-
-impl Permission {
-    pub fn readable(self) -> bool {
-        self.contains(Permission::READ)
-    }
-    pub fn writable(self) -> bool {
-        self.contains(Permission::WRITE)
-    }
-    pub fn executable(self) -> bool {
-        self.contains(Permission::EXEC)
-    }
-}
-
-impl SectionKind {
-    pub fn get_name(self) -> &'static str {
+impl ModuleItem {
+    pub fn get_common(&self) -> &MirGlobalCommon {
         match self {
-            Self::Text => ".text",
-            Self::Data => ".data",
-            Self::Bss => ".bss",
-            Self::ROData => ".rodata",
+            ModuleItem::Variable(var) => &var.common,
+            ModuleItem::UnnamedData(data) => &data.common,
+            ModuleItem::Function(func) => &func.common,
         }
     }
-
-    pub fn get_permission(self) -> Permission {
-        match self {
-            Self::Text => Permission::READ | Permission::EXEC,
-            Self::Data => Permission::READ | Permission::WRITE,
-            Self::Bss => Permission::READ | Permission::WRITE,
-            Self::ROData => Permission::READ,
-        }
+    pub fn get_name(&self) -> Option<&str> {
+        let name = self.get_common().name.as_str();
+        if name.is_empty() { None } else { Some(name) }
     }
-
-    pub fn readable(self) -> bool {
-        self.get_permission().readable()
-    }
-    pub fn writable(self) -> bool {
-        self.get_permission().writable()
-    }
-    pub fn executable(self) -> bool {
-        self.get_permission().executable()
+    pub fn is_extern(&self) -> bool {
+        self.get_common().linkage == Linkage::Extern
     }
 }
 
-/**
- AArch64 MIR module representation.
-*/
-pub struct MachineMod {
+#[derive(Debug)]
+pub struct MirModule {
     pub name: String,
-    pub alloc: RefCell<MachineAlloc>,
-    pub globals: Vec<MachineGlobalData>,
+    pub items: Vec<ModuleItem>,
+    pub allocs: RefCell<MirAllocs>,
 }
 
-pub struct MachineAlloc {
-    pub alloc_block: Slab<MachineBlock>,
-    pub alloc_inst: Slab<MachineInst>,
+#[derive(Debug, Clone)]
+pub struct MirAllocs {
+    pub block: Slab<MirBlock>,
 }
 
-impl MachineMod {
+impl MirModule {
     pub fn new(name: String) -> Self {
-        Self {
+        MirModule {
             name,
-            alloc: RefCell::new(MachineAlloc {
-                alloc_block: Slab::new(),
-                alloc_inst: Slab::new(),
-            }),
-            globals: Vec::new(),
+            items: Vec::new(),
+            allocs: RefCell::new(MirAllocs { block: Slab::new() }),
         }
     }
 
-    pub fn make_path(&self, base_dir: &Path, format_mode: MIRFormatMode) -> PathBuf {
-        let mut path = PathBuf::from(base_dir);
-        path.push(&self.name);
-        path.set_extension(match format_mode {
-            MIRFormatMode::MIR => "mir",
-            MIRFormatMode::Assembly => "s",
-        });
-        path
+    pub fn add_item(&mut self, item: ModuleItem) {
+        item.get_common().index.set(self.items.len() as u32);
+        self.items.push(item);
     }
 
-    pub fn borrow_alloc_block(&self) -> Ref<'_, Slab<MachineBlock>> {
-        Ref::map(self.alloc.borrow(), |alloc| &alloc.alloc_block)
+    pub fn refresh_indices(&self) {
+        for (index, item) in self.items.iter().enumerate() {
+            let index_cell = &item.get_common().index;
+            index_cell.set(index as u32);
+        }
     }
-    pub fn borrow_alloc_block_mut(&self) -> RefMut<'_, Slab<MachineBlock>> {
-        RefMut::map(self.alloc.borrow_mut(), |alloc| &mut alloc.alloc_block)
+
+    pub fn borrow_alloc_block(&self) -> Ref<Slab<MirBlock>> {
+        Ref::map(self.allocs.borrow(), |allocs| &allocs.block)
     }
-    pub fn borrow_alloc_inst(&self) -> Ref<'_, Slab<MachineInst>> {
-        Ref::map(self.alloc.borrow(), |alloc| &alloc.alloc_inst)
+    pub fn borrow_alloc_block_mut(&self) -> RefMut<Slab<MirBlock>> {
+        RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.block)
     }
-    pub fn borrow_alloc_inst_mut(&self) -> RefMut<'_, Slab<MachineInst>> {
-        RefMut::map(self.alloc.borrow_mut(), |alloc| &mut alloc.alloc_inst)
+    pub fn insert_block(&self, block: MirBlock) -> MirBlockRef {
+        let mut allocs = self.borrow_alloc_block_mut();
+        let index = allocs.insert(block);
+        MirBlockRef::from_handle(index)
     }
 }

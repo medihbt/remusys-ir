@@ -1,214 +1,150 @@
-use std::cell::Cell;
-
 use crate::{
-    base::{
-        slablist::{SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
-        slabref::SlabRef,
-    },
-    ir::cmp_cond::CmpCond,
+    base::slablist::{SlabRefListNode, SlabRefListNodeHead},
     mir::{
-        inst::fixop::{
-            branch::{BLink, BrRegCond, CondBr, UncondBr},
-            data_process::{BFMOp, BinOP, CmpOP, CondCmp, CondSel, CondSet, CondUnary, TriOP, UnaryOP},
-            load_store::{LoadStoreRRR, LoadStoreRX},
+        inst::{
+            branch::{BLink, CondBr, RegCondBr, UncondBr},
+            call::MirCall,
+            cmp::{CmpOP, CondCmpOP},
+            data_process::{
+                BFMOp, BinOp, CondSelect, CondSet, CondUnaryOp, ExtROp, TernaryOp, UnaryOp,
+            },
+            load_store::{LoadStoreLiteral, LoadStoreRRI, LoadStoreRRR},
+            opcode::MirOP,
+            switch::{BinSwitch, TabSwitch},
         },
-        operand::MachineOperand,
+        operand::MirOperand,
     },
 };
-use opcode::AArch64OP;
-use slab::Slab;
+use std::cell::Cell;
 
-pub mod fixop;
+pub mod branch;
+pub mod call;
+pub mod cmp;
+pub mod cond;
+pub mod data_process;
+pub mod load_store;
 pub mod opcode;
+pub mod switch;
 
+/// MIR and AArch64 assembly instructions.
 #[derive(Debug, Clone)]
-pub enum MachineInst {
-    /// A guide node for the instruction list, used for padding
-    GuideNode(MachineInstCommonBase, [Cell<MachineOperand>; 0]),
+pub enum MirInst {
+    GuideNode(MirInstCommon),
+    Nullary(MirInstCommon),
 
-    /// Nullary instruction, e.g., NOP, used for padding
-    Nullary(MachineInstCommonBase, [Cell<MachineOperand>; 0]),
+    // Branch instructions
     CondBr(CondBr),
     UncondBr(UncondBr),
     BLink(BLink),
-    BrRegCond(BrRegCond),
+    RegCondBr(RegCondBr),
 
-    /// Load/Store with register
+    // Loads and stores
     LoadStoreRRR(LoadStoreRRR),
-    /// Load/Store with immediate or label
-    LoadStoreRX(LoadStoreRX),
+    LoadStoreRRI(LoadStoreRRI),
+    LoadStoreLiteral(LoadStoreLiteral),
 
-    /// Binary operation instruction, with or without using CSR
-    BinOP(BinOP),
-    /// Compare and Test instruction, e.g., CMP, TST
-    Cmp(CmpOP),
-    /// Unary instruction, e.g. Move
-    Unary(UnaryOP),
-    /// BFM operation
+    // Data processing instructions
+    Bin(BinOp),
+    Unary(UnaryOp),
     BFM(BFMOp),
-    /// Tenary operation
-    TriOP(TriOP),
-    /// Condition Select
-    CondSel(CondSel),
-    /// Condition Unary
-    CondUnary(CondUnary),
-    /// Condition Set
+    ExtR(ExtROp),
+    Tri(TernaryOp),
+
+    Cmp(CmpOP),
+
+    // Conditional instructions
+    CondSelect(CondSelect),
+    CondUnary(CondUnaryOp),
     CondSet(CondSet),
-    /// Condition Compare
-    CondCmp(CondCmp),
-}
+    CondCmp(CondCmpOP),
 
-impl MachineInst {
-    pub fn get_common(&self) -> &MachineInstCommonBase {
-        match self {
-            Self::GuideNode(common, _) => common,
-            Self::Nullary(common, _) => common,
-            Self::CondBr(cond_br) => &cond_br.common,
-            Self::UncondBr(uncond_br) => &uncond_br.common,
-            Self::BLink(blink) => &blink.common,
-            Self::BrRegCond(brcond) => &brcond.common,
-            Self::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
-            Self::LoadStoreRX(load_store_rx) => &load_store_rx.0.common,
-            Self::BinOP(bin_op) => &bin_op.common,
-            Self::Cmp(cmp_op) => &cmp_op.common,
-            Self::Unary(unary_op) => &unary_op.common,
-            Self::BFM(bfmop) => &bfmop.common,
-            Self::TriOP(tri_op) => &tri_op.common,
-            Self::CondSel(cond_sel) => &cond_sel.common,
-            Self::CondUnary(cond_unary) => &cond_unary.common,
-            Self::CondSet(cond_set) => &cond_set.common,
-            Self::CondCmp(cond_cmp) => &cond_cmp.common,
-        }
-    }
-
-    pub fn get_opcode(&self) -> AArch64OP {
-        self.get_common().opcode
-    }
-    pub fn operands(&self) -> &[Cell<MachineOperand>] {
-        match self {
-            Self::GuideNode(_, operands) => operands,
-            Self::Nullary(_, operands) => operands,
-            Self::CondBr(cond_br) => &cond_br.operands,
-            Self::UncondBr(uncond_br) => &uncond_br.operands,
-            Self::BLink(blink) => &blink.operands,
-            Self::BrRegCond(brcond) => &brcond.operands,
-            Self::LoadStoreRRR(load_store_rrr) => &load_store_rrr.operands,
-            Self::LoadStoreRX(load_store_rx) => load_store_rx.0.operands(),
-            Self::BinOP(bin_op) => bin_op.operands(),
-            Self::Cmp(cmp_op) => &cmp_op.operands,
-            Self::Unary(unary_op) => unary_op.get_operands(),
-            Self::BFM(bfmop) => &bfmop.operands,
-            Self::TriOP(tri_op) => &tri_op.operands,
-            Self::CondSel(cond_sel) => &cond_sel.operands,
-            Self::CondUnary(cond_unary) => &cond_unary.operands,
-            Self::CondSet(cond_set) => &cond_set.operands,
-            Self::CondCmp(cond_cmp) => &cond_cmp.operands,
-        }
-    }
-}
-
-impl SlabRefListNode for MachineInst {
-    fn new_guide() -> Self {
-        MachineInst::GuideNode(MachineInstCommonBase::new(AArch64OP::Nop), [])
-    }
-    fn load_node_head(&self) -> SlabRefListNodeHead {
-        self.get_common().self_head.get()
-    }
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
-        self.get_common().self_head.set(node_head);
-    }
+    // Pseudo instructions
+    Call(MirCall),
+    TabSwitch(TabSwitch),
+    BinSwitch(BinSwitch),
 }
 
 #[derive(Debug, Clone)]
-pub struct MachineInstCommonBase {
-    pub self_head: Cell<SlabRefListNodeHead>,
-    pub opcode: AArch64OP,
+pub struct MirInstCommon {
+    node_head: Cell<SlabRefListNodeHead>,
+    opcode: MirOP,
+    operands_placeholder: [Cell<MirOperand>; 0],
 }
 
-impl MachineInstCommonBase {
-    pub fn new(opcode: AArch64OP) -> Self {
+impl MirInstCommon {
+    pub fn new(opcode: MirOP) -> Self {
         Self {
-            self_head: Cell::new(SlabRefListNodeHead::new()),
+            node_head: Cell::new(SlabRefListNodeHead::new()),
             opcode,
+            operands_placeholder: [],
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BrCondFlag {
-    EQ = 0b0000,
-    NE = 0b0001,
-    CS = 0b0010, // Carry Set
-    CC = 0b0011, // Carry Clear
-    MI = 0b0100, // Minus
-    PL = 0b0101, // Plus
-    VS = 0b0110, // Overflow Set
-    VC = 0b0111, // Overflow Clear
-    HI = 0b1000, // Unsigned Higher
-    LS = 0b1001, // Unsigned Lower or Same
-    GE = 0b1010, // Signed Greater or Equal
-    LT = 0b1011, // Signed Less Than
-    GT = 0b1100, // Signed Greater Than
-    LE = 0b1101, // Signed Less Than or Equal
-    AL = 0b1110, // Always
-    NV = 0b1111, // Never
-}
-
-impl BrCondFlag {
-    pub fn from_cmp_cond(cond: CmpCond) -> Self {
-        let signed = if cond.is_float() {
-            true
-        } else {
-            cond.is_signed_ordered()
-        };
-        #[rustfmt::skip]
-        return match cond.get_basic_cond() {
-            CmpCond::LT => if signed { Self::LT } else { Self::CC },
-            CmpCond::EQ => Self::EQ,
-            CmpCond::GT => if signed { Self::GT } else { Self::HI },
-            CmpCond::LE => if signed { Self::LE } else { Self::LS },
-            CmpCond::NE => Self::NE,
-            CmpCond::GE => if signed { Self::GE } else { Self::CS },
-            CmpCond::ALWAYS => Self::AL,
-            CmpCond::NEVER  => Self::NV,
-            _ => unreachable!(),
-        };
+impl MirInst {
+    pub fn get_common(&self) -> &MirInstCommon {
+        match self {
+            MirInst::GuideNode(common) | MirInst::Nullary(common) => common,
+            MirInst::CondBr(inst) => &inst.common,
+            MirInst::UncondBr(inst) => &inst.common,
+            MirInst::BLink(inst) => &inst.common,
+            MirInst::RegCondBr(inst) => &inst.common,
+            MirInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
+            MirInst::LoadStoreRRI(load_store_rri) => &load_store_rri.common,
+            MirInst::LoadStoreLiteral(load_store_literal) => &load_store_literal.common,
+            MirInst::Bin(bin_op) => &bin_op.common,
+            MirInst::Unary(unary_op) => &unary_op.common,
+            MirInst::BFM(bfmop) => &bfmop.common,
+            MirInst::ExtR(ext_rop) => &ext_rop.common,
+            MirInst::Tri(ternary_op) => &ternary_op.common,
+            MirInst::Cmp(cmp_op) => &cmp_op.common,
+            MirInst::CondSelect(cond_select) => &cond_select.common,
+            MirInst::CondUnary(cond_unary_op) => &cond_unary_op.common,
+            MirInst::CondSet(cond_set) => &cond_set.common,
+            MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.common,
+            MirInst::Call(call) => &call.common,
+            MirInst::TabSwitch(tab_switch) => &tab_switch.common,
+            MirInst::BinSwitch(bin_switch) => &bin_switch.common,
+        }
     }
-
-    pub fn get_name(self) -> &'static str {
-        #[rustfmt::skip]
-        return match self {
-            Self::EQ => "EQ", Self::NE => "NE", Self::CS => "CS", Self::CC => "CC",
-            Self::MI => "MI", Self::PL => "PL", Self::VS => "VS", Self::VC => "VC",
-            Self::HI => "HI", Self::LS => "LS", Self::GE => "GE", Self::LT => "LT",
-            Self::GT => "GT", Self::LE => "LE", Self::AL => "AL", Self::NV => "NV",
-        };
+    pub fn get_opcode(&self) -> MirOP {
+        self.get_common().opcode
     }
-}
-
-impl ToString for BrCondFlag {
-    fn to_string(&self) -> String {
-        self.get_name().to_string()
+    pub fn operands(&self) -> &[Cell<MirOperand>] {
+        match self {
+            MirInst::GuideNode(common) | MirInst::Nullary(common) => &common.operands_placeholder,
+            MirInst::CondBr(inst) => &inst.operands,
+            MirInst::UncondBr(inst) => &inst.operands,
+            MirInst::BLink(inst) => &inst.operands,
+            MirInst::RegCondBr(inst) => &inst.operands,
+            MirInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.operands,
+            MirInst::LoadStoreRRI(load_store_rri) => &load_store_rri.operands,
+            MirInst::LoadStoreLiteral(load_store_literal) => &load_store_literal.operands,
+            MirInst::Bin(bin_op) => bin_op.operands(),
+            MirInst::Unary(unary_op) => unary_op.operands(),
+            MirInst::BFM(bfmop) => &bfmop.operands,
+            MirInst::ExtR(ext_rop) => &ext_rop.operands,
+            MirInst::Tri(ternary_op) => &ternary_op.operands,
+            MirInst::Cmp(cmp_op) => &cmp_op.operands,
+            MirInst::CondSelect(cond_select) => &cond_select.operands,
+            MirInst::CondUnary(cond_unary_op) => &cond_unary_op.operands,
+            MirInst::CondSet(cond_set) => &cond_set.operands,
+            MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.operands,
+            MirInst::Call(call) => call.operands.as_slice(),
+            MirInst::TabSwitch(tab_switch) => &tab_switch.operands,
+            MirInst::BinSwitch(bin_switch) => &bin_switch.operands,
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MachineInstRef(u32);
-
-#[rustfmt::skip]
-impl SlabRef for MachineInstRef {
-    type RefObject = MachineInst;
-    fn from_handle(handle: usize) -> Self { MachineInstRef(handle as u32)  }
-    fn get_handle (&self)        -> usize { self.0 as usize  }
-}
-impl SlabRefListNodeRef for MachineInstRef {
-    fn on_node_push_next(_: Self, _: Self, _: &Slab<MachineInst>) -> Result<(), SlabRefListError> {
-        Ok(())
+impl SlabRefListNode for MirInst {
+    fn new_guide() -> Self {
+        Self::GuideNode(MirInstCommon::new(MirOP::Nop))
     }
-    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MachineInst>) -> Result<(), SlabRefListError> {
-        Ok(())
+    fn load_node_head(&self) -> SlabRefListNodeHead {
+        self.get_common().node_head.get()
     }
-    fn on_node_unplug(_: Self, _: &Slab<MachineInst>) -> Result<(), SlabRefListError> {
-        Ok(())
+    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+        self.get_common().node_head.set(node_head);
     }
 }

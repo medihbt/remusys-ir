@@ -1,7 +1,8 @@
 #[rustfmt::skip]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[repr(u8)]
 /// AArch64 machine opcodes and Remusys-MIR pesudo-opcodes.
-pub enum AArch64OP {
+pub enum MirOP {
     // AArch64 manual C3.1: Branch instructions
     BCond,  BCCond, CBNZ, CBZ, TBNZ, TBZ,
     Branch, BLink,  BLinkReg,  BReg, Ret,
@@ -80,44 +81,40 @@ pub enum AArch64OP {
     FCmp, FCmpE, FCCmp, FCCmpE,
     // C3.8.11 Floating-point select
     FCSel,
+
+    // Remusys-MIR pseudo-opcodes
+    Call,
+    TailCall,
+    CallIndirect,
+
+    /// switch 指令: 通过跳转表直接跳转到目标地址
+    TabSwitch,
+    /// switch 指令: 通过二进制搜索跳转到目标地址
+    BinSwitch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NumOperand {
-    /// AArch64 文档规定了就这么多操作数
-    Fix(u32),
-    /// 操作数数量不定
-    Dyn,
-    /// 可能会用到 CSR 寄存器, 在不用到 CSR 时的操作数数量
-    MayCSR(u32),
-    /// 一定会用到 CSR 寄存器, 实际的寄存器数量是 `n + 1`, 其中 `n` 是这个枚举的值
-    MustCSR(u32),
-
-    /// LDR 操作数: 我不知道它是什么
-    Ldr,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-// opcode categories, separated by ARM manual C3 sections
-pub enum AArch64OPKind {
-    Branch,           // C3.1
-    System,
-    Hint,             // C3.1.8
-    Barrier,          // C3.1.9
-    LoadStore,        // C3.2
-    DataProcessing,   // C3.5, C3.7
-    FpSimd,           // C3.8
-}
-
-impl AArch64OP {
-    pub fn to_string_prob(&self) -> String {
-        format!("{:?}", self)
+impl MirOP {
+    /// 该 MirOP 是否是 call switch 这种 MIR 独有的伪指令.
+    pub const fn is_mir_pseudo(self) -> bool {
+        type O = MirOP;
+        matches!(
+            self,
+            O::Call | O::TailCall | O::CallIndirect | O::TabSwitch | O::BinSwitch
+        )
+    }
+    pub const fn is_load(self) -> bool {
+        type O = MirOP;
+        matches!(
+            self,
+            O::Ldr | O::LdrB | O::LdrSB | O::LdrH | O::LdrSH | O::LdrSW | O::Ldp | O::LdpSW
+        )
+    }
+    pub fn lowercase_name(self) -> String {
+        format!("{self:?}").to_lowercase()
     }
 
-    pub const COUNT: usize = Self::FCSel as usize + 1;
-
-    pub fn get_asm_name(self) -> &'static str {
-        type O = AArch64OP;
+    pub fn asm_name(self) -> &'static str {
+        type O = MirOP;
         #[rustfmt::skip]
         return match self {
             O::BCond => "b.cond", O::BCCond => "bc.cond",
@@ -189,138 +186,128 @@ impl AArch64OP {
             O::FMin  => "fmin", O::FMinNM => "fminnm",
             O::FCmp  => "fcmp", O::FCmpE => "fcmpe", O::FCCmp => "fccmp", O::FCCmpE => "fccmpe",
             O::FCSel => "fcsel",
+
+            O::Call => "call", O::TailCall => "tailcall", O::CallIndirect => "call_indirect",
+            O::TabSwitch => "tabswitch", O::BinSwitch => "binswitch",
         };
     }
+}
 
-    pub const fn get_category(self) -> AArch64OPKind {
-        type O = AArch64OP;
-        type C = AArch64OPKind;
-        #[rustfmt::skip]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum OperandLayout {
+    /// No operands.
+    Nullary,
+
+    /// Implicitly uses `$ra` (X30) register.
+    BLink(u8),
+
+    /// Operand layout collections for loads and stores.
+    LoadStore,
+
+    /// Operand number fixed and has no implicit register.
+    NoImplicit(u8),
+
+    /// Implicitly uses CSR ($PState) register.
+    ImplicitCSR(u8),
+
+    /// Implicitly uses PC register.
+    ImplicitPC(u8),
+
+    /// Pesudo `call`:
+    ///
+    /// * implicitly uses `$ra` (X30) register for return address.
+    /// * implicitly uses `$x0-$x7` registers for integer arguments.
+    /// * implicitly uses `$f0-$f7` registers for floating-point arguments.
+    /// * operand numbers are dynamic.
+    ///
+    /// `bool` indicates whether the call is dynamic call which uses a register to hold the function address.
+    Call(bool),
+
+    Switch,
+
+    Unsupported,
+}
+
+impl MirOP {
+    pub const fn get_operand_layout(self) -> OperandLayout {
+        type O = MirOP;
+        type N = OperandLayout;
+
+        // #[rustfmt::skip]
         return match self {
-            O::BCond | O::BCCond | O::CBNZ | O::CBZ | O::TBNZ | O::TBZ |
-            O::Branch | O::BLink | O::BLinkReg | O::BReg | O::Ret => C::Branch,
+            O::BCond | O::BCCond => N::ImplicitCSR(1),
+            O::CBNZ | O::CBZ | O::TBNZ | O::TBZ => N::ImplicitCSR(2),
+            O::Branch => N::NoImplicit(1),
+            O::BLink | O::BLinkReg => N::BLink(1),
+            O::BReg => N::NoImplicit(2),
+            O::Ret => N::BLink(0),
 
-            O::Nop | O::Yield => C::Hint,
+            O::MRS | O::MSR => N::NoImplicit(2),
+            O::Nop | O::Yield => N::Nullary,
 
-            O::ClrEX | O::DMB | O::DSB | O::ISB | O::CSDB | O::ESB => C::Barrier,
+            O::ClrEX | O::DMB | O::DSB | O::ISB | O::CSDB | O::ESB => N::Unsupported,
 
-            // Loads and Stores
-            O::Ldr | O::LdrB | O::LdrSB | O::LdrH | O::LdrSH | O::LdrSW |
-            O::Str | O::StrB | O::StrH |
-            O::Ldp | O::LdpSW | O::Stp => C::LoadStore,
+            O::Ldr | O::LdrB | O::LdrSB | O::LdrH | O::LdrSH | O::LdrSW => N::LoadStore,
+            O::Str | O::StrB | O::StrH => N::LoadStore,
+            O::Ldp | O::LdpSW | O::Stp => N::LoadStore,
 
-            O::MRS | O::MSR => C::System,
+            O::Add | O::Sub | O::SMax | O::SMin | O::UMax | O::UMin | O::And => N::NoImplicit(3),
+            O::ASRV | O::LSLV | O::LSRV | O::RORV => N::NoImplicit(3),
+            O::EON | O::EOr | O::Bic | O::Orr | O::OrN => N::NoImplicit(3),
 
-            // Data Processing
-            O::Add | O::AddS | O::Sub | O::SubS | O::Cmp | O::CmpN |
-            O::SMax | O::SMin | O::UMax | O::UMin |
-            O::And | O::AndS | O::Bic | O::BicS | O::EON | O::EOr |
-            O::Orr | O::MVN | O::OrN | O::Test |
-            O::MovZ | O::MovN | O::MovK | O::Mov |
-            O::AdrP | O::Adr |
-            O::BFM | O::SBFM | O::UBFM |
-            O::BFC | O::BFI | O::BFXIL |
-            O::SBFIZ | O::SBFX | O::UBFIZ | O::UBFX |
-            O::ExtR |
-            O::ASR | O::LSL | O::LSR | O::ROR |
-            O::SxtB | O::SxtH | O::SxtW | O::UxtB | O::UxtH |
-            O::Neg | O::NegS |
-            O::AddC | O::AddCS | O::SubC | O::SubCS | O::NegC | O::NegCS |
-            O::ABS |
-            O::ASRV | O::LSLV | O::LSRV | O::RORV |
-            O::MAdd | O::MSub | O::MNeg | O::Mul |
-            O::SMAddL | O::SMSubL | O::SMNegL | O::SMulL | O::SMulH |
-            O::UMAddL | O::UMSubL | O::UMNegL | O::UMulL | O::UMulH |
-            O::SDiv | O::UDiv |
-            O::ClS | O::ClZ | O::Cnt | O::CntZ | O::RBit | O::Rev |
-            O::Rev16 | O::Rev32 | O::Rev64 |
-            O::CSel | O::CSInc | O::CSInv | O::CSNeg | O::CSet | O::CSetM |
-            O::CInc | O::CInv | O::CNeg |
-            O::CCmp | O::CCmpN => C::DataProcessing,
+            O::Cmp | O::CmpN | O::Test => N::ImplicitCSR(2),
 
-            // Floating-point and SIMD instructions
-            O::FMov | O::FMovG |
-            O::FCvt |
-            O::FCvtAS | O::FCvtAU | O::FCvtMS | O::FCvtMU |
-            O::FCvtNS | O::FCvtNU | O::FCvtPS | O::FCvtPU |
-            O::FCvtZS | O::FCvtZU | O::FJCvtZS |
-            O::SCvtF | O::UCvtF |
-            O::FRIntA | O::FRIntI | O::FRIntN | O::FRIntP |
-            O::FRIntX | O::FRIntZ |
-            O::FRInt32X | O::FRInt32Z |
-            O::FRInt64X | O::FRInt64Z |
-            O::FMAdd | O::FMSub | O::FNMAdd | O::FNMSub |
-            O::FAbs | O::FNeg | O::FSqrt |
-            O::FAdd | O::FDiv | O::FMul | O::FNMul | O::FSub |
-            O::FMax | O::FMaxNM | O::FMin | O::FMinNM |
-            O::FCmp | O::FCmpE | O::FCCmp | O::FCCmpE |
-            O::FCSel => C::FpSimd,
+            O::MVN | O::MovZ | O::MovN | O::MovK | O::Mov | O::ABS => N::NoImplicit(2),
+            O::AdrP | O::Adr => N::ImplicitPC(2),
+
+            O::BFM | O::SBFM | O::UBFM | O::BFI | O::BFXIL | O::SBFX | O::UBFX | O::ExtR => {
+                N::NoImplicit(4)
+            }
+            O::BFC | O::SBFIZ | O::UBFIZ => N::NoImplicit(3),
+
+            O::ASR | O::LSL | O::LSR | O::ROR => N::NoImplicit(3),
+            O::SxtB | O::SxtH | O::SxtW | O::UxtB | O::UxtH | O::Neg => N::NoImplicit(2),
+
+            O::AddS | O::SubS | O::AndS | O::BicS => N::ImplicitCSR(3),
+            O::AddC | O::AddCS | O::SubC | O::SubCS => N::ImplicitCSR(3),
+            O::NegS | O::NegC | O::NegCS => N::ImplicitCSR(2),
+
+            O::MNeg | O::Mul | O::SMNegL | O::SMulL | O::SMulH => N::NoImplicit(3),
+            O::UMNegL | O::UMulL | O::UMulH | O::SDiv | O::UDiv => N::NoImplicit(3),
+
+            O::MAdd | O::MSub | O::SMAddL | O::SMSubL | O::UMAddL | O::UMSubL => N::NoImplicit(4),
+
+            O::ClS | O::ClZ | O::Cnt | O::CntZ => N::NoImplicit(2),
+            O::RBit | O::Rev | O::Rev16 | O::Rev32 | O::Rev64 => N::NoImplicit(2),
+
+            O::CSel | O::CSInc | O::CSInv | O::CSNeg => N::NoImplicit(3),
+            O::CSet | O::CSetM => N::ImplicitCSR(1),
+            O::CInc | O::CInv | O::CNeg => N::ImplicitCSR(2),
+            O::CCmp | O::CCmpN => N::ImplicitCSR(2),
+
+            O::FMov | O::FMovG | O::FCvt => N::NoImplicit(2),
+            O::FCvtAS | O::FCvtAU | O::FCvtMS | O::FCvtMU => N::NoImplicit(2),
+            O::FCvtNS | O::FCvtNU | O::FCvtPS | O::FCvtPU => N::NoImplicit(2),
+            O::FCvtZS | O::FCvtZU | O::FJCvtZS => N::NoImplicit(2),
+            O::SCvtF | O::UCvtF => N::NoImplicit(2),
+
+            O::FRIntA | O::FRIntI | O::FRIntN | O::FRIntP | O::FRIntX | O::FRIntZ => {
+                N::NoImplicit(2)
+            }
+            O::FRInt32X | O::FRInt32Z | O::FRInt64X | O::FRInt64Z => N::NoImplicit(2),
+
+            O::FMAdd | O::FMSub | O::FNMAdd | O::FNMSub => N::NoImplicit(4),
+            O::FAbs | O::FNeg | O::FSqrt => N::NoImplicit(2),
+            O::FAdd | O::FDiv | O::FMul | O::FNMul | O::FSub => N::NoImplicit(3),
+            O::FMax | O::FMaxNM | O::FMin | O::FMinNM => N::NoImplicit(3),
+
+            O::FCmp | O::FCmpE | O::FCCmp | O::FCCmpE => N::ImplicitCSR(2),
+            O::FCSel => N::ImplicitCSR(3),
+
+            O::Call | O::TailCall => N::Call(false),
+            O::CallIndirect => N::Call(true),
+
+            O::TabSwitch | O::BinSwitch => N::Switch,
         };
-    }
-
-    /// 这个操作码代表的指令可能会有多少个操作数.
-    /// 
-    /// 对于会读取或修改 CSR 的指令, CSR 会被当成一个额外的操作数.
-    /// 
-    /// 例如 `Add` 指令有 3 个操作数（2个源操作数和 1 个目的操作数）, 而
-    /// `AddS` `AddC` `AddCS` 这样的指令有 4 个操作数——
-    /// AddS 会写、AddC 会读、AddCS 会读写 CSR.
-    pub const fn get_n_operands(self) -> NumOperand {
-        type O = AArch64OP;
-        type N = NumOperand;
-        #[rustfmt::skip]
-        return match self {
-            O::BCond | O::BCCond => N::MustCSR(1), // 会读取 CSR
-            O::CBNZ  | O::CBZ | O::TBNZ | O::TBZ => N::MustCSR(2),
-            O::Branch | O::BLink  => N::Fix(1),
-            O::Ret | O::Nop | O::Yield => N::Fix(0),
-            
-            O::Ldr | O::LdrB | O::LdrSB | O::LdrH | O::LdrSH | O::LdrSW => N::Ldr,
-            O::Str | O::StrB | O::StrH => N::Ldr,
-
-            O::MRS | O::MSR => N::MustCSR(1),
-
-            O::Add | O::Sub | O::SMax | O::SMin | O::UMax | O::UMin => N::Fix(3),
-            O::Neg => N::Fix(2),
-            O::AddS | O::SubS => N::MustCSR(3),
-            O::Cmp  | O::CmpN | O::NegS => N::MustCSR(2),
-
-            O::AddC | O::AddCS | O::SubC | O::SubCS => N::MustCSR(3),
-            O::NegC | O::NegCS => N::MustCSR(2),
-
-            O::And | O::Bic | O::EON | O::EOr | O::Orr | O::OrN | O::ASRV | O::LSLV | O::LSRV | O::RORV => N::Fix(3),
-            O::AndS | O::BicS => N::MustCSR(3),
-            O::Test => N::MustCSR(2),
-            O::MovZ | O::MovN | O::MVN | O::MovK | O::Mov | O::ABS => N::Fix(2),
-
-            O::AdrP | O::Adr => N::Fix(2),
-
-            O::BFM | O::SBFM | O::UBFM | O::BFI | O::BFXIL | O::SBFIZ | O::SBFX | O::UBFIZ | O::UBFX => N::Fix(4),
-            O::BFC => N::Fix(3),
-            O::ASR | O::LSL | O::LSR | O::ROR | O::SxtB | O::SxtH | O::SxtW | O::UxtB | O::UxtH => N::Fix(2),
-
-            O::MAdd | O::MSub | O::SMAddL | O::SMSubL | O::UMAddL | O::UMSubL => N::Fix(4),
-            O::MNeg | O::Mul | O::SMNegL | O::SMulL | O::SMulH | O::UMNegL | O::UMulL | O::UMulH => N::Fix(3),
-
-            O::SDiv | O::UDiv => N::Fix(3),
-
-            O::ClS | O::ClZ | O::Cnt | O::CntZ | O::RBit | O::Rev | O::Rev16 | O::Rev32 | O::Rev64 => N::Fix(2),
-
-            O::CSel | O::CSInc | O::CSInv | O::CSNeg => N::MustCSR(3),
-            O::CSet | O::CSetM => N::MustCSR(1),
-            O::CInc | O::CInv | O::CNeg | O::CCmpN | O::CCmp => N::MustCSR(2),
-
-            _ => todo!()
-        };
-    }
-
-    pub const fn is_load(self) -> bool {
-        matches!(self, AArch64OP::Ldr | AArch64OP::LdrB | AArch64OP::LdrSB |
-                  AArch64OP::LdrH | AArch64OP::LdrSH | AArch64OP::LdrSW |
-                  AArch64OP::Ldp | AArch64OP::LdpSW)
-    }
-    pub const fn is_store(self) -> bool {
-        matches!(self, AArch64OP::Str | AArch64OP::StrB | AArch64OP::StrH |
-                  AArch64OP::Stp)
     }
 }
