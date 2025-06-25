@@ -5,11 +5,13 @@ use slab::Slab;
 use crate::{
     base::slablist::SlabRefList,
     mir::{
-        inst::switch::{BinSwitchTab, VecSwitchTab}, module::{
+        inst::switch::{BinSwitchTab, VecSwitchTab},
+        module::{
             block::{MirBlock, MirBlockRef},
             global::{Linkage, MirGlobalCommon, Section},
             stack::{MirStackLayout, VirtRegAlloc},
-        }, operand::reg::{PhysReg, VirtReg}
+        },
+        operand::reg::{PhysReg, VirtReg},
     },
     typing::{
         context::TypeContext,
@@ -95,11 +97,10 @@ impl MirFunc {
                 *reg_top += 1;
             } else {
                 // 使用栈传递参数
-                stack.push_arg(vreg_alloc, arg_ty);
+                stack.add_spilled_arg(arg_ty, vreg_alloc);
             }
         }
-
-        stack.update_arg_stack_top(4, true); // 16 字节对齐栈顶
+        stack.finish_arg_building();
     }
 
     /// 在虚拟寄存器 / 虚拟栈空间中添加一个变量，并返回其虚拟寄存器。
@@ -137,7 +138,8 @@ impl MirFunc {
             ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
                 // 结构体和数组类型的变量需要在栈上分配空间。
                 self.stack_layout
-                    .push_spilled_variable(&mut self.vreg_alloc, irtype, type_ctx)
+                    .add_variable(irtype, type_ctx, &mut self.vreg_alloc)
+                    .virtreg
             }
             _ => panic!(
                 "Invalid variable type for MIR function: {}",

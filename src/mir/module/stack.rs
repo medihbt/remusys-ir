@@ -5,146 +5,186 @@ use crate::{
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
+/// Represents an item in the MIR stack layout.
+/// Each item corresponds to a variable or argument in the function's stack frame.
 #[derive(Debug, Clone)]
 pub struct MirStackItem {
-    pub vreg:   VirtReg,
+    /// The type of the item, which determines its size and alignment.
     pub irtype: ValTypeID,
-    /// offset from `SP` in bytes.
+    /// The index of the item in the stack layout array.
+    pub index: usize,
+    /// The virtual register pointer to the stack slot.
+    pub virtreg: VirtReg,
+    /// The offset of the item in its own section inside the stack.
+    /// * If `is_arg` is false, this is the offset from the start of the stack frame.
+    /// * If `is_arg` is true, the real offset should add the `vars_size` to this value.
     pub offset: i64,
+    /// The size of the item in bytes.
     pub size: u64,
+    /// The size of the item in bytes, including padding for alignment.
+    pub size_with_padding: u64,
+    /// The log base 2 of the alignment of the item.
     pub align_log2: u8,
+    /// Whether the item is a spilled argument.
     pub is_arg: bool,
+}
+
+impl MirStackItem {
+    pub fn offset_from_sp(&self, layout: &MirStackLayout) -> i64 {
+        if self.is_arg {
+            self.offset + layout.vars_size as i64
+        } else {
+            self.offset
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MirStackLayout {
-    pub variables: Vec<MirStackItem>,
+    /// The stack layout for variables.
+    pub vars: Vec<MirStackItem>,
+    /// The stack layout for spilled arguments.
     pub args: Vec<MirStackItem>,
-    pub var_stack_size: u64,
-    pub args_stack_size: u64,
-    var_align_log2: u8,
-    arg_align_log2: u8,
+    /// The total size of the variables section in the stack frame.
+    pub vars_size: u64,
+    /// The total size of the arguments section in the stack frame.
+    pub args_size: u64,
+    finished_arg_build: bool,
 }
 
 impl MirStackLayout {
     pub fn new() -> Self {
         Self {
-            variables: Vec::new(),
+            vars: Vec::new(),
             args: Vec::new(),
-            var_stack_size: 0,
-            args_stack_size: 0,
-            var_align_log2: 0,
-            arg_align_log2: 0,
+            vars_size: 0,
+            args_size: 0,
+            finished_arg_build: false,
         }
     }
 
-    fn update_stack_top_aligned(
-        curr_size: u64,
-        curr_align_log2: u8,
-        new_align_log2: u8,
-    ) -> (u64, u8) {
-        let next_align_log2 = curr_align_log2.max(new_align_log2);
-        let next_align = 1u64 << next_align_log2;
+    /// Updates the stack top size based on the current size and alignment.
+    fn update_stack_top(curr_size: u64, align_log2: u8) -> u64 {
+        let next_align = 1u64 << align_log2;
         let pmask = next_align - 1;
         let nmask = !pmask;
         let new_size_base = curr_size & nmask;
-        let new_size = if curr_size & pmask != 0 {
+        if curr_size & pmask != 0 {
             new_size_base + next_align
         } else {
             new_size_base
-        };
-        (new_size, next_align_log2)
-    }
-    pub(super) fn update_arg_stack_top(&mut self, new_align_log2: u8, strict_aligned: bool) {
-        let curr_align_log2 = if strict_aligned {
-            self.var_align_log2
-        } else {
-            0
-        };
-        let (new_size, _) =
-            Self::update_stack_top_aligned(self.args_stack_size, curr_align_log2, new_align_log2);
-        self.args_stack_size = new_size;
-    }
-    fn update_var_stack_top(&mut self, new_align_log2: u8, strict_aligned: bool) {
-        let curr_align_log2 = if strict_aligned {
-            self.arg_align_log2
-        } else {
-            0
-        };
-        let (new_size, _) =
-            Self::update_stack_top_aligned(self.var_stack_size, curr_align_log2, new_align_log2);
-        self.var_stack_size = new_size;
+        }
     }
 
-    pub(super) fn push_arg(
+    /// Adds a spilled argument to the stack layout.
+    pub fn add_spilled_arg(
         &mut self,
+        irtype: ValTypeID,
         vreg_alloc: &mut VirtRegAlloc,
-        // passes primitive types and pointer only.
-        arg_ty: ValTypeID,
-    ) -> VirtReg {
-        let (is_float, size, align_log2) = match arg_ty {
-            ValTypeID::Ptr => (false, 8, 3),
-            ValTypeID::Int(bits) => (false, Self::round_to(bits), Self::round_to(bits)),
-            ValTypeID::Float(fpkind) => match fpkind {
-                FloatTypeKind::Ieee32 => (true, 4, 2),
-                FloatTypeKind::Ieee64 => (true, 8, 3),
+    ) -> &mut MirStackItem {
+        assert!(
+            self.finished_arg_build == false,
+            "Cannot add more args after building the stack layout"
+        );
+        let (natural_size, natural_align_log2) = match irtype {
+            ValTypeID::Ptr => (8, 3),
+            ValTypeID::Int(bits) => match bits {
+                8 => (1, 0),
+                16 => (2, 1),
+                32 => (4, 2),
+                64 => (8, 3),
+                _ => panic!("Unsupported integer size: {}", bits),
             },
-            _ => panic!("Invalid argument type for stack layout: {arg_ty:?}"),
+            ValTypeID::Float(fp_kind) => match fp_kind {
+                FloatTypeKind::Ieee32 => (4, 2),
+                FloatTypeKind::Ieee64 => (8, 3),
+            },
+            _ => panic!("Requires ptr/int/float as args but got `{irtype:?}`"),
         };
-        let vreg = vreg_alloc.alloc(is_float);
-        vreg.subreg_index_mut().set_bits_log2(align_log2);
-        self.update_arg_stack_top(align_log2, false);
-        let arg_item = MirStackItem {
-            vreg: vreg.clone(),
-            irtype: arg_ty,
-            offset: self.args_stack_size as i64,
+
+        let size = natural_size.max(8);
+        let align_log2 = natural_align_log2.max(3);
+        let new_top = Self::update_stack_top(self.args_size, align_log2);
+        let item = MirStackItem {
+            irtype,
+            index: self.args.len(),
+            /* this `virtreg` is a pointer to the stack slot, not a register */
+            virtreg: *vreg_alloc.alloc(false),
+            offset: new_top as i64,
             size: size as u64,
-            align_log2,
+            // Placeholder, will be updated on `finish_arg_building()`
+            size_with_padding: 0,
+            align_log2: align_log2 as u8,
             is_arg: true,
         };
-        self.args.push(arg_item);
-        self.args_stack_size += size as u64;
-        vreg.clone()
+        self.args_size = new_top + size as u64;
+        self.args.push(item);
+        self.args.last_mut().unwrap()
     }
 
-    /// Pushes a variable onto the stack and returns a pointer to the allocated virtual register.
-    pub(super) fn push_spilled_variable(
+    pub fn finish_arg_building(&mut self) {
+        if self.finished_arg_build {
+            return;
+        }
+        self.finished_arg_build = true;
+
+        // Align the args size to 16.
+        self.args_size = Self::update_stack_top(self.args_size, 4);
+        // Calculate the size with padding for each argument
+        let nargs = self.args.len();
+        if nargs == 0 {
+            return;
+        }
+        let args = self.args.as_mut_slice();
+        for i in 1..nargs {
+            let curr_offset = args[i - 1].offset;
+            let next_offset = args[i].offset;
+            args[i - 1].size_with_padding = (next_offset - curr_offset) as u64;
+        }
+        // The last argument's size is the remaining space in the stack frame
+        if let Some(last_arg) = self.args.last_mut() {
+            last_arg.size_with_padding = self.args_size - last_arg.offset as u64;
+        }
+    }
+
+    pub fn add_variable(
         &mut self,
-        vreg_alloc: &mut VirtRegAlloc,
         irtype: ValTypeID,
         type_ctx: &TypeContext,
-    ) -> VirtReg {
+        vreg_alloc: &mut VirtRegAlloc,
+    ) -> &mut MirStackItem {
         let size = irtype.get_instance_size(type_ctx);
         let align = irtype.get_instance_align(type_ctx);
-        let (size_bytes, align_log2) = match (size, align) {
-            (Some(s), Some(a)) => (s, a.trailing_zeros() as u8),
-            _ => panic!("Invalid type for variable allocation: {irtype:?}"),
+
+        let (size, align_log2) = match (size, align) {
+            (Some(size), Some(align)) if align.is_power_of_two() => {
+                (size, align.trailing_zeros() as u8)
+            }
+            _ => panic!(
+                "Invalid size or alignment for type `{irtype:?}`: size={size:?}, align={align:?}",
+            ),
         };
-        // returns pointer to the allocated virtual register.
-        let vreg = vreg_alloc.alloc_gp();
-        // aarch64 pointers are 64 bits (1 << 6).
-        vreg.subreg_index_mut().insert_bits_log2(6);
-        let vreg = vreg.clone();
-        self.update_var_stack_top(align_log2, false);
-        let var_item = MirStackItem {
-            vreg,
+        let new_top = Self::update_stack_top(self.vars_size, align_log2);
+        if let Some(prev_top) = self.vars.last_mut() {
+            // Update the previous top item to reflect the new size
+            // This is necessary to ensure that the size_with_padding is correct
+            // for the previous item after adding a new item.
+            let prev_offset = prev_top.offset;
+            prev_top.size_with_padding = (new_top as i64 - prev_offset) as u64;
+        }
+        let item = MirStackItem {
             irtype,
-            offset: self.var_stack_size as i64,
-            size: size_bytes as u64,
+            index: self.vars.len(),
+            virtreg: *vreg_alloc.alloc(matches!(irtype, ValTypeID::Float(_))),
+            offset: new_top as i64,
+            size: size as u64,
+            size_with_padding: size as u64, // Placeholder, will be updated later
             align_log2,
             is_arg: false,
         };
-        self.variables.push(var_item);
-        self.var_stack_size += size_bytes as u64;
-        vreg
-    }
-
-    fn round_to(bits: u8) -> u8 {
-        if bits == 0 {
-            0
-        } else {
-            (bits - 1).next_power_of_two().trailing_zeros() as u8
-        }
+        self.vars_size = new_top + size as u64;
+        self.vars.push(item);
+        self.vars.last_mut().unwrap()
     }
 }
 

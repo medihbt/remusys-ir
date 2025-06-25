@@ -18,7 +18,6 @@ pub mod block;
 pub mod func;
 pub mod global;
 pub mod stack;
-pub mod stack_new;
 
 /// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
 #[derive(Debug)]
