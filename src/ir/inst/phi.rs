@@ -194,6 +194,36 @@ impl PhiOp {
         u
     }
 
+    pub fn replace_from_bb_with_new(
+        &self,
+        from_bb: BlockRef,
+        new_from_bb: BlockRef,
+        module: &Module,
+    ) -> bool {
+        if from_bb == new_from_bb {
+            return true; // No change
+        }
+        let mut from = self.from.borrow_mut();
+        let from = &mut *from;
+        let from_ref = if let Some(i) = from.iter().position(|op| op.from_bb == from_bb) {
+            &mut from[i]
+        } else {
+            return false; // No such from_bb
+        };
+        from_ref.from_bb = new_from_bb;
+        from_ref
+            .from_bb_use
+            .set_operand(module, ValueSSA::Block(new_from_bb));
+        from_ref
+            .from_value_use
+            .kind_by_module(module)
+            .set(UseKind::PhiIncomingValue {
+                from_bb: new_from_bb,
+                from_bb_use: from_ref.from_bb_use,
+            });
+        true
+    }
+
     pub fn new(ret_type: ValTypeID, module: &Module) -> (InstDataCommon, Self) {
         (
             InstDataCommon::new(Opcode::Phi, ret_type, &mut module.borrow_use_alloc_mut()),

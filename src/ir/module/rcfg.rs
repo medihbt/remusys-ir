@@ -44,6 +44,9 @@ impl RcfgPerBlock {
             comes_from.remove(pos);
         }
     }
+    pub fn n_preds(&self) -> usize {
+        self.preds.borrow().len()
+    }
 
     pub fn dump_pred_blocks(
         &self,

@@ -887,8 +887,8 @@ impl IRBuilder {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
-            let (alloc, ret) = Ret::new(&self.module, ret_value);
-            self.focus_replace_terminator_with(InstData::Ret(alloc, ret))
+            let (common, ret) = Ret::new(&self.module, ret_value);
+            self.focus_replace_terminator_with(InstData::Ret(common, ret))
         }
     }
 
@@ -908,8 +908,8 @@ impl IRBuilder {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
-            let (alloc, jmp) = Jump::new(&self.module, jump_to);
-            self.focus_replace_terminator_with(InstData::Jump(alloc, jmp))
+            let (common, jmp) = Jump::new(&self.module, jump_to);
+            self.focus_replace_terminator_with(InstData::Jump(common, jmp))
         }
     }
 
@@ -931,8 +931,8 @@ impl IRBuilder {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
-            let (alloc, br) = Br::new(&self.module, cond, if_true, if_false);
-            self.focus_replace_terminator_with(InstData::Br(alloc, br))
+            let (common, br) = Br::new(&self.module, cond, if_true, if_false);
+            self.focus_replace_terminator_with(InstData::Br(common, br))
         }
     }
 

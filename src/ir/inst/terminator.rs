@@ -512,6 +512,20 @@ impl TerminatorInstRef {
         self.0
     }
 
+    pub fn get_n_jump_targets(self, alloc_inst: &Slab<InstData>) -> usize {
+        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        match inst_data {
+            InstData::Jump(..) => 1,
+            InstData::Br(..) => 2,
+            InstData::Switch(_, sw) => sw.get_n_jump_targets(),
+            InstData::Ret(..) | InstData::Unreachable(_) => 0,
+            _ => panic!(
+                "InstRef {:?} is not a terminator instruction",
+                inst_data.get_opcode()
+            ),
+        }
+    }
+
     pub fn get_jump_targets_from_alloc_inst<'a>(
         &self,
         alloc_inst: &'a Slab<InstData>,

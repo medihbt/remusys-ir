@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 
 use slab::Slab;
 
@@ -140,6 +140,14 @@ impl UseRef {
         if !operand.is_none() {
             Self::_handle_setop_err(module.operand_add_use(operand, self.clone()));
         }
+    }
+
+    pub fn kind<'a>(self, alloc: &'a Slab<UseData>) -> &'a Cell<UseKind> {
+        &self.to_slabref_unwrap(alloc).kind
+    }
+    pub fn kind_by_module<'a>(self, module: &'a Module) -> Ref<'a, Cell<UseKind>> {
+        let use_alloc = module.borrow_use_alloc();
+        Ref::map(use_alloc, |alloc| &self.to_slabref_unwrap(alloc).kind)
     }
 
     fn _handle_setop_err(res: Result<(), ModuleError>) {
