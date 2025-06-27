@@ -22,6 +22,7 @@ use crate::ir::{
 ///
 /// This snapshot will include all the blocks in one function, whether they are
 /// reachable or not.
+#[derive(Debug, Clone)]
 pub struct CfgSnapshot {
     /// All nodes sorted by `BlockRef` handle number.
     pub nodes: Box<[CfgSnapshotNode]>,
@@ -30,6 +31,7 @@ pub struct CfgSnapshot {
     pub entry: BlockRef,
 }
 
+#[derive(Debug, Clone)]
 pub struct CfgSnapshotNode {
     pub block: BlockRef,
 

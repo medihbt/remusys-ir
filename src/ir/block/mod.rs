@@ -41,6 +41,13 @@ impl BlockRef {
     pub const fn is_vexit(self) -> bool {
         self.0 == usize::MAX - 1
     }
+
+    pub fn get_parent_func(self, alloc: &Slab<BlockData>) -> GlobalRef {
+        self.to_slabref_unwrap(alloc).get_parent_func()
+    }
+    pub fn module_get_parent_func(self, module: &Module) -> GlobalRef {
+        self.get_parent_func(&module.borrow_value_alloc().alloc_block)
+    }
 }
 
 impl SlabRefListNodeRef for BlockRef {
