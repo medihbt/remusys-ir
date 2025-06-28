@@ -86,16 +86,15 @@ impl<'a> AsmWriter<'a> {
         let mut extern_globals = Vec::with_capacity(16);
 
         self.indent_level.set(1);
-        for (index, mod_item) in module.items.iter().enumerate() {
+        for &mod_item_ref in &module.items {
+            let mod_item = mod_item_ref.data_from_module(module);
             let common = mod_item.get_common();
             let section = common.section;
             let align_log2 = common.align_log2;
-
             if common.linkage == Linkage::Extern {
-                extern_globals.push(index);
+                extern_globals.push(mod_item_ref);
                 continue;
-            };
-
+            }
             if section != global_status.last_section {
                 self.wrap_indent();
                 self.write_str(&format!(".section {}", section.asm_name()));
@@ -106,7 +105,7 @@ impl<'a> AsmWriter<'a> {
                 self.write_str(&format!(".align {}", align_log2));
                 global_status.last_align_log2 = align_log2;
             }
-            match mod_item {
+            match &*mod_item {
                 ModuleItem::Variable(gvar) => self.write_variable(gvar),
                 ModuleItem::UnnamedData(gdata) => self.write_global_data(gdata),
                 ModuleItem::Function(func) => self.write_function(module, func),
@@ -226,7 +225,7 @@ impl<'a> AsmWriter<'a> {
             self.write_fmt(format_args!(".size {}, .-{}", func_name, func_name));
         }
 
-        for vec_switch_tab in &func.vec_switch_tabs {
+        for vec_switch_tab in &*func.borrow_vec_switch_tabs() {
             self.indent_level.set(0);
             self.wrap_indent();
             self.write_fmt(format_args!(
@@ -237,7 +236,7 @@ impl<'a> AsmWriter<'a> {
             self.wrap_indent();
             self.format_vec_switch_tab(&istat, vec_switch_tab);
         }
-        for bin_switch_tab in &func.bin_switch_tabs {
+        for bin_switch_tab in &*func.borrow_bin_switch_tabs() {
             self.wrap_indent();
             self.format_bin_switch_tab(
                 &istat,
@@ -259,7 +258,7 @@ impl<'a> AsmWriter<'a> {
                 .write_str(":");
             self.indent_level.set(1);
         }
-        for inst in block.insts.iter() {
+        for (_, inst) in block.insts.view(&istat.module.borrow_alloc_inst()) {
             self.wrap_indent();
             self.write_inst(istat, inst);
         }
@@ -446,9 +445,12 @@ impl<'a> AsmWriter<'a> {
                     let alloc_bb = istat.module.borrow_alloc_block();
                     self.write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
                 }
-                SymbolOperand::Global(index) => {
-                    let global = &istat.module.items[index as usize];
-                    self.write_str(global.get_name().unwrap_or("<unnnamed>"))
+                SymbolOperand::Global(item) => {
+                    let name = item.get_name(istat.module);
+                    match name {
+                        Some(name) => self.write_str(name.as_str()),
+                        None => self.write_str("<unnamed>"),
+                    }
                 }
             },
             MirOperand::Label(bb) => {
@@ -456,7 +458,10 @@ impl<'a> AsmWriter<'a> {
                 self.write_str(bb.to_slabref_unwrap(&alloc_bb).name.as_str())
             }
             MirOperand::VecSwitchTab(index) => {
-                let vec_switch_tab = &istat.parent_func.vec_switch_tabs[index];
+                let vec_switch_tab = istat
+                    .parent_func
+                    .get_vec_switch_tab(index)
+                    .expect("Invalid VecSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     "_Z{}switch_tab.v{}",
                     istat.parent_func.common.name.len(),
@@ -464,7 +469,10 @@ impl<'a> AsmWriter<'a> {
                 ))
             }
             MirOperand::BinSwitchTab(index) => {
-                let bin_switch_tab = &istat.parent_func.bin_switch_tabs[index];
+                let bin_switch_tab = istat
+                    .parent_func
+                    .get_bin_switch_tab(index)
+                    .expect("Invalid BinSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     "_Z{}switch_tab.b{}",
                     istat.parent_func.common.name.len(),
@@ -560,13 +568,15 @@ impl<'a> AsmWriter<'a> {
         type S = SymbolOperand;
         match imm {
             MirOperand::ImmConst(value) => self.write_fmt(format_args!("#{}", value)),
-            MirOperand::Symbol(SymbolOperand::Global(index)) => {
-                let global = &istat.module.items[index as usize];
-                if global.is_extern() {
+            MirOperand::Symbol(SymbolOperand::Global(item)) => {
+                if item.is_extern(istat.module) {
                     self.write_str(":got");
                 }
-                self.write_str(":lo12:")
-                    .write_str(global.get_name().unwrap_or("<unnnamed>"))
+                self.write_str(":lo12:").write_str(
+                    item.get_name(istat.module)
+                        .unwrap_or("<unnamed>".into())
+                        .as_str(),
+                )
             }
             M::Symbol(S::Label(label)) | M::Label(label) => {
                 let alloc_bb = istat.module.borrow_alloc_block();
@@ -574,7 +584,10 @@ impl<'a> AsmWriter<'a> {
                     .write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
             }
             MirOperand::VecSwitchTab(index) => {
-                let vec_switch_tab = &istat.parent_func.vec_switch_tabs[index];
+                let vec_switch_tab = istat
+                    .parent_func
+                    .get_vec_switch_tab(index)
+                    .expect("Invalid VecSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     ":lo12:_Z{}switch_tab.v{}",
                     istat.parent_func.common.name.len(),
@@ -582,7 +595,10 @@ impl<'a> AsmWriter<'a> {
                 ))
             }
             MirOperand::BinSwitchTab(index) => {
-                let bin_switch_tab = &istat.parent_func.bin_switch_tabs[index];
+                let bin_switch_tab = istat
+                    .parent_func
+                    .get_bin_switch_tab(index)
+                    .expect("Invalid BinSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     ":lo12:_Z{}switch_tab.b{}",
                     istat.parent_func.common.name.len(),
