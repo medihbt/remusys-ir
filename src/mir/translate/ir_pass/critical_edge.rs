@@ -112,15 +112,25 @@ fn collect_critical_edges_in_func(ir_module: &Module, func: GlobalRef) -> Critic
             }
             let edges_left = critical_edges.edges.len() as u32;
             critical_edges.edges.push(jt_ref);
+            let new_edge = EdgeCriticalInfo {
+                from: from_bb,
+                to: to_bb,
+                edge_left: edges_left,
+                edge_right: edges_left + 1
+            };
             if let Some(edge_info) = critical_edges.info.last_mut() {
                 if edge_info.from == from_bb {
                     edge_info.edge_right += 1;
+                } else {
+                    critical_edges.info.push(new_edge);
                 }
+            } else {
+                critical_edges.info.push(new_edge);
             }
         }
     }
 
-    ()
+    critical_edges
 }
 
 // pub fn collect_critical_edges(ir_module: &Module) -> Vec<CriticalEdgeInfo> {
