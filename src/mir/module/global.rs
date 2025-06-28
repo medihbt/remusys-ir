@@ -1,7 +1,8 @@
 use std::cell::Cell;
 
 use crate::{
-    mir::module::MirModule,
+    base::{NullableValue, slablist::SlabRefListNodeHead},
+    mir::module::ModuleItemRef,
     typing::{context::TypeContext, id::ValTypeID},
 };
 
@@ -46,6 +47,8 @@ pub enum Linkage {
 
 #[derive(Debug, Clone)]
 pub struct MirGlobalCommon {
+    /// Slab RefList Head
+    pub node_head: Cell<SlabRefListNodeHead>,
     /// Useless when name is empty (e.g. when this global data is "unnamed global data" pesudo op).
     pub name: String,
     /// Section where this global data resides.
@@ -57,18 +60,19 @@ pub struct MirGlobalCommon {
     /// Size of the global data in bytes.
     pub size: usize,
     /// Index of the global data in the module. `u32::MAX` means not set.
-    pub(super) index: Cell<u32>,
+    pub(super) self_ref: Cell<ModuleItemRef>,
 }
 
 impl MirGlobalCommon {
     pub fn new(name: String, section: Section, align_log2: u8, linkage: Linkage) -> Self {
         Self {
+            node_head: Cell::new(SlabRefListNodeHead::new()),
             name,
             section,
             linkage,
             align_log2,
             size: 0,
-            index: Cell::new(u32::MAX), // Default to MAX to indicate not set
+            self_ref: Cell::new(ModuleItemRef::new_null()), // Default to MAX to indicate not set
         }
     }
     pub fn get_align(&self) -> usize {
@@ -77,25 +81,11 @@ impl MirGlobalCommon {
     pub fn has_name(&self) -> bool {
         !self.name.is_empty()
     }
-    pub fn get_optional_index(&self) -> Option<u32> {
-        if self.index.get() == u32::MAX {
-            None
-        } else {
-            Some(self.index.get())
-        }
+    pub fn get_self_ref(&self) -> ModuleItemRef {
+        self.self_ref.get()
     }
-    pub fn get_index(&self, parent_module: &MirModule) -> u32 {
-        let index = self.index.get();
-        if index != u32::MAX {
-            return index;
-        }
-        // Refresh the index from the parent module.
-        parent_module.refresh_indices();
-        let index = self.index.get();
-        if index == u32::MAX {
-            panic!("global object NOT plugged in module: {self:?}");
-        }
-        index
+    pub fn set_self_ref(&self, self_ref: ModuleItemRef) {
+        self.self_ref.set(self_ref);
     }
 }
 

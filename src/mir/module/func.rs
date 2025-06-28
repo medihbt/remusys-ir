@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
 
 use slab::Slab;
 
@@ -28,10 +28,15 @@ pub struct MirFunc {
     pub ret_ir_type: ValTypeID,
 
     pub arg_regs: Vec<PhysReg>,
+    pub blocks: SlabRefList<MirBlockRef>,
+
+    inner: RefCell<MirFuncInner>,
+}
+
+#[derive(Debug)]
+pub struct MirFuncInner {
     pub stack_layout: MirStackLayout,
     pub vreg_alloc: VirtRegAlloc,
-
-    pub blocks: SlabRefList<MirBlockRef>,
     pub vec_switch_tabs: Vec<Rc<VecSwitchTab>>,
     pub bin_switch_tabs: Vec<Rc<BinSwitchTab>>,
 }
@@ -54,11 +59,13 @@ impl MirFunc {
             arg_ir_types,
             ret_ir_type,
             arg_regs,
-            stack_layout,
-            vreg_alloc,
             blocks: SlabRefList::new_guide(),
-            vec_switch_tabs: Vec::new(),
-            bin_switch_tabs: Vec::new(),
+            inner: RefCell::new(MirFuncInner {
+                stack_layout,
+                vreg_alloc,
+                vec_switch_tabs: Vec::new(),
+                bin_switch_tabs: Vec::new(),
+            }),
         }
     }
     pub fn new_define(
@@ -108,10 +115,12 @@ impl MirFunc {
     /// 如果变量是整数、浮点或者指针这类一个寄存器就能装下并且没有什么内部结构的类型, 直接分配寄存器返回即可
     /// 除此之外, 结构体和数组类型的变量需要在栈上分配空间, 返回一个指向栈上分配的虚拟寄存器。
     pub fn add_variable(&mut self, irtype: ValTypeID, type_ctx: &TypeContext) -> VirtReg {
+        let mut inner = self.inner.borrow_mut();
+        let inner = &mut *inner;
         match irtype {
             ValTypeID::Ptr => {
                 // 指针类型的变量需要分配一个虚拟寄存器。
-                let vreg = self.vreg_alloc.alloc_gp();
+                let vreg = inner.vreg_alloc.alloc_gp();
                 vreg.subreg_index_mut().insert_bits_log2(6); // aarch64
                 vreg.clone()
             }
@@ -121,14 +130,14 @@ impl MirFunc {
                 if bits > 64 || !bits.is_power_of_two() {
                     panic!("Unsupported integer type for MIR function: {irtype:?}");
                 }
-                let vreg = self.vreg_alloc.alloc_gp();
+                let vreg = inner.vreg_alloc.alloc_gp();
                 vreg.subreg_index_mut()
                     .insert_bits_log2(bits.trailing_zeros() as u8);
                 vreg.clone()
             }
             ValTypeID::Float(fpkind) => {
                 // 浮点类型的变量需要分配一个虚拟寄存器。
-                let vreg = self.vreg_alloc.alloc_float();
+                let vreg = inner.vreg_alloc.alloc_float();
                 vreg.subreg_index_mut().insert_bits_log2(match fpkind {
                     FloatTypeKind::Ieee32 => 5, // 32 bits
                     FloatTypeKind::Ieee64 => 6, // 64 bits
@@ -137,8 +146,8 @@ impl MirFunc {
             }
             ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
                 // 结构体和数组类型的变量需要在栈上分配空间。
-                self.stack_layout
-                    .add_variable(irtype, type_ctx, &mut self.vreg_alloc)
+                inner.stack_layout
+                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
                     .virtreg
             }
             _ => panic!(
@@ -153,5 +162,37 @@ impl MirFunc {
     }
     pub fn is_define(&self) -> bool {
         self.blocks.is_valid()
+    }
+
+    pub fn borrow_inner(&self) -> Ref<MirFuncInner> {
+        self.inner.borrow()
+    }
+    pub fn borrow_inner_mut(&self) -> RefMut<MirFuncInner> {
+        self.inner.borrow_mut()
+    }
+
+    pub fn borrow_vec_switch_tabs(&self) -> Ref<Vec<Rc<VecSwitchTab>>> {
+        Ref::map(self.inner.borrow(), |inner| &inner.vec_switch_tabs)
+    }
+    pub fn borrow_bin_switch_tabs(&self) -> Ref<Vec<Rc<BinSwitchTab>>> {
+        Ref::map(self.inner.borrow(), |inner| &inner.bin_switch_tabs)
+    }
+    pub fn add_vec_switch_tab(&self, tab: Rc<VecSwitchTab>) -> usize {
+        let mut inner = self.inner.borrow_mut();
+        let ret = inner.vec_switch_tabs.len();
+        inner.vec_switch_tabs.push(tab);
+        ret
+    }
+    pub fn add_bin_switch_tab(&self, tab: Rc<BinSwitchTab>) -> usize {
+        let mut inner = self.inner.borrow_mut();
+        let ret = inner.bin_switch_tabs.len();
+        inner.bin_switch_tabs.push(tab);
+        ret
+    }
+    pub fn get_vec_switch_tab(&self, index: usize) -> Option<Rc<VecSwitchTab>> {
+        self.inner.borrow().vec_switch_tabs.get(index).cloned()
+    }
+    pub fn get_bin_switch_tab(&self, index: usize) -> Option<Rc<BinSwitchTab>> {
+        self.inner.borrow().bin_switch_tabs.get(index).cloned()
     }
 }

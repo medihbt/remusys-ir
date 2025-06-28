@@ -1,5 +1,9 @@
 use crate::{
-    base::slablist::{SlabRefListNode, SlabRefListNodeHead},
+    base::{
+        slablist::{SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slabref::SlabRef,
+    },
+    impl_slabref,
     mir::{
         inst::{
             branch::{BLink, CondBr, RegCondBr, UncondBr},
@@ -12,10 +16,12 @@ use crate::{
             opcode::MirOP,
             switch::{BinSwitch, TabSwitch},
         },
+        module::MirModule,
         operand::MirOperand,
     },
 };
-use std::cell::Cell;
+use slab::Slab;
+use std::cell::{Cell, Ref};
 
 pub mod branch;
 pub mod call;
@@ -146,5 +152,67 @@ impl SlabRefListNode for MirInst {
     }
     fn store_node_head(&self, node_head: SlabRefListNodeHead) {
         self.get_common().node_head.set(node_head);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MirInstRef(usize);
+impl_slabref!(MirInstRef, MirInst);
+
+impl SlabRefListNodeRef for MirInstRef {
+    fn on_node_push_next(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+    fn on_node_unplug(_: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+        Ok(())
+    }
+}
+
+impl MirInstRef {
+    pub fn from_alloc(alloc: &mut Slab<MirInst>, data: MirInst) -> Self {
+        let index = alloc.insert(data);
+        if index == usize::MAX {
+            panic!("Failed to allocate MirInst in slab");
+        }
+        MirInstRef(index)
+    }
+    pub fn from_module(module: &MirModule, data: MirInst) -> Self {
+        let mut alloc = module.borrow_alloc_inst_mut();
+        MirInstRef::from_alloc(&mut alloc, data)
+    }
+
+    pub fn get_common(self, alloc: &Slab<MirInst>) -> &MirInstCommon {
+        self.to_slabref_unwrap(alloc).get_common()
+    }
+    pub fn get_opcode(self, alloc: &Slab<MirInst>) -> MirOP {
+        self.get_common(alloc).opcode
+    }
+    pub fn operands(self, alloc: &Slab<MirInst>) -> &[Cell<MirOperand>] {
+        self.to_slabref_unwrap(alloc).operands()
+    }
+    pub fn noperands(self, alloc: &Slab<MirInst>) -> usize {
+        self.operands(alloc).len()
+    }
+
+    pub fn data_from_module(self, module: &MirModule) -> Ref<MirInst> {
+        let alloc = module.borrow_alloc_inst();
+        Ref::map(alloc, |a| a.get(self.0).expect("Invalid MirInstRef"))
+    }
+    pub fn get_common_from_module(self, module: &MirModule) -> Ref<MirInstCommon> {
+        let alloc = module.borrow_alloc_inst();
+        Ref::map(alloc, |a| self.get_common(a))
+    }
+    pub fn get_opcode_from_module(self, module: &MirModule) -> MirOP {
+        self.get_common_from_module(module).opcode
+    }
+    pub fn operands_from_module(self, module: &MirModule) -> Ref<[Cell<MirOperand>]> {
+        let alloc = module.borrow_alloc_inst();
+        Ref::map(alloc, |a| self.operands(a))
+    }
+    pub fn noperands_from_module(self, module: &MirModule) -> usize {
+        self.operands_from_module(module).len()
     }
 }

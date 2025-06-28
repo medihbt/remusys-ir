@@ -6,9 +6,9 @@ use crate::mir::{
     },
 };
 
-pub mod immediate;
-pub mod reg;
-pub mod symbol;
+pub(super) mod immediate;
+pub(super) mod reg;
+pub(super) mod symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MirOperand {

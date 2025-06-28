@@ -7,17 +7,20 @@ use slab::Slab;
 
 use crate::{
     base::slabref::SlabRef,
-    mir::module::{
-        block::{MirBlock, MirBlockRef},
-        func::MirFunc,
-        global::{Linkage, MirGlobalCommon, MirGlobalData, MirGlobalVariable},
+    mir::{
+        inst::MirInst,
+        module::{
+            block::MirBlock,
+            func::MirFunc,
+            global::{Linkage, MirGlobalCommon, MirGlobalData, MirGlobalVariable},
+        },
     },
 };
 
-pub mod block;
-pub mod func;
-pub mod global;
-pub mod stack;
+pub(super) mod block;
+pub(super) mod func;
+pub(super) mod global;
+pub(super) mod stack;
 
 /// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
 #[derive(Debug)]
@@ -26,6 +29,70 @@ pub enum ModuleItem {
     UnnamedData(MirGlobalData),
     Function(Rc<MirFunc>),
     Useless,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModuleItemRef(u32);
+
+impl SlabRef for ModuleItemRef {
+    type RefObject = ModuleItem;
+    fn from_handle(handle: usize) -> Self {
+        ModuleItemRef(handle as u32)
+    }
+    fn get_handle(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl ModuleItemRef {
+    pub fn from_alloc(alloc: &mut Slab<ModuleItem>, data: ModuleItem) -> Self {
+        let index = alloc.insert(data);
+        if index == usize::MAX {
+            panic!("Failed to allocate ModuleItem in slab");
+        }
+        let ret = Self(index as u32);
+        ret.read_slabref(alloc, |data| {
+            data.get_common().set_self_ref(ret);
+        });
+        ret
+    }
+    pub fn from_module(module: &MirModule, data: ModuleItem) -> Self {
+        let mut alloc = module.borrow_alloc_item_mut();
+        ModuleItemRef::from_alloc(&mut alloc, data)
+    }
+
+    pub fn data_from_module(self, module: &MirModule) -> Ref<ModuleItem> {
+        let alloc = module.borrow_alloc_item();
+        Ref::map(alloc, |a| {
+            a.get(self.0 as usize).expect("Invalid ModuleItemRef")
+        })
+    }
+    pub fn force_as_func(self, module: &MirModule) -> Rc<MirFunc> {
+        let item = self.data_from_module(module);
+        match &*item {
+            ModuleItem::Function(func) => func.clone(),
+            _ => panic!("Expected a function, but found a different item type"),
+        }
+    }
+    pub fn force_as_variable(self, module: &MirModule) -> Rc<MirGlobalVariable> {
+        let item = self.data_from_module(module);
+        match &*item {
+            ModuleItem::Variable(var) => var.clone(),
+            _ => panic!("Expected a variable, but found a different item type"),
+        }
+    }
+
+    pub fn get_common(self, module: &MirModule) -> Ref<MirGlobalCommon> {
+        let item = self.data_from_module(module);
+        Ref::map(item, |item| item.get_common())
+    }
+    pub fn get_name(self, module: &MirModule) -> Option<String> {
+        self.data_from_module(module).get_name().map(str::to_string)
+    }
+
+    pub fn is_extern(self, module: &MirModule) -> bool {
+        self.get_common(module).linkage == Linkage::Extern
+    }
 }
 
 impl ModuleItem {
@@ -44,18 +111,23 @@ impl ModuleItem {
     pub fn is_extern(&self) -> bool {
         self.get_common().linkage == Linkage::Extern
     }
+    pub fn is_uselsss(&self) -> bool {
+        matches!(self, ModuleItem::Useless)
+    }
 }
 
 #[derive(Debug)]
 pub struct MirModule {
     pub name: String,
-    pub items: Vec<ModuleItem>,
+    pub items: Vec<ModuleItemRef>,
     pub allocs: RefCell<MirAllocs>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MirAllocs {
     pub block: Slab<MirBlock>,
+    pub inst: Slab<MirInst>,
+    pub item: Slab<ModuleItem>,
 }
 
 impl MirModule {
@@ -63,20 +135,19 @@ impl MirModule {
         MirModule {
             name,
             items: Vec::new(),
-            allocs: RefCell::new(MirAllocs { block: Slab::new() }),
+            allocs: RefCell::new(MirAllocs {
+                block: Slab::new(),
+                inst: Slab::new(),
+                item: Slab::new(),
+            }),
         }
     }
 
-    pub fn add_item(&mut self, item: ModuleItem) {
-        item.get_common().index.set(self.items.len() as u32);
-        self.items.push(item);
-    }
-
-    pub fn refresh_indices(&self) {
-        for (index, item) in self.items.iter().enumerate() {
-            let index_cell = &item.get_common().index;
-            index_cell.set(index as u32);
-        }
+    pub fn add_item(&mut self, item: ModuleItem) -> ModuleItemRef {
+        let alloc_item = &mut self.allocs.get_mut().item;
+        let item_ref = ModuleItemRef::from_alloc(alloc_item, item);
+        self.items.push(item_ref);
+        item_ref
     }
 
     pub fn borrow_alloc_block(&self) -> Ref<Slab<MirBlock>> {
@@ -85,24 +156,16 @@ impl MirModule {
     pub fn borrow_alloc_block_mut(&self) -> RefMut<Slab<MirBlock>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.block)
     }
-
-    pub fn insert_block(&self, block: MirBlock) -> MirBlockRef {
-        let mut allocs = self.borrow_alloc_block_mut();
-        let index = allocs.insert(block);
-        MirBlockRef::from_handle(index)
+    pub fn borrow_alloc_inst(&self) -> Ref<Slab<MirInst>> {
+        Ref::map(self.allocs.borrow(), |allocs| &allocs.inst)
     }
-    pub fn borrow_block(&self, block_ref: MirBlockRef) -> Ref<MirBlock> {
-        Ref::map(self.borrow_alloc_block(), |allocs| {
-            allocs
-                .get(block_ref.get_handle())
-                .expect("Block reference is invalid")
-        })
+    pub fn borrow_alloc_inst_mut(&self) -> RefMut<Slab<MirInst>> {
+        RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.inst)
     }
-    pub fn borrow_block_mut(&self, block_ref: MirBlockRef) -> RefMut<MirBlock> {
-        RefMut::map(self.borrow_alloc_block_mut(), |allocs| {
-            allocs
-                .get_mut(block_ref.get_handle())
-                .expect("Block reference is invalid")
-        })
+    pub fn borrow_alloc_item(&self) -> Ref<Slab<ModuleItem>> {
+        Ref::map(self.allocs.borrow(), |allocs| &allocs.item)
+    }
+    pub fn borrow_alloc_item_mut(&self) -> RefMut<Slab<ModuleItem>> {
+        RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.item)
     }
 }
