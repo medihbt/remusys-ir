@@ -661,6 +661,34 @@ impl Module {
     }
 }
 
+/// Module as global definition maintainer.
+impl Module {
+    pub fn dump_funcs(&self, require_def: bool) -> Vec<GlobalRef> {
+        let mut ret = Vec::with_capacity(self.global_defs.borrow().len());
+        for (_, &global) in self.global_defs.borrow().iter() {
+            match &*self.get_global(global) {
+                GlobalData::Func(f) if !require_def || !f.is_extern() => {
+                    ret.push(global);
+                }
+                _ => {}
+            }
+        }
+        ret
+    }
+
+    pub fn dump_globals(&self, require_def: bool) -> Vec<GlobalRef> {
+        let global_defs = self.global_defs.borrow();
+        let mut ret = Vec::with_capacity(global_defs.len());
+        for (_, &global) in global_defs.iter() {
+            let is_extern = global.is_extern_with_module(self);
+            if !require_def || !is_extern {
+                ret.push(global);
+            }
+        }
+        ret
+    }
+}
+
 /// Module as context maintainer.
 impl Module {
     /// Perform a basic check on the module.

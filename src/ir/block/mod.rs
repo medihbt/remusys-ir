@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 
 use slab::Slab;
 
@@ -6,11 +6,13 @@ use crate::{
     base::{
         NullableValue,
         slablist::{
-            SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef,
+            SlabListRange, SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead,
+            SlabRefListNodeRef,
         },
         slabref::SlabRef,
     },
     impl_slabref,
+    ir::block::jump_target::JumpTargetRef,
     typing::id::ValTypeID,
 };
 
@@ -47,6 +49,32 @@ impl BlockRef {
     }
     pub fn module_get_parent_func(self, module: &Module) -> GlobalRef {
         self.get_parent_func(&module.borrow_value_alloc().alloc_block)
+    }
+
+    pub fn get_terminator(self, module: &Module) -> Option<InstRef> {
+        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+            .get_termiantor(module)
+    }
+    pub fn get_terminator_subref(self, module: &Module) -> Option<TerminatorInstRef> {
+        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+            .get_terminator_subref(module)
+    }
+    pub fn get_jump_targets<'a>(
+        self,
+        module: &'a Module,
+    ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
+        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+            .get_jump_targets(module)
+    }
+    pub fn load_jump_targets(self, module: &Module) -> Option<SlabListRange<JumpTargetRef>> {
+        self.get_jump_targets(module).map(|list| list.load_range())
+    }
+
+    pub fn has_phi(self, module: &Module) -> bool {
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_block = &alloc_value.alloc_block;
+        self.to_slabref_unwrap(alloc_block).has_phi(alloc_inst)
     }
 }
 
@@ -218,6 +246,22 @@ impl BlockData {
         };
         self.instructions._tail.add_prev_inst(module, terminator)?;
         Ok(ret)
+    }
+
+    pub fn get_jump_targets<'a>(
+        &self,
+        module: &'a Module,
+    ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
+        self.get_terminator_subref(module)
+            .and_then(|t| t.get_jump_targets(module))
+    }
+
+    pub fn has_phi(&self, alloc_inst: &Slab<InstData>) -> bool {
+        let phi_end = self.phi_node_end.get();
+        self.instructions
+            .get_front_ref(alloc_inst)
+            .expect("Block structure error: Should have a PHIEnd node as splitter")
+            != phi_end
     }
 
     pub fn build_add_inst(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {

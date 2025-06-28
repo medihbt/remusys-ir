@@ -116,7 +116,12 @@ impl GlobalData {
         self.get_common().name.as_str()
     }
 
-    pub fn new_variable(name: String, is_const: bool, content_ty: ValTypeID, init: ValueSSA) -> Self {
+    pub fn new_variable(
+        name: String,
+        is_const: bool,
+        content_ty: ValTypeID,
+        init: ValueSSA,
+    ) -> Self {
         GlobalData::Var(Var {
             common: GlobalDataCommon {
                 name,
@@ -164,16 +169,29 @@ impl GlobalData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalRef(usize);
 impl_slabref!(GlobalRef, GlobalData);
 
 impl GlobalRef {
-    pub fn get_name_with_alloc<'a>(&self, slab: &'a Slab<GlobalData>) -> &'a str {
+    pub fn get_name_with_alloc<'a>(self, slab: &'a Slab<GlobalData>) -> &'a str {
         self.to_slabref_unwrap(slab).get_name()
     }
-    pub fn get_name_with_module<'a>(&self, module: &'a Module) -> Ref<'a, str> {
-        Ref::map(module.get_global(*self), |g| g.get_name())
+    pub fn get_name_with_module<'a>(self, module: &'a Module) -> Ref<'a, str> {
+        Ref::map(module.get_global(self), |g| g.get_name())
+    }
+
+    pub fn is_extern(self, alloc_global: &Slab<GlobalData>) -> bool {
+        match self.to_slabref_unwrap(alloc_global) {
+            GlobalData::Alias(_) => false,
+            GlobalData::Var(gvar) => gvar.is_extern(),
+            GlobalData::Func(f) => f.is_extern(),
+        }
+    }
+    pub fn is_extern_with_module(self, module: &Module) -> bool {
+        let alloc_value = module.borrow_value_alloc();
+        let alloc_global = &alloc_value.alloc_global;
+        self.is_extern(alloc_global)
     }
 }
 
