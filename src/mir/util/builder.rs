@@ -11,7 +11,7 @@ use crate::{
             global::{MirGlobalData, MirGlobalVariable, Section},
         },
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
 
 #[derive(Debug, Clone)]
@@ -110,6 +110,15 @@ impl<'a> MirBuilder<'a> {
             self.set_focus(MirFocus::Func(Rc::clone(&rc_func)));
         }
         (item_ref, rc_func)
+    }
+    pub fn extern_func(
+        &mut self,
+        name: String,
+        func_ty: FuncTypeRef,
+        type_ctx: &TypeContext,
+    ) -> (ModuleItemRef, Rc<MirFunc>) {
+        let func = MirFunc::new_extern(name, func_ty, type_ctx);
+        self.push_func(func, true)
     }
 
     pub fn add_block(&mut self, mir_block: MirBlockRef, switch_focus: bool) {

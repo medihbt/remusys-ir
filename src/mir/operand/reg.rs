@@ -241,6 +241,12 @@ impl VirtReg {
             VirtReg::General(id, _, _) | VirtReg::Float(id, _, _) => id,
         }
     }
+    pub fn insert_id(self, id: u32) -> Self {
+        match self {
+            VirtReg::General(_, si, uf) => VirtReg::General(id, si, uf),
+            VirtReg::Float(_, si, uf) => VirtReg::Float(id, si, uf),
+        }
+    }
 }
 
 impl std::fmt::Display for VirtReg {

@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use crate::mir::{
     module::block::MirBlockRef,
     operand::{
@@ -38,6 +40,22 @@ impl From<SymbolOperand> for MirOperand {
         match operand {
             SymbolOperand::Label(label) => MirOperand::Label(label),
             SymbolOperand::Global(index) => MirOperand::Symbol(SymbolOperand::Global(index)),
+        }
+    }
+}
+
+impl MirOperand {
+    pub fn set_as_reg(cell: &Cell<Self>, mut reg: RegOperand) {
+        match cell.get() {
+            MirOperand::VirtReg(virt_reg) => {
+                *reg.use_flags_mut() = virt_reg.get_use_flags();
+                cell.set(MirOperand::from(reg));
+            }
+            MirOperand::PhysReg(phys_reg) => {
+                *reg.use_flags_mut() = phys_reg.get_use_flags();
+                cell.set(MirOperand::from(reg));
+            }
+            _ => cell.set(MirOperand::from(reg)),
         }
     }
 }

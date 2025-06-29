@@ -1,4 +1,7 @@
-use std::{cell::{Ref, RefCell, RefMut}, rc::Rc};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
+};
 
 use slab::Slab;
 
@@ -9,7 +12,7 @@ use crate::{
         module::{
             block::{MirBlock, MirBlockRef},
             global::{Linkage, MirGlobalCommon, Section},
-            stack::{MirStackLayout, VirtRegAlloc},
+            stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
         },
         operand::reg::{PhysReg, VirtReg},
     },
@@ -114,15 +117,30 @@ impl MirFunc {
     ///
     /// 如果变量是整数、浮点或者指针这类一个寄存器就能装下并且没有什么内部结构的类型, 直接分配寄存器返回即可
     /// 除此之外, 结构体和数组类型的变量需要在栈上分配空间, 返回一个指向栈上分配的虚拟寄存器。
-    pub fn add_variable(&mut self, irtype: ValTypeID, type_ctx: &TypeContext) -> VirtReg {
+    pub fn add_variable(
+        &self,
+        irtype: ValTypeID,
+        type_ctx: &TypeContext,
+        force_stack_alloc: bool,
+    ) -> (VirtReg, bool) {
         let mut inner = self.inner.borrow_mut();
         let inner = &mut *inner;
+        if force_stack_alloc {
+            // 强制在栈上分配变量
+            return (
+                inner
+                    .stack_layout
+                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
+                    .virtreg,
+                true,
+            );
+        }
         match irtype {
             ValTypeID::Ptr => {
                 // 指针类型的变量需要分配一个虚拟寄存器。
                 let vreg = inner.vreg_alloc.alloc_gp();
                 vreg.subreg_index_mut().insert_bits_log2(6); // aarch64
-                vreg.clone()
+                (vreg.clone(), false)
             }
             ValTypeID::Int(bits) => {
                 // 整数类型的变量需要分配一个虚拟寄存器。
@@ -133,7 +151,7 @@ impl MirFunc {
                 let vreg = inner.vreg_alloc.alloc_gp();
                 vreg.subreg_index_mut()
                     .insert_bits_log2(bits.trailing_zeros() as u8);
-                vreg.clone()
+                (vreg.clone(), false)
             }
             ValTypeID::Float(fpkind) => {
                 // 浮点类型的变量需要分配一个虚拟寄存器。
@@ -142,13 +160,17 @@ impl MirFunc {
                     FloatTypeKind::Ieee32 => 5, // 32 bits
                     FloatTypeKind::Ieee64 => 6, // 64 bits
                 });
-                vreg.clone()
+                (vreg.clone(), false)
             }
             ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
                 // 结构体和数组类型的变量需要在栈上分配空间。
-                inner.stack_layout
-                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
-                    .virtreg
+                (
+                    inner
+                        .stack_layout
+                        .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
+                        .virtreg,
+                    true,
+                )
             }
             _ => panic!(
                 "Invalid variable type for MIR function: {}",
@@ -163,12 +185,19 @@ impl MirFunc {
     pub fn is_define(&self) -> bool {
         self.blocks.is_valid()
     }
+    pub fn get_name(&self) -> &str {
+        self.common.name.as_str()
+    }
 
     pub fn borrow_inner(&self) -> Ref<MirFuncInner> {
         self.inner.borrow()
     }
     pub fn borrow_inner_mut(&self) -> RefMut<MirFuncInner> {
         self.inner.borrow_mut()
+    }
+
+    pub fn borrow_spilled_args(&self) -> Ref<Vec<MirStackItem>> {
+        Ref::map(self.inner.borrow(), |inner| &inner.stack_layout.args)
     }
 
     pub fn borrow_vec_switch_tabs(&self) -> Ref<Vec<Rc<VecSwitchTab>>> {

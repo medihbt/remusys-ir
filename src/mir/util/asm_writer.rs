@@ -329,7 +329,7 @@ impl<'a> AsmWriter<'a> {
                     .write_str(" ")
                     .write_operand(istat, unary_op.rd().get())
                     .write_str(", ")
-                    .write_operand(istat, unary_op.rn().get());
+                    .write_operand(istat, unary_op.rhs().get());
                 if let Some(modify) = unary_op.rhs_modifier {
                     self.write_str(", ").write_str(modify.to_string().as_str());
                 }

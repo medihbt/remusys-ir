@@ -2,13 +2,10 @@ use std::cell::Cell;
 
 use crate::mir::{
     inst::{
-        MirInstCommon,
-        cond::MirCondFlag,
-        opcode::{MirOP, OperandLayout},
+        cond::MirCondFlag, opcode::{MirOP, OperandLayout}, MirInstCommon
     },
     operand::{
-        MirOperand,
-        reg::{PhysReg, RegOP, RegUseFlags, VirtReg},
+        reg::{PhysReg, RegOP, RegUseFlags, VirtReg}, MirOperand
     },
 };
 
@@ -201,7 +198,7 @@ impl UnaryOp {
     pub fn rd(&self) -> &Cell<MirOperand> {
         &self.operand_pool[0]
     }
-    pub fn rn(&self) -> &Cell<MirOperand> {
+    pub fn rhs(&self) -> &Cell<MirOperand> {
         &self.operand_pool[1]
     }
     pub fn implicit_csr(&self) -> Option<&Cell<MirOperand>> {

@@ -169,9 +169,9 @@ impl MirGlobalData {
     pub fn get_unit_kind_name(&self) -> &'static str {
         match self.unit_bytes_log2 {
             0 => "byte",
-            1 => "half",
-            2 => "word",
-            3 => "dword",
+            1 => "short",
+            2 => "long",
+            3 => "quad",
             _ => panic!("Unsupported unit size"),
         }
     }

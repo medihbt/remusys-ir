@@ -247,6 +247,7 @@ impl InstDataUnique for PhiOp {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct PhiOpRef(InstRef);
 
 impl PhiOpRef {
@@ -275,5 +276,11 @@ impl PhiOpRef {
                 panic!("Requries PHI but got {:?}", self.0);
             }
         })
+    }
+}
+
+impl Into<InstRef> for PhiOpRef {
+    fn into(self) -> InstRef {
+        self.0
     }
 }

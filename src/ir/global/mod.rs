@@ -82,6 +82,14 @@ impl Var {
             panic!("Align {} NOT power of 2", align)
         }
     }
+
+    pub fn get_stored_pointee_type(&self) -> ValTypeID {
+        self.common.content_ty.clone()
+    }
+
+    pub fn get_name(&self) -> &str {
+        self.common.name.as_str()
+    }
 }
 
 impl PtrStorage for GlobalData {
