@@ -27,7 +27,7 @@ pub(super) fn translate_const_init(
     builder.collect_data(section)
 }
 
-enum GlobalDataUnit {
+pub(super) enum GlobalDataUnit {
     Bytes(Vec<u8>),
     Halfs(Vec<u16>),
     Words(Vec<u32>),
@@ -62,7 +62,7 @@ impl GlobalDataUnit {
         }
     }
 
-    fn from_const_data(data: ConstData, type_ctx: &TypeContext) -> Self {
+    pub(super) fn from_const_data(data: ConstData, type_ctx: &TypeContext) -> Self {
         match data {
             ConstData::Undef(ty) | ConstData::Zero(ty) => {
                 let size_bytes = ty

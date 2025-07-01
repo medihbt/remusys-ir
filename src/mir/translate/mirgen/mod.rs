@@ -17,6 +17,7 @@ use crate::{
 mod data_gen;
 mod func_gen;
 mod global_gen;
+mod inst_dispatch;
 
 pub(super) fn codegen_ir_to_mir(
     ir_module: &IRModule,

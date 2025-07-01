@@ -35,7 +35,7 @@ pub(super) struct FuncTranslator<'a> {
     pub global_map: &'a BTreeMap<GlobalRef, ModuleItemRef>,
 }
 
-enum IRValueKind {
+pub(super) enum IRValueKind {
     Arg,
     SpilledArg,
     VirtReg,
@@ -43,7 +43,7 @@ enum IRValueKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum IRTrackableValue {
+pub(super) enum IRTrackableValue {
     /// `(Function, ArgIndex)`
     FuncArg(GlobalRef, u32),
     Inst(InstRef),
@@ -69,19 +69,18 @@ impl IRTrackableValue {
     }
 }
 
-struct IRValueInfo {
-    key: IRTrackableValue,
-    ty: ValTypeID,
-    kind: IRValueKind,
-    reg: RegOperand,
-    stackpos: Option<u32>,
+pub(super) struct IRValueInfo {
+    pub key: IRTrackableValue,
+    pub ty: ValTypeID,
+    pub kind: IRValueKind,
+    pub reg: RegOperand,
 }
 
-struct IRValueMap(Vec<IRValueInfo>);
+pub(super) struct SSAValueMap(Vec<IRValueInfo>);
 
-impl IRValueMap {
+impl SSAValueMap {
     fn new() -> Self {
-        IRValueMap(Vec::new())
+        SSAValueMap(Vec::new())
     }
     fn push(&mut self, info: IRValueInfo) {
         self.0.push(info);
@@ -90,13 +89,13 @@ impl IRValueMap {
         self.0.sort_by_key(|info| info.key.clone());
     }
 
-    fn find(&self, key: IRTrackableValue) -> Option<&IRValueInfo> {
+    pub(super) fn find(&self, key: IRTrackableValue) -> Option<&IRValueInfo> {
         self.0
             .binary_search_by_key(&key, |info| info.key.clone())
             .ok()
             .map(|idx| &self.0[idx])
     }
-    fn find_by_valssa(&self, value: &ValueSSA) -> Option<&IRValueInfo> {
+    pub(super) fn find_by_valssa(&self, value: &ValueSSA) -> Option<&IRValueInfo> {
         self.find(IRTrackableValue::from_value(value))
     }
 }
@@ -141,8 +140,8 @@ impl<'a> FuncTranslator<'a> {
         ir_func_ref: GlobalRef,
         bb_map: &[(usize, BlockRef, MirBlockRef)],
         ir_module: &Module,
-    ) -> IRValueMap {
-        let mut value_map = IRValueMap::new();
+    ) -> SSAValueMap {
+        let mut value_map = SSAValueMap::new();
         let type_ctx = &ir_module.type_ctx;
 
         let mut args_count = 0;
@@ -153,7 +152,6 @@ impl<'a> FuncTranslator<'a> {
                 ty: arg_types[args_count],
                 kind: IRValueKind::Arg,
                 reg: RegOperand::Phys(*reg),
-                stackpos: None,
             });
             args_count += 1;
         }
@@ -164,9 +162,6 @@ impl<'a> FuncTranslator<'a> {
                 ty: spilled_arg.irtype,
                 kind: IRValueKind::SpilledArg,
                 reg: RegOperand::Virt(spilled_arg.virtreg),
-                // We cannot determine the stack position yet since
-                // layout of variables is not finalized.
-                stackpos: None,
             });
             args_count += 1;
         }
@@ -189,7 +184,7 @@ impl<'a> FuncTranslator<'a> {
         ir_module: &Module,
         bb_ref: BlockRef,
         mir_func: &MirFunc,
-        value_map: &mut IRValueMap,
+        value_map: &mut SSAValueMap,
         type_ctx: &TypeContext,
     ) {
         let bb_data = ir_module.get_block(bb_ref);
@@ -216,7 +211,6 @@ impl<'a> FuncTranslator<'a> {
                     IRValueKind::VirtReg
                 },
                 reg: RegOperand::Virt(vreg),
-                stackpos: None,
             });
         }
     }
@@ -226,7 +220,7 @@ impl<'a> FuncTranslator<'a> {
         bb_index: usize,
         ir_bb_data: &BlockData,
         mir_bb_ref: MirBlockRef,
-        value_map: &IRValueMap,
+        value_map: &SSAValueMap,
         mir_bb_map: &[(usize, BlockRef, MirBlockRef)],
     ) {
         let bb_ref = self.cfg.nodes[bb_index].block;
@@ -246,7 +240,7 @@ impl<'a> FuncTranslator<'a> {
     fn add_block_phi_copies(
         &mut self,
         ir_block: BlockRef,
-        value_map: &IRValueMap,
+        value_map: &SSAValueMap,
         block_map: &[(usize, BlockRef, MirBlockRef)],
     ) {
         let phi_copies = self.phi_copies.find_copies(ir_block);
@@ -267,7 +261,7 @@ impl<'a> FuncTranslator<'a> {
 
     fn translate_operand(
         &self,
-        local_map: &IRValueMap,
+        local_map: &SSAValueMap,
         block_map: &[(usize, BlockRef, MirBlockRef)],
         ir_value: &ValueSSA,
     ) -> MirOperand {
