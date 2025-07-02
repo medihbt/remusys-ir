@@ -238,6 +238,9 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a binary branch instruction to MIR.
+    /// 
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `TRUE`
     ///
     /// Possible MIR translation for a branch instruction:
     ///
@@ -268,6 +271,16 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a load instruction to MIR.
+    /// 
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `FALSE`
+    /// 
+    /// Possible MIR translation for a load instruction:
+    /// 
+    /// - Dest operand is a VirtReg representing the load instruction itself.
+    /// - If source operand is a register operand: add a `load <source>, <dest>, ?ZR` instruction (LoadStoreRRR, r2 = ZR)
+    /// - If source operand is a global: add a `load <label>, <dest>` instruction (LoadStoreLiteral)
+    /// - Source operand should not be a constant or a constant expression. If appears, panic with an error.
     fn translate_load_inst(
         &self,
         func_translator: &mut FuncTranslator,
@@ -281,6 +294,18 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a store instruction to MIR.
+    /// 
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `FALSE`
+    /// 
+    /// Possible MIR translation for a store instruction:
+    /// 
+    /// - MIR store instruction Source operand should be a register operand(VirtReg or PhysReg).
+    ///     - If IR store source is a VirtReg | PhysReg, then it is used as a source operand.
+    ///     - If IR store source is a constant, add a 'mov <dest>, #const' instruction
+    ///     - If IR store source is a global, add a 'mov <dest>, <global>' instruction
+    /// - If dest operand is a register: Add a `store <source>, <dest>, ?ZR` instruction (LoadStoreRRR, r2 = ZR)
+    /// - If dest operand is a global: Add a `store <source>, <label>` instruction (LoadStoreLiteral)
     fn translate_store_inst(
         &self,
         func_translator: &mut FuncTranslator,
@@ -294,11 +319,17 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translate binary select operation to MIR.
+    /// 
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `TRUE`
+    /// 
+    /// Possible MIR translation for a select instruction:
+    /// 
     fn translate_select_inst(
         &self,
         func_translator: &mut FuncTranslator,
         inst_ref: InstRef,
-        cond: &ValueSSA,
+        cond: &ValueSSA, // type limitation: `i1` as CSR
         if_true: &ValueSSA,
         if_false: &ValueSSA,
     ) {
