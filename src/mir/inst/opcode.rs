@@ -86,6 +86,8 @@ pub enum MirOP {
     Call,
     TailCall,
     CallIndirect,
+    /// return 指令: 根据上下文自动展开为合适的指令.
+    MirReturn,
 
     /// switch 指令: 通过跳转表直接跳转到目标地址
     TabSwitch,
@@ -188,6 +190,7 @@ impl MirOP {
             O::FCSel => "fcsel",
 
             O::Call => "call", O::TailCall => "tailcall", O::CallIndirect => "call_indirect",
+            O::MirReturn => "mir_return",
             O::TabSwitch => "tabswitch", O::BinSwitch => "binswitch",
         };
     }
@@ -222,6 +225,9 @@ pub enum OperandLayout {
     ///
     /// `bool` indicates whether the call is dynamic call which uses a register to hold the function address.
     Call(bool),
+
+    /// Pesudo `MirReturn`
+    MirReturn,
 
     Switch,
 
@@ -306,6 +312,7 @@ impl MirOP {
 
             O::Call | O::TailCall => N::Call(false),
             O::CallIndirect => N::Call(true),
+            O::MirReturn => N::MirReturn,
 
             O::TabSwitch | O::BinSwitch => N::Switch,
         };

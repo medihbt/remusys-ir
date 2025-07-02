@@ -7,7 +7,7 @@ use crate::{
     mir::{
         inst::{
             branch::{BLink, CondBr, RegCondBr, UncondBr},
-            call::MirCall,
+            call_ret::{MirCall, MirReturn},
             cmp::{CmpOP, CondCmpOP},
             data_process::{
                 BFMOp, BinOp, CondSelect, CondSet, CondUnaryOp, ExtROp, TernaryOp, UnaryOp,
@@ -24,7 +24,7 @@ use slab::Slab;
 use std::cell::{Cell, Ref};
 
 pub mod branch;
-pub mod call;
+pub mod call_ret;
 pub mod cmp;
 pub mod cond;
 pub mod data_process;
@@ -66,6 +66,7 @@ pub enum MirInst {
 
     // Pseudo instructions
     Call(MirCall),
+    MirReturn(MirReturn),
     TabSwitch(TabSwitch),
     BinSwitch(BinSwitch),
 }
@@ -109,6 +110,7 @@ impl MirInst {
             MirInst::CondSet(cond_set) => &cond_set.common,
             MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.common,
             MirInst::Call(call) => &call.common,
+            MirInst::MirReturn(mir_return) => &mir_return.common,
             MirInst::TabSwitch(tab_switch) => &tab_switch.common,
             MirInst::BinSwitch(bin_switch) => &bin_switch.common,
         }
@@ -137,6 +139,7 @@ impl MirInst {
             MirInst::CondSet(cond_set) => &cond_set.operands,
             MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.operands,
             MirInst::Call(call) => call.operands.as_slice(),
+            MirInst::MirReturn(ret) => ret.operands(),
             MirInst::TabSwitch(tab_switch) => &tab_switch.operands,
             MirInst::BinSwitch(bin_switch) => &bin_switch.operands,
         }

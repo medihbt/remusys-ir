@@ -427,7 +427,10 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_str(ccmp.cond.get_name());
             }
-            MirInst::Call(_) | MirInst::TabSwitch(_) | MirInst::BinSwitch(_) => panic!(
+            MirInst::Call(_)
+            | MirInst::MirReturn(_)
+            | MirInst::TabSwitch(_)
+            | MirInst::BinSwitch(_) => panic!(
                 "Cannot write MIR pesudo instruction to assembly: {:?}",
                 inst
             ),

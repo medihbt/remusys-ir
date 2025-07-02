@@ -16,6 +16,7 @@
 use crate::{ir::module::Module, mir::module::MirModule};
 
 pub mod ir_pass;
+pub mod mir_pass;
 pub mod mirgen;
 
 pub fn translate_ir_to_mir(ir_module: &Module) -> MirModule {

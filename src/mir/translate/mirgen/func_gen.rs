@@ -1,27 +1,17 @@
 use std::{collections::BTreeMap, rc::Rc};
 
 use crate::{
-    ir::{
-        ValueSSA,
-        block::{BlockData, BlockRef},
-        constant::data::ConstData,
-        global::GlobalRef,
-        inst::{InstData, InstRef},
-        module::Module,
-    },
-    mir::{
-        inst::{MirInst, data_process, opcode::MirOP},
+    base::slablist::SlabListRange, ir::{
+        block::{BlockData, BlockRef}, constant::data::ConstData, global::GlobalRef, inst::{InstData, InstRef}, module::Module, ValueSSA
+    }, mir::{
+        inst::{data_process, opcode::MirOP, MirInst},
         module::{
-            ModuleItemRef,
-            block::{MirBlock, MirBlockRef},
-            func::MirFunc,
+            block::{MirBlock, MirBlockRef}, func::MirFunc, ModuleItemRef
         },
-        operand::{MirOperand, reg::RegOperand, symbol::SymbolOperand},
-        translate::ir_pass::phi_node_ellimination::CopyMap,
+        operand::{reg::RegOperand, symbol::SymbolOperand, MirOperand},
+        translate::{ir_pass::phi_node_ellimination::CopyMap, mirgen::inst_dispatch::{self, OpMap}},
         util::builder::{MirBuilder, MirFocus},
-    },
-    opt::analysis::cfg::snapshot::CfgSnapshot,
-    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
+    }, opt::analysis::cfg::snapshot::CfgSnapshot, typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind}
 };
 
 pub(super) struct FuncTranslator<'a> {
@@ -101,7 +91,7 @@ impl SSAValueMap {
 }
 
 impl<'a> FuncTranslator<'a> {
-    pub(super) fn translate(&mut self) {
+    pub(super) fn translate(&'a mut self) {
         // Begin translate
         self.mir_builder
             .set_focus(MirFocus::Func(Rc::clone(&self.mir_rc)));
@@ -127,7 +117,7 @@ impl<'a> FuncTranslator<'a> {
         for (bb_index, ir_bb_ref, mir_bb_ref) in bb_map.iter() {
             self.translate_one_block(
                 *bb_index,
-                &self.ir_module.get_block(*ir_bb_ref),
+                self.ir_module.get_block(*ir_bb_ref).instructions.load_range(),
                 *mir_bb_ref,
                 &value_map,
                 &bb_map,
@@ -218,7 +208,7 @@ impl<'a> FuncTranslator<'a> {
     fn translate_one_block(
         &mut self,
         bb_index: usize,
-        ir_bb_data: &BlockData,
+        ir_bb_insts: SlabListRange<InstRef>,
         mir_bb_ref: MirBlockRef,
         value_map: &SSAValueMap,
         mir_bb_map: &[(usize, BlockRef, MirBlockRef)],
@@ -228,11 +218,13 @@ impl<'a> FuncTranslator<'a> {
             .set_focus(MirFocus::Block(Rc::clone(&self.mir_rc), mir_bb_ref));
         let alloc_value = self.ir_module.borrow_value_alloc();
         let alloc_inst = &alloc_value.alloc_inst;
-        for (inst_ref, inst) in ir_bb_data.instructions.view(alloc_inst) {
+        let mut last_pstate_modifier = None;
+        for (inst_ref, inst) in ir_bb_insts.view(alloc_inst) {
             if inst.is_terminator() {
                 // Insert copy instructions for PHI nodes before terminators.
                 self.add_block_phi_copies(bb_ref, value_map, mir_bb_map);
             }
+            last_pstate_modifier = inst_dispatch::do_inst_dispatch(self, inst_ref, inst, value_map, mir_bb_map, last_pstate_modifier);
             todo!("Translate instruction: {inst_ref:?} in block {bb_index}");
         }
     }

@@ -1,9 +1,21 @@
+use std::cell::Cell;
+
 use slab::Slab;
 
 use crate::{
-    mir::operand::reg::VirtReg,
+    mir::operand::reg::{PhysReg, VirtReg},
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StackItemKind {
+    /// Represents a variable in the stack layout.
+    Variable,
+    /// Represents a saved register in the stack layout.
+    SavedReg,
+    /// Represents a spilled argument in the stack layout.
+    SpilledArg,
+}
 
 /// Represents an item in the MIR stack layout.
 /// Each item corresponds to a variable or argument in the function's stack frame.
@@ -26,30 +38,52 @@ pub struct MirStackItem {
     /// The log base 2 of the alignment of the item.
     pub align_log2: u8,
     /// Whether the item is a spilled argument.
-    pub is_arg: bool,
+    pub kind: StackItemKind,
 }
 
 impl MirStackItem {
-    pub fn offset_from_sp(&self, layout: &MirStackLayout) -> i64 {
-        if self.is_arg {
-            self.offset + layout.vars_size as i64
-        } else {
-            self.offset
-        }
-    }
+    // pub fn offset_from_sp(&self, layout: &MirStackLayout) -> i64 {
+    //     match self.kind {
+    //         StackItemKind::Variable => self.offset,
+    //         StackItemKind::SavedReg => self.offset + layout.vars_size as i64,
+    //         StackItemKind::SpilledArg => {
+    //             // Spilled arguments are offset from the end of the variable section
+    //             self.offset + (layout.vars_size + layout.saved_regs_size) as i64
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug, Clone)]
 pub struct MirStackLayout {
     /// The stack layout for variables.
     pub vars: Vec<MirStackItem>,
+    /// Cellee-saved registers that will be restored only at the end of the function. Positioned
+    /// after the variables section in the stack frame.
+    /// 
+    /// In AAPCS64 ABI, these are the registers that are callee-saved:
+    ///
+    /// - `x19` to `x28` (general-purpose registers, should save when regalloc pass allocates them)
+    /// - `x29` (frame pointer, should save in `main` function or function has instruction translated
+    ///    from IR `DynAlloca` instruction.
+    /// - `x30` (link register, should save when the function is not a leaf function)
+    /// - `d8` to `d15` (floating-point registers, should save when regalloc pass allocates them)
+    /// 
+    /// In register allocation, these registers will be marked as "Tier 2" -- Usually costs
+    /// more to spill and restore than "Tier 1" registers.
+    /// 
+    /// NOTE that not all saved registers are in this list, since some instructions like
+    /// `call (MIR pesudo op)` will also save some registers to the stack temporarily.
+    pub saved_regs: Vec<PhysReg>,
     /// The stack layout for spilled arguments.
     pub args: Vec<MirStackItem>,
     /// The total size of the variables section in the stack frame.
     pub vars_size: u64,
     /// The total size of the arguments section in the stack frame.
     pub args_size: u64,
+
     finished_arg_build: bool,
+    saved_regs_size_cache: Cell<u64>,
 }
 
 impl MirStackLayout {
@@ -57,9 +91,11 @@ impl MirStackLayout {
         Self {
             vars: Vec::new(),
             args: Vec::new(),
+            saved_regs: Vec::new(),
             vars_size: 0,
             args_size: 0,
             finished_arg_build: false,
+            saved_regs_size_cache: Cell::new(0),
         }
     }
 
@@ -115,7 +151,7 @@ impl MirStackLayout {
             // Placeholder, will be updated on `finish_arg_building()`
             size_with_padding: 0,
             align_log2: align_log2 as u8,
-            is_arg: true,
+            kind: StackItemKind::SpilledArg,
         };
         self.args_size = new_top + size as u64;
         self.args.push(item);
@@ -180,7 +216,7 @@ impl MirStackLayout {
             size: size as u64,
             size_with_padding: size as u64, // Placeholder, will be updated later
             align_log2,
-            is_arg: false,
+            kind: StackItemKind::Variable,
         };
         self.vars_size = new_top + size as u64;
         self.vars.push(item);
