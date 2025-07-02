@@ -162,6 +162,10 @@ impl IndexPtrOp {
         Ok(layer_n_ty)
     }
 
+    pub fn dump_index_chain(module: &Module) -> Vec<(ValTypeID, ValueSSA)> {
+        todo!("Implement dumping index chain for IndexPtrOp");
+    }
+
     pub fn new_raw(
         mut_module: &Module,
         base_pointee_ty: ValTypeID,
