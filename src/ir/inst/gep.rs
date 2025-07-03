@@ -18,6 +18,13 @@ use super::{
     usedef::{UseData, UseKind, UseRef},
 };
 
+#[derive(Debug)]
+pub struct IndexChainNode {
+    pub index: ValueSSA,
+    pub unpacked_ty: ValTypeID,
+}
+
+#[derive(Debug)]
 pub struct IndexPtrOp {
     pub base_ptr: UseRef,
     pub base_pointee_ty: ValTypeID,
@@ -162,8 +169,37 @@ impl IndexPtrOp {
         Ok(layer_n_ty)
     }
 
-    pub fn dump_index_chain(module: &Module) -> Vec<(ValTypeID, ValueSSA)> {
-        todo!("Implement dumping index chain for IndexPtrOp");
+    pub fn dump_index_chain(&self, module: &Module) -> Vec<IndexChainNode> {
+        let mut ret = Vec::with_capacity(self.indices.len());
+        let alloc_use = module.borrow_use_alloc();
+
+        assert!(
+            !self.indices.is_empty(),
+            "IndexPtrOp must have at least one index"
+        );
+
+        ret.push(IndexChainNode {
+            index: self.indices[0].get_operand(&alloc_use),
+            unpacked_ty: self.base_pointee_ty,
+        });
+        let mut layer_n_ty = self.base_pointee_ty;
+        for index_use in self.indices[1..].iter() {
+            let idx_value = index_use.get_operand(&alloc_use);
+            layer_n_ty = match Self::unpack_aggregate_layers_iter(
+                module,
+                &module.type_ctx,
+                layer_n_ty,
+                idx_value,
+            ) {
+                Ok(ty) => ty,
+                Err(_) => continue, // Skip invalid indices.
+            };
+            ret.push(IndexChainNode {
+                index: idx_value,
+                unpacked_ty: layer_n_ty,
+            });
+        }
+        ret
     }
 
     pub fn new_raw(
