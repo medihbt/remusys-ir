@@ -1,17 +1,35 @@
+use core::panic;
 use std::{collections::BTreeMap, rc::Rc};
 
 use crate::{
-    base::slablist::SlabListRange, ir::{
-        block::{BlockData, BlockRef}, constant::data::ConstData, global::GlobalRef, inst::{InstData, InstRef}, module::Module, ValueSSA
-    }, mir::{
-        inst::{data_process, opcode::MirOP, MirInst},
+    base::slablist::SlabListRange,
+    ir::{
+        ValueSSA,
+        block::BlockRef,
+        constant::data::ConstData,
+        global::GlobalRef,
+        inst::{InstData, InstRef},
+        module::Module,
+    },
+    mir::{
+        inst::{MirInst, data_process, opcode::MirOP},
         module::{
-            block::{MirBlock, MirBlockRef}, func::MirFunc, ModuleItemRef
+            MirGlobalRef,
+            block::{MirBlock, MirBlockRef},
+            func::MirFunc,
         },
-        operand::{reg::RegOperand, symbol::SymbolOperand, MirOperand},
-        translate::{ir_pass::phi_node_ellimination::CopyMap, mirgen::inst_dispatch::{self, OpMap}},
+        operand::{
+            MirOperand,
+            suboperand::{IMirSubOperand, RegOperand},
+        },
+        translate::{
+            ir_pass::phi_node_ellimination::CopyMap,
+            mirgen::inst_dispatch::{self},
+        },
         util::builder::{MirBuilder, MirFocus},
-    }, opt::analysis::cfg::snapshot::CfgSnapshot, typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind}
+    },
+    opt::analysis::cfg::snapshot::CfgSnapshot,
+    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
 pub(super) struct FuncTranslator<'a> {
@@ -19,10 +37,10 @@ pub(super) struct FuncTranslator<'a> {
     pub ir_module: &'a Module,
     pub ir_ref: GlobalRef,
     pub cfg: &'a CfgSnapshot,
-    pub mir_ref: ModuleItemRef,
+    pub mir_ref: MirGlobalRef,
     pub mir_rc: Rc<MirFunc>,
     pub phi_copies: &'a CopyMap,
-    pub global_map: &'a BTreeMap<GlobalRef, ModuleItemRef>,
+    pub global_map: &'a BTreeMap<GlobalRef, MirGlobalRef>,
 }
 
 pub(super) enum IRValueKind {
@@ -117,7 +135,10 @@ impl<'a> FuncTranslator<'a> {
         for (bb_index, ir_bb_ref, mir_bb_ref) in bb_map.iter() {
             self.translate_one_block(
                 *bb_index,
-                self.ir_module.get_block(*ir_bb_ref).instructions.load_range(),
+                self.ir_module
+                    .get_block(*ir_bb_ref)
+                    .instructions
+                    .load_range(),
                 *mir_bb_ref,
                 &value_map,
                 &bb_map,
@@ -141,7 +162,7 @@ impl<'a> FuncTranslator<'a> {
                 key: IRTrackableValue::FuncArg(ir_func_ref, args_count as u32),
                 ty: arg_types[args_count],
                 kind: IRValueKind::Arg,
-                reg: RegOperand::Phys(*reg),
+                reg: RegOperand::P(*reg),
             });
             args_count += 1;
         }
@@ -151,7 +172,7 @@ impl<'a> FuncTranslator<'a> {
                 key: IRTrackableValue::FuncArg(ir_func_ref, args_count as u32),
                 ty: spilled_arg.irtype,
                 kind: IRValueKind::SpilledArg,
-                reg: RegOperand::Virt(spilled_arg.virtreg),
+                reg: RegOperand::V(spilled_arg.virtreg),
             });
             args_count += 1;
         }
@@ -200,7 +221,7 @@ impl<'a> FuncTranslator<'a> {
                 } else {
                     IRValueKind::VirtReg
                 },
-                reg: RegOperand::Virt(vreg),
+                reg: RegOperand::V(vreg),
             });
         }
     }
@@ -224,7 +245,14 @@ impl<'a> FuncTranslator<'a> {
                 // Insert copy instructions for PHI nodes before terminators.
                 self.add_block_phi_copies(bb_ref, value_map, mir_bb_map);
             }
-            last_pstate_modifier = inst_dispatch::do_inst_dispatch(self, inst_ref, inst, value_map, mir_bb_map, last_pstate_modifier);
+            last_pstate_modifier = inst_dispatch::do_inst_dispatch(
+                self,
+                inst_ref,
+                inst,
+                value_map,
+                mir_bb_map,
+                last_pstate_modifier,
+            );
             todo!("Translate instruction: {inst_ref:?} in block {bb_index}");
         }
     }
@@ -245,7 +273,9 @@ impl<'a> FuncTranslator<'a> {
             let source_reg = self.translate_operand(value_map, block_map, &source_value);
 
             let copy_inst = data_process::UnaryOp::new(MirOP::Mov, None);
-            MirOperand::set_as_reg(copy_inst.rd(), target_reg.reg.clone());
+            copy_inst
+                .rd()
+                .set(target_reg.reg.insert_to_mirop(copy_inst.rd().get()));
             copy_inst.rhs().set(source_reg);
             self.mir_builder.add_inst(MirInst::Unary(copy_inst));
         }
@@ -266,7 +296,7 @@ impl<'a> FuncTranslator<'a> {
             ValueSSA::FuncArg(global_ref, index) => {
                 let key = IRTrackableValue::FuncArg(*global_ref, *index);
                 if let Some(info) = local_map.find(key.clone()) {
-                    MirOperand::from(info.reg)
+                    info.reg.into_mirop()
                 } else {
                     panic!("Cannot find function argument: {key:?}");
                 }
@@ -279,14 +309,14 @@ impl<'a> FuncTranslator<'a> {
             }
             ValueSSA::Inst(inst_ref) => {
                 if let Some(info) = local_map.find(IRTrackableValue::Inst(*inst_ref)) {
-                    MirOperand::from(info.reg)
+                    info.reg.into_mirop()
                 } else {
                     panic!("Cannot find instruction value: {inst_ref:?}");
                 }
             }
             ValueSSA::Global(global_ref) => {
                 if let Some(mir_ref) = self.global_map.get(global_ref) {
-                    MirOperand::Symbol(SymbolOperand::Global(*mir_ref))
+                    mir_ref.into_mirop()
                 } else {
                     panic!("Cannot find global value: {global_ref:?}");
                 }
@@ -298,14 +328,49 @@ impl<'a> FuncTranslator<'a> {
             ConstData::Undef(ty) | ConstData::Zero(ty) => {
                 Self::make_typed_const_zero(*ty, &self.ir_module.type_ctx)
             }
-            ConstData::PtrNull(_) => MirOperand::ImmConst(0),
+            ConstData::PtrNull(_) => MirOperand::Imm(0),
             ConstData::Int(bit, val) => {
-                MirOperand::ImmConst(ConstData::iconst_value_get_real_signed(*bit, *val) as i64)
+                MirOperand::Imm(ConstData::iconst_value_get_real_signed(*bit, *val) as i64)
             }
             ConstData::Float(kind, val) => match kind {
-                FloatTypeKind::Ieee32 => MirOperand::ImmConst((*val as f32).to_bits() as i64),
-                FloatTypeKind::Ieee64 => MirOperand::ImmConst((*val as f64).to_bits() as i64),
+                FloatTypeKind::Ieee32 => MirOperand::Imm((*val as f32).to_bits() as i64),
+                FloatTypeKind::Ieee64 => MirOperand::Imm((*val as f64).to_bits() as i64),
             },
+        }
+    }
+    fn translate_operand_to_reg(
+        &mut self,
+        local_map: &SSAValueMap,
+        block_map: &[(usize, BlockRef, MirBlockRef)],
+        operand: &ValueSSA,
+        ir_type: ValTypeID,
+    ) -> RegOperand {
+        let mir_value = self.translate_operand(local_map, block_map, operand);
+        match mir_value {
+            MirOperand::VReg(virt_reg) => RegOperand::V(virt_reg),
+            MirOperand::PReg(phys_reg) => RegOperand::P(phys_reg),
+            MirOperand::Imm(iconst) => {
+                let mut inner_alloc = self.mir_rc.borrow_inner_mut();
+                let reg_allocator = &mut inner_alloc.vreg_alloc;
+
+                // Add a MOV to the allocated register
+                let reg = reg_allocator.alloc(matches!(ir_type, ValTypeID::Float(_)));
+                match ir_type {
+                    ValTypeID::Ptr | ValTypeID::Int(64) => todo!(),
+                    ValTypeID::Int(32) => todo!(),
+                    ValTypeID::Int(16) => todo!(),
+                    ValTypeID::Int(8) => todo!(),
+                    ValTypeID::Float(fpkind) => todo!(),
+                    _ => panic!("Cannot allocate register for type: {ir_type:?}"),
+                }
+                todo!("Handle immediate constant {iconst} for register allocation");
+                RegOperand::V(reg.clone())
+            }
+            MirOperand::Global(_)
+            | MirOperand::Label(_)
+            | MirOperand::VecSwitchTab(_)
+            | MirOperand::BinSwitchTab(_)
+            | MirOperand::None => panic!("Cannot translate operand to register: {mir_value:?}"),
         }
     }
     fn make_typed_const_zero(ir_type: ValTypeID, type_ctx: &TypeContext) -> MirOperand {
@@ -318,6 +383,6 @@ impl<'a> FuncTranslator<'a> {
         if !matches!(align, 1 | 2 | 4 | 8) || size > 8 {
             panic!("Size and align cannot meet the requirements: size={size}, align={align}");
         };
-        MirOperand::ImmConst(0)
+        MirOperand::Imm(0)
     }
 }

@@ -8,13 +8,13 @@ use crate::{
         ValueSSA,
         block::{BlockRef, jump_target::JumpTargetData},
         global::GlobalRef,
-        inst::{InstData, InstRef, usedef::UseData},
+        inst::{InstData, InstRef, gep::IndexChainNode, usedef::UseData},
         opcode::Opcode,
     },
     mir::{
         inst::{MirInst, MirInstRef, branch::UncondBr, call_ret::MirReturn, opcode::MirOP},
         module::block::MirBlockRef,
-        operand::{MirOperand, reg::VirtReg, symbol::SymbolOperand},
+        operand::{MirOperand, reg::VReg, suboperand::IMirSubOperand},
         translate::mirgen::{
             FuncTranslator,
             data_gen::GlobalDataUnit,
@@ -48,7 +48,7 @@ impl<'a> OpMap<'a> {
                     G::Long(l) => l as i64,
                     G::Quad(q) => q as i64,
                 };
-                MirOperand::ImmConst(data)
+                MirOperand::Imm(data)
             }
             ValueSSA::ConstExpr(_) => panic!("ConstExpr should not be used in MIR translation"),
             ValueSSA::FuncArg(func, index) => {
@@ -56,7 +56,7 @@ impl<'a> OpMap<'a> {
                     .value_map
                     .find(IRTrackableValue::FuncArg(*func, *index));
                 match info {
-                    Some(info) => MirOperand::from(info.reg),
+                    Some(info) => info.reg.into_mirop(),
                     _ => panic!(
                         "Function argument not found in SSA value map: {:?} at index {}",
                         func, index
@@ -66,7 +66,7 @@ impl<'a> OpMap<'a> {
             ValueSSA::Inst(inst) => {
                 let info = self.value_map.find(IRTrackableValue::Inst(*inst));
                 match info {
-                    Some(info) => MirOperand::from(info.reg),
+                    Some(info) => info.reg.into_mirop(),
                     None => panic!("Instruction not found in SSA value map: {:?}", inst),
                 }
             }
@@ -79,7 +79,7 @@ impl<'a> OpMap<'a> {
                 ),
             ValueSSA::Global(gref) => func_translator.global_map.get(gref).map_or_else(
                 || panic!("Global not found in SSA value map: {:?}", gref),
-                |mir_ref| MirOperand::Symbol(SymbolOperand::Global(*mir_ref)),
+                |mir_ref| MirOperand::Global(*mir_ref),
             ),
         }
     }
@@ -163,7 +163,7 @@ impl<'a> OpMap<'a> {
                     .get_operand(&Self::borrow_alloc_use(func_translator));
                 let mir_dest = self.get_mir_value(&func_translator, &ValueSSA::Inst(inst_ref));
                 let mir_dest = match mir_dest {
-                    MirOperand::VirtReg(v) => v,
+                    MirOperand::VReg(v) => v,
                     _ => {
                         panic!(
                             "Expected a virtual register for load destination, found: {mir_dest:?}"
@@ -205,18 +205,8 @@ impl<'a> OpMap<'a> {
                 let base_ptr = gep
                     .base_ptr
                     .get_operand(&Self::borrow_alloc_use(func_translator));
-                let indices = gep
-                    .indices
-                    .iter()
-                    .map(|v| v.get_operand(&Self::borrow_alloc_use(func_translator)))
-                    .collect::<Vec<_>>();
-                self.translate_gep_inst(
-                    func_translator,
-                    inst_ref,
-                    &base_ptr,
-                    gep.base_pointee_ty,
-                    indices.as_slice(),
-                );
+                let index_chain = gep.dump_index_chain(func_translator.ir_module);
+                self.translate_gep_inst(func_translator, inst_ref, &base_ptr, &index_chain);
             }
             InstData::Call(_, call) => {
                 let callee = call
@@ -238,7 +228,7 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a binary branch instruction to MIR.
-    /// 
+    ///
     /// - is PState modifier: `FALSE`
     /// - is PState reader: `TRUE`
     ///
@@ -271,12 +261,12 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a load instruction to MIR.
-    /// 
+    ///
     /// - is PState modifier: `FALSE`
     /// - is PState reader: `FALSE`
-    /// 
+    ///
     /// Possible MIR translation for a load instruction:
-    /// 
+    ///
     /// - Dest operand is a VirtReg representing the load instruction itself.
     /// - If source operand is a register operand: add a `load <source>, <dest>, ?ZR` instruction (LoadStoreRRR, r2 = ZR)
     /// - If source operand is a global: add a `load <label>, <dest>` instruction (LoadStoreLiteral)
@@ -286,7 +276,7 @@ impl<'a> OpMap<'a> {
         func_translator: &mut FuncTranslator,
         inst_ref: InstRef,
         source_ptr: &ValueSSA,
-        mir_dest: VirtReg,
+        mir_dest: VReg,
     ) {
         todo!(
             "Implement load instruction translation {inst_ref:?}: load {source_ptr:?} to {mir_dest:?}"
@@ -294,12 +284,12 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translates a store instruction to MIR.
-    /// 
+    ///
     /// - is PState modifier: `FALSE`
     /// - is PState reader: `FALSE`
-    /// 
+    ///
     /// Possible MIR translation for a store instruction:
-    /// 
+    ///
     /// - MIR store instruction Source operand should be a register operand(VirtReg or PhysReg).
     ///     - If IR store source is a VirtReg | PhysReg, then it is used as a source operand.
     ///     - If IR store source is a constant, add a 'mov <dest>, #const' instruction
@@ -319,12 +309,13 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translate binary select operation to MIR.
-    /// 
+    ///
     /// - is PState modifier: `FALSE`
     /// - is PState reader: `TRUE`
-    /// 
+    ///
     /// Possible MIR translation for a select instruction:
-    /// 
+    ///
+    /// (Implement it later)
     fn translate_select_inst(
         &self,
         func_translator: &mut FuncTranslator,
@@ -353,6 +344,25 @@ impl<'a> OpMap<'a> {
     }
 
     /// Translate cast operation to MIR.
+    ///
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `FALSE`
+    ///
+    /// Possible MIR translation for a cast instruction (by opcode):
+    ///
+    /// - IR `zext` => AArch64 `UXTB`, `UXTH`, `UXTW` instructions
+    /// - IR `sext` => AArch64 `SXTB`, `SXTH`, `SXTW` instructions
+    /// - IR `trunc` => AArch64 `BIC` instruction (to clear upper bits)
+    /// - IR `bitcast` int to int => AArch64 `MOV` instruction (no-op for integer types)
+    /// - IR `bitcast` float to int => AArch64 `MOV` instruction
+    /// - IR `ptrtoint` => AArch64 `MOV` instruction (pointer to integer conversion)
+    /// - IR `inttoptr` => AArch64 `MOV` instruction (integer to pointer conversion)
+    /// - IR `fptosi` float to i32 => AArch64 `FCVTZS` instruction
+    /// - IR `sitofp` i32 to float => AArch64 `SCVTF` instruction
+    /// - IR `fptoui` float to i32 => AArch64 `FCVTZU` instruction
+    /// - IR `uitofp` i32 to float => AArch64 `UCVTF` instruction
+    /// - IR `fpext` => AArch64 `FCVT` instruction (to extend float precision)
+    /// - IR `fptrunc` => AArch64 `FCVT` instruction (to truncate float precision)
     fn translate_cast_inst(
         &self,
         func_translator: &mut FuncTranslator,
@@ -367,24 +377,40 @@ impl<'a> OpMap<'a> {
     }
 
     /// translate a `GEP` instruction to MIR.
+    ///
+    /// - is PState modifier: `FALSE`
+    /// - is PState reader: `FALSE`
+    ///
+    /// Possible MIR translation for a GEP instruction:
+    ///
+    /// - A series of `add` instructions to calculate the address.
     fn translate_gep_inst(
         &self,
         func_translator: &mut FuncTranslator,
         inst_ref: InstRef,
         base_ptr: &ValueSSA,
-        base_pointee_type: ValTypeID,
-        indices: &[ValueSSA],
+        index_chain: &[IndexChainNode],
     ) {
         todo!(
-            "Implement GEP instruction translation {:?}: GEP {:?} from base pointee type {:?} with indices {:?}",
+            "Implement GEP instruction translation {:?}: GEP {:?} with indices {:?}",
             inst_ref,
             base_ptr,
-            base_pointee_type,
-            indices
+            index_chain
         );
     }
 
     /// Translate a call instruction to MIR.
+    ///
+    /// - is PState modifier: `TRUE` -- because we cannot guarantee that the callee does not modify PState.
+    /// - is PState reader: `TRUE` -- because we cannot guarantee that the callee does not read PState.
+    ///
+    /// Possible MIR translation for a call instruction:
+    ///
+    /// - callee should be a global function -- becasuse SysY does not support function pointers or virtual functions.
+    /// - add a `call <callee>, <args>` MIR pesudo-instruction.
+    /// - if the callee returns a value, it should be stored in a virtual register
+    ///   (the return value is not a PState modifier, so it can be used
+    ///   as a regular value).
     fn translate_call_inst(
         &self,
         func_translator: &mut FuncTranslator,

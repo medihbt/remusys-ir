@@ -10,7 +10,8 @@ use crate::{
             call_ret::{MirCall, MirReturn},
             cmp::{CmpOP, CondCmpOP},
             data_process::{
-                BFMOp, BinOp, CondSelect, CondSet, CondUnaryOp, ExtROp, TernaryOp, UnaryOp,
+                BFMOp, BinCSROp, BinOp, CondSelect, CondSet, CondUnaryOp, ExtROp, TernaryOp,
+                UnaCSROp, UnaryOp,
             },
             load_store::{LoadStoreLiteral, LoadStoreRRI, LoadStoreRRR},
             opcode::MirOP,
@@ -51,7 +52,9 @@ pub enum MirInst {
 
     // Data processing instructions
     Bin(BinOp),
+    BinCSR(BinCSROp),
     Unary(UnaryOp),
+    UnaryCSR(UnaCSROp),
     BFM(BFMOp),
     ExtR(ExtROp),
     Tri(TernaryOp),
@@ -88,6 +91,19 @@ impl MirInstCommon {
     }
 }
 
+pub trait IMirSubInst {
+    fn from_mir_inst(inst: &MirInst) -> Option<&Self>;
+    fn into_mir_inst(self) -> MirInst;
+    fn common(&self) -> &MirInstCommon;
+    fn operands(&self) -> &[Cell<MirOperand>];
+    fn accepts_opcode(opcode: MirOP) -> bool;
+    fn new_empty(opcode: MirOP) -> Self;
+
+    fn get_opcode(&self) -> MirOP {
+        self.common().opcode
+    }
+}
+
 impl MirInst {
     pub fn get_common(&self) -> &MirInstCommon {
         match self {
@@ -96,23 +112,25 @@ impl MirInst {
             MirInst::UncondBr(inst) => &inst.common,
             MirInst::BLink(inst) => &inst.common,
             MirInst::RegCondBr(inst) => &inst.common,
-            MirInst::LoadStoreRRR(load_store_rrr) => &load_store_rrr.common,
-            MirInst::LoadStoreRRI(load_store_rri) => &load_store_rri.common,
-            MirInst::LoadStoreLiteral(load_store_literal) => &load_store_literal.common,
-            MirInst::Bin(bin_op) => &bin_op.common,
-            MirInst::Unary(unary_op) => &unary_op.common,
-            MirInst::BFM(bfmop) => &bfmop.common,
-            MirInst::ExtR(ext_rop) => &ext_rop.common,
-            MirInst::Tri(ternary_op) => &ternary_op.common,
-            MirInst::Cmp(cmp_op) => &cmp_op.common,
-            MirInst::CondSelect(cond_select) => &cond_select.common,
-            MirInst::CondUnary(cond_unary_op) => &cond_unary_op.common,
-            MirInst::CondSet(cond_set) => &cond_set.common,
-            MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.common,
+            MirInst::LoadStoreRRR(inst) => &inst.common,
+            MirInst::LoadStoreRRI(inst) => &inst.common,
+            MirInst::LoadStoreLiteral(inst) => &inst.common,
+            MirInst::Bin(bin_op) => bin_op.common(),
+            MirInst::BinCSR(bin_csr_op) => bin_csr_op.common(),
+            MirInst::Unary(unary_op) => unary_op.common(),
+            MirInst::BFM(bfmop) => bfmop.common(),
+            MirInst::ExtR(ext_rop) => ext_rop.common(),
+            MirInst::Tri(ternary_op) => ternary_op.common(),
+            MirInst::Cmp(cmp_op) => cmp_op.common(),
+            MirInst::CondSelect(cond_select) => cond_select.common(),
+            MirInst::CondUnary(cond_unary_op) => cond_unary_op.common(),
+            MirInst::CondSet(cond_set) => cond_set.common(),
+            MirInst::CondCmp(cond_cmp_op) => cond_cmp_op.common(),
             MirInst::Call(call) => &call.common,
             MirInst::MirReturn(mir_return) => &mir_return.common,
             MirInst::TabSwitch(tab_switch) => &tab_switch.common,
             MirInst::BinSwitch(bin_switch) => &bin_switch.common,
+            MirInst::UnaryCSR(inst) => inst.common(),
         }
     }
     pub fn get_opcode(&self) -> MirOP {
@@ -130,18 +148,20 @@ impl MirInst {
             MirInst::LoadStoreLiteral(load_store_literal) => &load_store_literal.operands,
             MirInst::Bin(bin_op) => bin_op.operands(),
             MirInst::Unary(unary_op) => unary_op.operands(),
-            MirInst::BFM(bfmop) => &bfmop.operands,
-            MirInst::ExtR(ext_rop) => &ext_rop.operands,
-            MirInst::Tri(ternary_op) => &ternary_op.operands,
-            MirInst::Cmp(cmp_op) => &cmp_op.operands,
-            MirInst::CondSelect(cond_select) => &cond_select.operands,
-            MirInst::CondUnary(cond_unary_op) => &cond_unary_op.operands,
-            MirInst::CondSet(cond_set) => &cond_set.operands,
-            MirInst::CondCmp(cond_cmp_op) => &cond_cmp_op.operands,
+            MirInst::BFM(bfmop) => bfmop.operands(),
+            MirInst::ExtR(ext_rop) => ext_rop.operands(),
+            MirInst::Tri(ternary_op) => ternary_op.operands(),
+            MirInst::Cmp(cmp_op) => cmp_op.operands(),
+            MirInst::CondSelect(cond_select) => cond_select.operands(),
+            MirInst::CondUnary(cond_unary_op) => cond_unary_op.operands(),
+            MirInst::CondSet(cond_set) => cond_set.operands(),
+            MirInst::CondCmp(cond_cmp_op) => cond_cmp_op.operands(),
             MirInst::Call(call) => call.operands.as_slice(),
             MirInst::MirReturn(ret) => ret.operands(),
             MirInst::TabSwitch(tab_switch) => &tab_switch.operands,
             MirInst::BinSwitch(bin_switch) => &bin_switch.operands,
+            MirInst::BinCSR(bin_csrop) => bin_csrop.operands(),
+            MirInst::UnaryCSR(inst) => inst.operands(),
         }
     }
 }

@@ -5,7 +5,7 @@ use crate::{
     mir::{
         inst::{MirInst, MirInstRef},
         module::{
-            MirModule, ModuleItem, ModuleItemRef,
+            MirModule, MirGlobal, MirGlobalRef,
             block::MirBlockRef,
             func::MirFunc,
             global::{MirGlobalData, MirGlobalVariable, Section},
@@ -82,11 +82,11 @@ impl<'a> MirBuilder<'a> {
     pub fn push_variable(
         &mut self,
         var: MirGlobalVariable,
-    ) -> (ModuleItemRef, Rc<MirGlobalVariable>) {
+    ) -> (MirGlobalRef, Rc<MirGlobalVariable>) {
         let rc_var = Rc::new(var);
         let item_ref = self
             .mir_module
-            .add_item(ModuleItem::Variable(Rc::clone(&rc_var)));
+            .add_item(MirGlobal::Variable(Rc::clone(&rc_var)));
         (item_ref, rc_var)
     }
     pub fn extern_variable(
@@ -95,17 +95,17 @@ impl<'a> MirBuilder<'a> {
         section: Section,
         ty: ValTypeID,
         type_ctx: &TypeContext,
-    ) -> (ModuleItemRef, Rc<MirGlobalVariable>) {
+    ) -> (MirGlobalRef, Rc<MirGlobalVariable>) {
         self.push_variable(MirGlobalVariable::new_extern(name, section, ty, type_ctx))
     }
-    pub fn push_unnamed_data(&mut self, data: MirGlobalData) -> ModuleItemRef {
-        self.mir_module.add_item(ModuleItem::UnnamedData(data))
+    pub fn push_unnamed_data(&mut self, data: MirGlobalData) -> MirGlobalRef {
+        self.mir_module.add_item(MirGlobal::UnnamedData(data))
     }
-    pub fn push_func(&mut self, func: MirFunc, switch_focus: bool) -> (ModuleItemRef, Rc<MirFunc>) {
+    pub fn push_func(&mut self, func: MirFunc, switch_focus: bool) -> (MirGlobalRef, Rc<MirFunc>) {
         let rc_func = Rc::new(func);
         let item_ref = self
             .mir_module
-            .add_item(ModuleItem::Function(Rc::clone(&rc_func)));
+            .add_item(MirGlobal::Function(Rc::clone(&rc_func)));
         if switch_focus && rc_func.is_define() {
             self.set_focus(MirFocus::Func(Rc::clone(&rc_func)));
         }
@@ -116,7 +116,7 @@ impl<'a> MirBuilder<'a> {
         name: String,
         func_ty: FuncTypeRef,
         type_ctx: &TypeContext,
-    ) -> (ModuleItemRef, Rc<MirFunc>) {
+    ) -> (MirGlobalRef, Rc<MirFunc>) {
         let func = MirFunc::new_extern(name, func_ty, type_ctx);
         self.push_func(func, true)
     }

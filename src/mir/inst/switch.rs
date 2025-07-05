@@ -99,7 +99,7 @@ pub struct VecSwitchTab {
     pub left: i128,
     pub step: u64,
     pub cases: Box<[Cell<MirBlockRef>]>,
-    pub tab_index: Cell<usize>,
+    pub tab_index: Cell<u32>,
 }
 
 impl VecSwitchTab {
@@ -198,7 +198,7 @@ impl TabSwitch {
     pub fn set_default_label(&self, label: MirBlockRef) {
         self.operands[1].set(MirOperand::Label(label));
     }
-    pub fn get_switchtab(&self) -> (usize, Rc<VecSwitchTab>) {
+    pub fn get_switchtab(&self) -> (u32, Rc<VecSwitchTab>) {
         if let MirOperand::VecSwitchTab(index) = self.operands[2].get() {
             (index, self.switchtab_ref.clone())
         } else {
@@ -214,7 +214,7 @@ impl TabSwitch {
 #[derive(Debug, Clone)]
 pub struct BinSwitchTab {
     pub cases: Box<[(MirBlockRef, u64)]>,
-    pub tab_index: Cell<usize>,
+    pub tab_index: Cell<u32>,
     pub default_label: MirBlockRef,
 }
 
@@ -279,7 +279,7 @@ impl BinSwitch {
     pub fn set_condition(&self, condition: MirOperand) {
         self.operands[0].set(condition);
     }
-    pub fn get_switchtab(&self) -> (usize, Rc<BinSwitchTab>) {
+    pub fn get_switchtab(&self) -> (u32, Rc<BinSwitchTab>) {
         if let MirOperand::BinSwitchTab(index) = self.operands[1].get() {
             (index, self.switchtab_ref.clone())
         } else {

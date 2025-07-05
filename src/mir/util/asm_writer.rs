@@ -15,12 +15,12 @@ use crate::{
             switch::{BinSwitchTab, VecSwitchTab},
         },
         module::{
-            MirModule, ModuleItem,
+            MirGlobal, MirModule,
             block::MirBlock,
             func::MirFunc,
             global::{Linkage, MirGlobalData, MirGlobalVariable, Section},
         },
-        operand::{MirOperand, symbol::SymbolOperand},
+        operand::MirOperand,
     },
 };
 
@@ -106,9 +106,9 @@ impl<'a> AsmWriter<'a> {
                 global_status.last_align_log2 = align_log2;
             }
             match &*mod_item {
-                ModuleItem::Variable(gvar) => self.write_variable(gvar),
-                ModuleItem::UnnamedData(gdata) => self.write_global_data(gdata),
-                ModuleItem::Function(func) => self.write_function(module, func),
+                MirGlobal::Variable(gvar) => self.write_variable(gvar),
+                MirGlobal::UnnamedData(gdata) => self.write_global_data(gdata),
+                MirGlobal::Function(func) => self.write_function(module, func),
                 _ => {}
             }
         }
@@ -315,7 +315,7 @@ impl<'a> AsmWriter<'a> {
                     .write_operand(istat, bin_op.rn().get())
                     .write_str(", ")
                     .write_operand(istat, bin_op.rhs().get());
-                if let Some(modify) = bin_op.rhs_modifier {
+                if let Some(modify) = bin_op.rhs_op {
                     self.write_str(", ").write_str(modify.to_string().as_str());
                 }
             }
@@ -440,22 +440,16 @@ impl<'a> AsmWriter<'a> {
 
     fn write_operand(&self, istat: &InstWriteStatus, operand: MirOperand) -> &Self {
         match operand {
-            MirOperand::VirtReg(virt_reg) => self.write_str(&virt_reg.to_string()),
-            MirOperand::PhysReg(phys_reg) => self.write_str(&phys_reg.to_string()),
-            MirOperand::ImmConst(i) => self.write_fmt(format_args!("#0x{:x}", i)),
-            MirOperand::Symbol(sym) => match sym {
-                SymbolOperand::Label(label) => {
-                    let alloc_bb = istat.module.borrow_alloc_block();
-                    self.write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
+            MirOperand::VReg(vreg) => self.write_str(&vreg.to_string()),
+            MirOperand::PReg(preg) => self.write_str(&preg.to_string()),
+            MirOperand::Imm(i) => self.write_fmt(format_args!("#0x{:x}", i)),
+            MirOperand::Global(item) => {
+                let name = item.get_name(istat.module);
+                match name {
+                    Some(name) => self.write_str(name.as_str()),
+                    None => self.write_str("<unnamed>"),
                 }
-                SymbolOperand::Global(item) => {
-                    let name = item.get_name(istat.module);
-                    match name {
-                        Some(name) => self.write_str(name.as_str()),
-                        None => self.write_str("<unnamed>"),
-                    }
-                }
-            },
+            }
             MirOperand::Label(bb) => {
                 let alloc_bb = istat.module.borrow_alloc_block();
                 self.write_str(bb.to_slabref_unwrap(&alloc_bb).name.as_str())
@@ -463,7 +457,7 @@ impl<'a> AsmWriter<'a> {
             MirOperand::VecSwitchTab(index) => {
                 let vec_switch_tab = istat
                     .parent_func
-                    .get_vec_switch_tab(index)
+                    .get_vec_switch_tab(index as usize)
                     .expect("Invalid VecSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     "_Z{}switch_tab.v{}",
@@ -474,7 +468,7 @@ impl<'a> AsmWriter<'a> {
             MirOperand::BinSwitchTab(index) => {
                 let bin_switch_tab = istat
                     .parent_func
-                    .get_bin_switch_tab(index)
+                    .get_bin_switch_tab(index as usize)
                     .expect("Invalid BinSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     "_Z{}switch_tab.b{}",
@@ -568,10 +562,9 @@ impl<'a> AsmWriter<'a> {
 
     fn write_load_store_immediate(&self, istat: &InstWriteStatus, imm: MirOperand) -> &Self {
         type M = MirOperand;
-        type S = SymbolOperand;
         match imm {
-            MirOperand::ImmConst(value) => self.write_fmt(format_args!("#{}", value)),
-            MirOperand::Symbol(SymbolOperand::Global(item)) => {
+            MirOperand::Imm(value) => self.write_fmt(format_args!("#{}", value)),
+            MirOperand::Global(item) => {
                 if item.is_extern(istat.module) {
                     self.write_str(":got");
                 }
@@ -581,7 +574,7 @@ impl<'a> AsmWriter<'a> {
                         .as_str(),
                 )
             }
-            M::Symbol(S::Label(label)) | M::Label(label) => {
+            M::Label(label) => {
                 let alloc_bb = istat.module.borrow_alloc_block();
                 self.write_str(":lo12:")
                     .write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
@@ -589,7 +582,7 @@ impl<'a> AsmWriter<'a> {
             MirOperand::VecSwitchTab(index) => {
                 let vec_switch_tab = istat
                     .parent_func
-                    .get_vec_switch_tab(index)
+                    .get_vec_switch_tab(index as usize)
                     .expect("Invalid VecSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     ":lo12:_Z{}switch_tab.v{}",
@@ -600,7 +593,7 @@ impl<'a> AsmWriter<'a> {
             MirOperand::BinSwitchTab(index) => {
                 let bin_switch_tab = istat
                     .parent_func
-                    .get_bin_switch_tab(index)
+                    .get_bin_switch_tab(index as usize)
                     .expect("Invalid BinSwitchTab index in write_operand");
                 self.write_fmt(format_args!(
                     ":lo12:_Z{}switch_tab.b{}",
@@ -609,7 +602,7 @@ impl<'a> AsmWriter<'a> {
                 ))
             }
 
-            MirOperand::None | MirOperand::VirtReg(_) | MirOperand::PhysReg(_) => {
+            MirOperand::None | MirOperand::VReg(_) | MirOperand::PReg(_) => {
                 panic!(
                     "Cannot write immediate operand for load/store RRI instruction: {:?}",
                     imm
@@ -651,7 +644,7 @@ mod testing {
             &type_ctx,
             &mut module.borrow_alloc_block_mut(),
         );
-        module.add_item(ModuleItem::Function(Rc::new(main_func)));
+        module.add_item(MirGlobal::Function(Rc::new(main_func)));
 
         writer.write_module(&module);
     }

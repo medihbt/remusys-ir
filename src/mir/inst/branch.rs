@@ -4,7 +4,7 @@ use crate::mir::{
     inst::{MirInstCommon, cond::MirCondFlag, opcode::MirOP},
     operand::{
         MirOperand,
-        reg::{PhysReg, RegUseFlags},
+        reg::{PReg, RegUseFlags},
     },
 };
 
@@ -37,7 +37,7 @@ impl CondBr {
             common: MirInstCommon::new(opcode),
             operands: [
                 Cell::new(MirOperand::None),
-                Cell::new(MirOperand::PhysReg(PhysReg::PState(
+                Cell::new(MirOperand::PReg(PReg::PState(
                     RegUseFlags::IMPLICIT_DEF,
                 ))),
             ],
@@ -111,13 +111,13 @@ pub struct BLink {
 
 impl BLink {
     pub fn new(opcode: MirOP) -> Self {
-        let mut ret_addr = PhysReg::return_addr();
+        let mut ret_addr = PReg::return_addr();
         ret_addr.add_use_flag(RegUseFlags::IMPLICIT_DEF);
         Self {
             common: MirInstCommon::new(opcode),
             operands: [
                 Cell::new(MirOperand::None),
-                Cell::new(MirOperand::PhysReg(ret_addr)),
+                Cell::new(MirOperand::PReg(ret_addr)),
             ],
         }
     }

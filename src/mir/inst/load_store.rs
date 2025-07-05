@@ -4,7 +4,7 @@ use crate::mir::{
     inst::{MirInstCommon, opcode::MirOP},
     operand::{
         MirOperand,
-        reg::{PhysReg, RegOP},
+        reg::{PReg, RegOP},
     },
 };
 
@@ -56,7 +56,7 @@ impl LoadStoreRRR {
             operands: [
                 Cell::new(MirOperand::None),                   // Rt
                 Cell::new(MirOperand::None),                   // Rn
-                Cell::new(MirOperand::PhysReg(PhysReg::zr())), // Rm
+                Cell::new(MirOperand::PReg(PReg::zr())), // Rm
             ],
             rm_op,
         }
@@ -79,9 +79,9 @@ impl LoadStoreInst for LoadStoreRRR {
     }
     fn get_addr_mode(&self) -> AddressMode {
         match self.rm().get() {
-            MirOperand::VirtReg(_) => AddressMode::BaseOffset,
-            MirOperand::PhysReg(phys_reg) => match phys_reg {
-                PhysReg::ZR(..) => AddressMode::BaseOnly,
+            MirOperand::VReg(_) => AddressMode::BaseOffset,
+            MirOperand::PReg(phys_reg) => match phys_reg {
+                PReg::ZR(..) => AddressMode::BaseOnly,
                 _ => AddressMode::BaseOffset,
             },
             _ => panic!("Invalid operand {:?} for address mode", self.rm().get()),
@@ -118,7 +118,7 @@ impl LoadStoreRRI {
             operands: [
                 Cell::new(MirOperand::None),        // Rt
                 Cell::new(MirOperand::None),        // Rn
-                Cell::new(MirOperand::ImmConst(0)), // Offset
+                Cell::new(MirOperand::Imm(0)), // Offset
             ],
         }
     }

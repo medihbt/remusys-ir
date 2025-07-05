@@ -15,7 +15,7 @@ use crate::{
     mir::{
         inst::{MirInst, MirInstRef},
         module::MirModule,
-        operand::reg::RegOperand,
+        operand::suboperand::RegOperand,
     },
 };
 

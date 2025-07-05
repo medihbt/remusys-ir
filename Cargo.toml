@@ -7,3 +7,4 @@ edition = "2024"
 bitflags = "2.9.0"
 lazy_static = "1.5.0"
 slab = "0.4.9"
+remusys_mir_instdef = { path = "remusys_mir_instdef" }

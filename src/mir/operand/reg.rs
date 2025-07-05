@@ -2,7 +2,13 @@ use std::fmt::Debug;
 
 use bitflags::bitflags;
 
-use crate::typing::{id::ValTypeID, types::FloatTypeKind};
+use crate::{
+    mir::operand::{
+        MirOperand,
+        suboperand::{IMirSubOperand, RegOperand},
+    },
+    typing::{id::ValTypeID, types::FloatTypeKind},
+};
 
 /// Represents a sub-register index with a specific bit width and index.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -87,8 +93,8 @@ bitflags! {
     }
 }
 
-impl ToString for RegUseFlags {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for RegUseFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut flags = String::new();
         if self.contains(RegUseFlags::DEF) {
             flags.push_str("def ");
@@ -102,7 +108,7 @@ impl ToString for RegUseFlags {
         if self.contains(RegUseFlags::IMPLICIT_DEF) {
             flags.push_str("implicit-def ");
         }
-        flags.trim_end().to_string()
+        write!(f, "{}", flags.trim_end())
     }
 }
 
@@ -150,39 +156,40 @@ impl std::fmt::Display for RegOP {
     }
 }
 
+/// 虚拟寄存器, 在寄存器分配之前使用.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VirtReg {
+pub enum VReg {
     General(u32, SubRegIndex, RegUseFlags),
     Float(u32, SubRegIndex, RegUseFlags),
 }
 
-impl VirtReg {
+impl VReg {
     pub fn new_long(reg_id: u32) -> Self {
-        VirtReg::General(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        VReg::General(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub fn new_int(reg_id: u32) -> Self {
-        VirtReg::General(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
+        VReg::General(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
     }
     pub fn new_double(reg_id: u32) -> Self {
-        VirtReg::Float(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        VReg::Float(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub fn new_float(reg_id: u32) -> Self {
-        VirtReg::Float(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
+        VReg::Float(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
     }
 
     pub fn new_from_type(ir_type: ValTypeID, reg_id: u32) -> Self {
         match ir_type {
-            ValTypeID::Ptr => VirtReg::new_long(reg_id),
+            ValTypeID::Ptr => VReg::new_long(reg_id),
             ValTypeID::Int(bits) => {
                 if bits <= 32 {
-                    VirtReg::new_int(reg_id)
+                    VReg::new_int(reg_id)
                 } else {
-                    VirtReg::new_long(reg_id)
+                    VReg::new_long(reg_id)
                 }
             }
             ValTypeID::Float(fp_kind) => match fp_kind {
-                FloatTypeKind::Ieee32 => VirtReg::new_float(reg_id),
-                FloatTypeKind::Ieee64 => VirtReg::new_double(reg_id),
+                FloatTypeKind::Ieee32 => VReg::new_float(reg_id),
+                FloatTypeKind::Ieee64 => VReg::new_double(reg_id),
             },
             ValTypeID::Void
             | ValTypeID::Array(_)
@@ -197,23 +204,23 @@ impl VirtReg {
 
     pub fn get_subreg_index(self) -> SubRegIndex {
         match self {
-            VirtReg::General(_, si, _) | VirtReg::Float(_, si, _) => si,
+            VReg::General(_, si, _) | VReg::Float(_, si, _) => si,
         }
     }
     pub fn subreg_index_mut(&mut self) -> &mut SubRegIndex {
         match self {
-            VirtReg::General(_, si, _) | VirtReg::Float(_, si, _) => si,
+            VReg::General(_, si, _) | VReg::Float(_, si, _) => si,
         }
     }
 
-    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
-        match self {
-            VirtReg::General(_, _, uf) | VirtReg::Float(_, _, uf) => uf,
-        }
-    }
     pub fn get_use_flags(&self) -> RegUseFlags {
         match self {
-            VirtReg::General(_, _, uf) | VirtReg::Float(_, _, uf) => *uf,
+            VReg::General(_, _, uf) | VReg::Float(_, _, uf) => *uf,
+        }
+    }
+    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
+        match self {
+            VReg::General(_, _, uf) | VReg::Float(_, _, uf) => uf,
         }
     }
     pub fn add_use_flag(&mut self, flag: RegUseFlags) {
@@ -233,27 +240,27 @@ impl VirtReg {
 
     pub fn get_bits(self) -> u8 {
         match self {
-            VirtReg::General(_, si, _) | VirtReg::Float(_, si, _) => 1 << si.get_bits_log2(),
+            VReg::General(_, si, _) | VReg::Float(_, si, _) => 1 << si.get_bits_log2(),
         }
     }
     pub fn get_id(self) -> u32 {
         match self {
-            VirtReg::General(id, _, _) | VirtReg::Float(id, _, _) => id,
+            VReg::General(id, _, _) | VReg::Float(id, _, _) => id,
         }
     }
     pub fn insert_id(self, id: u32) -> Self {
         match self {
-            VirtReg::General(_, si, uf) => VirtReg::General(id, si, uf),
-            VirtReg::Float(_, si, uf) => VirtReg::Float(id, si, uf),
+            VReg::General(_, si, uf) => VReg::General(id, si, uf),
+            VReg::Float(_, si, uf) => VReg::Float(id, si, uf),
         }
     }
 }
 
-impl std::fmt::Display for VirtReg {
+impl std::fmt::Display for VReg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (leading, id, si, uf) = match self {
-            VirtReg::General(id, si, uf) => ("%vg", *id, *si, *uf),
-            VirtReg::Float(id, si, uf) => ("%vf", *id, *si, *uf),
+            VReg::General(id, si, uf) => ("%vg", *id, *si, *uf),
+            VReg::Float(id, si, uf) => ("%vf", *id, *si, *uf),
         };
         write!(f, "{} {leading}{}{}", uf.to_string(), id, si)
     }
@@ -261,7 +268,7 @@ impl std::fmt::Display for VirtReg {
 
 /// Represents a physical register in the ARM architecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PhysReg {
+pub enum PReg {
     X(u8, SubRegIndex, RegUseFlags), // 64-bit general purpose register (Xn | Wn; n in 0..31)
     V(u8, SubRegIndex, RegUseFlags), // 128-bit vector register (Vn | Dn | Sn)
     SP(SubRegIndex, RegUseFlags),    // Stack pointer (SP)
@@ -270,20 +277,20 @@ pub enum PhysReg {
     PC(SubRegIndex, RegUseFlags),    // Program counter (PC)
 }
 
-impl PhysReg {
+impl PReg {
     pub const fn sp() -> Self {
-        PhysReg::SP(SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::SP(SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_sp(self) -> bool {
-        matches!(self, PhysReg::SP(..))
+        matches!(self, PReg::SP(..))
     }
 
     pub const fn x(reg_id: u8) -> Self {
         assert!(reg_id < 32);
-        PhysReg::X(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::X(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_x(self) -> bool {
-        if let PhysReg::X(_, si, _) = self {
+        if let PReg::X(_, si, _) = self {
             si.get_bits_log2() == 6
         } else {
             false
@@ -291,10 +298,10 @@ impl PhysReg {
     }
     pub const fn w(reg_id: u8) -> Self {
         assert!(reg_id < 32);
-        PhysReg::X(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
+        PReg::X(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
     }
     pub const fn is_w(self) -> bool {
-        if let PhysReg::X(_, si, _) = self {
+        if let PReg::X(_, si, _) = self {
             si.get_bits_log2() == 5
         } else {
             false
@@ -302,10 +309,10 @@ impl PhysReg {
     }
     pub const fn fp_d(reg_id: u8) -> Self {
         assert!(reg_id < 32);
-        PhysReg::V(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::V(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_fp_d(self) -> bool {
-        if let PhysReg::V(_, si, _) = self {
+        if let PReg::V(_, si, _) = self {
             si.get_bits_log2() == 6
         } else {
             false
@@ -313,103 +320,107 @@ impl PhysReg {
     }
     pub const fn fp_s(reg_id: u8) -> Self {
         assert!(reg_id < 32);
-        PhysReg::V(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
+        PReg::V(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
     }
     pub const fn is_fp_s(self) -> bool {
-        if let PhysReg::V(_, si, _) = self {
+        if let PReg::V(_, si, _) = self {
             si.get_bits_log2() == 5
         } else {
             false
         }
     }
     pub const fn return_addr() -> Self {
-        PhysReg::X(30, SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::X(30, SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_return_addr(self) -> bool {
-        matches!(self, PhysReg::X(30, ..))
+        matches!(self, PReg::X(30, ..))
     }
     pub const fn pc() -> Self {
-        PhysReg::PC(SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::PC(SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_pc(self) -> bool {
-        matches!(self, PhysReg::PC(..))
+        matches!(self, PReg::PC(..))
     }
 
     pub const fn pstate() -> Self {
-        PhysReg::PState(RegUseFlags::NONE)
+        PReg::PState(RegUseFlags::NONE)
     }
     pub const fn is_pstate(self) -> bool {
-        matches!(self, PhysReg::PState(_))
+        matches!(self, PReg::PState(_))
     }
 
     pub const fn zr() -> Self {
-        PhysReg::ZR(SubRegIndex::new(6, 0), RegUseFlags::NONE)
+        PReg::ZR(SubRegIndex::new(6, 0), RegUseFlags::NONE)
     }
     pub const fn is_zr(self) -> bool {
-        matches!(self, PhysReg::ZR(..))
+        matches!(self, PReg::ZR(..))
     }
 
     pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
         match self {
-            PhysReg::X(_, _, uf)
-            | PhysReg::V(_, _, uf)
-            | PhysReg::SP(_, uf)
-            | PhysReg::ZR(_, uf)
-            | PhysReg::PState(uf)
-            | PhysReg::PC(_, uf) => uf,
+            PReg::X(_, _, uf)
+            | PReg::V(_, _, uf)
+            | PReg::SP(_, uf)
+            | PReg::ZR(_, uf)
+            | PReg::PState(uf)
+            | PReg::PC(_, uf) => uf,
         }
     }
     pub fn get_use_flags(&self) -> RegUseFlags {
         match self {
-            PhysReg::X(_, _, uf)
-            | PhysReg::V(_, _, uf)
-            | PhysReg::SP(_, uf)
-            | PhysReg::ZR(_, uf)
-            | PhysReg::PState(uf)
-            | PhysReg::PC(_, uf) => *uf,
+            PReg::X(_, _, uf)
+            | PReg::V(_, _, uf)
+            | PReg::SP(_, uf)
+            | PReg::ZR(_, uf)
+            | PReg::PState(uf)
+            | PReg::PC(_, uf) => *uf,
         }
     }
     pub fn add_use_flag(&mut self, flag: RegUseFlags) {
         self.use_flags_mut().insert(flag);
     }
+    pub fn insert_use_flags(mut self, flag: RegUseFlags) -> Self {
+        self.add_use_flag(flag);
+        self
+    }
 
     pub fn subreg_index_mut(&mut self) -> Option<&mut SubRegIndex> {
         match self {
-            PhysReg::X(_, si, _)
-            | PhysReg::V(_, si, _)
-            | PhysReg::SP(si, _)
-            | PhysReg::ZR(si, _)
-            | PhysReg::PC(si, _) => Some(si),
-            PhysReg::PState(_) => None,
+            PReg::X(_, si, _)
+            | PReg::V(_, si, _)
+            | PReg::SP(si, _)
+            | PReg::ZR(si, _)
+            | PReg::PC(si, _) => Some(si),
+            PReg::PState(_) => None,
         }
     }
     pub fn id_mut(&mut self) -> Option<&mut u8> {
         match self {
-            PhysReg::X(id, _, _) | PhysReg::V(id, _, _) => Some(id),
+            PReg::X(id, _, _) | PReg::V(id, _, _) => Some(id),
             _ => None,
         }
     }
     pub fn get_bits(&self) -> u8 {
         match self {
-            PhysReg::X(_, subr, _)
-            | PhysReg::V(_, subr, _)
-            | PhysReg::SP(subr, _)
-            | PhysReg::ZR(subr, _)
-            | PhysReg::PC(subr, _) => 1 << subr.get_bits_log2(),
-            PhysReg::PState(_) => 64,
+            PReg::X(_, subr, _)
+            | PReg::V(_, subr, _)
+            | PReg::SP(subr, _)
+            | PReg::ZR(subr, _)
+            | PReg::PC(subr, _) => 1 << subr.get_bits_log2(),
+            PReg::PState(_) => 64,
         }
     }
 }
 
-impl std::fmt::Display for PhysReg {
+impl std::fmt::Display for PReg {
     /// Formats the physical register in AArch64 assembly syntax.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PhysReg::X(id, si, _) => {
+            PReg::X(id, si, _) => {
                 let bits_log2_str = if si.get_bits_log2() == 5 { "w" } else { "x" };
                 write!(f, "{}{}", bits_log2_str, id)
             }
-            PhysReg::V(id, si, _) => {
+            PReg::V(id, si, _) => {
                 let bits_log2 = match si.get_bits_log2() {
                     5 => "s",
                     6 => "d",
@@ -418,22 +429,22 @@ impl std::fmt::Display for PhysReg {
                 };
                 write!(f, "{}{}", bits_log2, id)
             }
-            PhysReg::SP(si, _) => {
+            PReg::SP(si, _) => {
                 let bits_log2 = match si.get_bits_log2() {
                     5 => "wsp",
                     _ => "sp",
                 };
                 write!(f, "{}", bits_log2)
             }
-            PhysReg::ZR(si, _) => {
+            PReg::ZR(si, _) => {
                 let bits_log2 = match si.get_bits_log2() {
                     5 => "wzr",
                     _ => "xzr",
                 };
                 write!(f, "{}", bits_log2)
             }
-            PhysReg::PState(_) => write!(f, "pstate"),
-            PhysReg::PC(si, _) => {
+            PReg::PState(_) => write!(f, "pstate"),
+            PReg::PC(si, _) => {
                 let bits_log2 = if si.get_bits_log2() == 5 { "wpc" } else { "pc" };
                 write!(f, "{}", bits_log2)
             }
@@ -441,38 +452,40 @@ impl std::fmt::Display for PhysReg {
     }
 }
 
-/// Represents a register operand, which can be either a virtual or physical register.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RegOperand {
-    Virt(VirtReg),
-    Phys(PhysReg),
+impl IMirSubOperand for VReg {
+    fn from_mirop(operand: MirOperand) -> Self {
+        match operand {
+            MirOperand::VReg(r) => r,
+            _ => panic!("Expected a VReg operand, found: {operand:?}"),
+        }
+    }
+    fn into_mirop(self) -> MirOperand {
+        MirOperand::VReg(self)
+    }
+
+    fn insert_to_mirop(self, op: MirOperand) -> MirOperand {
+        RegOperand::V(self).insert_to_mirop(op)
+    }
+
+    fn new_empty_mirsubop() -> Self {
+        VReg::new_long(0)
+    }
 }
 
-impl RegOperand {
-    pub fn is_phys(&self) -> bool {
-        matches!(self, RegOperand::Phys(_))
-    }
-    pub fn is_virt(&self) -> bool {
-        matches!(self, RegOperand::Virt(_))
-    }
-
-    pub fn get_bits(&self) -> u8 {
-        match self {
-            RegOperand::Virt(vr) => vr.get_bits(),
-            RegOperand::Phys(pr) => pr.get_bits(),
+impl IMirSubOperand for PReg {
+    fn from_mirop(operand: MirOperand) -> Self {
+        match operand {
+            MirOperand::PReg(r) => r,
+            _ => panic!("Expected a PReg operand, found: {operand:?}"),
         }
     }
-
-    pub fn get_use_flags(&self) -> RegUseFlags {
-        match self {
-            RegOperand::Virt(vr) => vr.get_use_flags(),
-            RegOperand::Phys(pr) => pr.get_use_flags(),
-        }
+    fn into_mirop(self) -> MirOperand {
+        MirOperand::PReg(self)
     }
-    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
-        match self {
-            RegOperand::Virt(vr) => vr.use_flags_mut(),
-            RegOperand::Phys(pr) => pr.use_flags_mut(),
-        }
+    fn insert_to_mirop(self, op: MirOperand) -> MirOperand {
+        RegOperand::P(self).insert_to_mirop(op)
+    }
+    fn new_empty_mirsubop() -> Self {
+        PReg::x(0)
     }
 }

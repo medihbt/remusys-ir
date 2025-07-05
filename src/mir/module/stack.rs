@@ -3,7 +3,7 @@ use std::cell::Cell;
 use slab::Slab;
 
 use crate::{
-    mir::operand::reg::{PhysReg, VirtReg},
+    mir::operand::reg::{PReg, VReg},
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
@@ -26,7 +26,7 @@ pub struct MirStackItem {
     /// The index of the item in the stack layout array.
     pub index: usize,
     /// The virtual register pointer to the stack slot.
-    pub virtreg: VirtReg,
+    pub virtreg: VReg,
     /// The offset of the item in its own section inside the stack.
     /// * If `is_arg` is false, this is the offset from the start of the stack frame.
     /// * If `is_arg` is true, the real offset should add the `vars_size` to this value.
@@ -74,7 +74,7 @@ pub struct MirStackLayout {
     /// 
     /// NOTE that not all saved registers are in this list, since some instructions like
     /// `call (MIR pesudo op)` will also save some registers to the stack temporarily.
-    pub saved_regs: Vec<PhysReg>,
+    pub saved_regs: Vec<PReg>,
     /// The stack layout for spilled arguments.
     pub args: Vec<MirStackItem>,
     /// The total size of the variables section in the stack frame.
@@ -226,8 +226,8 @@ impl MirStackLayout {
 
 #[derive(Debug, Clone)]
 pub struct VirtRegAlloc {
-    pub general: Slab<VirtReg>,
-    pub float: Slab<VirtReg>,
+    pub general: Slab<VReg>,
+    pub float: Slab<VReg>,
 }
 
 impl VirtRegAlloc {
@@ -238,30 +238,30 @@ impl VirtRegAlloc {
         }
     }
 
-    fn do_alloc(slab: &mut Slab<VirtReg>, mapper: impl Fn(u32) -> VirtReg) -> u32 {
+    fn do_alloc(slab: &mut Slab<VReg>, mapper: impl Fn(u32) -> VReg) -> u32 {
         let index = slab.vacant_key() as u32;
         slab.insert(mapper(index));
         index
     }
-    pub fn alloc_gp(&mut self) -> &mut VirtReg {
-        let index = Self::do_alloc(&mut self.general, VirtReg::new_long);
+    pub fn alloc_gp(&mut self) -> &mut VReg {
+        let index = Self::do_alloc(&mut self.general, VReg::new_long);
         &mut self.general[index as usize]
     }
-    pub fn alloc_float(&mut self) -> &mut VirtReg {
-        let index = Self::do_alloc(&mut self.float, VirtReg::new_float);
+    pub fn alloc_float(&mut self) -> &mut VReg {
+        let index = Self::do_alloc(&mut self.float, VReg::new_float);
         &mut self.float[index as usize]
     }
-    pub fn alloc(&mut self, is_float: bool) -> &mut VirtReg {
+    pub fn alloc(&mut self, is_float: bool) -> &mut VReg {
         if is_float {
             self.alloc_float()
         } else {
             self.alloc_gp()
         }
     }
-    pub fn dealloc(&mut self, vreg: VirtReg) -> bool {
+    pub fn dealloc(&mut self, vreg: VReg) -> bool {
         let (id, slab) = match vreg {
-            VirtReg::General(id, ..) => (id, &mut self.general),
-            VirtReg::Float(id, ..) => (id, &mut self.float),
+            VReg::General(id, ..) => (id, &mut self.general),
+            VReg::Float(id, ..) => (id, &mut self.float),
         };
         slab.try_remove(id as usize).is_some()
     }

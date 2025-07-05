@@ -14,7 +14,7 @@ use crate::{
             global::{Linkage, MirGlobalCommon, Section},
             stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
         },
-        operand::reg::{PhysReg, VirtReg},
+        operand::reg::{PReg, VReg},
     },
     typing::{
         context::TypeContext,
@@ -30,7 +30,7 @@ pub struct MirFunc {
     pub arg_ir_types: Vec<ValTypeID>,
     pub ret_ir_type: ValTypeID,
 
-    pub arg_regs: Vec<PhysReg>,
+    pub arg_regs: Vec<PReg>,
     pub blocks: SlabRefList<MirBlockRef>,
 
     inner: RefCell<MirFuncInner>,
@@ -84,7 +84,7 @@ impl MirFunc {
     }
 
     fn init_args(
-        arg_regs: &mut Vec<PhysReg>,
+        arg_regs: &mut Vec<PReg>,
         stack: &mut MirStackLayout,
         vreg_alloc: &mut VirtRegAlloc,
         arg_tys: &[ValTypeID],
@@ -96,8 +96,8 @@ impl MirFunc {
 
         for &arg_ty in arg_tys {
             let (reg_top, mut preg) = match arg_ty {
-                ValTypeID::Ptr | ValTypeID::Int(_) => (&mut gpreg_top, PhysReg::x(0)),
-                ValTypeID::Float(_) => (&mut fpreg_top, PhysReg::fp_s(0)),
+                ValTypeID::Ptr | ValTypeID::Int(_) => (&mut gpreg_top, PReg::x(0)),
+                ValTypeID::Float(_) => (&mut fpreg_top, PReg::fp_s(0)),
                 _ => panic!("Invalid argument type for MIR function: {arg_ty:?}"),
             };
             if *reg_top < 8 {
@@ -122,7 +122,7 @@ impl MirFunc {
         irtype: ValTypeID,
         type_ctx: &TypeContext,
         force_stack_alloc: bool,
-    ) -> (VirtReg, bool) {
+    ) -> (VReg, bool) {
         let mut inner = self.inner.borrow_mut();
         let inner = &mut *inner;
         if force_stack_alloc {

@@ -1,114 +1,99 @@
 use std::cell::Cell;
 
+use remusys_mir_instdef::impl_mir_inst;
+
 use crate::mir::{
-    inst::{
-        cond::MirCondFlag, opcode::{MirOP, OperandLayout}, MirInstCommon
-    },
+    inst::{IMirSubInst, MirInst, MirInstCommon, cond::MirCondFlag, opcode::MirOP},
     operand::{
-        reg::{PhysReg, RegOP, RegUseFlags, VirtReg}, MirOperand
+        MirOperand,
+        reg::{PReg, RegOP, RegUseFlags, VReg},
+        suboperand::*,
     },
 };
 
-/**
- Binary Operation Instruction
-
- AArch64 assembly syntax (Do not show CSR operand if contains a CSR):
-
- * `binop rd, rn, rm`
- * `binop rd, rn, rm, <shift flag> #shift`
- * `binop rd, rn, rm, <SXTX|SXTW|UXTW>`
- * `binop rd, rn, #imm`
- * `binop rd, rn, #imm, <shift flag> #shift`
- * `binop rd, rn, rm, <SXTX|SXTW|UXTW>`
-
- These syntaxes are mapped to the following Remusys-MIR syntaxes:
-
- * `binop %rd, %rn, %rm`
- * `binop %rd, %rn, #imm`
- * `binop %rd, %rn, %rm,  implicit-def $PState`
- * `binop %rd, %rn, #imm, implicit-def $PState`
-
- 3-operand mode accepts opcode:
-
- ```aarch64
- add sub
- smax smin umax umin
- and bic eon eor orr orn
- asr lsl lsr ror
- asrv lslv lsrv rorv
- mul mneg smnegl umnegl smull smulh umull umulhn sdiv udiv
-
- fadd fsub fmul fdiv fnmul fmax fmin fmaxnm fminnm
- ```
-
- 3-operand with CSR mode accepts opcode:
-
- ```aarch64
- adds subs
- adc adcs sbc sbcs
- ands bics
- ```
-*/
+/// Binary Operation Instruction
+///
+/// AArch64 assembly syntax (Do not show CSR operand if contains a CSR):
+///
+/// * `binop rd, rn, rm`
+/// * `binop rd, rn, rm, <shift flag> #shift`
+/// * `binop rd, rn, rm, <SXTX|SXTW|UXTW>`
+/// * `binop rd, rn, #imm`
+/// * `binop rd, rn, #imm, <shift flag> #shift`
+/// * `binop rd, rn, rm, <SXTX|SXTW|UXTW>`
+///
+/// These syntaxes are mapped to the following Remusys-MIR syntaxes:
+///
+/// * `binop %rd, %rn, %rm`
+/// * `binop %rd, %rn, #imm`
+/// * `binop %rd, %rn, %rm,  implicit-def $PState`
+/// * `binop %rd, %rn, #imm, implicit-def $PState`
+///
+/// 3-operand mode accepts opcode:
+///
+/// ```aarch64
+/// add sub
+/// smax smin umax umin
+/// and bic eon eor orr orn
+/// asr lsl lsr ror
+/// asrv lslv lsrv rorv
+/// mul mneg smnegl umnegl smull smulh umull umulh sdiv udiv
+///
+/// fadd fsub fmul fdiv fnmul fmax fmin fmaxnm fminnm
+/// ```
+///
+/// 3-operand with CSR mode accepts opcode:
+///
+/// ```aarch64
+/// adds subs
+/// adc adcs sbc sbcs
+/// ands bics
+/// ```
 #[derive(Debug, Clone)]
 pub struct BinOp {
-    pub(super) common: MirInstCommon,
-    operand_pool: [Cell<MirOperand>; 4],
-    num_operands: u8,
-    pub rhs_modifier: Option<RegOP>,
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
+    pub rhs_op: Option<RegOP>,
 }
 
-impl BinOp {
-    pub fn new(opcode: MirOP, rhs_op: Option<RegOP>) -> Self {
-        let noperands = match opcode.get_operand_layout() {
-            OperandLayout::NoImplicit(3) => 3,
-            OperandLayout::ImplicitCSR(3) => 4,
-            _ => panic!(
-                "Unexpected operand layout {:?} for BinOp {opcode:?}",
-                opcode.get_operand_layout()
-            ),
-        };
-        let operand_pool = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::None),                          // Rm or immediate
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // CSR (if applicable)
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operand_pool,
-            num_operands: noperands,
-            rhs_modifier: rhs_op,
-        }
+impl_mir_inst! {
+    BinOp, Bin,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        rhs: MirOperand,
+    },
+    accept_opcode: [
+        Add, Sub, SMax, SMin, UMax, UMin,
+        And, Bic, EON, EOr, Orr, OrN,
+        ASR, LSL, LSR, ROR,
+        ASRV, LSLV, LSRV, RORV,
+        Mul, MNeg, SMNegL, UMNegL, SMulL, SMulH, UMulL, UMulH, SDiv, UDiv,
+        FAdd, FSub, FMul, FDiv, FNMul, FMax, FMin, FMaxNM, FMinNM,
+    ],
+    field_inits: {
+        pub rhs_op: Option<RegOP> = None;
     }
+}
 
-    pub fn operands(&self) -> &[Cell<MirOperand>] {
-        &self.operand_pool[..self.num_operands as usize]
-    }
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
+#[derive(Debug, Clone)]
+pub struct BinCSROp {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4],
+    pub rhs_op: Option<RegOP>,
+}
 
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operand_pool[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operand_pool[1]
-    }
-    pub fn rhs(&self) -> &Cell<MirOperand> {
-        &self.operand_pool[2]
-    }
-
-    pub fn csr(&self) -> Option<&Cell<MirOperand>> {
-        if self.num_operands == 4 {
-            Some(&self.operand_pool[3])
-        } else {
-            None
-        }
-    }
-    pub fn has_csr(&self) -> bool {
-        self.num_operands == 4
+impl_mir_inst! {
+    BinCSROp, BinCSR,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        rhs: MirOperand,
+        csr: PState,
+    },
+    accept_opcode: [ AddS, SubS, AddC, AddCS, SubC, SubCS, AndS, BicS ],
+    field_inits: {
+        pub rhs_op: Option<RegOP> = None;
     }
 }
 
@@ -157,56 +142,55 @@ impl BinOp {
 /// ```
 #[derive(Debug, Clone)]
 pub struct UnaryOp {
-    pub(super) common: MirInstCommon,
-    operand_pool: [Cell<MirOperand>; 3],
-    num_operands: u8,
-    pub rhs_modifier: Option<RegOP>,
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
+    pub rhs_op: Option<RegOP>,
 }
 
-impl UnaryOp {
-    pub fn new(opcode: MirOP, rhs_op: Option<RegOP>) -> Self {
-        let noperands = match opcode.get_operand_layout() {
-            OperandLayout::NoImplicit(2) => 2,
-            OperandLayout::ImplicitCSR(2) => 3,
-            _ => panic!(
-                "Unexpected operand layout {:?} for UnaryOp {opcode:?}",
-                opcode.get_operand_layout()
-            ),
-        };
-        let operand_pool = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn or immediate
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // CSR (if applicable)
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operand_pool,
-            num_operands: noperands,
-            rhs_modifier: rhs_op,
-        }
+impl_mir_inst! {
+    UnaryOp, Unary,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        rhs: MirOperand,
+    },
+    accept_opcode: [
+        MovZ, MovN, MovK, Mov,
+        AdrP, Adr,
+        SxtB, SxtH, SxtW, UxtB, UxtH,
+        ABS, Neg,
+        ClS, ClZ, Cnt, CntZ, RBit, Rev16, Rev32, Rev64,
+        FMov, FCvt,
+        FCvtAS, FCvtAU, FCvtMS, FCvtMU,
+        FCvtNS, FCvtNU, FCvtPS, FCvtPU,
+        FCvtZS, FCvtZU, FJCvtZS,
+        SCvtF, UCvtF,
+        FRIntA, FRIntI, FRIntN, FRIntP, FRIntX, FRIntZ,
+        FRInt32X, FRInt32Z, FRInt64X, FRInt64Z,
+        FAbs, FNeg, FSqrt,
+    ],
+    field_inits: {
+        pub rhs_op: Option<RegOP> = None;
     }
+}
 
-    pub fn operands(&self) -> &[Cell<MirOperand>] {
-        &self.operand_pool[..self.num_operands as usize]
-    }
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
+#[derive(Debug, Clone)]
+pub struct UnaCSROp {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
+    pub rhs_op: Option<RegOP>,
+}
 
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operand_pool[0]
-    }
-    pub fn rhs(&self) -> &Cell<MirOperand> {
-        &self.operand_pool[1]
-    }
-    pub fn implicit_csr(&self) -> Option<&Cell<MirOperand>> {
-        if self.num_operands == 3 {
-            Some(&self.operand_pool[2])
-        } else {
-            None
-        }
+impl_mir_inst! {
+    UnaCSROp, UnaryCSR,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        csr: PState,
+    },
+    accept_opcode: [ NegS, NegC, NegCS ],
+    field_inits: {
+        pub rhs_op: Option<RegOP> = None;
     }
 }
 
@@ -232,41 +216,26 @@ pub enum BFMMode {
 /// ```
 #[derive(Debug, Clone)]
 pub struct BFMOp {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 4], // rd, rn, immr, imms
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4],
     pub mode: BFMMode,
 }
 
-impl BFMOp {
-    pub fn new(opcode: MirOP, mode: BFMMode) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::None),                          // ImmR or LSB
-            Cell::new(MirOperand::None),                          // ImmS or Width
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            mode,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn immr(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
-    pub fn imms(&self) -> &Cell<MirOperand> {
-        &self.operands[3]
+impl_mir_inst! {
+    BFMOp, BFM,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        immr: MirOperand,
+        imms: MirOperand,
+    },
+    accept_opcode: [
+        BFM, SBFM, UBFM,
+        BFI, SBFIZ, UBFIZ,
+        BFXIL, SBFX, UBFX,
+    ],
+    field_inits: {
+        pub mode: BFMMode = BFMMode::ImmrImms;
     }
 }
 
@@ -281,94 +250,36 @@ impl BFMOp {
 /// * `extr %rd, %rn, %rm, #imm`
 #[derive(Debug, Clone)]
 pub struct ExtROp {
-    pub(super) common: MirInstCommon,
-    /// [rd, rn, rm, imm]
-    pub operands: [Cell<MirOperand>; 4],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4],
 }
 
-impl ExtROp {
-    pub fn new(opcode: MirOP) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rm
-            Cell::new(MirOperand::ImmConst(0)),                   // Imm
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn rm(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
-    pub fn imm(&self) -> &Cell<MirOperand> {
-        &self.operands[3]
-    }
+impl_mir_inst! {
+    ExtROp, ExtR,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg, rm: Reg, imm: Imm,
+    },
+    accept_opcode: [ ExtR ],
 }
 
-/// Ternary Operation Instruction
-///
-/// used for some instructions like multiplication or division.
-///
-/// AArch64 (same as Remusys-MIR) assembly syntax:
-///
-/// * `triop rd, rn, rm, ra`
-///
-/// Accepts the following opcodes:
-///
-/// ```aarch64
-/// madd msub smaddl smsubl umaddl umsubl
-/// fmadd fmsub fnmadd fnmsub
-/// ```
 #[derive(Debug, Clone)]
 pub struct TernaryOp {
-    pub(super) common: MirInstCommon,
-    /// [rd, rn, rm, ra]
-    pub operands: [Cell<MirOperand>; 4],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4],
 }
 
-impl TernaryOp {
-    pub fn new(opcode: MirOP) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rm
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Ra
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn rm(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
-    pub fn ra(&self) -> &Cell<MirOperand> {
-        &self.operands[3]
-    }
+impl_mir_inst! {
+    TernaryOp, Tri,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg, rm: Reg, ra: Reg,
+    },
+    accept_opcode: [
+        MAdd, MSub,
+        SMAddL, SMSubL, UMAddL, UMSubL,
+        FMAdd, FMSub, FNMAdd, FNMSub,
+    ],
 }
 
 /// Conditional Select Instruction
@@ -389,45 +300,24 @@ impl TernaryOp {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CondSelect {
-    pub(super) common: MirInstCommon,
-    /// [rd, rn, rm, implicit-def $PState]
-    pub operands: [Cell<MirOperand>; 4],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4],
     pub cond: MirCondFlag,
 }
 
-impl CondSelect {
-    pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rm
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // Implicit CSR
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            cond,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn rm(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
-    pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-        &self.operands[3]
-    }
+impl_mir_inst! {
+    CondSelect, CondSelect,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg, rm: Reg,
+        implicit_csr: PState,
+    },
+    accept_opcode: [
+        CSel, CSInc, CSInv, CSNeg, FCSel,
+    ],
+    field_inits: {
+        pub cond: MirCondFlag = MirCondFlag::AL;
+    },
 }
 
 /// Conditional Unary Operation Instruction
@@ -447,41 +337,24 @@ impl CondSelect {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CondUnaryOp {
-    pub(super) common: MirInstCommon,
-    /// [rd, rn, implicit-def $PState]
-    pub operands: [Cell<MirOperand>; 3],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
     pub cond: MirCondFlag,
 }
 
-impl CondUnaryOp {
-    pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // Implicit CSR
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            cond,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
+impl_mir_inst! {
+    CondUnaryOp, CondUnary,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        rn: Reg,
+        implicit_csr: PState,
+    },
+    accept_opcode: [
+        CInc, CInv, CNeg,
+    ],
+    field_inits: {
+        pub cond: MirCondFlag = MirCondFlag::AL;
+    },
 }
 
 /// Conditional Set Instruction
@@ -501,35 +374,53 @@ impl CondUnaryOp {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CondSet {
-    pub(super) common: MirInstCommon,
-    /// [rd, implicit-def $PState]
-    pub operands: [Cell<MirOperand>; 2],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
     pub cond: MirCondFlag,
 }
 
-impl CondSet {
-    pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rd
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // Implicit CSR
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            cond,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
+impl_mir_inst! {
+    CondSet, CondSet,
+    operands: {
+        rd: Reg { use_flags: [DEF] },
+        csr: PState,
+    },
+    accept_opcode: [
+        CSet, CSetM,
+    ],
+    field_inits: {
+        pub cond: MirCondFlag = MirCondFlag::AL;
     }
 }
+// #[derive(Debug, Clone)]
+// pub struct CondSet {
+//     pub(super) common: MirInstCommon,
+//     /// [rd, implicit-def $PState]
+//     pub operands: [Cell<MirOperand>; 2],
+//     pub cond: MirCondFlag,
+// }
+
+// impl CondSet {
+//     pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
+//         let operands = [
+//             Cell::new(MirOperand::VReg(VReg::new_long(0))), // Rd
+//             Cell::new(MirOperand::PReg(PReg::PState(RegUseFlags::IMPLICIT_DEF))), // Implicit CSR
+//         ];
+//         Self {
+//             common: MirInstCommon::new(opcode),
+//             operands,
+//             cond,
+//         }
+//     }
+
+//     pub fn get_opcode(&self) -> MirOP {
+//         self.common.opcode
+//     }
+
+//     pub fn rd(&self) -> &Cell<MirOperand> {
+//         &self.operands[0]
+//     }
+//     pub fn implicit_csr(&self) -> &Cell<MirOperand> {
+//         &self.operands[1]
+//     }
+// }

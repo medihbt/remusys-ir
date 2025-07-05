@@ -15,7 +15,7 @@ use crate::{
     },
     mir::{
         module::{
-            ModuleItemRef,
+            MirGlobalRef,
             func::MirFunc,
             global::{MirGlobalData, MirGlobalVariable, Section},
         },
@@ -42,8 +42,8 @@ pub(super) struct GlobalStatistics {
 }
 
 pub(super) struct IrMirGlobalInfo {
-    pub mapping: BTreeMap<GlobalRef, ModuleItemRef>,
-    pub funcs: Vec<(GlobalRef, ModuleItemRef, Rc<MirFunc>)>,
+    pub mapping: BTreeMap<GlobalRef, MirGlobalRef>,
+    pub funcs: Vec<(GlobalRef, MirGlobalRef, Rc<MirFunc>)>,
 }
 
 impl GlobalStatistics {
@@ -235,7 +235,7 @@ fn extern_global_variable(
     ir_module: &Module,
     mir_builder: &mut MirBuilder,
     gvar_ref: GlobalRef,
-) -> (ModuleItemRef, Rc<MirGlobalVariable>) {
+) -> (MirGlobalRef, Rc<MirGlobalVariable>) {
     let gdata = ir_module.get_global(gvar_ref);
     let gdata = match &*gdata {
         GlobalData::Var(var) => var,
@@ -265,7 +265,7 @@ fn define_global_variable(
     mir_builder: &mut MirBuilder,
     gvar_ref: GlobalRef,
     zero_init: bool,
-) -> (ModuleItemRef, Rc<MirGlobalVariable>) {
+) -> (MirGlobalRef, Rc<MirGlobalVariable>) {
     let gdata = ir_module.get_global(gvar_ref);
     let gdata = match &*gdata {
         GlobalData::Var(var) => var,
@@ -313,7 +313,7 @@ fn extern_function(
     ir_module: &Module,
     mir_builder: &mut MirBuilder,
     gfunc_ref: GlobalRef,
-) -> (ModuleItemRef, Rc<MirFunc>) {
+) -> (MirGlobalRef, Rc<MirFunc>) {
     let func_data = ir_module.get_global(gfunc_ref);
     let func_data = match &*func_data {
         GlobalData::Func(func) => func,

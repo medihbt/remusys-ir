@@ -1,11 +1,13 @@
 use crate::mir::{
-    inst::{MirInstCommon, cond::MirCondFlag, opcode::MirOP},
+    inst::{IMirSubInst, MirInst, MirInstCommon, cond::MirCondFlag, opcode::MirOP},
     operand::{
         MirOperand,
-        reg::{PhysReg, RegOP, RegUseFlags, VirtReg},
+        reg::{RegOP, RegUseFlags},
+        suboperand::{IMirSubOperand, PStateSubOperand, RegOperand},
     },
 };
 use bitflags::bitflags;
+use remusys_mir_instdef::impl_mir_inst;
 use std::cell::Cell;
 
 bitflags! {
@@ -18,71 +20,46 @@ bitflags! {
     }
 }
 
-/**
-  Compare or test instruction
-
-  AArch64 assembly syntax:
-
-  * `cmp-op rn, rm`
-  * `cmp-op rn, rm, <shift flag> #shift`
-  * `cmp-op rn, rm, <SXTX|SXTW|UXTW>`
-  * `cmp-op rn, #imm`
-
-  These syntaxes are mapped to the following Remusys-MIR syntaxes:
-
-  * `cmp-op %rn, %rm, implicit-def $PState`
-  * `cmp-op %rn, %rm, <shift flag> #shift, implicit-def $PState`
-  * `cmp-op %rn, %rm, <SXTX|SXTW|UXTW>, implicit-def $PState`
-  * `cmp-op %rn, #imm, implicit-def $PState`
-
-  Accepts the following opcodes:
-
-  ```aarch64
-  cmp cmn tst
-  fcmp fcmpe
-  ```
-*/
+/// Compare or test instruction
+///
+/// AArch64 assembly syntax:
+///
+/// * `cmp-op rn, rm`
+/// * `cmp-op rn, rm, <shift flag> #shift`
+/// * `cmp-op rn, rm, <SXTX|SXTW|UXTW>`
+/// * `cmp-op rn, #imm`
+///
+/// These syntaxes are mapped to the following Remusys-MIR syntaxes:
+///
+/// * `cmp-op %rn, %rm, implicit-def $PState`
+/// * `cmp-op %rn, %rm, <shift flag> #shift, implicit-def $PState`
+/// * `cmp-op %rn, %rm, <SXTX|SXTW|UXTW>, implicit-def $PState`
+/// * `cmp-op %rn, #imm, implicit-def $PState`
+///
+/// Accepts the following opcodes:
+///
+/// ```aarch64
+/// cmp cmn tst
+/// fcmp fcmpe
+/// ```
 #[derive(Debug, Clone)]
 pub struct CmpOP {
-    pub common: MirInstCommon,
-    /// `[lhs, rhs, implicit-def $PState]`
-    pub operands: [Cell<MirOperand>; 3],
-    /// Optional RHS additional operation, such as a shift or sign extension.
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
     pub rhs_op: Option<RegOP>,
 }
 
-impl CmpOP {
-    pub fn new(opcode: MirOP, rhs_op: Option<RegOP>) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::None),                          // Rm or immediate
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // Implicit CSR
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            rhs_op,
-        }
-    }
-
-    pub fn operands(&self) -> &[Cell<MirOperand>] {
-        &self.operands
-    }
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rhs(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
+impl_mir_inst! {
+    CmpOP, Cmp,
+    operands: {
+        rn: Reg { use_flags: [DEF] },
+        rhs: MirOperand,
+        csr: PState,
+    },
+    accept_opcode: [ Cmp, CmpN, Test, FCmp, FCmpE ],
+    field_inits: {
+        pub rhs_op: Option<RegOP> = None;
+    },
 }
 
 /// Conditional comparation
@@ -102,44 +79,22 @@ impl CmpOP {
 /// ```
 #[derive(Debug, Clone)]
 pub struct CondCmpOP {
-    pub common: MirInstCommon,
-    /// `[lhs, rhs, implicit-def $PState]`
-    pub operands: [Cell<MirOperand>; 3],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
     pub cond: MirCondFlag,
     pub nzcv: NZCV,
 }
 
-impl CondCmpOP {
-    pub fn new(opcode: MirOP, cond: MirCondFlag, nzcv: NZCV) -> Self {
-        let operands = [
-            Cell::new(MirOperand::VirtReg(VirtReg::new_long(0))), // Rn
-            Cell::new(MirOperand::None),                          // Rm or immediate
-            Cell::new(MirOperand::PhysReg(PhysReg::PState(
-                RegUseFlags::IMPLICIT_DEF,
-            ))), // Implicit CSR
-        ];
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands,
-            cond,
-            nzcv,
-        }
-    }
-
-    pub fn operands(&self) -> &[Cell<MirOperand>] {
-        &self.operands
-    }
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rhs(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
-    }
+impl_mir_inst! {
+    CondCmpOP, CondCmp,
+    operands: {
+        rn: Reg { use_flags: [DEF] },
+        rhs: MirOperand,
+        csr: PState,
+    },
+    accept_opcode: [ FCCmp, FCCmpE, CCmpN, CCmp ],
+    field_inits: {
+        pub cond: MirCondFlag = MirCondFlag::EQ;
+        pub nzcv: NZCV = NZCV::empty();
+    },
 }

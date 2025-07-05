@@ -36,4 +36,5 @@ Thumbs.db
 
 # Rust-specific
 /target
+/remusys_mir_instdef/target
 Cargo.lock

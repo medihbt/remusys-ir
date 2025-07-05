@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use crate::{
     base::{NullableValue, slablist::SlabRefListNodeHead},
-    mir::module::ModuleItemRef,
+    mir::module::MirGlobalRef,
     typing::{context::TypeContext, id::ValTypeID},
 };
 
@@ -60,7 +60,7 @@ pub struct MirGlobalCommon {
     /// Size of the global data in bytes.
     pub size: usize,
     /// Index of the global data in the module. `u32::MAX` means not set.
-    pub(super) self_ref: Cell<ModuleItemRef>,
+    pub(super) self_ref: Cell<MirGlobalRef>,
 }
 
 impl MirGlobalCommon {
@@ -72,7 +72,7 @@ impl MirGlobalCommon {
             linkage,
             align_log2,
             size: 0,
-            self_ref: Cell::new(ModuleItemRef::new_null()), // Default to MAX to indicate not set
+            self_ref: Cell::new(MirGlobalRef::new_null()), // Default to MAX to indicate not set
         }
     }
     pub fn get_align(&self) -> usize {
@@ -81,10 +81,10 @@ impl MirGlobalCommon {
     pub fn has_name(&self) -> bool {
         !self.name.is_empty()
     }
-    pub fn get_self_ref(&self) -> ModuleItemRef {
+    pub fn get_self_ref(&self) -> MirGlobalRef {
         self.self_ref.get()
     }
-    pub fn set_self_ref(&self, self_ref: ModuleItemRef) {
+    pub fn set_self_ref(&self, self_ref: MirGlobalRef) {
         self.self_ref.set(self_ref);
     }
 }
