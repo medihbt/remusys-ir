@@ -6,7 +6,7 @@ use crate::mir::{
     inst::{IMirSubInst, MirInst, MirInstCommon, cond::MirCondFlag, opcode::MirOP},
     operand::{
         MirOperand,
-        reg::{PReg, RegOP, RegUseFlags, VReg},
+        reg::{RegOP, RegUseFlags},
         suboperand::*,
     },
 };
@@ -143,7 +143,7 @@ impl_mir_inst! {
 #[derive(Debug, Clone)]
 pub struct UnaryOp {
     _common: MirInstCommon,
-    _operands: [Cell<MirOperand>; 3],
+    _operands: [Cell<MirOperand>; 2],
     pub rhs_op: Option<RegOP>,
 }
 
@@ -151,7 +151,6 @@ impl_mir_inst! {
     UnaryOp, Unary,
     operands: {
         rd: Reg { use_flags: [DEF] },
-        rn: Reg,
         rhs: MirOperand,
     },
     accept_opcode: [
@@ -185,7 +184,7 @@ impl_mir_inst! {
     UnaCSROp, UnaryCSR,
     operands: {
         rd: Reg { use_flags: [DEF] },
-        rn: Reg,
+        rhs: Reg,
         csr: PState,
     },
     accept_opcode: [ NegS, NegC, NegCS ],
@@ -263,6 +262,26 @@ impl_mir_inst! {
     accept_opcode: [ ExtR ],
 }
 
+/// Ternary Operation Instruction
+/// 
+/// AArch64 assembly syntax:
+/// 
+/// * `ternary-op rd, rn, rm, ra`
+/// 
+/// These syntaxes are mapped to the following Remusys-MIR syntaxes:
+/// 
+/// * `ternary-op %rd, %rn, %rm, %ra`
+/// 
+/// Accepts the following opcodes:
+/// 
+/// ```aarch64
+/// madd msub
+/// smaddl smsubl umaddl umsubl
+/// fmadd fmsub fnmadd fnmsub
+/// ```
+/// 
+/// These instructions are used for operations that require
+/// three operands, such as multiplication followed by addition or subtraction.
 #[derive(Debug, Clone)]
 pub struct TernaryOp {
     _common: MirInstCommon,
@@ -392,35 +411,3 @@ impl_mir_inst! {
         pub cond: MirCondFlag = MirCondFlag::AL;
     }
 }
-// #[derive(Debug, Clone)]
-// pub struct CondSet {
-//     pub(super) common: MirInstCommon,
-//     /// [rd, implicit-def $PState]
-//     pub operands: [Cell<MirOperand>; 2],
-//     pub cond: MirCondFlag,
-// }
-
-// impl CondSet {
-//     pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
-//         let operands = [
-//             Cell::new(MirOperand::VReg(VReg::new_long(0))), // Rd
-//             Cell::new(MirOperand::PReg(PReg::PState(RegUseFlags::IMPLICIT_DEF))), // Implicit CSR
-//         ];
-//         Self {
-//             common: MirInstCommon::new(opcode),
-//             operands,
-//             cond,
-//         }
-//     }
-
-//     pub fn get_opcode(&self) -> MirOP {
-//         self.common.opcode
-//     }
-
-//     pub fn rd(&self) -> &Cell<MirOperand> {
-//         &self.operands[0]
-//     }
-//     pub fn implicit_csr(&self) -> &Cell<MirOperand> {
-//         &self.operands[1]
-//     }
-// }

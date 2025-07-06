@@ -83,7 +83,7 @@ pub struct MirStackLayout {
     pub args_size: u64,
 
     finished_arg_build: bool,
-    saved_regs_size_cache: Cell<u64>,
+    _saved_regs_size_cache: Cell<u64>,
 }
 
 impl MirStackLayout {
@@ -95,7 +95,7 @@ impl MirStackLayout {
             vars_size: 0,
             args_size: 0,
             finished_arg_build: false,
-            saved_regs_size_cache: Cell::new(0),
+            _saved_regs_size_cache: Cell::new(0),
         }
     }
 

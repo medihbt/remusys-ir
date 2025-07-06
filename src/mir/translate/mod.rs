@@ -13,28 +13,30 @@
 //! * `lower_pseudo_ops`: Lowers pseudo operations in the MIR module.
 //! * `reg_alloc`: Allocates registers for the MIR module.
 
+use std::rc::Rc;
+
 use crate::{ir::module::Module, mir::module::MirModule};
 
 pub mod ir_pass;
 pub mod mir_pass;
 pub mod mirgen;
 
-pub fn translate_ir_to_mir(ir_module: &Module) -> MirModule {
+pub fn translate_ir_to_mir(ir_module: Rc<Module>) -> MirModule {
     use ir_pass::phi_node_ellimination::CopyMap;
 
     // Pass: Critical Edge Elimination
-    ir_pass::critical_edge::break_critical_edges(ir_module);
+    ir_pass::critical_edge::break_critical_edges(&ir_module);
 
     // Pass: PHI Node Elimination
-    let (copy_map, cfgs) = CopyMap::new_and_cfg(ir_module);
+    let (copy_map, cfgs) = CopyMap::new_and_cfg(&ir_module);
 
     // Pass: Generate MIR from IR
-    let mir_module = mirgen::codegen_ir_to_mir(ir_module, &copy_map, cfgs.as_slice());
+    let mir_module = mirgen::codegen_ir_to_mir(Rc::clone(&ir_module), copy_map, cfgs);
 
     // Passes...
     todo!(
         "Implement MIR translation for IR module: {}",
         ir_module.name
     );
-    mir_module
+    // mir_module
 }

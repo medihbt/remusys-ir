@@ -9,8 +9,8 @@ use crate::{
     base::slabref::SlabRef,
     mir::{
         inst::{
-            MirInst,
-            load_store::{AddressMode, LoadStoreInst, LoadStoreRRI, LoadStoreRRR},
+            IMirSubInst, MirInst,
+            load_store::{AddressMode, ILoadStoreInst, LoadStoreRRI, LoadStoreRRR},
             opcode::MirOP,
             switch::{BinSwitchTab, VecSwitchTab},
         },
@@ -285,12 +285,12 @@ impl<'a> AsmWriter<'a> {
             MirInst::BLink(blink) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
-                    .write_operand(istat, blink.target().get());
+                    .write_operand(istat, blink.label().get());
             }
             MirInst::RegCondBr(reg_cond_br) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
-                    .write_operand(istat, reg_cond_br.reg_cond().get())
+                    .write_operand(istat, reg_cond_br.reg().get())
                     .write_str(", ")
                     .write_operand(istat, reg_cond_br.label().get());
             }
@@ -319,23 +319,16 @@ impl<'a> AsmWriter<'a> {
                     self.write_str(", ").write_str(modify.to_string().as_str());
                 }
             }
-            // * `unary-op rd, rn`
-            // * `unary-op rd, rn, <shift flag> #shift`
-            // * `unary-op rd, rn, <SXTX|SXTW|UXTW>`
-            // * `unary-op rd, #imm`
-            // * `adr-op rd, label`
             MirInst::Unary(unary_op) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
                     .write_operand(istat, unary_op.rd().get())
                     .write_str(", ")
                     .write_operand(istat, unary_op.rhs().get());
-                if let Some(modify) = unary_op.rhs_modifier {
+                if let Some(modify) = unary_op.rhs_op {
                     self.write_str(", ").write_str(modify.to_string().as_str());
                 }
             }
-            // * `bfn-op rd, rn, #immr, #imms`
-            // * `bfn-op rd, rn, #lsb, #width`
             MirInst::BFM(bfmop) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -347,7 +340,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_operand(istat, bfmop.imms().get());
             }
-            // * `extr rd, rn, rm, #imm`
             MirInst::ExtR(extr_op) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -359,7 +351,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_operand(istat, extr_op.imm().get());
             }
-            // * `<triop> rd, rn, rm, ra`
             MirInst::Tri(triop) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -371,10 +362,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_operand(istat, triop.ra().get());
             }
-            // * `cmp-op rn, rm`
-            // * `cmp-op rn, rm, <shift flag> #shift`
-            // * `cmp-op rn, rm, <SXTX|SXTW|UXTW>`
-            // * `cmp-op rn, #imm`
             MirInst::Cmp(cmp_op) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -385,7 +372,6 @@ impl<'a> AsmWriter<'a> {
                     self.write_str(", ").write_str(rhs_op.to_string().as_str());
                 }
             }
-            // * `csel rd, rn, rm, <cond>`
             MirInst::CondSelect(csel) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -397,7 +383,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_str(csel.cond.get_name());
             }
-            // * `cunary-op rd, rn, <cond>`
             MirInst::CondUnary(cunary) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -407,7 +392,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_str(cunary.cond.get_name());
             }
-            // * `cset rd, <cond>`
             MirInst::CondSet(cond_set) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -415,7 +399,6 @@ impl<'a> AsmWriter<'a> {
                     .write_str(", ")
                     .write_str(cond_set.cond.get_name());
             }
-            // * `condcmp-op rn, rhs, #<nzcv>, cond`
             MirInst::CondCmp(ccmp) => {
                 self.write_str(opcode.asm_name())
                     .write_str(" ")
@@ -435,6 +418,33 @@ impl<'a> AsmWriter<'a> {
                 inst
             ),
             MirInst::GuideNode(_) => {}
+            MirInst::LoadConst(ldrc) => {
+                self.write_str("ldr ")
+                    .write_operand(istat, ldrc.rt().get())
+                    .write_fmt(format_args!(", =0x{:x}", ldrc.get_imm()));
+            }
+            MirInst::BinCSR(bin_csrop) => {
+                self.write_str(opcode.asm_name())
+                    .write_str(" ")
+                    .write_operand(istat, bin_csrop.rd().get())
+                    .write_str(", ")
+                    .write_operand(istat, bin_csrop.rn().get())
+                    .write_str(", ")
+                    .write_operand(istat, bin_csrop.rhs().get());
+                if let Some(rm_op) = &bin_csrop.rhs_op {
+                    self.write_str(", ").write_fmt(format_args!("{}", rm_op));
+                }
+            }
+            MirInst::UnaryCSR(una_csrop) => {
+                self.write_str(opcode.asm_name())
+                    .write_str(" ")
+                    .write_operand(istat, una_csrop.rd().get())
+                    .write_str(", ")
+                    .write_operand(istat, una_csrop.rhs().get());
+                if let Some(rm_op) = &una_csrop.rhs_op {
+                    self.write_str(", ").write_fmt(format_args!("{}", rm_op));
+                }
+            },
         }
     }
 
@@ -553,9 +563,8 @@ impl<'a> AsmWriter<'a> {
             AddressMode::PostIndex => self
                 .write_load_store_immediate(istat, ldst_rri.offset().get())
                 .write_str("]!"),
-            AddressMode::Literal => panic!(
-                "Cannot write literal address mode for load/store RRI instruction: {:?}",
-                ldst_rri
+            _ => panic!(
+                "Cannot write literal address mode for load/store RRI instruction: {ldst_rri:?}",
             ),
         };
     }

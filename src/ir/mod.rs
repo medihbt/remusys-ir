@@ -8,6 +8,7 @@ use constant::{
 use global::{GlobalData, GlobalRef, IGlobalObjectVisitor, func::FuncStorage};
 use inst::{InstRef, visitor::IInstVisitor};
 use module::{Module, ModuleAllocatorInner};
+use slab::Slab;
 
 use crate::{
     base::{NullableValue, slabref::SlabRef},
@@ -113,6 +114,22 @@ impl ValueSSA {
                     _ => panic!("Invalid function reference"),
                 }
             }
+        }
+    }
+
+    pub fn binary_is_zero(&self, module: &Module) -> bool {
+        match self {
+            ValueSSA::ConstData(data) => data.binary_is_zero(),
+            ValueSSA::ConstExpr(expr) => expr.binary_is_zero(module),
+            _ => false,
+        }
+    }
+
+    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<constant::expr::ConstExprData>) -> bool {
+        match self {
+            ValueSSA::ConstData(data) => data.binary_is_zero(),
+            ValueSSA::ConstExpr(expr) => expr.binary_is_zero_from_alloc(alloc_expr),
+            _ => false,
         }
     }
 }

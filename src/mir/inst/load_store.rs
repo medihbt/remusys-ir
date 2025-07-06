@@ -1,10 +1,11 @@
 use std::cell::Cell;
-
+use remusys_mir_instdef::impl_mir_inst;
 use crate::mir::{
-    inst::{MirInstCommon, opcode::MirOP},
+    inst::{IMirSubInst, MirInst, MirInstCommon, opcode::MirOP},
     operand::{
         MirOperand,
-        reg::{PReg, RegOP},
+        reg::{RegOP, RegUseFlags},
+        suboperand::*,
     },
 };
 
@@ -15,15 +16,11 @@ pub enum AddressMode {
     PreIndex,
     PostIndex,
     Literal,
+    PseudoImmMaker,
 }
 
-pub trait LoadStoreInst {
-    fn common(&self) -> &MirInstCommon;
+pub trait ILoadStoreInst: IMirSubInst {
     fn get_addr_mode(&self) -> AddressMode;
-
-    fn get_opcode(&self) -> MirOP {
-        self.common().opcode
-    }
 }
 
 /// Load/store instruction, with all operands being registers.
@@ -38,54 +35,32 @@ pub trait LoadStoreInst {
 ///
 /// ```aarch64
 /// ldr{b|h|sb|sh|sw}
-/// str{b|h|sb|sh|sw}
+/// str{b|h}
 /// ```
 #[derive(Debug, Clone)]
 pub struct LoadStoreRRR {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 3],
-    /// `None` if we keep the `Rm` unmodified,
-    /// `Some(RegOP)` if we apply a register operation to `Rm`.
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
     pub rm_op: Option<RegOP>,
 }
 
-impl LoadStoreRRR {
-    pub fn new(opcode: MirOP, rm_op: Option<RegOP>) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [
-                Cell::new(MirOperand::None),                   // Rt
-                Cell::new(MirOperand::None),                   // Rn
-                Cell::new(MirOperand::PReg(PReg::zr())), // Rm
-            ],
-            rm_op,
-        }
-    }
-
-    pub fn rt(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn rm(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
+impl_mir_inst! {
+    LoadStoreRRR, LoadStoreRRR,
+    operands: {
+        rt: Reg { use_flags: [DEF] },
+        rn: Reg, rm: Reg,
+    },
+    accept_opcode: [
+        Ldr, LdrB, LdrH, LdrSB, LdrSH, LdrSW, Str, StrB, StrH
+    ],
+    field_inits: {
+        pub rm_op: Option<RegOP> = None;
     }
 }
 
-impl LoadStoreInst for LoadStoreRRR {
-    fn common(&self) -> &MirInstCommon {
-        &self.common
-    }
+impl ILoadStoreInst for LoadStoreRRR {
     fn get_addr_mode(&self) -> AddressMode {
-        match self.rm().get() {
-            MirOperand::VReg(_) => AddressMode::BaseOffset,
-            MirOperand::PReg(phys_reg) => match phys_reg {
-                PReg::ZR(..) => AddressMode::BaseOnly,
-                _ => AddressMode::BaseOffset,
-            },
-            _ => panic!("Invalid operand {:?} for address mode", self.rm().get()),
-        }
+        AddressMode::BaseOffset
     }
 }
 
@@ -101,45 +76,51 @@ impl LoadStoreInst for LoadStoreRRR {
 ///
 /// ```aarch64
 /// ldr{b|h|sb|sh|sw}
-/// str{b|h|sb|sh|sw}
+/// str{b|h}
 /// ```
 #[derive(Debug, Clone)]
 pub struct LoadStoreRRI {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 3],
-    addr_mode: AddressMode,
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
+    _addr_mode: AddressMode,
+}
+
+impl_mir_inst! {
+    LoadStoreRRI, LoadStoreRRI,
+    operands: {
+        rt: Reg { use_flags: [DEF] },
+        rn: Reg, offset: Imm,
+    },
+    accept_opcode: [
+        Ldr, LdrB, LdrH, LdrSB, LdrSH, LdrSW, Str, StrB, StrH
+    ],
+    field_inits: {
+        _addr_mode: AddressMode = AddressMode::BaseOffset;
+    }
 }
 
 impl LoadStoreRRI {
-    pub fn new(opcode: MirOP, addr_mode: AddressMode) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            addr_mode,
-            operands: [
-                Cell::new(MirOperand::None),        // Rt
-                Cell::new(MirOperand::None),        // Rn
-                Cell::new(MirOperand::Imm(0)), // Offset
-            ],
+    pub fn set_addr_mode(&mut self, mode: AddressMode) {
+        if self._addr_mode == mode {
+            return;
         }
-    }
-
-    pub fn rt(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn rn(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-    pub fn offset(&self) -> &Cell<MirOperand> {
-        &self.operands[2]
+        let mut rn = self.get_rn();
+        match mode {
+            AddressMode::BaseOffset => {
+                rn.use_flags_mut().remove(RegUseFlags::DEF);
+            }
+            AddressMode::PreIndex | AddressMode::PostIndex => {
+                rn.use_flags_mut().insert(RegUseFlags::DEF);
+            }
+            _ => panic!("Invalid address mode for LoadStoreRRI: {:?}", mode),
+        };
+        self._addr_mode = mode;
     }
 }
 
-impl LoadStoreInst for LoadStoreRRI {
-    fn common(&self) -> &MirInstCommon {
-        &self.common
-    }
+impl ILoadStoreInst for LoadStoreRRI {
     fn get_addr_mode(&self) -> AddressMode {
-        self.addr_mode
+        self._addr_mode
     }
 }
 
@@ -155,34 +136,48 @@ impl LoadStoreInst for LoadStoreRRI {
 /// ```
 #[derive(Debug, Clone)]
 pub struct LoadStoreLiteral {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 2],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
 }
 
-impl LoadStoreLiteral {
-    pub fn new(opcode: MirOP) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [
-                Cell::new(MirOperand::None), // Rt
-                Cell::new(MirOperand::None), // Literal address
-            ],
-        }
-    }
-
-    pub fn rt(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn literal(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
+impl_mir_inst! {
+    LoadStoreLiteral, LoadStoreLiteral,
+    operands: {
+        rt: Reg { use_flags: [DEF] },
+        literal: Symbol,
+    },
+    accept_opcode: [
+        Ldr, LdrB, LdrH, LdrSB, LdrSH, LdrSW,
+        Str, StrB, StrH
+    ],
 }
 
-impl LoadStoreInst for LoadStoreLiteral {
-    fn common(&self) -> &MirInstCommon {
-        &self.common
-    }
+/// Pesudo Instruction: Load a constant value into a register.
+///
+/// AArch64 + MIR assembly syntax: `LDR <Rt>, =<imm>`
+///
+/// Accepts opcode:
+///
+/// ```aarch64
+/// ldr
+/// ```
+#[derive(Debug, Clone)]
+pub struct LoadConst {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
+}
+
+impl_mir_inst! {
+    LoadConst, LoadConst,
+    operands: {
+        rt: Reg { use_flags: [DEF] },
+        imm: Imm,
+    },
+    accept_opcode: [Ldr],
+}
+
+impl ILoadStoreInst for LoadConst {
     fn get_addr_mode(&self) -> AddressMode {
-        AddressMode::Literal
+        AddressMode::PseudoImmMaker
     }
 }

@@ -124,6 +124,14 @@ impl GlobalData {
         self.get_common().name.as_str()
     }
 
+    pub fn is_readonly(&self) -> bool {
+        match self {
+            GlobalData::Alias(_) => todo!("Alias is not readonly"),
+            GlobalData::Var(var) => var.is_readonly(),
+            GlobalData::Func(_) => true,
+        }
+    }
+
     pub fn new_variable(
         name: String,
         is_const: bool,

@@ -48,6 +48,14 @@ impl ConstExprRef {
         }
         Some(ConstAggregateView(self.clone(), module))
     }
+
+    pub fn binary_is_zero(&self, module: &Module) -> bool {
+        module.get_expr(self.clone()).binary_is_zero(module)
+    }
+    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<ConstExprData>) -> bool {
+        self.to_slabref_unwrap(alloc_expr)
+            .binary_is_zero_from_alloc(alloc_expr)
+    }
 }
 
 #[derive(Clone)]
@@ -111,6 +119,35 @@ pub trait IConstExprVisitor {
         match expr_data {
             ConstExprData::Array(array) => self.read_array(expr_ref, array),
             ConstExprData::Struct(struct_data) => self.read_struct(expr_ref, struct_data),
+        }
+    }
+}
+
+impl ConstExprData {
+    pub fn binary_is_zero(&self, module: &Module) -> bool {
+        match self {
+            ConstExprData::Array(a) => Self::binary_is_zero_aggregate(&a.elems, module),
+            ConstExprData::Struct(s) => Self::binary_is_zero_aggregate(&s.elems, module),
+        }
+    }
+    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<ConstExprData>) -> bool {
+        match self {
+            ConstExprData::Array(a) => a
+                .elems
+                .iter()
+                .all(|v| v.binary_is_zero_from_alloc(alloc_expr)),
+            ConstExprData::Struct(s) => s
+                .elems
+                .iter()
+                .all(|v| v.binary_is_zero_from_alloc(alloc_expr)),
+        }
+    }
+
+    fn binary_is_zero_aggregate(values: &[ValueSSA], module: &Module) -> bool {
+        if values.is_empty() {
+            true
+        } else {
+            values.iter().all(|v| v.binary_is_zero(module))
         }
     }
 }

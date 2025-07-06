@@ -110,6 +110,18 @@ impl ConstData {
         let value = value & mask;
         value | sign_mask
     }
+
+    pub fn binary_is_zero(&self) -> bool {
+        match self {
+            ConstData::Undef(_) => false,
+            ConstData::Zero(_) | ConstData::PtrNull(_) => true,
+            ConstData::Int(_, i) => *i == 0,
+            ConstData::Float(fpk, fp) => match fpk {
+                FloatTypeKind::Ieee32 => (*fp as f32).to_bits() == 0,
+                FloatTypeKind::Ieee64 => (*fp as f64).to_bits() == 0,
+            },
+        }
+    }
 }
 
 impl ConstData {

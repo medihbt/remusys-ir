@@ -1,15 +1,19 @@
 use std::cell::Cell;
 
+use remusys_mir_instdef::impl_mir_inst;
+
 use crate::mir::{
-    inst::{MirInstCommon, cond::MirCondFlag, opcode::MirOP},
+    inst::{IMirSubInst, MirInst, MirInstCommon, cond::MirCondFlag, opcode::MirOP},
+    module::block::MirBlockRef,
     operand::{
         MirOperand,
         reg::{PReg, RegUseFlags},
+        suboperand::*,
     },
 };
 
 /// Conditional branch instruction in the MIR.
-/// 
+///
 /// AArch64 Syntax: `<b.><cond> <label>`
 ///
 /// Operand layout:
@@ -26,38 +30,24 @@ use crate::mir::{
 /// ```
 #[derive(Debug, Clone)]
 pub struct CondBr {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 2],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
     pub cond: MirCondFlag,
 }
 
-impl CondBr {
-    pub fn new(opcode: MirOP, cond: MirCondFlag) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [
-                Cell::new(MirOperand::None),
-                Cell::new(MirOperand::PReg(PReg::PState(
-                    RegUseFlags::IMPLICIT_DEF,
-                ))),
-            ],
-            cond,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-    pub fn label(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn implicit_pstate(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
+impl_mir_inst! {
+    CondBr, CondBr,
+    operands: {
+        label: Label, csr: PState,
+    },
+    accept_opcode: [ BCond, BCCond, ],
+    field_inits: {
+        pub cond: MirCondFlag = MirCondFlag::AL;
+    },
 }
 
 /// Unconditional branch instruction in the MIR.
-/// 
+///
 /// AArch64 Syntax: `<br-opcode> <label>`
 ///
 /// Operand layout:
@@ -71,24 +61,14 @@ impl CondBr {
 /// ```
 #[derive(Debug, Clone)]
 pub struct UncondBr {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 1],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 1],
 }
 
-impl UncondBr {
-    pub fn new(opcode: MirOP) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [Cell::new(MirOperand::None)],
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-    pub fn label(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
+impl_mir_inst! {
+    UncondBr, UncondBr,
+    operands: { label: Label, },
+    accept_opcode: [ Branch, BReg ],
 }
 
 /// Branch link instruction in the MIR.
@@ -105,32 +85,17 @@ impl UncondBr {
 /// ```
 #[derive(Debug, Clone)]
 pub struct BLink {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 2],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
 }
 
-impl BLink {
-    pub fn new(opcode: MirOP) -> Self {
-        let mut ret_addr = PReg::return_addr();
-        ret_addr.add_use_flag(RegUseFlags::IMPLICIT_DEF);
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [
-                Cell::new(MirOperand::None),
-                Cell::new(MirOperand::PReg(ret_addr)),
-            ],
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-    pub fn target(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn implicit_ra(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
+impl_mir_inst! {
+    BLink, BLink,
+    operands: {
+        label: Label,
+        ra: PReg { use_flags: [IMPLICIT_DEF] },
+    },
+    accept_opcode: [ BLink, BLinkReg ],
 }
 
 /// Compare / Test and branch instruction in the MIR.
@@ -151,41 +116,15 @@ impl BLink {
 /// ```
 #[derive(Debug, Clone)]
 pub struct RegCondBr {
-    pub(super) common: MirInstCommon,
-    pub operands: [Cell<MirOperand>; 2],
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
 }
 
-impl RegCondBr {
-    pub fn new(opcode: MirOP) -> Self {
-        Self {
-            common: MirInstCommon::new(opcode),
-            operands: [
-                Cell::new(MirOperand::None), // Register condition
-                Cell::new(MirOperand::None), // Branch target label
-            ],
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        self.common.opcode
-    }
-    pub fn reg_cond(&self) -> &Cell<MirOperand> {
-        &self.operands[0]
-    }
-    pub fn label(&self) -> &Cell<MirOperand> {
-        &self.operands[1]
-    }
-
-    pub fn is_cbnz(&self) -> bool {
-        matches!(self.get_opcode(), MirOP::CBNZ)
-    }
-    pub fn is_cbz(&self) -> bool {
-        matches!(self.get_opcode(), MirOP::CBZ)
-    }
-    pub fn is_tbnz(&self) -> bool {
-        matches!(self.get_opcode(), MirOP::TBNZ)
-    }
-    pub fn is_tbz(&self) -> bool {
-        matches!(self.get_opcode(), MirOP::TBZ)
-    }
+impl_mir_inst! {
+    RegCondBr, RegCondBr,
+    operands: {
+        reg: Reg,
+        label: Label,
+    },
+    accept_opcode: [ CBZ, CBNZ, TBZ, TBNZ ],
 }

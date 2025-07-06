@@ -66,7 +66,6 @@ enum RegKind {
 
 impl OperandDecl {
     fn write_default_init_to_token_stream(&self) -> proc_macro2::TokenStream {
-        let name = self.name.as_str();
         let info = &self.info;
 
         match info {
@@ -161,7 +160,7 @@ impl OperandDecl {
         };
         if !self.attrs.contains(&OperandAttr::Readonly) {
             accessors.extend(quote! {
-                // #[doc = #setter_doc]
+                #[doc = #setter_doc]
                 pub fn #setter_name(&mut self, operand: #self_type) {
                     let operand_ref = &self._operands[#self_index];
                     operand_ref.set(operand.insert_to_mirop(operand_ref.get()));
@@ -215,7 +214,7 @@ impl OperandInfo {
             OperandInfo::Global => quote::quote! { MirGlobalRef },
             OperandInfo::CompactSwitchTab => quote::quote! { VecSwitchTabPos },
             OperandInfo::SparseSwitchTab => quote::quote! { BinSwitchTabPos },
-            OperandInfo::Symbol => quote::quote! { ImmSymbolOperand },
+            OperandInfo::Symbol => quote::quote! { ImmSymOperand },
             OperandInfo::MirOperand => quote::quote! { MirOperand },
         }
     }
@@ -319,7 +318,7 @@ impl Parse for ImplMirInst {
         if content.peek(syn::Token![,]) {
             content.parse::<syn::Token![,]>().expect("RemusysError");
         }
-        
+
         Ok(ImplMirInst {
             struct_name: struct_ty.to_string(),
             mir_variant: mir_variant.to_string(),
@@ -645,6 +644,45 @@ impl ImplMirInst {
         }
     }
 
+    fn write_new_inst_function(&self) -> proc_macro2::TokenStream {
+        let mut operand_params = Vec::new();
+        let mut operand_setter_names = Vec::new();
+        let mut set_operands = Vec::new();
+        for decl in self.operand_decls.iter() {
+            if decl.attrs.contains(&OperandAttr::Readonly) {
+                continue; // Skip readonly operands in the new function
+            }
+            let param_name = Ident::new(&decl.name, Span::call_site());
+            let param_type = decl.info.get_typename_token();
+            operand_params.push(quote! { #param_name: #param_type, });
+            let setter_name = Ident::new(&format!("set_{}", decl.name), Span::call_site());
+            operand_setter_names.push(setter_name.clone());
+            set_operands.push(quote! { inst.#setter_name(#param_name); });
+        }
+        let mut field_args = Vec::with_capacity(self.field_inits.len());
+        let mut set_fields = Vec::with_capacity(self.field_inits.len());
+        for field in &self.field_inits {
+            let field_name = Ident::new(&field.name, Span::call_site());
+            let field_type = &field.ty;
+            let field_value = &field.value;
+            field_args.push(quote! { #field_name: #field_type, });
+            set_fields.push(quote! { inst.#field_name = #field_value; });
+        }
+
+        quote! {
+            pub fn new(
+                opcode: MirOP,
+                #(#operand_params)*
+                #(#field_args)*
+            ) -> Self {
+                let mut inst = Self::new_empty(opcode);
+                #(#set_operands)*
+                #(#set_fields)*
+                inst
+            }
+        }
+    }
+
     fn write_impl_inst_block(&self) -> proc_macro2::TokenStream {
         let struct_name = Ident::new(&self.struct_name, Span::call_site());
         let mut operand_accessors = Vec::new();
@@ -652,8 +690,10 @@ impl ImplMirInst {
             let accessors = decl.write_accessors(i);
             operand_accessors.push(accessors);
         }
+        let new_inst_function = self.write_new_inst_function();
         quote! {
             impl #struct_name {
+                #new_inst_function
                 #(#operand_accessors)*
             }
         }
@@ -666,7 +706,7 @@ impl ImplMirInst {
 ///
 /// The user should write the instruction structure itself like this:
 ///
-/// ```rust
+/// ```rust,ignore
 /// // Should implement `Debug` trait.
 /// #[derive(Debug)]
 /// pub struct MyMIRInst {
@@ -706,7 +746,7 @@ impl ImplMirInst {
 ///
 /// instruction template generated from macro `impl_mir_instdef` is like this:
 ///
-/// ```rust
+/// ```rust,ignore
 /// // hand-written structure definition
 /// // ...
 ///
