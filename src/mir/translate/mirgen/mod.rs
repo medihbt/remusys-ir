@@ -52,8 +52,7 @@ struct MirTranslateCtx {
 struct MirBlockInfo {
     pub ir: BlockRef,
     pub mir: MirBlockRef,
-    pub instl: u32,
-    pub instr: u32,
+    pub insts: Vec<InstTranslateInfo>
 }
 
 struct InstTranslateInfo {
@@ -62,24 +61,11 @@ struct InstTranslateInfo {
     pub kind: InstDataKind,
 }
 
+#[derive(Debug, Clone, Copy)]
 struct AllocaInfo {
     pub ir: InstRef,
     pub align_log2: u8,
     pub pointee_ty: ValTypeID,
-}
-
-struct InstTranslateMap {
-    blocks: Vec<MirBlockInfo>,
-    insts: Vec<InstTranslateInfo>,
-    allocas: Vec<AllocaInfo>,
-}
-
-impl InstTranslateMap {
-    fn block_get_insts(&self, block_info: &MirBlockInfo) -> &[InstTranslateInfo] {
-        let start = block_info.instl as usize;
-        let end = block_info.instr as usize;
-        &self.insts[start..end]
-    }
 }
 
 impl MirTranslateCtx {
@@ -128,7 +114,7 @@ impl MirTranslateCtx {
         }
 
         // Step 1.3 dump 出所有指令, 并为函数确定参数布局和栈布局
-        let inst_map = self.dump_insts_and_layout(block_map);
+        let allocas = self.dump_insts_and_layout(&mut block_map);
 
         // Step 1.? 翻译每个基本块的指令
         for &MirBlockInfo { ir, mir, .. } in &inst_map.blocks {
@@ -198,20 +184,9 @@ impl MirTranslateCtx {
     }
 
     /// Step 1.3: Dump 出所有指令, 并为函数确定参数布局和栈布局
-    fn dump_insts_and_layout(&mut self, mut block_map: Vec<MirBlockInfo>) -> InstTranslateMap {
-        let mut insts = Vec::new();
+    fn dump_insts_and_layout(&mut self, block_map: &mut [MirBlockInfo]) -> AllocaInfo {
         let mut allocas = Vec::new();
-
-        let mut inst_cnt = 0;
-
-        for info in block_map.iter_mut() {
-            let MirBlockInfo {
-                ir,
-                instl: inst_begin,
-                instr: inst_end,
-                ..
-            } = info;
-
+        for MirBlockInfo { ir, insts, .. } in block_map {
             let (insts_in_block, len) = self
                 .ir_module
                 .get_block(*ir)
@@ -222,7 +197,6 @@ impl MirTranslateCtx {
             let alloc_value = self.ir_module.borrow_value_alloc();
             let alloc_inst = &alloc_value.alloc_inst;
 
-            *inst_begin = inst_cnt;
             for (ir, inst) in insts_in_block.view(alloc_inst) {
                 if let InstData::Alloca(_, a) = inst {
                     allocas.push(AllocaInfo {
@@ -238,15 +212,31 @@ impl MirTranslateCtx {
                     continue; // 跳过不需要翻译的指令
                 }
                 insts.push(InstTranslateInfo { ir, ty, kind });
-                inst_cnt += 1;
             }
-            *inst_end = inst_cnt;
         }
 
         InstTranslateMap {
             blocks: block_map,
             insts,
             allocas,
+        }
+    }
+
+    fn map_inst_to_vregs(func: &MirFunc) {}
+
+    /// Fill MIR function stack with spilled allocas.
+    fn spill_allocas_for_mir_func(
+        &mut self,
+        func: &MirFunc,
+        allocas: &[AllocaInfo]
+    ) {
+        let type_ctx = &self.ir_module.type_ctx;
+        for alloca_info in allocas {
+            let AllocaInfo {
+                ir, align_log2,
+                pointee_ty
+            } = alloca_info;
+            func.add_variable(*pointee_ty, type_ctx, true);
         }
     }
 
