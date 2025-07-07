@@ -1,22 +1,24 @@
-use std::{cell::Ref, rc::Rc};
-
-use slab::Slab;
+use std::rc::Rc;
 
 use crate::{
     base::slabref::SlabRef,
     ir::{
-        block::{self, BlockRef},
-        global::{GlobalData, GlobalRef},
+        block::BlockRef,
+        global::GlobalRef,
         inst::{InstData, InstDataKind, InstRef},
         module::Module as IRModule,
     },
     mir::{
         module::{
-            MirGlobalRef, MirModule,
+            MirModule,
             block::{MirBlock, MirBlockRef},
             func::MirFunc,
         },
-        translate::{ir_pass::phi_node_ellimination::CopyMap, mirgen::globalgen::MirGlobalItems},
+        operand::reg::{SubRegIndex, VReg},
+        translate::{
+            ir_pass::phi_node_ellimination::CopyMap,
+            mirgen::{globalgen::MirGlobalItems, operandgen::OperandMap},
+        },
         util::builder::{MirBuilder, MirFocus},
     },
     opt::{
@@ -26,7 +28,7 @@ use crate::{
     typing::id::ValTypeID,
 };
 
-mod constgen;
+mod datagen;
 mod globalgen;
 mod instgen;
 mod operandgen;
@@ -52,9 +54,10 @@ struct MirTranslateCtx {
 struct MirBlockInfo {
     pub ir: BlockRef,
     pub mir: MirBlockRef,
-    pub insts: Vec<InstTranslateInfo>
+    pub insts: Vec<InstTranslateInfo>,
 }
 
+#[derive(Debug, Clone, Copy)]
 struct InstTranslateInfo {
     pub ir: InstRef,
     pub ty: ValTypeID,
@@ -115,11 +118,12 @@ impl MirTranslateCtx {
 
         // Step 1.3 dump 出所有指令, 并为函数确定参数布局和栈布局
         let allocas = self.dump_insts_and_layout(&mut block_map);
+        // Step 1.4 为每个指令分配虚拟寄存器
+        let vregs = self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func);
 
-        // Step 1.? 翻译每个基本块的指令
-        for &MirBlockInfo { ir, mir, .. } in &inst_map.blocks {
-            self.inst_dispatch_for_one_mir_block(ir, mir, mir_func, globals, &inst_map.blocks);
-        }
+        // Step 1.5 翻译每个基本块的指令
+        let operand_map = OperandMap::new(Rc::clone(mir_func), globals, vregs.clone(), block_map);
+        for i in 0..operand_map.blocks.len() {}
     }
 
     /// Step 1.1: 为每个函数的基本块分配 MIR 块引用
@@ -139,8 +143,7 @@ impl MirTranslateCtx {
             block_map.push(MirBlockInfo {
                 ir: bb,
                 mir: mir_bb_ref,
-                instl: 0,
-                instr: 0,
+                insts: Vec::new(),
             });
             let mut mir_builder = MirBuilder::new(&mut self.mir_module);
             mir_builder.set_focus(MirFocus::Func(Rc::clone(&func)));
@@ -184,7 +187,7 @@ impl MirTranslateCtx {
     }
 
     /// Step 1.3: Dump 出所有指令, 并为函数确定参数布局和栈布局
-    fn dump_insts_and_layout(&mut self, block_map: &mut [MirBlockInfo]) -> AllocaInfo {
+    fn dump_insts_and_layout(&mut self, block_map: &mut [MirBlockInfo]) -> Vec<AllocaInfo> {
         let mut allocas = Vec::new();
         for MirBlockInfo { ir, insts, .. } in block_map {
             let (insts_in_block, len) = self
@@ -214,41 +217,80 @@ impl MirTranslateCtx {
                 insts.push(InstTranslateInfo { ir, ty, kind });
             }
         }
-
-        InstTranslateMap {
-            blocks: block_map,
-            insts,
-            allocas,
-        }
+        allocas
     }
 
-    fn map_inst_to_vregs(func: &MirFunc) {}
-
-    /// Fill MIR function stack with spilled allocas.
-    fn spill_allocas_for_mir_func(
+    /// 为指令分配虚拟寄存器.
+    fn allocate_storage_for_insts(
         &mut self,
+        block_map: &mut [MirBlockInfo],
+        allocas: &[AllocaInfo],
         func: &MirFunc,
-        allocas: &[AllocaInfo]
-    ) {
+    ) -> Vec<(InstRef, VReg)> {
+        let mut vregs = Vec::new();
         let type_ctx = &self.ir_module.type_ctx;
         for alloca_info in allocas {
-            let AllocaInfo {
-                ir, align_log2,
-                pointee_ty
-            } = alloca_info;
-            func.add_variable(*pointee_ty, type_ctx, true);
+            let (vreg, _) = func.add_variable(alloca_info.pointee_ty, type_ctx, true);
+            vregs.push((alloca_info.ir, vreg));
         }
+
+        for MirBlockInfo { insts, .. } in block_map {
+            for InstTranslateInfo { ir, ty, kind } in insts {
+                type K = InstDataKind;
+                match kind {
+                    K::ListGuideNode | K::PhiInstEnd | K::Unreachable => {
+                        // 功能结点不需要分配寄存器或存储空间
+                        continue;
+                    }
+                    K::Ret | K::Jump | K::Br | K::Store | K::Switch => {
+                        // 基本块终止指令不需要分配寄存器或存储空间
+                        continue;
+                    }
+                    InstDataKind::Cmp => continue, // 比较指令不需要分配寄存器或存储空间
+                    InstDataKind::Alloca => continue, // 分配指令已经在 `allocas` 中处理
+
+                    _ => {
+                        let (is_float, bits) = match ty {
+                            ValTypeID::Ptr => (false, 64), // 假设指针大小为 64 位
+                            ValTypeID::Int(bits) => (false, *bits),
+                            ValTypeID::Float(fpkind) => (true, fpkind.get_binary_bits()),
+                            _ => panic!("Unsupported type for MIR instruction: {ty:?}"),
+                        };
+                        let mut inner = func.borrow_inner_mut();
+                        let alloc_reg = &mut inner.vreg_alloc;
+                        let mut vreg = *alloc_reg.alloc(is_float);
+                        *vreg.subreg_index_mut() = SubRegIndex::new(log2(bits), 0);
+                        vregs.push((*ir, vreg));
+                    }
+                }
+            }
+        }
+        vregs.sort_by_key(|(k, _)| *k);
+        vregs
     }
 
-    /// Step 1.?: 翻译每个基本块的指令
-    fn inst_dispatch_for_one_mir_block(
-        &mut self,
-        ir_bb: BlockRef,
-        mir_bb: MirBlockRef,
-        mir_func: &Rc<MirFunc>,
-        globals: &MirGlobalItems,
-        blocks: &[MirBlockInfo],
-    ) {
-        // Step 0:
+    /// Step 1.5: 翻译每个基本块的指令
+    fn inst_dispatch_for_one_mir_block(&mut self, operand_map: &OperandMap, block_index: usize) {
+        let block_info = &operand_map.blocks[block_index];
+        let ir_block = block_info.ir;
+        let mir_block = block_info.mir;
+
+        let mut mir_builder = MirBuilder::new(&mut self.mir_module);
+        mir_builder.set_focus(MirFocus::Block(Rc::clone(&operand_map.func), mir_block));
+
+        // Step 1.5.1: 生成基本块的 MIR
+        let ir_module = Rc::clone(&self.ir_module);
+        for ir_inst in &block_info.insts {
+            let ir_ref = ir_inst.ir;
+            todo!("Translate instruction {ir_ref:?} in block {ir_block:?}");
+        }
+    }
+}
+
+fn log2(bits: u8) -> u8 {
+    if bits.is_power_of_two() {
+        bits.trailing_zeros() as u8
+    } else {
+        panic!("Bits must be a power of two, got {bits}");
     }
 }

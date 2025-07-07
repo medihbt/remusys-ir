@@ -67,6 +67,7 @@ impl SlabRefListNodeRef for InstRef {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InstDataKind {
     /// Instruction list guide node containing a simple header and parent block.
     /// The guide node will be always attached to a block, so its parent block
