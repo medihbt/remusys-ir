@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, rc::Rc};
 use crate::{
     ir::{
         PtrStorage,
-        global::{GlobalData, GlobalRef},
+        global::{GlobalData, GlobalRef, func::FuncStorage},
         module::Module as IRModule,
     },
     mir::{
@@ -25,7 +25,7 @@ enum GlobalKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct GlobalStatistics {
+struct GlobalStatistics {
     all_globals: Box<[GlobalRef]>,
     /// order:
     ///
@@ -183,69 +183,83 @@ impl MirGlobalItems {
         }
     }
 
-    pub fn build_mir(
+    /// Builds MIR globals from the IR module and the global statistics.
+    fn build_mir_from_statusics(
         ir_module: &IRModule,
         mir_builder: &mut MirBuilder,
         statistics: &GlobalStatistics,
     ) -> Self {
         let mut all_globals = Vec::with_capacity(statistics.all_globals.len());
-        let mut funcs = Vec::new();
+        let mut funcs = Vec::with_capacity(statistics.funcs().len());
 
-        statistics.foreach_item(|gref, kind| {
+        for &gref in statistics.extern_vars() {
             let global = ir_module.get_global(gref);
             let name = global.get_name().to_string();
             let ty = global.get_stored_pointee_type();
-            let type_ctx = &ir_module.type_ctx;
-            let mir_ref = match kind {
-                GlobalKind::ExternVar => {
-                    let section = if global.is_readonly() {
-                        Section::RoData
-                    } else {
-                        Section::Data
-                    };
-                    mir_builder.extern_variable(name, section, ty, type_ctx).0
-                }
-                GlobalKind::ExternFunc => {
-                    let func_ty = match ty {
-                        ValTypeID::Func(f) => f,
-                        _ => panic!("Expected a function type for extern function, got {ty:?}"),
-                    };
-                    let (mir, _) = mir_builder.extern_func(name, func_ty, type_ctx);
-                    mir
-                }
-                GlobalKind::Func => {
-                    let func_ty = match ty {
-                        ValTypeID::Func(f) => f,
-                        _ => panic!("Expected a function type for extern function, got {ty:?}"),
-                    };
-                    let mir_func = MirFunc::new_define(
-                        name,
-                        func_ty,
-                        type_ctx,
-                        &mut mir_builder.mir_module.borrow_alloc_block_mut(),
-                    );
-                    let (mir, rc) = mir_builder.push_func(mir_func, false);
-                    funcs.push(MirFuncInfo {
-                        key: gref,
-                        mir: mir.clone(),
-                        rc,
-                    });
-                    mir
-                }
-                GlobalKind::GlobalConst => todo!("Handle global constants in MIR generation"),
-                GlobalKind::GlobalVar => todo!("Handle global variables in MIR generation"),
-                GlobalKind::GlobalZeroInit => {
-                    todo!("Handle global variables with zero initializer in MIR generation")
-                }
-                GlobalKind::ALL => unreachable!("This should not be used in this context"),
+            let section = if global.is_readonly() {
+                Section::RoData
+            } else {
+                Section::Data
             };
+            let (mir_ref, _) = mir_builder.extern_variable(name, section, ty, &ir_module.type_ctx);
             all_globals.push((gref, mir_ref));
-        });
+        }
+
+        for &gref in statistics.extern_funcs() {
+            let global = ir_module.get_global(gref);
+            let global = &*global;
+            let name = global.get_name().to_string();
+            let funcdef = match global {
+                GlobalData::Func(func) => func,
+                _ => panic!("Expected a function type for extern function, got {global:?}"),
+            };
+            let func_ty = funcdef.get_stored_func_type();
+            let (mir_ref, _) = mir_builder.extern_func(name, func_ty, &ir_module.type_ctx);
+            all_globals.push((gref, mir_ref));
+        }
+
+        for &gref in statistics.funcs() {
+            let global = ir_module.get_global(gref);
+            let global = &*global;
+            let name = global.get_name().to_string();
+            let funcdef = match global {
+                GlobalData::Func(func) => func,
+                _ => panic!("Expected a function type for MIR function, got {global:?}"),
+            };
+            let func_ty = funcdef.get_stored_func_type();
+            let mir_func = MirFunc::new_define(
+                name,
+                func_ty,
+                &ir_module.type_ctx,
+                &mut mir_builder.mir_module.borrow_alloc_block_mut(),
+            );
+            let (mir_ref, rc) = mir_builder.push_func(mir_func, false);
+            funcs.push(MirFuncInfo {
+                key: gref,
+                mir: mir_ref.clone(),
+                rc,
+            });
+            all_globals.push((gref, mir_ref));
+        }
+        for gref in statistics.global_consts() {
+            todo!("Handle global constants in MIR generation");
+        }
+        for gref in statistics.global_vars() {
+            todo!("Handle global variables in MIR generation");
+        }
+        for gref in statistics.global_zero_inits() {
+            todo!("Handle global variables with zero initializer in MIR generation");
+        }
         all_globals.sort_by_key(|(gref, _)| *gref);
         funcs.sort_by_key(|f| f.key);
         Self {
             all: all_globals.into_boxed_slice(),
             funcs: funcs.into_boxed_slice(),
         }
+    }
+
+    pub fn build_mir(ir_module: &IRModule, mir_builder: &mut MirBuilder) -> Self {
+        let statistics = GlobalStatistics::new(ir_module);
+        Self::build_mir_from_statusics(ir_module, mir_builder, &statistics)
     }
 }

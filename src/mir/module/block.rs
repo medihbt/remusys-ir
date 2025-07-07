@@ -27,9 +27,10 @@ pub struct MirBlock {
     pub insts: SlabRefList<MirInstRef>,
     pub livein_regs: HashSet<RegOperand>,
     pub successors: BTreeSet<MirBlockRef>,
+    pub predecessors: BTreeSet<MirBlockRef>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MirBlockRef(u32);
 
 impl SlabRef for MirBlockRef {
@@ -50,6 +51,7 @@ impl SlabRefListNode for MirBlock {
             insts: SlabRefList::new_guide(),
             livein_regs: HashSet::new(),
             successors: BTreeSet::new(),
+            predecessors: BTreeSet::new(),
         }
     }
     fn load_node_head(&self) -> SlabRefListNodeHead {
@@ -80,6 +82,7 @@ impl MirBlock {
             insts: SlabRefList::from_slab(alloc_inst),
             livein_regs: HashSet::new(),
             successors: BTreeSet::new(),
+            predecessors: BTreeSet::new(),
         }
     }
     pub fn push_inst(&self, inst: MirInst, alloc_inst: &mut Slab<MirInst>) -> MirInstRef {

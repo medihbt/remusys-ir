@@ -58,11 +58,13 @@ pub trait FuncUser: PtrUser {
     }
 }
 
+#[derive(Debug)]
 pub struct FuncData {
     pub(crate) _common: GlobalDataCommon,
     pub(crate) _body: RefCell<Option<FuncBody>>,
 }
 
+#[derive(Debug)]
 pub struct FuncBody {
     pub func: GlobalRef,
     pub body: SlabRefList<BlockRef>,

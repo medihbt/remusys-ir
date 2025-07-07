@@ -21,23 +21,27 @@ use super::{
 pub mod func;
 pub mod intrin;
 
+#[derive(Debug)]
 pub enum GlobalData {
     Alias(Alias),
     Var(Var),
     Func(FuncData),
 }
 
+#[derive(Debug)]
 pub struct GlobalDataCommon {
     pub name: String,
     pub content_ty: ValTypeID,
     pub self_ref: Cell<GlobalRef>,
 }
 
+#[derive(Debug)]
 pub struct Alias {
     pub common: GlobalDataCommon,
     pub target: Cell<GlobalRef>,
 }
 
+#[derive(Debug)]
 pub struct Var {
     pub common: GlobalDataCommon,
     pub inner: Cell<VarInner>,

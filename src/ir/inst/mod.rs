@@ -67,6 +67,36 @@ impl SlabRefListNodeRef for InstRef {
     }
 }
 
+pub enum InstDataKind {
+    /// Instruction list guide node containing a simple header and parent block.
+    /// The guide node will be always attached to a block, so its parent block
+    /// will be initialized when the block is allocated on `module.inner._alloc_block`.
+    ListGuideNode,
+    PhiInstEnd,
+
+    // Terminator instructions. These instructions are put at the end of a block and
+    // transfer control to another block or return from a function.
+    Unreachable,
+    Ret,
+    Jump,
+    Br,
+    Switch,
+
+    // Non-terminator instructions. These instructions are put in the middle of a block
+    // and do not transfer control to another block or return from a function.
+    Phi,
+    Alloca,
+    Load,
+    Store,
+    Select,
+    BinOp,
+    Cmp,
+    Cast,
+    IndexPtr,
+    Call,
+    Intrin,
+}
+
 pub enum InstData {
     /// Instruction list guide node containing a simple header and parent block.
     /// The guide node will be always attached to a block, so its parent block
@@ -457,6 +487,29 @@ impl InstData {
 
         // Clean up the instruction itself.
         // However, there is nothing special to do here.
+    }
+
+    pub fn get_kind(&self) -> InstDataKind {
+        match self {
+            Self::ListGuideNode(..) => InstDataKind::ListGuideNode,
+            Self::PhiInstEnd(_) => InstDataKind::PhiInstEnd,
+            Self::Unreachable(_) => InstDataKind::Unreachable,
+            Self::Ret(_, _) => InstDataKind::Ret,
+            Self::Jump(_, _) => InstDataKind::Jump,
+            Self::Br(_, _) => InstDataKind::Br,
+            Self::Switch(_, _) => InstDataKind::Switch,
+            Self::Phi(_, _) => InstDataKind::Phi,
+            Self::Alloca(_, _) => InstDataKind::Alloca,
+            Self::Load(_, _) => InstDataKind::Load,
+            Self::Store(_, _) => InstDataKind::Store,
+            Self::Select(_, _) => InstDataKind::Select,
+            Self::BinOp(_, _) => InstDataKind::BinOp,
+            Self::Cmp(_, _) => InstDataKind::Cmp,
+            Self::Cast(_, _) => InstDataKind::Cast,
+            Self::IndexPtr(_, _) => InstDataKind::IndexPtr,
+            Self::Call(_, _) => InstDataKind::Call,
+            Self::Intrin(_) => InstDataKind::Intrin,
+        }
     }
 }
 
