@@ -11,7 +11,7 @@ use crate::{
         module::Module,
     },
     mir::module::global::{MirGlobalData, Section},
-    typing::{context::TypeContext, types::FloatTypeKind},
+    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
 #[derive(Debug, Clone)]
@@ -103,6 +103,49 @@ impl DataUnit {
                 };
                 let count = size_bytes >> unit_bytes_log2;
                 Self::from_zeroes(unit_bytes_log2, count)
+            }
+            ConstData::PtrNull(_) => Self::DWord(0),
+            ConstData::Int(bits, value) => match bits {
+                8 => Self::Byte(value as u8),
+                16 => Self::Half(value as u16),
+                32 => Self::Word(value as u32),
+                64 => Self::DWord(value as u64),
+                _ => panic!("Unsupported integer bit width: {}", bits),
+            },
+            ConstData::Float(FloatTypeKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
+            ConstData::Float(FloatTypeKind::Ieee64, x) => Self::DWord(x.to_bits()),
+        }
+    }
+
+    pub fn from_const_primitive_data(data: ConstData) -> Self {
+        match data {
+            ConstData::Undef(ty) | ConstData::Zero(ty) => {
+                let bits_log2 = match ty {
+                    ValTypeID::Ptr => 3, // Assuming 64-bit pointers
+                    ValTypeID::Int(bits) => match bits {
+                        8 => 0,
+                        16 => 1,
+                        32 => 2,
+                        64 => 3,
+                        _ => panic!("Unsupported integer bit width: {}", bits),
+                    },
+                    ValTypeID::Float(fpkind) => match fpkind {
+                        FloatTypeKind::Ieee32 => 2,
+                        FloatTypeKind::Ieee64 => 3,
+                    },
+                    ValTypeID::Void
+                    | ValTypeID::Array(_)
+                    | ValTypeID::Struct(_)
+                    | ValTypeID::StructAlias(_)
+                    | ValTypeID::Func(_) => panic!("Unsupported type for zero/undef data: {ty:?}"),
+                };
+                match bits_log2 {
+                    0 => Self::Byte(0),
+                    1 => Self::Half(0),
+                    2 => Self::Word(0),
+                    3 => Self::DWord(0),
+                    _ => panic!("Unsupported bit width for zero/undef data: {}", bits_log2),
+                }
             }
             ConstData::PtrNull(_) => Self::DWord(0),
             ConstData::Int(bits, value) => match bits {

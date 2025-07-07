@@ -1,11 +1,15 @@
 use std::rc::Rc;
 
 use crate::{
-    ir::{block::BlockRef, global::GlobalRef, inst::InstRef},
+    ir::{ValueSSA, block::BlockRef, global::GlobalRef, inst::InstRef},
     mir::{
-        module::{block::MirBlockRef, func::MirFunc, MirGlobalRef},
-        operand::{reg::VReg, suboperand::RegOperand},
-        translate::mirgen::{globalgen::MirGlobalItems, MirBlockInfo},
+        module::{MirGlobalRef, block::MirBlockRef, func::MirFunc},
+        operand::{
+            MirOperand,
+            reg::VReg,
+            suboperand::{IMirSubOperand, RegOperand},
+        },
+        translate::mirgen::{MirBlockInfo, datagen::DataUnit, globalgen::MirGlobalItems},
     },
 };
 
@@ -38,7 +42,13 @@ impl<'a> OperandMap<'a> {
             args.push((arg_id, RegOperand::V(spilled_arg.virtreg)));
             arg_id += 1;
         }
-        Self { args, func, globals, insts, blocks }
+        Self {
+            args,
+            func,
+            globals,
+            insts,
+            blocks,
+        }
     }
 
     pub fn find_operand_for_inst(&self, inst: InstRef) -> Option<RegOperand> {
@@ -61,5 +71,24 @@ impl<'a> OperandMap<'a> {
             .binary_search_by_key(&block, |b| b.ir)
             .ok()
             .map(|idx| self.blocks[idx].mir)
+    }
+
+    pub fn find_operand(&self, operand: &ValueSSA) -> Option<MirOperand> {
+        match operand {
+            ValueSSA::ConstData(data) => match DataUnit::from_const_primitive_data(*data) {
+                DataUnit::Byte(x) => Some(MirOperand::Imm(x as i64)),
+                DataUnit::Half(x) => Some(MirOperand::Imm(x as i64)),
+                DataUnit::Word(x) => Some(MirOperand::Imm(x as i32 as i64)),
+                DataUnit::DWord(x) => Some(MirOperand::Imm(x as i64)),
+                _ => unreachable!("Unsupported data unit for MIR generation"),
+            },
+            ValueSSA::FuncArg(_, n) => self.find_operand_for_arg(*n).map(RegOperand::into_mirop),
+            ValueSSA::Block(b) => self.find_operand_for_block(*b).map(MirOperand::Label),
+            ValueSSA::Inst(i) => self.find_operand_for_inst(*i).map(RegOperand::into_mirop),
+            ValueSSA::Global(g) => self.find_operand_for_global(*g).map(MirOperand::Global),
+            ValueSSA::ConstExpr(_) | ValueSSA::None => {
+                panic!("Unsupported value type in OperandMap: {operand:?}")
+            }
+        }
     }
 }
