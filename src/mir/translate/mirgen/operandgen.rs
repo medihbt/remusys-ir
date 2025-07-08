@@ -92,3 +92,16 @@ impl<'a> OperandMap<'a> {
         }
     }
 }
+
+pub mod imm_valid {
+    pub fn at_data_process_rhs(imm: u64) -> bool {
+        if imm < 0x1000 {
+            return true;
+        }
+        if imm.trailing_zeros() >= 12 && (imm >> 12) < 4096 {
+            return true;
+        }
+        false
+    }
+
+}
