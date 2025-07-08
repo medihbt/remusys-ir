@@ -15,7 +15,7 @@ use crate::{
         operand::reg::{SubRegIndex, VReg},
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
-            mirgen::{globalgen::MirGlobalItems, instgen::{dispatch_inst, InstDispatchState}, operandgen::OperandMap},
+            mirgen::{globalgen::MirGlobalItems, instgen::{dispatch_inst, InstDispatchError, InstDispatchState}, operandgen::OperandMap},
         },
         util::builder::{MirBuilder, MirFocus},
     },
@@ -277,23 +277,29 @@ impl MirTranslateCtx {
         let mut mir_builder = MirBuilder::new(&mut self.mir_module);
         mir_builder.set_focus(MirFocus::Block(Rc::clone(&operand_map.func), mir_block));
 
-        // Step 1.5.1: 生成基本块的 MIR
+        // Step .1: 生成基本块的 MIR
         let ir_module = Rc::clone(&self.ir_module);
         let mut state = InstDispatchState::new();
         for ir_inst in &block_info.insts {
             match dispatch_inst(&mut state, *ir_inst, operand_map) {
                 Ok(mir_inst) => {
-                    // Step 1.5.2: 将 MIR 指令添加到当前基本块
                     mir_builder.add_inst(mir_inst);
+                    todo!("Add instruction to block");
                 }
-                Err(InstDispatchError::ShouldNotTranslate(ir_ref, kind)) => {
-                    // 这些指令不需要翻译, 直接跳过
-                    tracing::debug!(
-                        "Skipping translation of instruction {ir_ref:?} with kind {kind:?} in block {ir_block:?}"
-                    );
-                }
+                Err(InstDispatchError::ShouldNotTranslate(..)) => {},
+                Err(e) => panic!("Instruction dispatchong error {e:?}"),
             }
             todo!("Translate instruction {ir_ref:?} in block {ir_block:?}");
+        }
+
+        // Step .2: 为每个 Phi 添加拷贝函数.
+        for phi_copy in self.copy_map.find_copies(ir_block) {
+            let phi_copy = phi_copy.clone();
+            let phi_reg = operand_map
+                .find_operand_for_inst(phi_copy.phi.into());
+            let from_val = operand_map
+                .find_operand(&phi_copy.from);
+
         }
     }
 }

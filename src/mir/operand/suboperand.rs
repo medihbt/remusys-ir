@@ -95,6 +95,12 @@ impl RegOperand {
     pub fn is_virt(&self) -> bool {
         matches!(self, Self::V(_))
     }
+    pub fn is_float(&self) -> bool {
+        matches!(
+            self,
+            Self::V(VReg::Float(..)) | Self::P(PReg::V(..))
+        )
+    }
 
     pub fn get_bits(&self) -> u8 {
         match self {

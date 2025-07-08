@@ -1,8 +1,7 @@
 use crate::{
     ir::inst::{InstDataKind, InstRef},
     mir::{
-        inst::MirInstRef,
-        translate::mirgen::{InstTranslateInfo, operandgen::OperandMap},
+        inst::{data_process::UnaryOp, load_store::{ILoadStoreInst, LoadConst}, opcode::MirOP, MirInst, MirInstRef}, module::stack::VirtRegAlloc, operand::{reg::PReg, suboperand::{IMirSubOperand, RegOperand}, MirOperand}, translate::mirgen::{operandgen::OperandMap, InstTranslateInfo}
     },
 };
 
@@ -63,4 +62,30 @@ pub fn dispatch_inst(
         InstDataKind::Intrin => todo!("Implement intrinsics handling"),
     }
     todo!("Implement dispatch_inst for MIR generation");
+}
+
+pub fn make_copy_inst(
+    to: RegOperand,
+    from: MirOperand,
+    vreg_alloc: &mut VirtRegAlloc,
+) -> Vec<MirInst> {
+    match from {
+        MirOperand::Imm(i) => if to.is_float() {
+            let vreg = *vreg_alloc.alloc_gp();
+            vec![
+                MirInst::LoadConst(LoadConst::new(MirOP::Ldr, vreg, i)),
+                MirInst::Unary(UnaryOp::new(MirOP::FMov, to, vreg.into_mirop())),
+            ]
+        } else {
+            vec![MirInst::LoadConst(LoadConst::new(MirOP::Ldr, to, i))]
+        }, 
+        MirOperand::PReg(p) => match p {
+            PReg::PState(_) => todo!("Add MRS and MSR support"),
+            PReg::ZR(..) => MirInst::Unary(
+                UnaryOp::new(MirOP::Mov, to, 0i64.into_mirop())
+            ),
+            PReg::V(n, si, uf) => {
+            }
+        }
+    }
 }

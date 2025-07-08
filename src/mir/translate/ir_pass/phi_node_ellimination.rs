@@ -24,6 +24,7 @@ use crate::{
     opt::analysis::cfg::snapshot::CfgSnapshot,
 };
 
+#[derive(Debug, Clone)]
 pub(crate) struct CopyInstNode {
     /// The value that should be copied.
     pub from: ValueSSA,
