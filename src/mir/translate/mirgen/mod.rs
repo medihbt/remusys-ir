@@ -10,14 +10,12 @@ use crate::{
     },
     mir::{
         module::{
-            MirModule,
-            block::{MirBlock, MirBlockRef},
-            func::MirFunc,
+            block::{MirBlock, MirBlockRef}, func::MirFunc, MirModule
         },
         operand::reg::{SubRegIndex, VReg},
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
-            mirgen::{globalgen::MirGlobalItems, operandgen::OperandMap},
+            mirgen::{globalgen::MirGlobalItems, instgen::{dispatch_inst, InstDispatchState}, operandgen::OperandMap},
         },
         util::builder::{MirBuilder, MirFocus},
     },
@@ -30,6 +28,7 @@ use crate::{
 
 mod datagen;
 mod globalgen;
+mod imm_utils;
 mod instgen;
 mod operandgen;
 
@@ -280,8 +279,20 @@ impl MirTranslateCtx {
 
         // Step 1.5.1: 生成基本块的 MIR
         let ir_module = Rc::clone(&self.ir_module);
+        let mut state = InstDispatchState::new();
         for ir_inst in &block_info.insts {
-            let ir_ref = ir_inst.ir;
+            match dispatch_inst(&mut state, *ir_inst, operand_map) {
+                Ok(mir_inst) => {
+                    // Step 1.5.2: 将 MIR 指令添加到当前基本块
+                    mir_builder.add_inst(mir_inst);
+                }
+                Err(InstDispatchError::ShouldNotTranslate(ir_ref, kind)) => {
+                    // 这些指令不需要翻译, 直接跳过
+                    tracing::debug!(
+                        "Skipping translation of instruction {ir_ref:?} with kind {kind:?} in block {ir_block:?}"
+                    );
+                }
+            }
             todo!("Translate instruction {ir_ref:?} in block {ir_block:?}");
         }
     }

@@ -1,15 +1,13 @@
 use std::rc::Rc;
 
 use crate::{
-    ir::{ValueSSA, block::BlockRef, global::GlobalRef, inst::InstRef},
+    ir::{block::BlockRef, constant::data::ConstData, global::GlobalRef, inst::InstRef, ValueSSA},
     mir::{
-        module::{MirGlobalRef, block::MirBlockRef, func::MirFunc},
+        module::{block::MirBlockRef, func::MirFunc, MirGlobalRef},
         operand::{
-            MirOperand,
-            reg::VReg,
-            suboperand::{IMirSubOperand, RegOperand},
+            reg::VReg, suboperand::{IMirSubOperand, RegOperand}, MirOperand
         },
-        translate::mirgen::{MirBlockInfo, datagen::DataUnit, globalgen::MirGlobalItems},
+        translate::mirgen::{datagen::DataUnit, globalgen::MirGlobalItems, MirBlockInfo},
     },
 };
 
@@ -72,6 +70,15 @@ impl<'a> OperandMap<'a> {
             .ok()
             .map(|idx| self.blocks[idx].mir)
     }
+    pub fn get_operand_for_constdata(data: &ConstData) -> i64 {
+        match DataUnit::from_const_primitive_data(*data) {
+            DataUnit::Byte(x) => x as i64,
+            DataUnit::Half(x) => x as i64,
+            DataUnit::Word(x) => x as i32 as i64,
+            DataUnit::DWord(x) => x as i64,
+            _ => unreachable!("Unsupported data unit for MIR generation"),
+        }
+    }
 
     pub fn find_operand(&self, operand: &ValueSSA) -> Option<MirOperand> {
         match operand {
@@ -91,17 +98,4 @@ impl<'a> OperandMap<'a> {
             }
         }
     }
-}
-
-pub mod imm_valid {
-    pub fn at_data_process_rhs(imm: u64) -> bool {
-        if imm < 0x1000 {
-            return true;
-        }
-        if imm.trailing_zeros() >= 12 && (imm >> 12) < 4096 {
-            return true;
-        }
-        false
-    }
-
 }
