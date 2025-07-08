@@ -108,6 +108,12 @@ impl RegOperand {
             Self::P(pr) => pr.get_bits(),
         }
     }
+    pub fn get_bits_log2(&self) -> u8 {
+        match self {
+            Self::V(vr) => vr.get_bits_log2(),
+            Self::P(pr) => pr.get_bits_log2(),
+        }
+    }
     pub fn get_use_flags(&self) -> RegUseFlags {
         match self {
             Self::V(vr) => vr.get_use_flags(),
@@ -125,7 +131,20 @@ impl RegOperand {
         self
     }
 
-    fn try_set_subreg_index(&mut self, si: SubRegIndex) -> bool {
+    pub fn get_subreg_index(&self) -> SubRegIndex {
+        match self {
+            Self::V(vreg) => vreg.get_subreg_index(),
+            Self::P(preg) => match preg {
+                PReg::X(_, si, _)
+                | PReg::V(_, si, _)
+                | PReg::SP(si, _)
+                | PReg::ZR(si, _)
+                | PReg::PC(si, _) => *si,
+                PReg::PState(_) => SubRegIndex::new(6, 0),
+            },
+        }
+    }
+    pub fn try_set_subreg_index(&mut self, si: SubRegIndex) -> bool {
         let self_si = match self {
             Self::V(vreg) => vreg.subreg_index_mut(),
             Self::P(preg) => match preg {

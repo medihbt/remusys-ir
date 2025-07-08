@@ -13,7 +13,7 @@ use crate::{
                 BFMOp, BinCSROp, BinOp, CondSelect, CondSet, CondUnaryOp, ExtROp, TernaryOp,
                 UnaCSROp, UnaryOp,
             },
-            load_store::{LoadConst, LoadStoreLiteral, LoadStoreRRI, LoadStoreRRR},
+            load_store::{LoadAddr, LoadConst, LoadStoreLiteral, LoadStoreRRI, LoadStoreRRR},
             opcode::MirOP,
             switch::{BinSwitch, TabSwitch},
         },
@@ -50,6 +50,7 @@ pub enum MirInst {
     LoadStoreRRI(LoadStoreRRI),
     LoadStoreLiteral(LoadStoreLiteral),
     LoadConst(LoadConst),
+    LoadAddr(LoadAddr),
 
     // Data processing instructions
     Bin(BinOp),
@@ -116,6 +117,8 @@ impl MirInst {
             MirInst::LoadStoreRRR(inst) => inst.common(),
             MirInst::LoadStoreRRI(inst) => inst.common(),
             MirInst::LoadStoreLiteral(inst) => inst.common(),
+            MirInst::LoadConst(load_const) => load_const.common(),
+            MirInst::LoadAddr(load_addr) => load_addr.common(),
             MirInst::Bin(bin_op) => bin_op.common(),
             MirInst::BinCSR(bin_csr_op) => bin_csr_op.common(),
             MirInst::Unary(unary_op) => unary_op.common(),
@@ -132,7 +135,6 @@ impl MirInst {
             MirInst::TabSwitch(tab_switch) => &tab_switch.common,
             MirInst::BinSwitch(bin_switch) => &bin_switch.common,
             MirInst::UnaryCSR(inst) => inst.common(),
-            MirInst::LoadConst(load_const) => load_const.common(),
         }
     }
     pub fn get_opcode(&self) -> MirOP {
@@ -148,6 +150,8 @@ impl MirInst {
             MirInst::LoadStoreRRR(load_store_rrr) => load_store_rrr.operands(),
             MirInst::LoadStoreRRI(load_store_rri) => load_store_rri.operands(),
             MirInst::LoadStoreLiteral(load_store_literal) => load_store_literal.operands(),
+            MirInst::LoadConst(load_const) => load_const.operands(),
+            MirInst::LoadAddr(load_addr) => load_addr.operands(),
             MirInst::Bin(bin_op) => bin_op.operands(),
             MirInst::Unary(unary_op) => unary_op.operands(),
             MirInst::BFM(bfmop) => bfmop.operands(),
@@ -164,7 +168,6 @@ impl MirInst {
             MirInst::BinSwitch(bin_switch) => &bin_switch.operands,
             MirInst::BinCSR(bin_csrop) => bin_csrop.operands(),
             MirInst::UnaryCSR(inst) => inst.operands(),
-            MirInst::LoadConst(load_const) => load_const.operands(),
         }
     }
 }

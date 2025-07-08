@@ -243,6 +243,11 @@ impl VReg {
             VReg::General(_, si, _) | VReg::Float(_, si, _) => 1 << si.get_bits_log2(),
         }
     }
+    pub fn get_bits_log2(self) -> u8 {
+        match self {
+            VReg::General(_, si, _) | VReg::Float(_, si, _) => si.get_bits_log2(),
+        }
+    }
     pub fn get_id(self) -> u32 {
         match self {
             VReg::General(id, _, _) | VReg::Float(id, _, _) => id,
@@ -408,6 +413,16 @@ impl PReg {
             | PReg::ZR(subr, _)
             | PReg::PC(subr, _) => 1 << subr.get_bits_log2(),
             PReg::PState(_) => 64,
+        }
+    }
+    pub fn get_bits_log2(&self) -> u8 {
+        match self {
+            PReg::X(_, subr, _)
+            | PReg::V(_, subr, _)
+            | PReg::SP(subr, _)
+            | PReg::ZR(subr, _)
+            | PReg::PC(subr, _) => subr.get_bits_log2(),
+            PReg::PState(_) => 6, // PState is considered as 64-bit register
         }
     }
 }

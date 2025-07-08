@@ -76,6 +76,71 @@ pub const fn is_calc_imm(imm: u64) -> bool {
     imm < 4096
 }
 
+/// Converts aarch64 `fmov` instruction immediate format
+/// to host float `f32`
+pub const fn fp8aarch_to_fp32(imm: u8) -> f32 {
+    let sign = imm >> 7;
+    let exp = (imm >> 4) & 0b111;
+    let mantissa = imm & 0b1111;
+
+    // [1,2,3,4,-3,-2,-1,0] -> [128, 129, 130, 131, 124, 125, 126, 127]
+    let fp32_exp = if exp < 4 { 128 } else { 120 } + exp as u32;
+    let fp32_mantissa = (mantissa as u32) << 19;
+    let fp32_sign = (sign as u32) << 31;
+    let fp32 = fp32_sign | (fp32_exp << 23) | fp32_mantissa;
+    f32::from_bits(fp32)
+}
+
+/// Converts aarch64 `fmov` instruction immediate format
+/// to host float `f64`.
+pub const fn fp8aarch_to_fp64(imm: u8) -> f64 {
+    let sign = imm >> 7;
+    let exp = (imm >> 4) & 0b111;
+    let mantissa = imm & 0b1111;
+
+    // [1,2,3,4,-3,-2,-1,0] -> [1024, 1025, 1026, 1027, 1020, 1021, 1022, 1023]
+    let fp64_exp = if exp < 4 { 1024 } else { 1016 } + exp as u64;
+    let fp64_mantissa = (mantissa as u64) << 48;
+    let fp64_sign = (sign as u64) << 63;
+    let fp64 = fp64_sign | (fp64_exp << 52) | fp64_mantissa;
+    f64::from_bits(fp64)
+}
+
+pub const fn try_cast_f32_to_aarch8(imm: f32) -> Option<u8> {
+    let bits = imm.to_bits();
+    let sign = (bits >> 31) as u8;
+    let exp = ((bits >> 23) & 0xFF) as u8;
+    let mantissa = bits & 0x7F_FFFF;
+    if exp < 124 || exp > 131 {
+        return None; // Exponent out of range for fp8
+    }
+    if mantissa & 0x07_FFFF != 0 {
+        return None;
+    }
+    let exp = if exp >= 128 { exp - 128 } else { exp - 120 };
+    let mantissa = (mantissa >> 19) as u8;
+    let imm8 = (sign << 7) | (exp << 4) | mantissa;
+    Some(imm8)
+}
+
+pub const fn try_cast_f64_to_aarch8(imm: f64) -> Option<u8> {
+    let bits = imm.to_bits();
+    let sign = (bits >> 63) as u8;
+    let exp = ((bits >> 52) & 0x7FF) as u8;
+    let mantissa = bits & 0x000F_FFFF_FFFF_FFFF; // 52 bits of mantissa
+    if exp < 1020 || exp > 1027 {
+        return None; // Exponent out of range for fp8
+    }
+    if mantissa & 0x0000_FFFF_FFFF_FFFF != 0 {
+        // Mantissa must be 4 bits
+        return None;
+    }
+    let exp = if exp >= 1024 { exp - 1024 } else { exp - 1016 };
+    let mantissa = (mantissa >> 48) as u8;
+    let imm8 = (sign << 7) | (exp << 4) | mantissa;
+    Some(imm8)
+}
+
 mod loop_pattern {
     pub(super) const fn is_loop8_pattern32(imm: u32) -> bool {
         let imm8 = (imm & 0xFF) as u8;

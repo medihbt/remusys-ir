@@ -152,7 +152,7 @@ impl_mir_inst! {
     ],
 }
 
-/// Pesudo Instruction: Load a constant value into a register.
+/// Pseudo Instruction: Load a constant value into a register.
 ///
 /// AArch64 + MIR assembly syntax: `LDR <Rt>, =<imm>`
 ///
@@ -180,4 +180,28 @@ impl ILoadStoreInst for LoadConst {
     fn get_addr_mode(&self) -> AddressMode {
         AddressMode::PseudoImmMaker
     }
+}
+
+/// Pseudo Instruction: Load the address of a symbol into a register.
+/// 
+/// AArch64 + MIR assembly syntax: `LDR <Rt>, =<label>`
+/// 
+/// Accepts opcode:
+/// 
+/// ```aarch64
+/// ldr
+/// ```
+#[derive(Debug, Clone)]
+pub struct LoadAddr {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2],
+}
+
+impl_mir_inst! {
+    LoadAddr, LoadAddr,
+    operands: {
+        rt: Reg { use_flags: [DEF] },
+        label: Symbol,
+    },
+    accept_opcode: [Ldr],
 }

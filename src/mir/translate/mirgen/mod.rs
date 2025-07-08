@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::VecDeque, rc::Rc};
 
 use crate::{
     base::slabref::SlabRef,
@@ -10,12 +10,18 @@ use crate::{
     },
     mir::{
         module::{
-            block::{MirBlock, MirBlockRef}, func::MirFunc, MirModule
+            MirModule,
+            block::{MirBlock, MirBlockRef},
+            func::MirFunc,
         },
         operand::reg::{SubRegIndex, VReg},
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
-            mirgen::{globalgen::MirGlobalItems, instgen::{dispatch_inst, InstDispatchError, InstDispatchState}, operandgen::OperandMap},
+            mirgen::{
+                globalgen::MirGlobalItems,
+                instgen::{InstDispatchError, InstDispatchState, dispatch_inst},
+                operandgen::OperandMap,
+            },
         },
         util::builder::{MirBuilder, MirFocus},
     },
@@ -278,28 +284,40 @@ impl MirTranslateCtx {
         mir_builder.set_focus(MirFocus::Block(Rc::clone(&operand_map.func), mir_block));
 
         // Step .1: 生成基本块的 MIR
-        let ir_module = Rc::clone(&self.ir_module);
         let mut state = InstDispatchState::new();
+        let mut inst_queue = VecDeque::with_capacity(block_info.insts.len());
         for ir_inst in &block_info.insts {
-            match dispatch_inst(&mut state, *ir_inst, operand_map) {
-                Ok(mir_inst) => {
-                    mir_builder.add_inst(mir_inst);
-                    todo!("Add instruction to block");
+            let mut func_inner = operand_map.func.borrow_inner_mut();
+            let vreg_alloc = &mut func_inner.vreg_alloc;
+            match dispatch_inst(
+                &mut state,
+                *ir_inst,
+                operand_map,
+                vreg_alloc,
+                &mut inst_queue,
+            ) {
+                Ok(()) => {
+                    while !inst_queue.is_empty() {
+                        let inst = inst_queue
+                            .pop_front()
+                            .expect("Inst queue should not be empty");
+                        mir_builder.add_inst(inst);
+                    }
                 }
-                Err(InstDispatchError::ShouldNotTranslate(..)) => {},
+                Err(InstDispatchError::ShouldNotTranslate(..)) => {}
                 Err(e) => panic!("Instruction dispatchong error {e:?}"),
             }
-            todo!("Translate instruction {ir_ref:?} in block {ir_block:?}");
+            todo!(
+                "Translate instruction {:?} in block {ir_block:?}",
+                ir_inst.ir
+            );
         }
 
         // Step .2: 为每个 Phi 添加拷贝函数.
         for phi_copy in self.copy_map.find_copies(ir_block) {
             let phi_copy = phi_copy.clone();
-            let phi_reg = operand_map
-                .find_operand_for_inst(phi_copy.phi.into());
-            let from_val = operand_map
-                .find_operand(&phi_copy.from);
-
+            let phi_reg = operand_map.find_operand_for_inst(phi_copy.phi.into());
+            let from_val = operand_map.find_operand(&phi_copy.from);
         }
     }
 }
