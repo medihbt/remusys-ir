@@ -315,9 +315,22 @@ impl MirTranslateCtx {
 
         // Step .2: 为每个 Phi 添加拷贝函数.
         for phi_copy in self.copy_map.find_copies(ir_block) {
+            let mut func_inner = operand_map.func.borrow_inner_mut();
+            let vreg_alloc = &mut func_inner.vreg_alloc;
             let phi_copy = phi_copy.clone();
-            let phi_reg = operand_map.find_operand_for_inst(phi_copy.phi.into());
-            let from_val = operand_map.find_operand(&phi_copy.from);
+            let phi_reg = operand_map
+                .find_operand_for_inst(phi_copy.phi.into())
+                .expect("Phi register not found");
+            let from_val = operand_map
+                .find_operand(&phi_copy.from)
+                .expect("From value not found");
+            instgen::make_copy_inst(phi_reg, from_val, vreg_alloc, &mut inst_queue);
+            while !inst_queue.is_empty() {
+                let inst = inst_queue
+                    .pop_front()
+                    .expect("Inst queue should not be empty");
+                mir_builder.add_inst(inst);
+            }
         }
     }
 }

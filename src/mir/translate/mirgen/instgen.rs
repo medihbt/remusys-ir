@@ -4,21 +4,14 @@ use crate::{
     ir::inst::{InstDataKind, InstRef},
     mir::{
         inst::{
-            IMirSubInst, MirInst, MirInstRef,
-            data_process::UnaryOp,
-            load_store::{ILoadStoreInst, LoadAddr, LoadConst},
-            opcode::MirOP,
+            call_ret::MirReturn, data_process::UnaryOp, load_store::{LoadAddr, LoadConst}, opcode::MirOP, IMirSubInst, MirInst, MirInstRef
         },
         module::stack::VirtRegAlloc,
         operand::{
-            MirOperand,
-            reg::PReg,
-            suboperand::{IMirSubOperand, ImmSymOperand, RegOperand},
+            reg::PReg, suboperand::{IMirSubOperand, ImmSymOperand, RegOperand}, MirOperand
         },
         translate::mirgen::{
-            InstTranslateInfo,
-            imm_utils::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
-            operandgen::OperandMap,
+            imm_utils::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8}, operandgen::OperandMap, InstTranslateInfo
         },
     },
 };
@@ -64,7 +57,11 @@ pub fn dispatch_inst(
         | InstDataKind::PhiInstEnd
         | InstDataKind::Phi
         | InstDataKind::Unreachable => Err(InstDispatchError::ShouldNotTranslate(ir_ref, kind)),
-        InstDataKind::Ret => todo!(),
+        InstDataKind::Ret => {
+            let ret_inst = MirReturn::new(true);
+            ret_inst.set_retval(todo!("Handle return value"));
+            out_insts.push_back(ret_inst.into_mir_inst());
+        },
         InstDataKind::Jump => todo!(),
         InstDataKind::Br => todo!(),
         InstDataKind::Switch => todo!(),
@@ -110,10 +107,10 @@ pub fn make_copy_inst(
     match from {
         MirOperand::PReg(preg) => {
             todo!("move from PReg to RegOperand: {preg:?}");
-        },
+        }
         MirOperand::VReg(vreg) => {
             todo!("move from PReg to RegOperand: {vreg:?}");
-        },
+        }
         MirOperand::Imm(imm) => {
             if dest_float {
                 let vx = *vreg_alloc.alloc_gp();
