@@ -4,15 +4,20 @@ use crate::{
     ir::inst::{InstDataKind, InstRef},
     mir::{
         inst::{
-            call_ret::MirReturn, data_process::UnaryOp, load_store::{LoadAddr, LoadConst}, opcode::MirOP, IMirSubInst, MirInst, MirInstRef
+            IMirSubInst, MirInst, MirInstRef,
+            call_ret::MirReturn,
+            data_process::UnaryOp,
+            load_store::{LoadAddr, LoadConst},
+            opcode::MirOP,
         },
         module::stack::VirtRegAlloc,
         operand::{
-            reg::PReg, suboperand::{IMirSubOperand, ImmSymOperand, RegOperand}, MirOperand
+            MirOperand,
+            imm::imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
+            reg::PReg,
+            suboperand::{IMirSubOperand, ImmSymOperand, RegOperand},
         },
-        translate::mirgen::{
-            imm_utils::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8}, operandgen::OperandMap, InstTranslateInfo
-        },
+        translate::mirgen::{InstTranslateInfo, operandgen::OperandMap},
     },
 };
 
@@ -58,10 +63,10 @@ pub fn dispatch_inst(
         | InstDataKind::Phi
         | InstDataKind::Unreachable => Err(InstDispatchError::ShouldNotTranslate(ir_ref, kind)),
         InstDataKind::Ret => {
-            let ret_inst = MirReturn::new(true);
+            let mut ret_inst = MirReturn::new(true);
             ret_inst.set_retval(todo!("Handle return value"));
-            out_insts.push_back(ret_inst.into_mir_inst());
-        },
+            out_insts.push_back(MirInst::MirReturn(ret_inst));
+        }
         InstDataKind::Jump => todo!(),
         InstDataKind::Br => todo!(),
         InstDataKind::Switch => todo!(),
@@ -132,6 +137,7 @@ pub fn make_copy_inst(
             push_load_addr(dest_float, to, BinSwitchTabPos(idx), out_insts)
         }
         MirOperand::None => {}
+        MirOperand::ImmLimit(imm_const) => todo!(),
     };
 }
 

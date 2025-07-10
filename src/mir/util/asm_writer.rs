@@ -444,7 +444,13 @@ impl<'a> AsmWriter<'a> {
                 if let Some(rm_op) = &una_csrop.rhs_op {
                     self.write_str(", ").write_fmt(format_args!("{}", rm_op));
                 }
-            },
+            }
+            MirInst::LoadAddr(load_addr) => {
+                self.write_str("ldr ")
+                    .write_operand(istat, load_addr.rt().get())
+                    .write_str(", =")
+                    .write_operand(istat, load_addr.label().get());
+            }
         }
     }
 
@@ -489,6 +495,7 @@ impl<'a> AsmWriter<'a> {
             MirOperand::None => {
                 panic!("Cannot write None operand to assembly");
             }
+            MirOperand::ImmLimit(imm_const) => self.write_fmt(format_args!("{imm_const}")),
         };
         self
     }
@@ -570,7 +577,6 @@ impl<'a> AsmWriter<'a> {
     }
 
     fn write_load_store_immediate(&self, istat: &InstWriteStatus, imm: MirOperand) -> &Self {
-        type M = MirOperand;
         match imm {
             MirOperand::Imm(value) => self.write_fmt(format_args!("#{}", value)),
             MirOperand::Global(item) => {
@@ -583,7 +589,8 @@ impl<'a> AsmWriter<'a> {
                         .as_str(),
                 )
             }
-            M::Label(label) => {
+            MirOperand::ImmLimit(imm_const) => self.write_fmt(format_args!("{imm_const}")),
+            MirOperand::Label(label) => {
                 let alloc_bb = istat.module.borrow_alloc_block();
                 self.write_str(":lo12:")
                     .write_str(label.to_slabref_unwrap(&alloc_bb).name.as_str())
@@ -610,7 +617,6 @@ impl<'a> AsmWriter<'a> {
                     bin_switch_tab.tab_index.get()
                 ))
             }
-
             MirOperand::None | MirOperand::VReg(_) | MirOperand::PReg(_) => {
                 panic!(
                     "Cannot write immediate operand for load/store RRI instruction: {:?}",

@@ -1,18 +1,18 @@
 //! 重构的 MIR 操作数模块
 
 use crate::mir::{
-    module::{MirGlobalRef, block::MirBlockRef},
+    module::{block::MirBlockRef, MirGlobalRef},
     operand::{
-        reg::{PReg, VReg},
-        suboperand::IMirSubOperand,
+        imm::ImmConst, reg::{PReg, VReg}, suboperand::IMirSubOperand
     },
 };
 
+pub mod imm;
 pub mod reg;
 pub mod suboperand;
 
 /// MIR 操作数.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum MirOperand {
     /// 没有操作数, 通常用于占位或无操作数指令.
     None,
@@ -22,6 +22,8 @@ pub enum MirOperand {
     VReg(VReg),
     /// 立即数操作数, 表示其二进制布局.
     Imm(i64),
+    /// 有限制的立即数
+    ImmLimit(ImmConst),
     /// 全局变量引用.
     Global(MirGlobalRef),
     /// 标签引用, 用于控制流跳转.

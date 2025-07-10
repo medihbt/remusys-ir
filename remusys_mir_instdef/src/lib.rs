@@ -178,6 +178,7 @@ impl OperandDecl {
 ///            | "PReg" (RegSubInfo)?
 ///            | "Reg"  (RegSubInfo)?
 ///            | "Imm"
+///            | "ImmLimit" ImmLimitInfo
 ///            | "PState"
 ///            | "Label"
 ///            | "Global"
@@ -193,6 +194,7 @@ enum OperandInfo {
     PReg(Option<RegSubInfo>),
     Reg(Option<RegSubInfo>),
     Imm,
+    ImmLimit,
     PState,
     Label,
     Global,
@@ -245,6 +247,22 @@ struct RegSubInfo {
 struct SubRegIndexExpr {
     bits: u8,
     index: u8,
+}
+
+/// Syntax:
+/// 
+/// ```bnf
+/// ImmLimitInfo: ImmLimitDirectInfo | "(" $expr:expr ")" ;
+/// ImmLimitDirectInfo: "Full" | "FullFP" | "Calc" | "Logic" | "Cmp" | "FPMov8" ;
+/// ```
+enum ImmLimitInfo {
+    Expr(Expr),
+    Full,
+    FullFP,
+    Calc,
+    Logic,
+    Cmp,
+    FPMov8,
 }
 
 /// Syntax:
