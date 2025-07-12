@@ -13,9 +13,9 @@ use crate::{
         slabref::SlabRef,
     },
     mir::{
-        inst::{MirInst, MirInstRef},
+        inst::{inst::MirInst, MirInstRef},
         module::MirModule,
-        operand::suboperand::RegOperand,
+        operand::reg::RegOperand,
     },
 };
 

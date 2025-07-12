@@ -1,0 +1,404 @@
+class CondBr {
+    in: {
+        label: Label,
+        csr:   PState,
+    },
+    insts: [ BCond, BCCond ],
+    props: {
+        cond: MirCondFlag = MirCondFlag::AL;
+    }
+}
+
+// Unconditional branches, which do not depend on any condition flags.
+template[TargetT] UnCondBranches {
+    in: { target: TargetT };
+    impl {
+        [Label] => UncondBr { insts: [B], },
+        [GPR64] => BReg     { insts: [Br], },
+    }
+}
+
+template[TargetT] BranchLinks {
+    in: { target: TargetT, },
+    out: { ra: GPR64, };
+    impl {
+        [Label] => BLinkLabel { insts: [ BLink ], },
+        [GPR64] => BLinkReg   { insts: [ BLinkReg ], },
+    }
+}
+
+class RegCondBr {
+    in: {
+        cond: GPR64,
+        target: Label,
+    },
+    insts: [ CBZ, CBNZ, TBZ, TBNZ ],
+}
+
+extern class MirCall;
+extern class MirReturn;
+extern class MirSwitch;
+
+template[Lhs, Rhs] CompareInsts {
+    in: {
+        rn:  Lhs,
+        rhs: Rhs,
+    },
+    out: { csr: PState, }
+    ;
+    impl {
+        [GPR64, GPR64] => ICmp64R {
+            insts: [ ICmp64R, ICmn64R ],
+            props: {
+                rm_op: Option<RegOP> = None;
+            }
+        },
+        [GPR32, GPR32] => ICmp32R {
+            insts: [ ICmp32R, ICmn32R ],
+            props: {
+                rm_op: Option<RegOP> = None;
+            }
+        },
+
+        [GPR64, ImmCalc] => ICmp64I { insts: [ ICmp64I, ICmn64I ], },
+        [GPR32, ImmCalc] => ICmp32I { insts: [ ICmp32I, ICmn32I ], },
+
+        [FPR32, FPR32] => FCmp32 { insts: [ FCmp32, FCmpE32 ], },
+        [FPR64, FPR64] => FCmp64 { insts: [ FCmp64, FCmpE64 ], },
+    }
+}
+
+template[Lhs, Rhs] CondCmpInsts {
+    in: {
+        rn:   Lhs,
+        rhs:  Rhs,
+    },
+    out: { csr: PState, },
+    props: {
+        cond: MirCondFlag = MirCondFlag::AL;
+        nzcv: NZCV = NZCV::empty();
+    },
+    ;
+    impl {
+        [GPR64, GPR64] => ICCmp64R { insts: [ ICCmp64R, ICCmn64R ], },
+        [GPR32, GPR32] => ICCmp32R { insts: [ ICCmp32R, ICCmn32R ], },
+        [GPR64, ImmCCmp] => ICCmp64I { insts: [ ICCmp64I, ICCmn64I ], },
+        [GPR32, ImmCCmp] => ICCmp32I { insts: [ ICCmp32I, ICCmn32I ], },
+        [FPR32, FPR32] => FCCmp32 { insts: [ FCCmp32, FCCmpE32 ], },
+        [FPR64, FPR64] => FCCmp64 { insts: [ FCCmp64, FCCmpE64 ], },
+    }
+}
+
+template[D, L, R] BinaryOP {
+    out: { rd: D, },
+    in: { rn: L, rm: R, };
+
+    impl {
+        /* 无立即数的二元操作 */
+
+        [GPR64, GPR64, GPR64] => Bin64R {
+            insts: [
+                Add64R, Sub64R, SMax64R, SMin64R, UMax64R, UMin64R,
+                And64R, Bic64R, EON64R, EOR64R, ORR64R, ORN64R,
+                Asr64R, Lsr64R, Lsl64R, Ror64R,
+                Mul64, MNeg64, SDiv64, UDiv64, SMulH, UMulH
+            ],
+            props: {
+                rm_op: Option<RegOP> = None;
+            },
+        },
+        [GPR32, GPR32, GPR32] => Bin32R {
+            insts: [
+                Add32R, Sub32R, SMax32R, SMin32R, UMax32R, UMin32R,
+                And32R, Bic32R, EON32R, EOR32R, ORR32R, ORN32R,
+                Asr32R, Lsr32R, Lsl32R, Ror32R,
+                Mul32, MNeg32, SDiv32, UDiv32
+            ],
+            props: {
+                rm_op: Option<RegOP> = None;
+            },
+        },
+
+        [GPR64, GPR32, GPR32] => MulL {
+            insts: [ SMULL, UMULL, SMNegL, UMNegL ],
+        },
+
+        /* 带有立即数的二元操作 */
+
+        [GPR64, GPR64, ImmCalc] => Bin64RC { insts: [ Add64I, Sub64I ] },
+        [GPR32, GPR32, ImmCalc] => Bin32RC { insts: [ Add32I, Sub32I ] },
+
+        [GPR64, GPR64, ImmLogic] => Bin64RL {
+            insts: [ And64I, Bic64I, EON64I, EOR64I, ORR64I, ORN64I ],
+        },
+        [GPR32, GPR32, ImmLogic] => Bin32RL {
+            insts: [ And32I, Bic32I, EON32I, EOR32I, ORR32I, ORN32I ],
+        },
+        [GPR64, GPR64, ImmSMax] => Bin64RS {
+            insts: [ SMax64I, SMin64I ],
+        },
+        [GPR64, GPR64, ImmUMax] => Bin64RU {
+            insts: [ UMax64I, UMin64I ],
+        },
+        [GPR32, GPR32, ImmSMax] => Bin32RS {
+            insts: [ SMax32I, SMin32I ],
+        },
+        [GPR32, GPR32, ImmUMax] => Bin32RU {
+            insts: [ UMax32I, UMin32I ],
+        },
+        [GPR64, GPR64, ImmShift] => Bin64RShift {
+            insts: [ Asr64I, Lsr64I, Lsl64I, Ror64I ],
+        },
+        [GPR32, GPR32, ImmShift] => Bin32RShift {
+            insts: [ Asr32I, Lsr32I, Lsl32I, Ror32I ],
+        },
+
+        /* 处理浮点 */
+
+        [FPR64, FPR64, FPR64] => BinF64R {
+            insts: [ FAdd64, FDiv64, FMul64, FNMul64, FSub64 ],
+        },
+        [FPR32, FPR32, FPR32] => BinF32R {
+            insts: [ FAdd32, FDiv32, FMul32, FNMul32, FSub32 ],
+        },
+    }
+}
+
+template[T] MirCopy {
+    in: { src: Any, },
+    out: { dst: T, } ;
+
+    impl {
+        // MIR 伪指令: 拷贝一个操作数到另一个虚拟寄存器里, 保持二进制布局不变.
+        [GPR64] => MirCopy64  { insts: [ MirCopy64 ], },
+        [GPR32] => MirCopy32  { insts: [ MirCopy32 ], },
+        [FPR64] => MirFCopy64 { insts: [ MirFCopy64 ], },
+        [FPR32] => MirFCopy32 { insts: [ MirFCopy32 ], },
+        [PState] => MirPCopy  { insts: [ MirPCopy ], },
+    }
+}
+
+template[D, T] UnaryOP {
+    in: { src: T, },
+    out: { dst: D, } ;
+
+    impl {
+        [GPR64, GPR64] => Una64R {
+            insts: [
+                Neg64R, MVN64R, Mov64R, Abs64R, CLS64, CLZ64, CNT64, CTZ64, RBit64
+            ],
+            props: {
+                dst_op: Option<RegOP> = None;
+            },
+        },
+        [GPR32, GPR32] => Una32R {
+            insts: [
+                Neg32R, MVN32R, Mov32R, Abs32R, CLS32, CLZ32, CNT32, CTZ32, RBit32,
+                SXTB32, SXTH32, SXTW32, UXTB32, UXTH32
+            ],
+            props: {
+                dst_op: Option<RegOP> = None;
+            },
+        },
+        [GPR64, GPR32] => ExtR {
+            insts: [SXTB64, SXTH64, SXTW64, UXTB64, UXTH64]
+        },
+
+        [GPR64, ImmMov] => Mov64I { insts: [ Mov64I, MovZ64, MovN64, MovK64 ], },
+        [GPR32, ImmMov] => Mov32I { insts: [ Mov32I, MovZ32, MovN32, MovK32 ], },
+        [GPR64, Label]  => Adr    { insts: [ AdrP, Adr ] },
+
+        [FPR64, GPR64] => UnaFG64 { insts: [ FMovFG64, SCvtF64 ] },
+        [GPR64, FPR64] => UnaGF64 {
+            insts: [
+                FMovGF64,
+                // FCvt: AS AU MS MU NS NU PS PU ZS ZU 
+                FCvtAS64, FCvtAU64, FCvtMS64, FCvtMU64, FCvtNS64,
+                FCvtNU64, FCvtPS64, FCvtPU64, FCvtZS64, FCvtZU64
+            ],
+        },
+        [FPR64, GPR32] => UnaF64G32 { insts: [ SCvtF64G32 ] },
+
+        [FPR32, GPR32] => UnaFG32 { insts: [ FMovFG32, SCvtF32 ] },
+        [GPR32, FPR32] => UnaGF32 {
+            insts: [
+                FMovGF32,
+                // FCvt: AS AU MS MU NS NU PS PU ZS ZU 
+                FCvtAS32, FCvtAU32, FCvtMS32, FCvtMU32, FCvtNS32,
+                FCvtNU32, FCvtPS32, FCvtPU32, FCvtZS32, FCvtZU32
+            ],
+        },
+
+        [GPR64, FPR32] => UnaG64F32 {
+            insts: [
+                // FCvt: AS AU MS MU NS NU PS PU ZS ZU 
+                FCvtAS64F32, FCvtAU64F32, FCvtMS64F32, FCvtMU64F32, FCvtNS64F32,
+                FCvtNU64F32, FCvtPS64F32, FCvtPU64F32, FCvtZS64F32, FCvtZU64F32
+            ],
+        },
+        [GPR32, FPR64] => UnaG32F64 {
+            insts: [ FCvtAS32F64, FCvtAU32F64 ]
+        },
+
+        [FPR64, FPR64] => UnaF64 {
+            insts: [
+                FMov64R,
+                // FRInt: A I M N P X Z
+                FRIntA64, FRIntI64, FRIntM64, FRIntN64, FRIntP64, FRIntX64, FRIntZ64,
+                FRInt32X64, FRIntZ32X64, FRInt64X64, FRIntZ64X64,
+                // Floating Arithmetic with unary source
+                FAbs64, FNeg64, FSqrt64,
+            ],
+        },
+        [FPR32, FPR32] => UnaF32 {
+            insts: [
+                FMov32R,
+                // FRInt: A I M N P X Z
+                FRIntA32, FRIntI32, FRIntM32, FRIntN32, FRIntP32, FRIntX32, FRIntZ32,
+                FRInt32X32, FRIntZ32X32, FRInt64X32, FRIntZ64X32,
+                // Floating Arithmetic with unary source
+                FAbs32, FNeg32, FSqrt32,
+            ],
+        },
+        [FPR32, FPR64] => UnaryF32F64 { insts: [ FCvt32F64 ] },
+        [FPR64, FPR32] => UnaryF64F32 { insts: [ FCvt64F32 ] },
+
+        [FPR64, ImmFMov64] => FMov64I { insts: [ FMov64I ] },
+        [FPR32, ImmFMov32] => FMov32I { insts: [ FMov32I ] },
+    }
+}
+
+template[T, U] TenaryOP {
+    out: { rd: T, },
+    in: { rn: U, rm: U, rs: T, };
+
+    impl {
+        [GPR64, GPR64] => TenaryG64 { insts: [ MAdd64, MSub64 ] },
+        [GPR64, GPR32] => TenaryG64G32 {
+            insts: [ SMAddL, SMSubL, UMAddL, UMSubL ],
+        },
+        [GPR32, GPR32] => TenaryG32 { insts: [ MAdd32, MSub32 ] },
+
+        [FPR64, FPR64] => TenaryF64 {
+            insts: [ FMAdd64, FMSub64, FNMAdd64, FNMSub64 ]
+        },
+        [FPR32, FPR32] => TenaryF32 {
+            insts: [ FMAdd32, FMSub32, FNMAdd32, FNMSub32 ]
+        },
+    }
+}
+
+template[Dst] LoadStoreRRR {
+    out: { rd: Dst, },
+    in: { rn: GPR64, rm: GPR64, },
+    props: {
+        rm_op: Option<RegOP> = None;
+    };
+
+    impl {
+        [GPR64] => LoadStoreGr64 {
+            insts: [
+                LdrGr64, LdrBGr64, LdrHGr64, LdrSBGr64, LdrSHGr64,
+                StrGr64, StrBGr64, StrHGr64,
+            ],
+        },
+        [GPR32] => LoadStoreGr32 {
+            insts: [
+                LdrGr32, LdrBGr32, LdrHGr32, LdrSBGr32, LdrSHGr32,
+                StrGr32, StrBGr32, StrHGr32,
+            ],
+        },
+        [FPR64] => LoadStoreF64 { insts: [ LdrF64, StrF64 ] },
+        [FPR32] => LoadStoreF32 { insts: [ LdrF32, StrF32 ] },
+    }
+}
+
+template[Dst, Offset] LoadStoreRRIBaseOffset {
+    out: { rd: Dst, },
+    in:  { rn: GPR64, rm: Offset, };
+
+    impl {
+        [GPR64, ImmLoad64] => LoadStoreGr64Base {
+            insts: [
+                LdrGr64Base, LdrBGr64Base, LdrHGr64Base, LdrSBGr64Base, LdrSHGr64Base,
+                StrGr64Base, StrBGr64Base, StrHGr64Base,
+            ],
+        },
+        [GPR32, ImmLoad32] => LoadStoreGr32Base {
+            insts: [
+                LdrGr32Base, LdrBGr32Base, LdrHGr32Base, LdrSBGr32Base, LdrSHGr32Base,
+                StrGr32Base, StrBGr32Base, StrHGr32Base,
+            ],
+        },
+        [FPR64, ImmLoad64] => LoadStoreF64Base { insts: [ LdrF64Base, StrF64Base ] },
+        [FPR32, ImmLoad32] => LoadStoreF32Base { insts: [ LdrF32Base, StrF32Base ] },
+    }
+}
+
+template[Dst, Offset] LoadStoreRRIndexed {
+    out: {
+        rd: Dst, 
+        rn: GPR64, // in-out registers are stored in the output
+    },
+    in: { rm: Offset, },
+    props: {
+        addr_mode: AddrMode = AddrMode::PostIndex;
+    };
+
+    impl {
+        [GPR64, ImmLoad64] => LoadStoreGr64Indexed {
+            insts: [
+                LdrGr64Indexed, LdrBGr64Indexed, LdrHGr64Indexed,
+                LdrSBGr64Indexed, LdrSHGr64Indexed,
+                StrGr64Indexed, StrBGr64Indexed, StrHGr64Indexed,
+            ],
+        },
+        [GPR32, ImmLoad32] => LoadStoreGr32Indexed {
+            insts: [
+                LdrGr32Indexed, LdrBGr32Indexed, LdrHGr32Indexed,
+                LdrSBGr32Indexed, LdrSHGr32Indexed,
+                StrGr32Indexed, StrBGr32Indexed, StrHGr32Indexed,
+            ],
+        },
+        [FPR64, ImmLoad64] => LoadStoreF64Indexed { insts: [ LdrF64Indexed, StrF64Indexed ] },
+        [FPR32, ImmLoad32] => LoadStoreF32Indexed { insts: [ LdrF32Indexed, StrF32Indexed ] },
+    }
+}
+
+template[Dst] LoadStoreLiteral {
+    out: { rd: Dst, },
+    in: { from: Symbol, };
+    impl {
+        [GPR64] => LoadStoreGr64Literal {
+            insts: [
+                LdrGr64Literal, LdrBGr64Literal, LdrHGr64Literal,
+                LdrSBGr64Literal, LdrSHGr64Literal,
+                StrGr64Literal, StrBGr64Literal, StrHGr64Literal
+            ]
+        },
+        [GPR32] => LoadStoreGr32Literal {
+            insts: [
+                LdrGr32Literal, LdrBGr32Literal, LdrHGr32Literal,
+                LdrSBGr32Literal, LdrSHGr32Literal,
+                StrGr32Literal, StrBGr32Literal, StrHGr32Literal
+            ]
+        },
+        [FPR64] => LoadStoreF64Literal {
+            insts: [ LdrF64Literal, StrF64Literal ]
+        },
+        [FPR32] => LoadStoreF32Literal {
+            insts: [ LdrF32Literal, StrF32Literal ]
+        },
+    }
+}
+
+template[Dst, Src] MirLoadConst {
+    out: { rd: Dst, },
+    in: { src: Src, };
+
+    impl {
+        [GPR64, Imm64] => LoadConst64 { insts: [ LoadConst64 ], },
+        [FPR64, Imm64] => LoadConstF64 { insts: [ LoadConstF64 ], },
+        [GPR64, Symbol] => LoadConst64Symbol { insts: [ LoadConst64Symbol ], },
+    }
+}

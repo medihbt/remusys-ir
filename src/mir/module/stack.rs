@@ -3,7 +3,10 @@ use std::cell::Cell;
 use slab::Slab;
 
 use crate::{
-    mir::operand::reg::{PReg, VReg},
+    mir::operand::{
+        IMirSubOperand,
+        reg::{FPR64, GPR64, GPReg, RegID, RegOperand, VFReg},
+    },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
@@ -26,7 +29,7 @@ pub struct MirStackItem {
     /// The index of the item in the stack layout array.
     pub index: usize,
     /// The virtual register pointer to the stack slot.
-    pub virtreg: VReg,
+    pub virtreg: RegOperand,
     /// The offset of the item in its own section inside the stack.
     /// * If `is_arg` is false, this is the offset from the start of the stack frame.
     /// * If `is_arg` is true, the real offset should add the `vars_size` to this value.
@@ -60,7 +63,7 @@ pub struct MirStackLayout {
     pub vars: Vec<MirStackItem>,
     /// Cellee-saved registers that will be restored only at the end of the function. Positioned
     /// after the variables section in the stack frame.
-    /// 
+    ///
     /// In AAPCS64 ABI, these are the registers that are callee-saved:
     ///
     /// - `x19` to `x28` (general-purpose registers, should save when regalloc pass allocates them)
@@ -68,13 +71,13 @@ pub struct MirStackLayout {
     ///    from IR `DynAlloca` instruction.
     /// - `x30` (link register, should save when the function is not a leaf function)
     /// - `d8` to `d15` (floating-point registers, should save when regalloc pass allocates them)
-    /// 
+    ///
     /// In register allocation, these registers will be marked as "Tier 2" -- Usually costs
     /// more to spill and restore than "Tier 1" registers.
-    /// 
+    ///
     /// NOTE that not all saved registers are in this list, since some instructions like
     /// `call (MIR pesudo op)` will also save some registers to the stack temporarily.
-    pub saved_regs: Vec<PReg>,
+    pub saved_regs: Vec<RegOperand>,
     /// The stack layout for spilled arguments.
     pub args: Vec<MirStackItem>,
     /// The total size of the variables section in the stack frame.
@@ -145,7 +148,7 @@ impl MirStackLayout {
             irtype,
             index: self.args.len(),
             /* this `virtreg` is a pointer to the stack slot, not a register */
-            virtreg: *vreg_alloc.alloc(false),
+            virtreg: vreg_alloc.alloc(false),
             offset: new_top as i64,
             size: size as u64,
             // Placeholder, will be updated on `finish_arg_building()`
@@ -211,7 +214,7 @@ impl MirStackLayout {
         let item = MirStackItem {
             irtype,
             index: self.vars.len(),
-            virtreg: *vreg_alloc.alloc(matches!(irtype, ValTypeID::Float(_))),
+            virtreg: vreg_alloc.alloc(false), // This is a pointer to the stack slot, not a register
             offset: new_top as i64,
             size: size as u64,
             size_with_padding: size as u64, // Placeholder, will be updated later
@@ -226,8 +229,8 @@ impl MirStackLayout {
 
 #[derive(Debug, Clone)]
 pub struct VirtRegAlloc {
-    pub general: Slab<VReg>,
-    pub float: Slab<VReg>,
+    pub general: Slab<GPReg>,
+    pub float: Slab<VFReg>,
 }
 
 impl VirtRegAlloc {
@@ -238,31 +241,66 @@ impl VirtRegAlloc {
         }
     }
 
-    fn do_alloc(slab: &mut Slab<VReg>, mapper: impl Fn(u32) -> VReg) -> u32 {
-        let index = slab.vacant_key() as u32;
-        slab.insert(mapper(index));
+    pub fn insert_gp_for_index(&mut self, vreg: GPReg) -> u32 {
+        let index = self.general.vacant_key() as u32;
+        let vreg = vreg.insert_id(RegID::Virt(index));
+        self.general.insert(vreg);
         index
     }
-    pub fn alloc_gp(&mut self) -> &mut VReg {
-        let index = Self::do_alloc(&mut self.general, VReg::new_long);
+    pub fn insert_float_for_index(&mut self, vreg: VFReg) -> u32 {
+        let index = self.float.vacant_key() as u32;
+        let vreg = vreg.insert_id(RegID::Virt(index));
+        self.float.insert(vreg);
+        index
+    }
+    pub fn insert_gp(&mut self, vreg: GPReg) -> GPReg {
+        let index = self.insert_gp_for_index(vreg.into_real());
+        self.general[index as usize]
+    }
+    pub fn insert_float(&mut self, vreg: VFReg) -> VFReg {
+        let index = self.insert_float_for_index(vreg.into_real());
+        self.float[index as usize]
+    }
+
+    pub fn alloc_gp(&mut self) -> &mut GPReg {
+        let index = self.insert_gp_for_index(GPR64::new_empty().into_real());
         &mut self.general[index as usize]
     }
-    pub fn alloc_float(&mut self) -> &mut VReg {
-        let index = Self::do_alloc(&mut self.float, VReg::new_float);
+    pub fn alloc_float(&mut self) -> &mut VFReg {
+        let index = self.insert_float_for_index(FPR64::new_empty().into_real());
         &mut self.float[index as usize]
     }
-    pub fn alloc(&mut self, is_float: bool) -> &mut VReg {
+    pub fn alloc(&mut self, is_float: bool) -> RegOperand {
         if is_float {
-            self.alloc_float()
+            RegOperand::from(*self.alloc_float())
         } else {
-            self.alloc_gp()
+            RegOperand::from(*self.alloc_gp())
         }
     }
-    pub fn dealloc(&mut self, vreg: VReg) -> bool {
-        let (id, slab) = match vreg {
-            VReg::General(id, ..) => (id, &mut self.general),
-            VReg::Float(id, ..) => (id, &mut self.float),
+
+    pub fn dealloc_gp(&mut self, vreg: GPReg) -> bool {
+        let id = match vreg.get_id() {
+            RegID::Virt(id) => id,
+            _ => panic!("Expected a virtual GP register, found {:?}", vreg.get_id()),
         };
-        slab.try_remove(id as usize).is_some()
+        self.general.try_remove(id as usize).is_some()
+    }
+    pub fn dealloc_float(&mut self, vreg: VFReg) -> bool {
+        let id = match vreg.get_id() {
+            RegID::Virt(id) => id,
+            _ => panic!("Expected a virtual VF register, found {:?}", vreg.get_id()),
+        };
+        self.float.try_remove(id as usize).is_some()
+    }
+
+    pub fn dealloc(&mut self, vreg: RegOperand) -> bool {
+        let RegOperand(id, si, uf, is_fp) = vreg;
+        if is_fp {
+            let vfreg = VFReg(id, si, uf);
+            self.dealloc_float(vfreg)
+        } else {
+            let gpreg = GPReg(id, si, uf);
+            self.dealloc_gp(gpreg)
+        }
     }
 }

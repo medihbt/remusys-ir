@@ -1,14 +1,9 @@
-use std::fmt::Debug;
-
-use bitflags::bitflags;
-
-use crate::{
-    mir::operand::{
-        MirOperand,
-        suboperand::{IMirSubOperand, RegOperand},
-    },
-    typing::{id::ValTypeID, types::FloatTypeKind},
+use crate::mir::{
+    fmt::FormatContext,
+    operand::{IMirSubOperand, MirOperand},
 };
+use bitflags::bitflags;
+use std::fmt::{Debug, Write};
 
 /// Represents a sub-register index with a specific bit width and index.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -57,6 +52,10 @@ impl SubRegIndex {
     }
     pub fn set_index(&mut self, index: u8) {
         *self = self.insert_index(index);
+    }
+
+    pub fn format_mir(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[:b{}:{}]", self.get_bits_log2(), self.get_index())
     }
 }
 
@@ -156,351 +155,499 @@ impl std::fmt::Display for RegOP {
     }
 }
 
-/// 虚拟寄存器, 在寄存器分配之前使用.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VReg {
-    General(u32, SubRegIndex, RegUseFlags),
-    Float(u32, SubRegIndex, RegUseFlags),
-}
+impl std::str::FromStr for RegOP {
+    type Err = &'static str;
 
-impl VReg {
-    pub fn new_long(reg_id: u32) -> Self {
-        VReg::General(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub fn new_int(reg_id: u32) -> Self {
-        VReg::General(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
-    }
-    pub fn new_double(reg_id: u32) -> Self {
-        VReg::Float(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub fn new_float(reg_id: u32) -> Self {
-        VReg::Float(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
-    }
-
-    pub fn new_from_type(ir_type: ValTypeID, reg_id: u32) -> Self {
-        match ir_type {
-            ValTypeID::Ptr => VReg::new_long(reg_id),
-            ValTypeID::Int(bits) => {
-                if bits <= 32 {
-                    VReg::new_int(reg_id)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "LSL" => Ok(RegOP::LSL(0)),
+            "LSR" => Ok(RegOP::LSR(0)),
+            "ASR" => Ok(RegOP::ASR(0)),
+            "UXTB" => Ok(RegOP::UXTB),
+            "UXTH" => Ok(RegOP::UXTH),
+            "UXTW" => Ok(RegOP::UXTW),
+            "SXTB" => Ok(RegOP::SXTB),
+            "SXTH" => Ok(RegOP::SXTH),
+            "SXTW" => Ok(RegOP::SXTW),
+            "SXTX" => Ok(RegOP::SXTX),
+            _ => {
+                if s.starts_with("LSL #") {
+                    let bits: u8 = s[5..].parse().map_err(|_| "Invalid LSL bits")?;
+                    Ok(RegOP::LSL(bits))
+                } else if s.starts_with("LSR #") {
+                    let bits: u8 = s[5..].parse().map_err(|_| "Invalid LSR bits")?;
+                    Ok(RegOP::LSR(bits))
+                } else if s.starts_with("ASR #") {
+                    let bits: u8 = s[5..].parse().map_err(|_| "Invalid ASR bits")?;
+                    Ok(RegOP::ASR(bits))
                 } else {
-                    VReg::new_long(reg_id)
+                    Err("Unknown RegOP")
                 }
             }
-            ValTypeID::Float(fp_kind) => match fp_kind {
-                FloatTypeKind::Ieee32 => VReg::new_float(reg_id),
-                FloatTypeKind::Ieee64 => VReg::new_double(reg_id),
-            },
-            ValTypeID::Void
-            | ValTypeID::Array(_)
-            | ValTypeID::Struct(_)
-            | ValTypeID::StructAlias(_)
-            | ValTypeID::Func(_) => panic!(
-                "Cannot create VirtReg from non-primitive type: {:?}",
-                ir_type
-            ),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RegID {
+    Virt(u32), // Virtual register ID (ID >= 33)
+    SP,        // Stack Pointer, ID = 32
+    ZR,        // Zero Register, ID = 31
+    Phys(u32), // Physical register ID (ID < 31)
+}
+
+impl RegID {
+    pub fn get_real(self) -> u32 {
+        match self {
+            RegID::Virt(id) => id + 33,
+            RegID::SP => 32,
+            RegID::ZR => 31,
+            RegID::Phys(id) => id,
+        }
+    }
+
+    pub fn from_real(id: u32) -> Self {
+        if id < 31 {
+            RegID::Phys(id)
+        } else if id == 31 {
+            RegID::ZR
+        } else if id == 32 {
+            RegID::SP
+        } else {
+            RegID::Virt(id - 33)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GPReg(pub u32, pub SubRegIndex, pub RegUseFlags);
+
+impl GPReg {
+    pub fn is_virtual(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
+    }
+    pub fn get_id(self) -> RegID {
+        RegID::from_real(self.0)
+    }
+    pub fn get_id_raw(self) -> u32 {
+        self.0
+    }
+    pub fn insert_id_raw(self, id: u32) -> Self {
+        let Self(_, si, uf) = self;
+        Self(id, si, uf)
+    }
+    pub fn set_id_raw(&mut self, id: u32) {
+        *self = self.insert_id_raw(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        self.insert_id_raw(id.get_real())
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        self.set_id_raw(id.get_real())
     }
 
     pub fn get_subreg_index(self) -> SubRegIndex {
-        match self {
-            VReg::General(_, si, _) | VReg::Float(_, si, _) => si,
-        }
+        self.1
     }
-    pub fn subreg_index_mut(&mut self) -> &mut SubRegIndex {
-        match self {
-            VReg::General(_, si, _) | VReg::Float(_, si, _) => si,
-        }
+    pub fn insert_subreg_index(self, subreg_index: SubRegIndex) -> Self {
+        let Self(id, _, uf) = self;
+        Self(id, subreg_index, uf)
     }
-
-    pub fn get_use_flags(&self) -> RegUseFlags {
-        match self {
-            VReg::General(_, _, uf) | VReg::Float(_, _, uf) => *uf,
-        }
-    }
-    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
-        match self {
-            VReg::General(_, _, uf) | VReg::Float(_, _, uf) => uf,
-        }
-    }
-    pub fn add_use_flag(&mut self, flag: RegUseFlags) {
-        self.use_flags_mut().insert(flag);
-    }
-    pub fn insert_use_flags(mut self, flag: RegUseFlags) -> Self {
-        self.add_use_flag(flag);
-        self
-    }
-    pub fn del_use_flag(&mut self, flag: RegUseFlags) {
-        self.use_flags_mut().remove(flag);
-    }
-    pub fn extract_use_flag(mut self, flag: RegUseFlags) -> Self {
-        self.del_use_flag(flag);
-        self
+    pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
+        *self = self.insert_subreg_index(subreg_index)
     }
 
-    pub fn get_bits(self) -> u8 {
-        match self {
-            VReg::General(_, si, _) | VReg::Float(_, si, _) => 1 << si.get_bits_log2(),
-        }
+    pub fn get_use_flags(self) -> RegUseFlags {
+        self.2
     }
-    pub fn get_bits_log2(self) -> u8 {
-        match self {
-            VReg::General(_, si, _) | VReg::Float(_, si, _) => si.get_bits_log2(),
-        }
+    pub fn insert_use_flags(self, use_flags: RegUseFlags) -> Self {
+        let Self(id, si, _) = self;
+        Self(id, si, use_flags)
     }
-    pub fn get_id(self) -> u32 {
-        match self {
-            VReg::General(id, _, _) | VReg::Float(id, _, _) => id,
-        }
+    pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
+        *self = self.insert_use_flags(use_flags)
     }
-    pub fn insert_id(self, id: u32) -> Self {
-        match self {
-            VReg::General(_, si, uf) => VReg::General(id, si, uf),
-            VReg::Float(_, si, uf) => VReg::Float(id, si, uf),
-        }
+
+    pub fn new_long(id: RegID) -> Self {
+        GPReg(id.get_real(), SubRegIndex::new(6, 0), RegUseFlags::empty())
+    }
+    pub fn new_word(id: RegID) -> Self {
+        GPReg(id.get_real(), SubRegIndex::new(5, 0), RegUseFlags::empty())
+    }
+    pub fn new_ra() -> Self {
+        GPReg(30, SubRegIndex::new(6, 0), RegUseFlags::empty())
     }
 }
 
-impl std::fmt::Display for VReg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (leading, id, si, uf) = match self {
-            VReg::General(id, si, uf) => ("%vg", *id, *si, *uf),
-            VReg::Float(id, si, uf) => ("%vf", *id, *si, *uf),
+impl IMirSubOperand for GPReg {
+    type RealRepresents = GPReg;
+
+    fn new_empty() -> Self {
+        GPReg(0, SubRegIndex::new(6, 0), RegUseFlags::empty())
+    }
+
+    fn from_mir(mir: MirOperand) -> Self {
+        if let MirOperand::GPReg(reg) = mir {
+            reg
+        } else {
+            panic!("Expected MirOperand::GPReg, found {:?}", mir);
+        }
+    }
+    fn into_mir(self) -> MirOperand {
+        MirOperand::GPReg(self)
+    }
+    fn from_real(real: GPReg) -> Self {
+        real
+    }
+    fn into_real(self) -> GPReg {
+        self
+    }
+    fn insert_to_real(self, real: Self) -> Self {
+        let Self(_, _, uf) = real;
+        let Self(id, si, _) = self;
+        Self(id, si, uf)
+    }
+
+    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let id_str = match self.get_id() {
+            RegID::Phys(id) => id.to_string(),
+            RegID::Virt(id) => format!("v{}", id + 33),
+            RegID::SP => "sp".to_string(),
+            RegID::ZR => "zr".to_string(),
         };
-        write!(f, "{} {leading}{}{}", uf.to_string(), id, si)
+        match self.get_subreg_index().get_bits_log2() {
+            5 => write!(formatter, "w{}", id_str),
+            _ => write!(formatter, "x{}", id_str),
+        }
     }
 }
 
-/// Represents a physical register in the ARM architecture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PReg {
-    X(u8, SubRegIndex, RegUseFlags), // 64-bit general purpose register (Xn | Wn; n in 0..31)
-    V(u8, SubRegIndex, RegUseFlags), // 128-bit vector register (Vn | Dn | Sn)
-    SP(SubRegIndex, RegUseFlags),    // Stack pointer (SP)
-    ZR(SubRegIndex, RegUseFlags),    // Zero register (ZR)
-    PState(RegUseFlags),             // Processor state register (PSTATE)
-    PC(SubRegIndex, RegUseFlags),    // Program counter (PC)
+/// vector or floating-point register
+/// This is used for both vector registers (Vn) and floating-point registers (Dn).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VFReg(pub u32, pub SubRegIndex, pub RegUseFlags);
+
+impl VFReg {
+    pub fn is_virtual(self) -> bool {
+        self.0 >= 31
+    }
+    pub fn get_id(self) -> RegID {
+        if self.0 < 31 {
+            RegID::Phys(self.0)
+        } else {
+            RegID::Virt(self.0)
+        }
+    }
+
+    pub fn get_id_raw(self) -> u32 {
+        self.0
+    }
+    pub fn insert_id_raw(self, id: u32) -> Self {
+        let Self(_, si, uf) = self;
+        Self(id, si, uf)
+    }
+    pub fn set_id_raw(&mut self, id: u32) {
+        *self = self.insert_id_raw(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        self.insert_id_raw(id.get_real())
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        self.set_id_raw(id.get_real())
+    }
+
+    pub fn get_subreg_index(self) -> SubRegIndex {
+        self.1
+    }
+    pub fn insert_subreg_index(self, subreg_index: SubRegIndex) -> Self {
+        let Self(id, _, uf) = self;
+        Self(id, subreg_index, uf)
+    }
+    pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
+        *self = self.insert_subreg_index(subreg_index)
+    }
+
+    pub fn get_use_flags(self) -> RegUseFlags {
+        self.2
+    }
+    pub fn insert_use_flags(self, use_flags: RegUseFlags) -> Self {
+        let Self(id, si, _) = self;
+        Self(id, si, use_flags)
+    }
+    pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
+        *self = self.insert_use_flags(use_flags)
+    }
+
+    pub fn new_double(id: RegID) -> Self {
+        VFReg(id.get_real(), SubRegIndex::new(6, 0), RegUseFlags::empty())
+    }
+    pub fn new_single(id: RegID) -> Self {
+        VFReg(id.get_real(), SubRegIndex::new(5, 0), RegUseFlags::empty())
+    }
 }
 
-impl PReg {
-    pub const fn sp() -> Self {
-        PReg::SP(SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_sp(self) -> bool {
-        matches!(self, PReg::SP(..))
+impl IMirSubOperand for VFReg {
+    type RealRepresents = VFReg;
+
+    fn new_empty() -> Self {
+        VFReg(0, SubRegIndex::new(6, 0), RegUseFlags::empty())
     }
 
-    pub const fn x(reg_id: u8) -> Self {
-        assert!(reg_id < 32);
-        PReg::X(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_x(self) -> bool {
-        if let PReg::X(_, si, _) = self {
-            si.get_bits_log2() == 6
+    fn from_mir(mir: MirOperand) -> Self {
+        if let MirOperand::VFReg(reg) = mir {
+            reg
         } else {
-            false
+            panic!("Expected MirOperand::VFReg, found {:?}", mir);
         }
-    }
-    pub const fn w(reg_id: u8) -> Self {
-        assert!(reg_id < 32);
-        PReg::X(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_w(self) -> bool {
-        if let PReg::X(_, si, _) = self {
-            si.get_bits_log2() == 5
-        } else {
-            false
-        }
-    }
-    pub const fn fp_d(reg_id: u8) -> Self {
-        assert!(reg_id < 32);
-        PReg::V(reg_id, SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_fp_d(self) -> bool {
-        if let PReg::V(_, si, _) = self {
-            si.get_bits_log2() == 6
-        } else {
-            false
-        }
-    }
-    pub const fn fp_s(reg_id: u8) -> Self {
-        assert!(reg_id < 32);
-        PReg::V(reg_id, SubRegIndex::new(5, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_fp_s(self) -> bool {
-        if let PReg::V(_, si, _) = self {
-            si.get_bits_log2() == 5
-        } else {
-            false
-        }
-    }
-    pub const fn return_addr() -> Self {
-        PReg::X(30, SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_return_addr(self) -> bool {
-        matches!(self, PReg::X(30, ..))
-    }
-    pub const fn pc() -> Self {
-        PReg::PC(SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_pc(self) -> bool {
-        matches!(self, PReg::PC(..))
     }
 
-    pub const fn pstate() -> Self {
-        PReg::PState(RegUseFlags::NONE)
+    fn into_mir(self) -> MirOperand {
+        MirOperand::VFReg(self)
     }
-    pub const fn is_pstate(self) -> bool {
-        matches!(self, PReg::PState(_))
+    fn from_real(real: Self) -> Self {
+        real
     }
-
-    pub const fn zr() -> Self {
-        PReg::ZR(SubRegIndex::new(6, 0), RegUseFlags::NONE)
-    }
-    pub const fn is_zr(self) -> bool {
-        matches!(self, PReg::ZR(..))
-    }
-
-    pub fn use_flags_mut(&mut self) -> &mut RegUseFlags {
-        match self {
-            PReg::X(_, _, uf)
-            | PReg::V(_, _, uf)
-            | PReg::SP(_, uf)
-            | PReg::ZR(_, uf)
-            | PReg::PState(uf)
-            | PReg::PC(_, uf) => uf,
-        }
-    }
-    pub fn get_use_flags(&self) -> RegUseFlags {
-        match self {
-            PReg::X(_, _, uf)
-            | PReg::V(_, _, uf)
-            | PReg::SP(_, uf)
-            | PReg::ZR(_, uf)
-            | PReg::PState(uf)
-            | PReg::PC(_, uf) => *uf,
-        }
-    }
-    pub fn add_use_flag(&mut self, flag: RegUseFlags) {
-        self.use_flags_mut().insert(flag);
-    }
-    pub fn insert_use_flags(mut self, flag: RegUseFlags) -> Self {
-        self.add_use_flag(flag);
+    fn into_real(self) -> Self {
         self
     }
+    fn insert_to_real(self, real: Self) -> Self {
+        let Self(_, _, uf) = real;
+        let Self(id, si, _) = self;
+        Self(id, si, uf)
+    }
 
-    pub fn subreg_index_mut(&mut self) -> Option<&mut SubRegIndex> {
-        match self {
-            PReg::X(_, si, _)
-            | PReg::V(_, si, _)
-            | PReg::SP(si, _)
-            | PReg::ZR(si, _)
-            | PReg::PC(si, _) => Some(si),
-            PReg::PState(_) => None,
-        }
-    }
-    pub fn id_mut(&mut self) -> Option<&mut u8> {
-        match self {
-            PReg::X(id, _, _) | PReg::V(id, _, _) => Some(id),
-            _ => None,
-        }
-    }
-    pub fn get_bits(&self) -> u8 {
-        match self {
-            PReg::X(_, subr, _)
-            | PReg::V(_, subr, _)
-            | PReg::SP(subr, _)
-            | PReg::ZR(subr, _)
-            | PReg::PC(subr, _) => 1 << subr.get_bits_log2(),
-            PReg::PState(_) => 64,
-        }
-    }
-    pub fn get_bits_log2(&self) -> u8 {
-        match self {
-            PReg::X(_, subr, _)
-            | PReg::V(_, subr, _)
-            | PReg::SP(subr, _)
-            | PReg::ZR(subr, _)
-            | PReg::PC(subr, _) => subr.get_bits_log2(),
-            PReg::PState(_) => 6, // PState is considered as 64-bit register
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let id_str = match self.get_id() {
+            RegID::Phys(id) => id.to_string(),
+            RegID::Virt(id) => format!("v{}", id + 33),
+            RegID::SP | RegID::ZR => panic!("VFReg cannot be SP or ZR"),
+        };
+        match self.get_subreg_index().get_bits_log2() {
+            5 => write!(_formatter, "s{}", id_str),
+            _ => write!(_formatter, "d{}", id_str),
         }
     }
 }
 
-impl std::fmt::Display for PReg {
-    /// Formats the physical register in AArch64 assembly syntax.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PReg::X(id, si, _) => {
-                let bits_log2_str = if si.get_bits_log2() == 5 { "w" } else { "x" };
-                write!(f, "{}{}", bits_log2_str, id)
-            }
-            PReg::V(id, si, _) => {
-                let bits_log2 = match si.get_bits_log2() {
-                    5 => "s",
-                    6 => "d",
-                    7 => "v",
-                    _ => unreachable!("Invalid bits_log2 for vector register"),
-                };
-                write!(f, "{}{}", bits_log2, id)
-            }
-            PReg::SP(si, _) => {
-                let bits_log2 = match si.get_bits_log2() {
-                    5 => "wsp",
-                    _ => "sp",
-                };
-                write!(f, "{}", bits_log2)
-            }
-            PReg::ZR(si, _) => {
-                let bits_log2 = match si.get_bits_log2() {
-                    5 => "wzr",
-                    _ => "xzr",
-                };
-                write!(f, "{}", bits_log2)
-            }
-            PReg::PState(_) => write!(f, "pstate"),
-            PReg::PC(si, _) => {
-                let bits_log2 = if si.get_bits_log2() == 5 { "wpc" } else { "pc" };
-                write!(f, "{}", bits_log2)
-            }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PState(pub RegUseFlags);
+
+impl IMirSubOperand for PState {
+    type RealRepresents = PState;
+
+    fn new_empty() -> Self {
+        PState(RegUseFlags::empty())
+    }
+    fn from_mir(mir: MirOperand) -> Self {
+        if let MirOperand::PState(pstate) = mir {
+            pstate
+        } else {
+            panic!("Expected MirOperand::PState, found {:?}", mir);
         }
+    }
+    fn into_mir(self) -> MirOperand {
+        MirOperand::PState(self)
+    }
+
+    fn from_real(real: Self) -> Self {
+        real
+    }
+    fn into_real(self) -> Self {
+        self
+    }
+    fn insert_to_real(self, real: Self) -> Self {
+        real // PState does not have an ID or sub-register index, so we can return it directly
+    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        write!(_formatter, "PSTATE")
     }
 }
 
-impl IMirSubOperand for VReg {
-    fn from_mirop(operand: MirOperand) -> Self {
-        match operand {
-            MirOperand::VReg(r) => r,
-            _ => panic!("Expected a VReg operand, found: {operand:?}"),
-        }
-    }
-    fn into_mirop(self) -> MirOperand {
-        MirOperand::VReg(self)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GPR32(pub u32, pub RegUseFlags);
 
-    fn insert_to_mirop(self, op: MirOperand) -> MirOperand {
-        RegOperand::V(self).insert_to_mirop(op)
-    }
+impl IMirSubOperand for GPR32 {
+    type RealRepresents = GPReg;
 
-    fn new_empty_mirsubop() -> Self {
-        VReg::new_long(0)
+    fn new_empty() -> Self {
+        Self(0, RegUseFlags::empty())
+    }
+    fn from_mir(mir: MirOperand) -> Self {
+        Self::from_real(GPReg::from_mir(mir))
+    }
+    fn into_mir(self) -> MirOperand {
+        MirOperand::GPReg(self.into_real())
+    }
+    fn from_real(real: GPReg) -> Self {
+        Self(real.0, real.2)
+    }
+    fn into_real(self) -> GPReg {
+        GPReg(self.0, SubRegIndex::new(5, 0), self.1)
+    }
+    fn insert_to_real(self, real: GPReg) -> GPReg {
+        let Self(_, uf) = self;
+        let GPReg(id, _, _) = real;
+        GPReg(id, SubRegIndex::new(5, 0), uf)
+    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        self.into_real().fmt_asm(_formatter)
     }
 }
 
-impl IMirSubOperand for PReg {
-    fn from_mirop(operand: MirOperand) -> Self {
-        match operand {
-            MirOperand::PReg(r) => r,
-            _ => panic!("Expected a PReg operand, found: {operand:?}"),
-        }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GPR64(pub u32, pub RegUseFlags);
+
+impl IMirSubOperand for GPR64 {
+    type RealRepresents = GPReg;
+
+    fn new_empty() -> Self {
+        Self(0, RegUseFlags::empty())
     }
-    fn into_mirop(self) -> MirOperand {
-        MirOperand::PReg(self)
+    fn from_mir(mir: MirOperand) -> Self {
+        Self::from_real(GPReg::from_mir(mir))
     }
-    fn insert_to_mirop(self, op: MirOperand) -> MirOperand {
-        RegOperand::P(self).insert_to_mirop(op)
+    fn into_mir(self) -> MirOperand {
+        MirOperand::GPReg(self.into_real())
     }
-    fn new_empty_mirsubop() -> Self {
-        PReg::x(0)
+    fn from_real(real: GPReg) -> Self {
+        Self(real.0, real.2)
+    }
+    fn into_real(self) -> GPReg {
+        GPReg(self.0, SubRegIndex::new(6, 0), self.1)
+    }
+    fn insert_to_real(self, real: GPReg) -> GPReg {
+        let Self(_, uf) = self;
+        let GPReg(id, _, _) = real;
+        GPReg(id, SubRegIndex::new(6, 0), uf)
+    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        self.into_real().fmt_asm(_formatter)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FPR32(pub u32, pub RegUseFlags);
+
+impl IMirSubOperand for FPR32 {
+    type RealRepresents = VFReg;
+
+    fn new_empty() -> Self {
+        Self(0, RegUseFlags::empty())
+    }
+    fn from_mir(mir: MirOperand) -> Self {
+        Self::from_real(VFReg::from_mir(mir))
+    }
+    fn into_mir(self) -> MirOperand {
+        MirOperand::VFReg(self.into_real())
+    }
+    fn from_real(real: VFReg) -> Self {
+        Self(real.0, real.2)
+    }
+    fn into_real(self) -> VFReg {
+        VFReg(self.0, SubRegIndex::new(5, 0), self.1)
+    }
+    fn insert_to_real(self, real: VFReg) -> VFReg {
+        let Self(_, uf) = self;
+        let VFReg(id, _, _) = real;
+        VFReg(id, SubRegIndex::new(5, 0), uf)
+    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        self.into_real().fmt_asm(_formatter)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FPR64(pub u32, pub RegUseFlags);
+
+impl IMirSubOperand for FPR64 {
+    type RealRepresents = VFReg;
+
+    fn new_empty() -> Self {
+        Self(0, RegUseFlags::empty())
+    }
+    fn from_mir(mir: MirOperand) -> Self {
+        Self::from_real(VFReg::from_mir(mir))
+    }
+    fn into_mir(self) -> MirOperand {
+        MirOperand::VFReg(self.into_real())
+    }
+    fn from_real(real: VFReg) -> Self {
+        Self(real.0, real.2)
+    }
+    fn into_real(self) -> VFReg {
+        VFReg(self.0, SubRegIndex::new(6, 0), self.1)
+    }
+    fn insert_to_real(self, real: VFReg) -> VFReg {
+        let Self(_, uf) = self;
+        let VFReg(id, _, _) = real;
+        VFReg(id, SubRegIndex::new(6, 0), uf)
+    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        self.into_real().fmt_asm(_formatter)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegOperand(pub u32, pub SubRegIndex, pub RegUseFlags, pub bool);
+
+impl RegOperand {
+    pub fn is_fp(&self) -> bool {
+        self.3
+    }
+    pub fn get_id(&self) -> RegID {
+        RegID::from_real(self.0)
+    }
+    pub fn insert_id(&self, id: RegID) -> Self {
+        self.insert_id_raw(id.get_real())
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        self.set_id_raw(id.get_real())
+    }
+
+    pub fn get_id_raw(&self) -> u32 {
+        self.0
+    }
+    pub fn insert_id_raw(&self, id: u32) -> Self {
+        let Self(_, si, uf, is_fp) = self;
+        Self(id, *si, *uf, *is_fp)
+    }
+    pub fn set_id_raw(&mut self, id: u32) {
+        *self = self.insert_id_raw(id)
+    }
+
+    pub fn get_subreg_index(&self) -> SubRegIndex {
+        self.1
+    }
+    pub fn insert_subreg_index(&self, subreg_index: SubRegIndex) -> Self {
+        let Self(id, _, uf, is_fp) = self;
+        Self(*id, subreg_index, *uf, *is_fp)
+    }
+    pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
+        *self = self.insert_subreg_index(subreg_index)
+    }
+
+    pub fn get_use_flags(&self) -> RegUseFlags {
+        self.2
+    }
+    pub fn insert_use_flags(&self, use_flags: RegUseFlags) -> Self {
+        let Self(id, si, _, is_fp) = self;
+        Self(*id, *si, use_flags, *is_fp)
+    }
+    pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
+        *self = self.insert_use_flags(use_flags)
+    }
+}
+
+impl From<GPReg> for RegOperand {
+    fn from(reg: GPReg) -> Self {
+        let GPReg(id, si, uf) = reg;
+        RegOperand(id, si, uf, false)
+    }
+}
+
+impl From<VFReg> for RegOperand {
+    fn from(reg: VFReg) -> Self {
+        let VFReg(id, si, uf) = reg;
+        RegOperand(id, si, uf, true)
     }
 }

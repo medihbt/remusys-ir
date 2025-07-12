@@ -246,13 +246,13 @@ impl InstDataUnique for Switch {
 
 impl Ret {
     pub fn new_raw(module: &Module, ret_ty: ValTypeID) -> (InstDataCommon, Self) {
-        let mut commmon =
+        let mut common =
             InstDataCommon::new(Opcode::Ret, ret_ty, &mut module.borrow_use_alloc_mut());
         let mut ret = Self {
             retval: UseRef::new_null(),
         };
-        ret.build_operands(&mut commmon, &mut module.borrow_use_alloc_mut());
-        (commmon, ret)
+        ret.build_operands(&mut common, &mut module.borrow_use_alloc_mut());
+        (common, ret)
     }
 
     pub fn new(module: &Module, retval: ValueSSA) -> (InstDataCommon, Self) {

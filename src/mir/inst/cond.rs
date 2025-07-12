@@ -1,3 +1,5 @@
+use bitflags::bitflags;
+
 use crate::ir::cmp_cond::CmpCond;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,5 +57,15 @@ impl MirCondFlag {
 impl ToString for MirCondFlag {
     fn to_string(&self) -> String {
         self.get_name().to_string()
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct NZCV: u8 {
+        const N = 0b0001; // Negative flag
+        const Z = 0b0010; // Zero flag
+        const C = 0b0100; // Carry flag
+        const V = 0b1000; // Overflow flag
     }
 }

@@ -8,7 +8,7 @@ use slab::Slab;
 use crate::{
     base::slabref::SlabRef,
     mir::{
-        inst::MirInst,
+        inst::inst::MirInst,
         module::{
             block::MirBlock,
             func::MirFunc,

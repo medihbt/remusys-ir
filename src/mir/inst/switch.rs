@@ -1,12 +1,9 @@
-use std::{cell::Cell, ops::Range, rc::Rc};
+use std::{cell::{Cell, RefCell}, ops::Range, rc::Rc};
 
-use crate::{
-    base::NullableValue,
-    mir::{
-        inst::{MirInstCommon, opcode::MirOP},
-        module::block::MirBlockRef,
-        operand::MirOperand,
-    },
+use crate::mir::{
+    inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
+    module::block::MirBlockRef,
+    operand::MirOperand,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,140 +151,79 @@ impl VecSwitchTab {
 }
 
 #[derive(Debug, Clone)]
-pub struct TabSwitch {
-    pub(super) common: MirInstCommon,
-    /// [%condition, <default label>, SwitchTab]
-    pub operands: [Cell<MirOperand>; 3],
-    pub switchtab_ref: Rc<VecSwitchTab>,
+pub struct MirSwitch {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3],
+    switch_tab: RefCell<Rc<VecSwitchTab>>,
 }
 
-impl TabSwitch {
+impl IMirSubInst for MirSwitch {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &[]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirSwitch)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        MirSwitch {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(MirOperand::None), // Switch value
+                Cell::new(MirOperand::None), // Default case
+                Cell::new(MirOperand::None), // Switch table
+            ],
+            switch_tab: RefCell::new(Rc::new(VecSwitchTab {
+                left: 0,
+                step: 0,
+                cases: Box::new([]),
+                tab_index: Cell::new(0),
+            })),
+        }
+    }
+}
+
+impl MirSwitch {
     pub fn new(
-        condition: MirOperand,
-        default_label: MirBlockRef,
-        switchtab_ref: Rc<VecSwitchTab>,
+        switch_value: MirOperand,
+        default_case: MirBlockRef,
+        switch_tab: Rc<VecSwitchTab>,
     ) -> Self {
-        Self {
-            common: MirInstCommon::new(MirOP::TabSwitch),
-            operands: [
-                Cell::new(condition),
-                Cell::new(MirOperand::Label(default_label)),
-                Cell::new(MirOperand::VecSwitchTab(switchtab_ref.tab_index.get())),
-            ],
-            switchtab_ref,
-        }
+        let mut inst = Self::new_empty(MirOP::MirSwitch);
+        inst._operands[0].set(switch_value);
+        inst._operands[1].set(MirOperand::Label(default_case));
+        inst._operands[2].set(MirOperand::SwitchTab(switch_tab.tab_index.get()));
+        inst.switch_tab = RefCell::new(switch_tab);
+        inst
     }
 
-    pub fn get_opcode(&self) -> MirOP {
-        MirOP::TabSwitch
+    pub fn condition(&self) -> &Cell<MirOperand> {
+        &self._operands[0]
     }
-
-    pub fn get_condition(&self) -> MirOperand {
-        self.operands[0].get()
+    pub fn default_case(&self) -> &Cell<MirOperand> {
+        &self._operands[1]
     }
-    pub fn set_condition(&self, condition: MirOperand) {
-        self.operands[0].set(condition);
-    }
-    pub fn get_default_label(&self) -> MirBlockRef {
-        if let MirOperand::Label(label) = self.operands[1].get() {
-            label
+    pub fn get_default_case(&self) -> MirBlockRef {
+        if let MirOperand::Label(block_ref) = self.default_case().get() {
+            block_ref
         } else {
-            panic!("Expected a label operand for default label");
+            panic!("Default case is not a label");
         }
     }
-    pub fn set_default_label(&self, label: MirBlockRef) {
-        self.operands[1].set(MirOperand::Label(label));
-    }
-    pub fn get_switchtab(&self) -> (u32, Rc<VecSwitchTab>) {
-        if let MirOperand::VecSwitchTab(index) = self.operands[2].get() {
-            (index, self.switchtab_ref.clone())
-        } else {
-            panic!("Expected a VecSwitchTab operand for switch table index");
-        }
-    }
-    pub fn set_switchtab(&mut self, switch_tab: &Rc<VecSwitchTab>) {
-        self.switchtab_ref = switch_tab.clone();
-        self.operands[2].set(MirOperand::VecSwitchTab(switch_tab.tab_index.get()));
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BinSwitchTab {
-    pub cases: Box<[(MirBlockRef, u64)]>,
-    pub tab_index: Cell<u32>,
-    pub default_label: MirBlockRef,
-}
-
-impl BinSwitchTab {
-    pub fn new(mut cases: Vec<(MirBlockRef, u64)>) -> Self {
-        cases.sort_by(|a, b| a.1.cmp(&b.1));
-        Self {
-            cases: cases.into_boxed_slice(),
-            tab_index: Cell::new(0),
-            default_label: MirBlockRef::new_null(),
-        }
-    }
-    pub fn from_iter<I: IntoIterator<Item = (MirBlockRef, u64)>>(cases: I) -> Self {
-        Self::new(cases.into_iter().collect())
+    pub fn set_default_case(&self, block_ref: MirBlockRef) {
+        self.default_case().set(MirOperand::Label(block_ref));
     }
 
-    pub fn ncases(&self) -> u64 {
-        self.cases.len() as u64
+    pub fn get_switch_tab(&self) -> Rc<VecSwitchTab> {
+        self.switch_tab.borrow().clone()
     }
-
-    pub fn min_case_value(&self) -> u64 {
-        self.cases.first().map_or(0, |(_, value)| *value)
-    }
-    pub fn max_case_value(&self) -> u64 {
-        self.cases.last().map_or(0, |(_, value)| *value)
-    }
-    pub fn get_label_by_case(&self, case_value: u64) -> MirBlockRef {
-        self.cases
-            .binary_search_by(|(_, case)| case.cmp(&case_value))
-            .map(|index| self.cases[index].0)
-            .unwrap_or(self.default_label)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BinSwitch {
-    pub(super) common: MirInstCommon,
-    /// [%condition, SwitchTab]
-    pub operands: [Cell<MirOperand>; 2],
-    pub switchtab_ref: Rc<BinSwitchTab>,
-}
-
-impl BinSwitch {
-    pub fn new(condition: MirOperand, switchtab_ref: Rc<BinSwitchTab>) -> Self {
-        Self {
-            common: MirInstCommon::new(MirOP::BinSwitch),
-            operands: [
-                Cell::new(condition),
-                Cell::new(MirOperand::BinSwitchTab(switchtab_ref.tab_index.get())),
-            ],
-            switchtab_ref,
-        }
-    }
-
-    pub fn get_opcode(&self) -> MirOP {
-        MirOP::BinSwitch
-    }
-
-    pub fn get_condition(&self) -> MirOperand {
-        self.operands[0].get()
-    }
-    pub fn set_condition(&self, condition: MirOperand) {
-        self.operands[0].set(condition);
-    }
-    pub fn get_switchtab(&self) -> (u32, Rc<BinSwitchTab>) {
-        if let MirOperand::BinSwitchTab(index) = self.operands[1].get() {
-            (index, self.switchtab_ref.clone())
-        } else {
-            panic!("Expected a BinSwitchTab operand for switch table index");
-        }
-    }
-    pub fn set_switchtab(&mut self, switch_tab: &Rc<BinSwitchTab>) {
-        self.switchtab_ref = switch_tab.clone();
-        self.operands[1].set(MirOperand::BinSwitchTab(switch_tab.tab_index.get()));
+    pub fn set_switch_tab(&self, switch_tab: Rc<VecSwitchTab>) {
+        self._operands[2].set(MirOperand::SwitchTab(switch_tab.tab_index.get()));
+        self.switch_tab.replace(switch_tab);
     }
 }
