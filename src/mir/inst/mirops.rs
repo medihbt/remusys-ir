@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::mir::{
-    fmt::FormatContext,
+    fmt::FuncFormatContext,
     inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
     module::func::MirFunc,
     operand::{IMirSubOperand, MirOperand},
@@ -47,7 +47,7 @@ impl MirCall {
         &self.operands[1..]
     }
 
-    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    pub fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter, "mir.call ")?;
         let callee = self.callee().get();
         if let MirOperand::Global(global_ref) = callee {
@@ -128,7 +128,7 @@ impl MirReturn {
         }
     }
 
-    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    pub fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         if let Some(retval) = self.retval() {
             write!(formatter, "mir.return ")?;
             retval.get().fmt_asm(formatter)?;

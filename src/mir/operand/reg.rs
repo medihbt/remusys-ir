@@ -1,5 +1,5 @@
 use crate::mir::{
-    fmt::FormatContext,
+    fmt::FuncFormatContext,
     operand::{IMirSubOperand, MirOperand},
 };
 use bitflags::bitflags;
@@ -308,7 +308,7 @@ impl IMirSubOperand for GPReg {
         Self(id, si, uf)
     }
 
-    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let id_str = match self.get_id() {
             RegID::Phys(id) => id.to_string(),
             RegID::Virt(id) => format!("v{}", id + 33),
@@ -416,7 +416,7 @@ impl IMirSubOperand for VFReg {
         Self(id, si, uf)
     }
 
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let id_str = match self.get_id() {
             RegID::Phys(id) => id.to_string(),
             RegID::Virt(id) => format!("v{}", id + 33),
@@ -458,7 +458,7 @@ impl IMirSubOperand for PState {
     fn insert_to_real(self, real: Self) -> Self {
         real // PState does not have an ID or sub-register index, so we can return it directly
     }
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         write!(_formatter, "PSTATE")
     }
 }
@@ -489,7 +489,7 @@ impl IMirSubOperand for GPR32 {
         let GPReg(id, _, _) = real;
         GPReg(id, SubRegIndex::new(5, 0), uf)
     }
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         self.into_real().fmt_asm(_formatter)
     }
 }
@@ -520,7 +520,7 @@ impl IMirSubOperand for GPR64 {
         let GPReg(id, _, _) = real;
         GPReg(id, SubRegIndex::new(6, 0), uf)
     }
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         self.into_real().fmt_asm(_formatter)
     }
 }
@@ -551,7 +551,7 @@ impl IMirSubOperand for FPR32 {
         let VFReg(id, _, _) = real;
         VFReg(id, SubRegIndex::new(5, 0), uf)
     }
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         self.into_real().fmt_asm(_formatter)
     }
 }
@@ -582,7 +582,7 @@ impl IMirSubOperand for FPR64 {
         let VFReg(id, _, _) = real;
         VFReg(id, SubRegIndex::new(6, 0), uf)
     }
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         self.into_real().fmt_asm(_formatter)
     }
 }

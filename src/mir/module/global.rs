@@ -202,7 +202,7 @@ impl MirGlobalData {
     pub fn format_unit_index(
         &self,
         index: usize,
-        writer: &mut impl std::io::Write,
+        writer: &mut dyn std::io::Write,
     ) -> std::io::Result<()> {
         if let Some(unit) = self.get_unit(index) {
             Self::format_unit_data(unit, self.unit_bytes_log2, writer)
@@ -217,7 +217,7 @@ impl MirGlobalData {
     fn format_unit_data(
         unit: &[u8],
         unit_bytes_log2: u8,
-        writer: &mut impl std::io::Write,
+        writer: &mut dyn std::io::Write,
     ) -> std::io::Result<()> {
         match unit_bytes_log2 {
             0 => write!(writer, "0x{:02x}", unit[0]),

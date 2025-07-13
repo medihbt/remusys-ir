@@ -1,7 +1,7 @@
 use crate::{
     base::{NullableValue, slabref::SlabRef},
     mir::{
-        fmt::FormatContext,
+        fmt::FuncFormatContext,
         module::{MirGlobalRef, block::MirBlockRef},
         operand::MirOperand,
     },
@@ -20,7 +20,7 @@ pub trait IMirSubOperand {
     fn into_real(self) -> Self::RealRepresents;
 
     fn insert_to_real(self, real: Self::RealRepresents) -> Self::RealRepresents;
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result;
+    fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result;
 }
 
 impl IMirSubOperand for MirBlockRef {
@@ -50,10 +50,12 @@ impl IMirSubOperand for MirBlockRef {
         real
     }
 
-    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
+        let func = formatter.get_current_func();
+        let func_name = func.get_name();
         let alloc_block = formatter.mir_module.borrow_alloc_block();
-        let name = self.to_slabref_unwrap(&alloc_block).name.as_str();
-        write!(formatter, ".LBB.{name}")
+        let bb_name = self.to_slabref_unwrap(&alloc_block).name.as_str();
+        write!(formatter, ".LBB.{func_name}.{bb_name}")
     }
 }
 
@@ -82,7 +84,7 @@ impl IMirSubOperand for MirGlobalRef {
         real
     }
 
-    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let alloc_global = formatter.mir_module.borrow_alloc_item();
         let name = self
             .to_slabref_unwrap(&alloc_global)
@@ -122,11 +124,8 @@ impl IMirSubOperand for SwitchTab {
         real
     }
 
-    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
-        let func = match formatter.get_current_func() {
-            Some(func) => func,
-            None => return Err(std::fmt::Error),
-        };
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
+        let func = formatter.get_current_func();
         let func_name = func.get_name();
         let Self(index) = *self;
         match func.get_vec_switch_tab(index as usize) {
@@ -161,7 +160,7 @@ impl IMirSubOperand for MirOperand {
         real
     }
 
-    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         match self {
             MirOperand::None => write!(formatter, "None"),
             MirOperand::GPReg(gpreg) => gpreg.fmt_asm(formatter),

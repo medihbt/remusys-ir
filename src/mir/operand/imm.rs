@@ -115,7 +115,7 @@ impl IMirSubOperand for Imm64 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         let is_fp = formatter.operand_context.is_fp;
         match self.get_kind() {
             ImmKind::Full => {
@@ -197,7 +197,7 @@ impl IMirSubOperand for Imm32 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         let is_fp = formatter.operand_context.is_fp;
         match self.get_kind() {
             ImmKind::Full => {
@@ -292,7 +292,7 @@ impl IMirSubOperand for ImmCalc {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter, "#0x{:X}", self.0)
     }
 }
@@ -372,7 +372,7 @@ impl IMirSubOperand for ImmLogic {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#0x{:X}", self.0)
     }
 }
@@ -450,7 +450,7 @@ impl IMirSubOperand for ImmSMax {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -527,7 +527,7 @@ impl IMirSubOperand for ImmUMax {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -607,7 +607,7 @@ impl IMirSubOperand for ImmShift {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -676,7 +676,7 @@ impl IMirSubOperand for ImmLoad32 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -745,7 +745,7 @@ impl IMirSubOperand for ImmLoad64 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -814,7 +814,7 @@ impl IMirSubOperand for ImmCCmp {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -883,7 +883,7 @@ impl IMirSubOperand for ImmMov {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
     }
 }
@@ -962,7 +962,7 @@ impl IMirSubOperand for ImmFMov32 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:e}", self.0)
     }
 }
@@ -1041,7 +1041,7 @@ impl IMirSubOperand for ImmFMov64 {
         }
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:e}", self.0)
     }
 }

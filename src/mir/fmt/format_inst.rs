@@ -1,5 +1,5 @@
 use crate::mir::{
-    fmt::{FormatContext, format_opcode::opcode_get_name_str},
+    fmt::{FuncFormatContext, format_opcode::opcode_get_name_str},
     inst::{
         // generated from `data/mir.rig`, please do not visit
         impls::*,
@@ -11,7 +11,7 @@ use crate::mir::{
 use std::fmt::Write;
 
 pub fn fmt_cond_br(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     cond_br: &CondBr,
 ) -> std::fmt::Result {
@@ -24,7 +24,7 @@ pub fn fmt_cond_br(
     cond_br.get_label().fmt_asm(formatter)
 }
 
-pub fn fmt_cbzs(formatter: &mut FormatContext, opcode: MirOP, cbzs: &CBZs) -> std::fmt::Result {
+pub fn fmt_cbzs(formatter: &mut FuncFormatContext, opcode: MirOP, cbzs: &CBZs) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     cbzs.get_cond().fmt_asm(formatter)?;
@@ -32,7 +32,7 @@ pub fn fmt_cbzs(formatter: &mut FormatContext, opcode: MirOP, cbzs: &CBZs) -> st
     cbzs.get_target().fmt_asm(formatter)
 }
 
-pub fn fmt_tbz64(formatter: &mut FormatContext, opcode: MirOP, tbz64: &TBZ64) -> std::fmt::Result {
+pub fn fmt_tbz64(formatter: &mut FuncFormatContext, opcode: MirOP, tbz64: &TBZ64) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     tbz64.get_cond().fmt_asm(formatter)?;
@@ -42,7 +42,7 @@ pub fn fmt_tbz64(formatter: &mut FormatContext, opcode: MirOP, tbz64: &TBZ64) ->
     tbz64.get_target().fmt_asm(formatter)
 }
 
-pub fn fmt_tbz32(formatter: &mut FormatContext, opcode: MirOP, tbz32: &TBZ32) -> std::fmt::Result {
+pub fn fmt_tbz32(formatter: &mut FuncFormatContext, opcode: MirOP, tbz32: &TBZ32) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     tbz32.get_cond().fmt_asm(formatter)?;
@@ -54,7 +54,7 @@ pub fn fmt_tbz32(formatter: &mut FormatContext, opcode: MirOP, tbz32: &TBZ32) ->
 
 // 无条件分支指令格式化
 pub fn fmt_uncond_br(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     uncond_br: &UncondBr,
 ) -> std::fmt::Result {
@@ -64,7 +64,7 @@ pub fn fmt_uncond_br(
 }
 
 // 寄存器分支指令格式化
-pub fn fmt_breg(formatter: &mut FormatContext, opcode: MirOP, breg: &BReg) -> std::fmt::Result {
+pub fn fmt_breg(formatter: &mut FuncFormatContext, opcode: MirOP, breg: &BReg) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     breg.get_target().fmt_asm(formatter)
@@ -72,7 +72,7 @@ pub fn fmt_breg(formatter: &mut FormatContext, opcode: MirOP, breg: &BReg) -> st
 
 // 链接分支指令格式化
 pub fn fmt_blink_label(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     blink_label: &BLinkLabel,
 ) -> std::fmt::Result {
@@ -82,7 +82,7 @@ pub fn fmt_blink_label(
 }
 
 pub fn fmt_blink_reg(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     blink_reg: &BLinkReg,
 ) -> std::fmt::Result {
@@ -93,7 +93,7 @@ pub fn fmt_blink_reg(
 
 // 64位整数比较指令（寄存器操作数）
 pub fn fmt_icmp64r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     icmp64r: &ICmp64R,
 ) -> std::fmt::Result {
@@ -112,7 +112,7 @@ pub fn fmt_icmp64r(
 
 // 32位整数比较指令（寄存器操作数）
 pub fn fmt_icmp32r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     icmp32r: &ICmp32R,
 ) -> std::fmt::Result {
@@ -130,7 +130,7 @@ pub fn fmt_icmp32r(
 
 // 64位整数比较指令（立即数操作数）
 pub fn fmt_icmp64i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     icmp64i: &ICmp64I,
 ) -> std::fmt::Result {
@@ -143,7 +143,7 @@ pub fn fmt_icmp64i(
 
 // 32位整数比较指令（立即数操作数）
 pub fn fmt_icmp32i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     icmp32i: &ICmp32I,
 ) -> std::fmt::Result {
@@ -156,7 +156,7 @@ pub fn fmt_icmp32i(
 
 // 浮点比较指令
 pub fn fmt_fcmp32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fcmp32: &FCmp32,
 ) -> std::fmt::Result {
@@ -168,7 +168,7 @@ pub fn fmt_fcmp32(
 }
 
 pub fn fmt_fcmp64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fcmp64: &FCmp64,
 ) -> std::fmt::Result {
@@ -181,7 +181,7 @@ pub fn fmt_fcmp64(
 
 // 条件比较指令格式化
 pub fn fmt_iccmp64r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     iccmp64r: &ICCmp64R,
 ) -> std::fmt::Result {
@@ -195,7 +195,7 @@ pub fn fmt_iccmp64r(
 }
 
 pub fn fmt_iccmp32r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     iccmp32r: &ICCmp32R,
 ) -> std::fmt::Result {
@@ -209,7 +209,7 @@ pub fn fmt_iccmp32r(
 }
 
 pub fn fmt_iccmp64i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     iccmp64i: &ICCmp64I,
 ) -> std::fmt::Result {
@@ -223,7 +223,7 @@ pub fn fmt_iccmp64i(
 }
 
 pub fn fmt_iccmp32i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     iccmp32i: &ICCmp32I,
 ) -> std::fmt::Result {
@@ -237,7 +237,7 @@ pub fn fmt_iccmp32i(
 }
 
 pub fn fmt_fccmp32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fccmp32: &FCCmp32,
 ) -> std::fmt::Result {
@@ -251,7 +251,7 @@ pub fn fmt_fccmp32(
 }
 
 pub fn fmt_fccmp64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fccmp64: &FCCmp64,
 ) -> std::fmt::Result {
@@ -266,7 +266,7 @@ pub fn fmt_fccmp64(
 
 // 二元运算指令格式化
 pub fn fmt_bin64r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64r: &Bin64R,
 ) -> std::fmt::Result {
@@ -285,7 +285,7 @@ pub fn fmt_bin64r(
 }
 
 pub fn fmt_bin32r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32r: &Bin32R,
 ) -> std::fmt::Result {
@@ -303,7 +303,7 @@ pub fn fmt_bin32r(
     Ok(())
 }
 
-pub fn fmt_mull(formatter: &mut FormatContext, opcode: MirOP, mull: &MulL) -> std::fmt::Result {
+pub fn fmt_mull(formatter: &mut FuncFormatContext, opcode: MirOP, mull: &MulL) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     mull.get_rd().fmt_asm(formatter)?;
@@ -315,7 +315,7 @@ pub fn fmt_mull(formatter: &mut FormatContext, opcode: MirOP, mull: &MulL) -> st
 
 // 带立即数的二元运算指令
 pub fn fmt_bin64rc(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64rc: &Bin64RC,
 ) -> std::fmt::Result {
@@ -329,7 +329,7 @@ pub fn fmt_bin64rc(
 }
 
 pub fn fmt_bin32rc(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32rc: &Bin32RC,
 ) -> std::fmt::Result {
@@ -344,7 +344,7 @@ pub fn fmt_bin32rc(
 
 // 其他立即数变体
 pub fn fmt_bin64rl(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64rl: &Bin64RL,
 ) -> std::fmt::Result {
@@ -358,7 +358,7 @@ pub fn fmt_bin64rl(
 }
 
 pub fn fmt_bin32rl(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32rl: &Bin32RL,
 ) -> std::fmt::Result {
@@ -373,7 +373,7 @@ pub fn fmt_bin32rl(
 
 // SMax/SMin/UMax/UMin 变体
 pub fn fmt_bin64rs(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64rs: &Bin64RS,
 ) -> std::fmt::Result {
@@ -387,7 +387,7 @@ pub fn fmt_bin64rs(
 }
 
 pub fn fmt_bin64ru(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64ru: &Bin64RU,
 ) -> std::fmt::Result {
@@ -401,7 +401,7 @@ pub fn fmt_bin64ru(
 }
 
 pub fn fmt_bin32rs(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32rs: &Bin32RS,
 ) -> std::fmt::Result {
@@ -415,7 +415,7 @@ pub fn fmt_bin32rs(
 }
 
 pub fn fmt_bin32ru(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32ru: &Bin32RU,
 ) -> std::fmt::Result {
@@ -430,7 +430,7 @@ pub fn fmt_bin32ru(
 
 // 移位指令
 pub fn fmt_bin64rshift(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin64rshift: &Bin64RShift,
 ) -> std::fmt::Result {
@@ -444,7 +444,7 @@ pub fn fmt_bin64rshift(
 }
 
 pub fn fmt_bin32rshift(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     bin32rshift: &Bin32RShift,
 ) -> std::fmt::Result {
@@ -459,7 +459,7 @@ pub fn fmt_bin32rshift(
 
 // 浮点二元运算
 pub fn fmt_binf64r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     binf64r: &BinF64R,
 ) -> std::fmt::Result {
@@ -473,7 +473,7 @@ pub fn fmt_binf64r(
 }
 
 pub fn fmt_binf32r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     binf32r: &BinF32R,
 ) -> std::fmt::Result {
@@ -487,7 +487,7 @@ pub fn fmt_binf32r(
 }
 
 pub fn fmt_mir_copy64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     copy64: &MirCopy64,
 ) -> std::fmt::Result {
@@ -499,7 +499,7 @@ pub fn fmt_mir_copy64(
 }
 
 pub fn fmt_mir_copy32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     copy32: &MirCopy32,
 ) -> std::fmt::Result {
@@ -511,7 +511,7 @@ pub fn fmt_mir_copy32(
 }
 
 pub fn fmt_mir_fcopy64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fcopy64: &MirFCopy64,
 ) -> std::fmt::Result {
@@ -523,7 +523,7 @@ pub fn fmt_mir_fcopy64(
 }
 
 pub fn fmt_mir_fcopy32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fcopy32: &MirFCopy32,
 ) -> std::fmt::Result {
@@ -535,7 +535,7 @@ pub fn fmt_mir_fcopy32(
 }
 
 pub fn fmt_mir_pcopy(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     pcopy64: &MirPCopy,
 ) -> std::fmt::Result {
@@ -547,7 +547,7 @@ pub fn fmt_mir_pcopy(
 }
 
 pub fn fmt_una64_r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una64_r: &Una64R,
 ) -> std::fmt::Result {
@@ -565,7 +565,7 @@ pub fn fmt_una64_r(
 }
 
 pub fn fmt_una32_r(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una32_r: &Una32R,
 ) -> std::fmt::Result {
@@ -583,7 +583,7 @@ pub fn fmt_una32_r(
 }
 
 // ===== Extension operations =====
-pub fn fmt_ext_r(formatter: &mut FormatContext, opcode: MirOP, ext_r: &ExtR) -> std::fmt::Result {
+pub fn fmt_ext_r(formatter: &mut FuncFormatContext, opcode: MirOP, ext_r: &ExtR) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     ext_r.get_dst().fmt_asm(formatter)?;
@@ -593,7 +593,7 @@ pub fn fmt_ext_r(formatter: &mut FormatContext, opcode: MirOP, ext_r: &ExtR) -> 
 
 // ===== Move immediate instructions =====
 pub fn fmt_mov64_i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     mov64_i: &Mov64I,
 ) -> std::fmt::Result {
@@ -605,7 +605,7 @@ pub fn fmt_mov64_i(
 }
 
 pub fn fmt_mov32_i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     mov32_i: &Mov32I,
 ) -> std::fmt::Result {
@@ -616,7 +616,7 @@ pub fn fmt_mov32_i(
     mov32_i.get_src().fmt_asm(formatter)
 }
 
-pub fn fmt_adr(formatter: &mut FormatContext, opcode: MirOP, adr: &Adr) -> std::fmt::Result {
+pub fn fmt_adr(formatter: &mut FuncFormatContext, opcode: MirOP, adr: &Adr) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     adr.get_dst().fmt_asm(formatter)?;
@@ -626,7 +626,7 @@ pub fn fmt_adr(formatter: &mut FormatContext, opcode: MirOP, adr: &Adr) -> std::
 
 // ===== Floating point conversions =====
 pub fn fmt_una_fg64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_fg64: &UnaFG64,
 ) -> std::fmt::Result {
@@ -638,7 +638,7 @@ pub fn fmt_una_fg64(
 }
 
 pub fn fmt_una_gf64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_gf64: &UnaGF64,
 ) -> std::fmt::Result {
@@ -650,7 +650,7 @@ pub fn fmt_una_gf64(
 }
 
 pub fn fmt_una_f64_g32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_f64_g32: &UnaF64G32,
 ) -> std::fmt::Result {
@@ -662,7 +662,7 @@ pub fn fmt_una_f64_g32(
 }
 
 pub fn fmt_una_fg32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_fg32: &UnaFG32,
 ) -> std::fmt::Result {
@@ -674,7 +674,7 @@ pub fn fmt_una_fg32(
 }
 
 pub fn fmt_una_gf32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_gf32: &UnaGF32,
 ) -> std::fmt::Result {
@@ -686,7 +686,7 @@ pub fn fmt_una_gf32(
 }
 
 pub fn fmt_una_g64_f32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_g64_f32: &UnaG64F32,
 ) -> std::fmt::Result {
@@ -698,7 +698,7 @@ pub fn fmt_una_g64_f32(
 }
 
 pub fn fmt_una_g32_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_g32_f64: &UnaG32F64,
 ) -> std::fmt::Result {
@@ -710,7 +710,7 @@ pub fn fmt_una_g32_f64(
 }
 
 pub fn fmt_una_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_f64: &UnaF64,
 ) -> std::fmt::Result {
@@ -722,7 +722,7 @@ pub fn fmt_una_f64(
 }
 
 pub fn fmt_una_f32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     una_f32: &UnaF32,
 ) -> std::fmt::Result {
@@ -734,7 +734,7 @@ pub fn fmt_una_f32(
 }
 
 pub fn fmt_unary_f32_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     unary_f32_f64: &UnaryF32F64,
 ) -> std::fmt::Result {
@@ -746,7 +746,7 @@ pub fn fmt_unary_f32_f64(
 }
 
 pub fn fmt_unary_f64_f32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     unary_f64_f32: &UnaryF64F32,
 ) -> std::fmt::Result {
@@ -758,7 +758,7 @@ pub fn fmt_unary_f64_f32(
 }
 
 pub fn fmt_fmov64_i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fmov64_i: &FMov64I,
 ) -> std::fmt::Result {
@@ -770,7 +770,7 @@ pub fn fmt_fmov64_i(
 }
 
 pub fn fmt_fmov32_i(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     fmov32_i: &FMov32I,
 ) -> std::fmt::Result {
@@ -783,7 +783,7 @@ pub fn fmt_fmov32_i(
 
 // ===== Ternary operations =====
 pub fn fmt_tenary_g64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     tenary_g64: &TenaryG64,
 ) -> std::fmt::Result {
@@ -799,7 +799,7 @@ pub fn fmt_tenary_g64(
 }
 
 pub fn fmt_tenary_g64_g32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     tenary_g64_g32: &TenaryG64G32,
 ) -> std::fmt::Result {
@@ -815,7 +815,7 @@ pub fn fmt_tenary_g64_g32(
 }
 
 pub fn fmt_tenary_g32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     tenary_g32: &TenaryG32,
 ) -> std::fmt::Result {
@@ -831,7 +831,7 @@ pub fn fmt_tenary_g32(
 }
 
 pub fn fmt_tenary_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     tenary_f64: &TenaryF64,
 ) -> std::fmt::Result {
@@ -847,7 +847,7 @@ pub fn fmt_tenary_f64(
 }
 
 pub fn fmt_tenary_f32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     tenary_f32: &TenaryF32,
 ) -> std::fmt::Result {
@@ -864,7 +864,7 @@ pub fn fmt_tenary_f32(
 
 // ===== Load/Store RRR instructions =====
 pub fn fmt_load_store_gr64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr64: &LoadStoreGr64,
 ) -> std::fmt::Result {
@@ -882,7 +882,7 @@ pub fn fmt_load_store_gr64(
 }
 
 pub fn fmt_load_store_gr32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr32: &LoadStoreGr32,
 ) -> std::fmt::Result {
@@ -900,7 +900,7 @@ pub fn fmt_load_store_gr32(
 }
 
 pub fn fmt_load_store_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f64: &LoadStoreF64,
 ) -> std::fmt::Result {
@@ -918,7 +918,7 @@ pub fn fmt_load_store_f64(
 }
 
 pub fn fmt_load_store_f32(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f32: &LoadStoreF32,
 ) -> std::fmt::Result {
@@ -937,7 +937,7 @@ pub fn fmt_load_store_f32(
 
 // ===== Load/Store Base Offset instructions =====
 pub fn fmt_load_store_gr64_base(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr64_base: &LoadStoreGr64Base,
 ) -> std::fmt::Result {
@@ -952,7 +952,7 @@ pub fn fmt_load_store_gr64_base(
 }
 
 pub fn fmt_load_store_gr32_base(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr32_base: &LoadStoreGr32Base,
 ) -> std::fmt::Result {
@@ -967,7 +967,7 @@ pub fn fmt_load_store_gr32_base(
 }
 
 pub fn fmt_load_store_f64_base(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f64_base: &LoadStoreF64Base,
 ) -> std::fmt::Result {
@@ -982,7 +982,7 @@ pub fn fmt_load_store_f64_base(
 }
 
 pub fn fmt_load_store_f32_base(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f32_base: &LoadStoreF32Base,
 ) -> std::fmt::Result {
@@ -998,7 +998,7 @@ pub fn fmt_load_store_f32_base(
 
 // ===== Load/Store Indexed instructions =====
 pub fn fmt_load_store_gr64_indexed(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr64_indexed: &LoadStoreGr64Indexed,
 ) -> std::fmt::Result {
@@ -1018,7 +1018,7 @@ pub fn fmt_load_store_gr64_indexed(
 }
 
 pub fn fmt_load_store_gr32_indexed(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr32_indexed: &LoadStoreGr32Indexed,
 ) -> std::fmt::Result {
@@ -1036,7 +1036,7 @@ pub fn fmt_load_store_gr32_indexed(
 }
 
 pub fn fmt_load_store_f64_indexed(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f64_indexed: &LoadStoreF64Indexed,
 ) -> std::fmt::Result {
@@ -1054,7 +1054,7 @@ pub fn fmt_load_store_f64_indexed(
 }
 
 pub fn fmt_load_store_f32_indexed(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f32_indexed: &LoadStoreF32Indexed,
 ) -> std::fmt::Result {
@@ -1073,7 +1073,7 @@ pub fn fmt_load_store_f32_indexed(
 
 // ===== Load/Store Literal instructions =====
 pub fn fmt_load_store_gr64_literal(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr64_literal: &LoadStoreGr64Literal,
 ) -> std::fmt::Result {
@@ -1085,7 +1085,7 @@ pub fn fmt_load_store_gr64_literal(
 }
 
 pub fn fmt_load_store_gr32_literal(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_gr32_literal: &LoadStoreGr32Literal,
 ) -> std::fmt::Result {
@@ -1097,7 +1097,7 @@ pub fn fmt_load_store_gr32_literal(
 }
 
 pub fn fmt_load_store_f64_literal(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f64_literal: &LoadStoreF64Literal,
 ) -> std::fmt::Result {
@@ -1109,7 +1109,7 @@ pub fn fmt_load_store_f64_literal(
 }
 
 pub fn fmt_load_store_f32_literal(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_store_f32_literal: &LoadStoreF32Literal,
 ) -> std::fmt::Result {
@@ -1122,7 +1122,7 @@ pub fn fmt_load_store_f32_literal(
 
 // ===== Load Constant instructions =====
 pub fn fmt_load_const64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_const64: &LoadConst64,
 ) -> std::fmt::Result {
@@ -1134,7 +1134,7 @@ pub fn fmt_load_const64(
 }
 
 pub fn fmt_load_const_f64(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_const_f64: &LoadConstF64,
 ) -> std::fmt::Result {
@@ -1146,7 +1146,7 @@ pub fn fmt_load_const_f64(
 }
 
 pub fn fmt_load_const64_symbol(
-    formatter: &mut FormatContext,
+    formatter: &mut FuncFormatContext,
     opcode: MirOP,
     load_const64_symbol: &LoadConst64Symbol,
 ) -> std::fmt::Result {

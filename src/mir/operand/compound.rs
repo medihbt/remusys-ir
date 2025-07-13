@@ -47,7 +47,7 @@ impl IMirSubOperand for MirSymbolOp {
         self
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         match self {
             MirSymbolOp::Label(x) => x.fmt_asm(formatter),
             MirSymbolOp::Global(x) => x.fmt_asm(formatter),

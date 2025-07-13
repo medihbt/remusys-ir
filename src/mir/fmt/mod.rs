@@ -1,17 +1,14 @@
-use std::{cell::Cell, rc::Rc};
+use std::rc::Rc;
 
-use crate::{
-    base::{NullableValue, slabref::SlabRef},
-    mir::{
-        inst::inst::MirInst,
-        module::{MirGlobal, MirGlobalRef, MirModule, func::MirFunc},
-    },
+use crate::mir::{
+    inst::inst::MirInst,
+    module::{MirModule, func::MirFunc},
 };
 
 mod format_inst;
 pub mod format_opcode;
 
-pub struct FormatContext<'a> {
+pub struct FuncFormatContext<'a> {
     pub writer: &'a mut dyn std::fmt::Write,
     pub operand_context: OperandContext,
     pub mir_module: &'a MirModule,
@@ -19,10 +16,10 @@ pub struct FormatContext<'a> {
 
 pub struct OperandContext {
     pub is_fp: bool,
-    pub current_func: Cell<MirGlobalRef>,
+    pub current_func: Rc<MirFunc>,
 }
 
-impl std::fmt::Write for FormatContext<'_> {
+impl std::fmt::Write for FuncFormatContext<'_> {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         self.writer.write_str(s)
     }
@@ -34,22 +31,40 @@ impl std::fmt::Write for FormatContext<'_> {
     }
 }
 
-impl<'a> FormatContext<'a> {
-    pub fn get_current_func(&self) -> Option<Rc<MirFunc>> {
-        let current_func_ref = self.operand_context.current_func.get();
-        if current_func_ref.is_null() {
-            None
-        } else {
-            let alloc_item = self.mir_module.borrow_alloc_item();
-            let func = current_func_ref.to_slabref_unwrap(&alloc_item);
-            match func {
-                MirGlobal::Function(f) => Some(f.clone()),
-                _ => None,
-            }
+impl<'a> FuncFormatContext<'a> {
+    pub fn new(
+        writer: &'a mut dyn std::fmt::Write,
+        curr_func: Rc<MirFunc>,
+        mir_module: &'a MirModule,
+    ) -> Self {
+        Self {
+            writer,
+            operand_context: OperandContext {
+                is_fp: false,
+                current_func: curr_func,
+            },
+            mir_module,
         }
     }
 
+    pub fn get_current_func(&self) -> Rc<MirFunc> {
+        self.operand_context.current_func.clone()
+    }
+
+    pub fn set_fp(&mut self, is_fp: bool) {
+        self.operand_context.is_fp = is_fp;
+    }
+
     pub fn format_inst(&mut self, inst: &MirInst) -> std::fmt::Result {
+        match inst {
+            MirInst::MirFCopy64(_)
+            | MirInst::MirFCopy32(_)
+            | MirInst::FMov64I(_)
+            | MirInst::FMov32I(_)
+            | MirInst::LoadConstF64(_)
+            | MirInst::LoadConst64Symbol(_) => self.set_fp(true),
+            _ => self.set_fp(false),
+        };
         match inst {
             MirInst::GuideNode(_) => Ok(()),
             MirInst::CondBr(cond_br) => format_inst::fmt_cond_br(self, inst.get_opcode(), cond_br),
@@ -297,35 +312,5 @@ impl<'a> FormatContext<'a> {
             MirInst::MirReturn(mir_return) => mir_return.fmt_asm(self),
             MirInst::MirSwitch(mir_switch) => mir_switch.fmt_asm(self),
         }
-    }
-}
-
-#[cfg(test)]
-mod testing {
-    use super::*;
-    use crate::mir::{inst::{impls::*, opcode::MirOP}, operand::reg::{RegOP, RegUseFlags, GPR64}};
-
-    #[test]
-    fn test_format_context() {
-        let mir_module = MirModule::new("test_module".into());
-        let mut outstr = String::new();
-        let mut context = FormatContext {
-            writer: &mut outstr,
-            operand_context: OperandContext {
-                is_fp: false,
-                current_func: Cell::new(MirGlobalRef::new_null()),
-            },
-            mir_module: &mir_module,
-        };
-        let add_inst = Bin64R::new(
-            MirOP::Add64R,
-            GPR64(0, RegUseFlags::DEF),
-            GPR64(1, RegUseFlags::empty()),
-            GPR64(2, RegUseFlags::empty()),
-            Some(RegOP::LSL(12))
-        );
-        let add_inst = MirInst::Bin64R(add_inst);
-        context.format_inst(&add_inst).unwrap();
-        println!("Formatted instruction: {}", outstr);
     }
 }

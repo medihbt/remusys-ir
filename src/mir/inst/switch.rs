@@ -6,9 +6,9 @@ use std::{
 };
 
 use crate::mir::{
-    fmt::FormatContext,
+    fmt::FuncFormatContext,
     inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
-    module::block::MirBlockRef,
+    module::{block::MirBlockRef, func::MirFunc},
     operand::{IMirSubOperand, MirOperand},
 };
 
@@ -154,6 +154,12 @@ impl VecSwitchTab {
             None
         }
     }
+
+    pub fn get_name(&self, mir_func: &MirFunc) -> String {
+        let func_name = mir_func.get_name();
+        let self_index = self.tab_index.get();
+        format!(".switch.{func_name}.{self_index:x}",)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -233,7 +239,7 @@ impl MirSwitch {
         self.switch_tab.replace(switch_tab);
     }
 
-    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+    pub fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let switch_value = self.condition().get();
         write!(formatter, "mir.switch ")?;
         switch_value.fmt_asm(formatter)?;
@@ -241,7 +247,11 @@ impl MirSwitch {
         self.get_default_case().fmt_asm(formatter)?;
         write!(formatter, ", ")?;
         let switch_tab = self.get_switch_tab();
-        write!(formatter, ".switch.{:x}", switch_tab.tab_index.get())?;
+        write!(
+            formatter,
+            "{}",
+            switch_tab.get_name(&formatter.get_current_func())
+        )?;
         Ok(())
     }
 }
