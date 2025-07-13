@@ -225,6 +225,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         // 浮点与通用寄存器转换指令（64位）
         MirOP::FMovFG64 => "fmov",
         MirOP::SCvtF64 => "scvtf",
+        MirOP::UCvtF64 => "ucvtf",
         MirOP::FMovGF64 => "fmov",
         MirOP::FCvtAS64 => "fcvtas",
         MirOP::FCvtAU64 => "fcvtau",
@@ -237,10 +238,15 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::FCvtZS64 => "fcvtzs",
         MirOP::FCvtZU64 => "fcvtzu",
         MirOP::SCvtF64G32 => "scvtf",
+        MirOP::UCvtF64G32 => "ucvtf",
         
         // 浮点与通用寄存器转换指令（32位）
         MirOP::FMovFG32 => "fmov",
         MirOP::SCvtF32 => "scvtf",
+        MirOP::UCvtF32 => "ucvtf",
+        MirOP::SCvtF32G64 => "scvtf",
+        MirOP::UCvtF32G64 => "ucvtf",
+
         MirOP::FMovGF32 => "fmov",
         MirOP::FCvtAS32 => "fcvtas",
         MirOP::FCvtAU32 => "fcvtau",

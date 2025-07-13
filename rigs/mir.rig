@@ -220,7 +220,7 @@ template[D, T] UnaryOP {
         [GPR32, ImmMov] => Mov32I { insts: [ Mov32I, MovZ32, MovN32, MovK32 ], },
         [GPR64, Label]  => Adr    { insts: [ AdrP, Adr ] },
 
-        [FPR64, GPR64] => UnaFG64 { insts: [ FMovFG64, SCvtF64 ] },
+        [FPR64, GPR64] => UnaFG64 { insts: [ FMovFG64, SCvtF64, UCvtF64 ] },
         [GPR64, FPR64] => UnaGF64 {
             insts: [
                 FMovGF64,
@@ -229,9 +229,10 @@ template[D, T] UnaryOP {
                 FCvtNU64, FCvtPS64, FCvtPU64, FCvtZS64, FCvtZU64
             ],
         },
-        [FPR64, GPR32] => UnaF64G32 { insts: [ SCvtF64G32 ] },
+        [FPR64, GPR32] => UnaF64G32 { insts: [ SCvtF64G32, UCvtF64G32 ] },
 
-        [FPR32, GPR32] => UnaFG32 { insts: [ FMovFG32, SCvtF32 ] },
+        [FPR32, GPR32] => UnaFG32 { insts: [ FMovFG32, SCvtF32, UCvtF32 ] },
+        [FPR32, GPR64] => UnaF32G64 { insts: [ SCvtF32G64, UCvtF32G64 ] },
         [GPR32, FPR32] => UnaGF32 {
             insts: [
                 FMovGF32,

@@ -432,6 +432,12 @@ impl IMirSubOperand for VFReg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PState(pub RegUseFlags);
 
+impl PState {
+    pub fn in_cmp() -> Self {
+        PState(RegUseFlags::DEF | RegUseFlags::IMPLICIT_DEF)
+    }
+}
+
 impl IMirSubOperand for PState {
     type RealRepresents = PState;
 
@@ -667,6 +673,26 @@ impl From<VFReg> for RegOperand {
     fn from(reg: VFReg) -> Self {
         let VFReg(id, si, uf) = reg;
         RegOperand(id, si, uf, true)
+    }
+}
+
+impl Into<GPReg> for RegOperand {
+    fn into(self) -> GPReg {
+        let RegOperand(id, si, uf, is_fp) = self;
+        if is_fp {
+            panic!("Cannot convert RegOperand to GPReg, it is a VFReg");
+        }
+        GPReg(id, si, uf)
+    }
+}
+
+impl Into<VFReg> for RegOperand {
+    fn into(self) -> VFReg {
+        let RegOperand(id, si, uf, is_fp) = self;
+        if !is_fp {
+            panic!("Cannot convert RegOperand to VFReg, it is a GPReg");
+        }
+        VFReg(id, si, uf)
     }
 }
 

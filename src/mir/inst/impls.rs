@@ -4098,7 +4098,7 @@ impl IMirSubInst for UnaFG64 {
         &self._operands[1usize..2usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::FMovFG64 | MirOP::SCvtF64)
+        matches!(opcode, MirOP::FMovFG64 | MirOP::SCvtF64 | MirOP::UCvtF64)
     }
     fn new_empty(opcode: MirOP) -> Self {
         Self {
@@ -4261,7 +4261,7 @@ impl IMirSubInst for UnaF64G32 {
         &self._operands[1usize..2usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::SCvtF64G32)
+        matches!(opcode, MirOP::SCvtF64G32 | MirOP::UCvtF64G32)
     }
     fn new_empty(opcode: MirOP) -> Self {
         Self {
@@ -4336,7 +4336,7 @@ impl IMirSubInst for UnaFG32 {
         &self._operands[1usize..2usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::FMovFG32 | MirOP::SCvtF32)
+        matches!(opcode, MirOP::FMovFG32 | MirOP::SCvtF32 | MirOP::UCvtF32)
     }
     fn new_empty(opcode: MirOP) -> Self {
         Self {
@@ -4391,6 +4391,81 @@ impl UnaFG32 {
     pub fn set_src(&self, value: GPReg) {
         let prev_value = self.get_src();
         let checked_value = GPR32::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.src().set(next_value.into_mir());
+    }
+}
+#[derive(Debug, Clone)]
+pub struct UnaF32G64 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2usize],
+}
+impl IMirSubInst for UnaF32G64 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..1usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[1usize..2usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::SCvtF32G64 | MirOP::UCvtF32G64)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(VFReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+            ],
+        }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaF32G64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaF32G64(self)
+    }
+}
+impl UnaF32G64 {
+    pub fn new(opcode: MirOP, dst: FPR32, src: GPR64) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+        }
+    }
+    #[doc = "operand dst at index 0 of type VFReg"]
+    pub fn dst(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand dst at index 0 of type VFReg"]
+    pub fn get_dst(&self) -> VFReg {
+        VFReg::from_mir(self.dst().get())
+    }
+    #[doc = "set the value of operand dst at 0 to a value of type VFReg (checked by FPR32)"]
+    pub fn set_dst(&self, value: VFReg) {
+        let prev_value = self.get_dst();
+        let checked_value = FPR32::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.dst().set(next_value.into_mir());
+    }
+    #[doc = "operand src at index 1 of type GPReg"]
+    pub fn src(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand src at index 1 of type GPReg"]
+    pub fn get_src(&self) -> GPReg {
+        GPReg::from_mir(self.src().get())
+    }
+    #[doc = "set the value of operand src at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_src(&self, value: GPReg) {
+        let prev_value = self.get_src();
+        let checked_value = GPR64::from_real(value);
         let next_value = checked_value.insert_to_real(prev_value);
         self.src().set(next_value.into_mir());
     }

@@ -181,6 +181,9 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::UnaFG32(una_fg32) => {
                 format_inst::fmt_una_fg32(self, inst.get_opcode(), una_fg32)
             }
+            MirInst::UnaF32G64(una_f32_g64) => {
+                format_inst::fmt_una_f32_g64(self, inst.get_opcode(), una_f32_g64)
+            }
             MirInst::UnaGF32(una_gf32) => {
                 format_inst::fmt_una_gf32(self, inst.get_opcode(), una_gf32)
             }

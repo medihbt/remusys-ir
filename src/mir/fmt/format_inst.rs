@@ -673,6 +673,18 @@ pub fn fmt_una_fg32(
     una_fg32.get_src().fmt_asm(formatter)
 }
 
+pub fn fmt_una_f32_g64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    una_f32_g64: &UnaF32G64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    una_f32_g64.get_dst().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    una_f32_g64.get_src().fmt_asm(formatter)
+}
+
 pub fn fmt_una_gf32(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,

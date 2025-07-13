@@ -18,10 +18,17 @@ use crate::{
     },
     typing::id::ValTypeID,
 };
+use core::panic;
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
+mod binary_gen;
+mod call_gen;
+mod cast_gen;
+mod cmp_gen;
+mod gep_gen;
 mod jumps_gen;
+mod load_store_gen;
 
 pub struct InstDispatchState {
     last_pstate_modifier: Option<(InstRef, MirInstRef)>,
@@ -107,135 +114,62 @@ pub fn dispatch_inst(
             }
         }
         InstDataKind::Select => todo!("Implement select instruction handling"),
-        InstDataKind::BinOp => {
-            type O = crate::ir::opcode::Opcode;
-            let (opcode, ty, inst) = match ir_ref.to_slabref_unwrap(alloc_inst) {
-                InstData::BinOp(c, b) => (c.opcode, c.ret_type, b),
-                _ => panic!("Expected BinOp instruction"),
-            };
-            let lhs_ir = inst.lhs.get_operand(&alloc_use);
-            let rhs_ir = inst.rhs.get_operand(&alloc_use);
-
-            fn generarte_iaddsub(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
+        InstDataKind::BinOp => binary_gen::dispatch_binaries(
+            operand_map,
+            ir_module,
+            vreg_alloc,
+            out_insts,
+            ir_ref,
+            alloc_inst,
+            alloc_use,
+        ),
+        InstDataKind::Cmp => cmp_gen::dispatch_cmp(
+            ir_module,
+            operand_map,
+            vreg_alloc,
+            out_insts,
+            ir_ref,
+            alloc_inst,
+            alloc_use,
+        ),
+        InstDataKind::Cast => {
+            if let Some(value) = cast_gen::dispatch_casts(
+                ir_module,
+                operand_map,
+                vreg_alloc,
+                out_insts,
+                ir_ref,
+                alloc_inst,
+                alloc_use,
             ) {
-                todo!("Implement integer addition/subtraction generation");
+                return value;
             }
-            fn generarte_faddsub(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement floating-point addition/subtraction generation");
-            }
-            fn generarte_imuldiv(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement integer multiplication/division generation");
-            }
-            fn generarte_fmuldiv(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement floating-point multiplication/division generation");
-            }
-            fn generarte_irem(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement integer remainder generation");
-            }
-            fn generarte_frem(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement floating-point remainder generation");
-            }
-            fn generarte_bitwise(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement bitwise operation generation");
-            }
-            fn generarte_shift(
-                opcode: O,
-                lhs_ir: ValueSSA,
-                rhs_ir: ValueSSA,
-                ty: ValTypeID,
-                vreg_alloc: &mut VirtRegAlloc,
-                out_insts: &mut VecDeque<MirInst>,
-            ) {
-                todo!("Implement shift operation generation");
-            }
-
-            match opcode {
-                O::Add | O::Sub => {
-                    generarte_iaddsub(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                }
-                O::Fadd | O::Fsub => {
-                    generarte_faddsub(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                }
-                O::Mul | O::Sdiv | O::Udiv => {
-                    generarte_imuldiv(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                }
-                O::Fmul | O::Fdiv => {
-                    generarte_fmuldiv(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                },
-                O::Srem | O::Urem => {
-                    generarte_irem(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                },
-                O::Frem => {
-                    generarte_frem(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                },
-                O::BitAnd | O::BitOr | O::BitXor => {
-                    generarte_bitwise(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                },
-                O::Shl | O::Lshr | O::Ashr => {
-                    generarte_shift(opcode, lhs_ir, rhs_ir, ty, vreg_alloc, out_insts)
-                },
-                _ => panic!("Unsupported binary operation: {opcode:?}"),
-            };
         }
-        InstDataKind::Cmp => todo!(),
-        InstDataKind::Cast => todo!(),
-        InstDataKind::IndexPtr => todo!(),
-        InstDataKind::Call => todo!(),
-        InstDataKind::Intrin => todo!("Implement intrinsics handling"),
+        InstDataKind::IndexPtr => gep_gen::dispatch_gep(
+            ir_module,
+            operand_map,
+            vreg_alloc,
+            out_insts,
+            ir_ref,
+            alloc_inst,
+            alloc_use,
+        ),
+        InstDataKind::Call => call_gen::dispatch_call(
+            ir_module,
+            operand_map,
+            vreg_alloc,
+            out_insts,
+            ir_ref,
+            alloc_inst,
+            alloc_use,
+        ),
+        InstDataKind::Intrin => {
+            todo!("Intrinsics not implemented in IR. Do this until IR supports intrinsics")
+        }
     };
 
     Ok(())
 }
-
-mod load_store_gen;
 
 /// Generates a copy instruction in MIR from `from` to `to` while keeping the binary
 /// representation of the value intact.

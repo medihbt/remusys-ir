@@ -1,5 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
+#[rustfmt::skip]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 /// Enum representing the various opcodes in the Musys IR.
 pub enum Opcode {
@@ -18,6 +19,7 @@ pub enum Opcode {
     Intrin, ReservedCnt,
 }
 
+#[rustfmt::skip]
 impl Opcode {
     pub fn is_shift_op(self) -> bool {
         matches!(self, Opcode::Shl | Opcode::Lshr | Opcode::Ashr)
@@ -76,7 +78,7 @@ impl FromStr for Opcode {
 }
 impl From<u8> for Opcode {
     fn from(value: u8) -> Self {
-        if (Self::None as usize .. Self::ReservedCnt as usize).contains(&(value as usize)) {
+        if (Self::None as usize..Self::ReservedCnt as usize).contains(&(value as usize)) {
             unsafe { std::mem::transmute(value) }
         } else {
             Self::None
@@ -84,6 +86,7 @@ impl From<u8> for Opcode {
     }
 }
 
+#[rustfmt::skip]
 static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "<undefined>",
     "and", "or", "xor", "shl",  "lshr", "ashr",

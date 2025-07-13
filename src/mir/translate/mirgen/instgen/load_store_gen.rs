@@ -1,8 +1,7 @@
-use super::{InstDispatchError, make_copy_inst};
+use super::InstDispatchError;
 use crate::{
     base::slabref::SlabRef,
     ir::{
-        constant::data::ConstData,
         inst::{InstData, InstRef, usedef::UseData},
         module::Module,
     },
@@ -21,113 +20,15 @@ use crate::{
         operand::{
             MirOperand,
             compound::MirSymbolOp,
-            imm::{Imm32, Imm64, ImmKind, ImmLoad32, ImmLoad64},
-            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, SubRegIndex, VFReg},
+            imm::{ImmLoad32, ImmLoad64},
+            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand},
             subop::IMirSubOperand,
         },
         translate::mirgen::operandgen::{OperandMap, OperandMapError},
     },
-    typing::types::FloatTypeKind,
 };
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
-
-fn alloc_store_imm32_source(
-    imm32: u32,
-    alloc_reg: &mut VirtRegAlloc,
-    out_insts: &mut VecDeque<MirInst>,
-) -> GPR32 {
-    let reg = alloc_reg.insert_gp(GPR32(0, RegUseFlags::DEF).into_real());
-    make_copy_inst(
-        RegOperand::from(reg),
-        MirOperand::Imm32(Imm32(imm32, ImmKind::Full)),
-        out_insts,
-    );
-    GPR32::from_real(reg)
-}
-fn alloc_store_imm64_source(
-    imm64: u64,
-    alloc_reg: &mut VirtRegAlloc,
-    out_insts: &mut VecDeque<MirInst>,
-) -> GPR64 {
-    let reg = alloc_reg.insert_gp(GPR64(0, RegUseFlags::DEF).into_real());
-    make_copy_inst(
-        RegOperand::from(reg),
-        MirOperand::Imm64(Imm64(imm64, ImmKind::Full)),
-        out_insts,
-    );
-    GPR64::from_real(reg)
-}
-
-#[derive(Debug, Clone, Copy)]
-enum StrSrc {
-    F32(FPR32),
-    F64(FPR64),
-    G32(GPR32),
-    G64(GPR64),
-}
-impl StrSrc {
-    fn from_reg(id: u32, si: SubRegIndex, uf: RegUseFlags, is_fp: bool) -> Self {
-        let bits_log2 = si.get_bits_log2();
-        match (is_fp, bits_log2) {
-            (true, 5) => StrSrc::F32(FPR32(id, uf)),
-            (true, 6) => StrSrc::F64(FPR64(id, uf)),
-            (false, 5) => StrSrc::G32(GPR32(id, uf)),
-            (false, 6) => StrSrc::G64(GPR64(id, uf)),
-            _ => panic!("Unsupported size for store: {bits_log2}"),
-        }
-    }
-
-    fn from_constdata(
-        constdata: &ConstData,
-        ir_module: &Module,
-        alloc_reg: &mut VirtRegAlloc,
-        out_insts: &mut VecDeque<MirInst>,
-    ) -> Option<Self> {
-        match constdata {
-            // Storing undef means nothing happens, so we can skip it.
-            ConstData::Undef(_) => None,
-            ConstData::Zero(ty) => {
-                let ty_size = ty
-                    .get_instance_size(&ir_module.type_ctx)
-                    .expect("Failed to get type size");
-                match ty_size {
-                    0 => None, // No-op for zero-sized types
-                    4 => Some(StrSrc::G32(alloc_store_imm32_source(0, alloc_reg, out_insts))),
-                    8 => Some(StrSrc::G64(alloc_store_imm64_source(0, alloc_reg, out_insts))),
-                    _ => panic!("Unsupported zero-sized type for store: {ty:?}"),
-                }
-            }
-            ConstData::PtrNull(_) => {
-                Some(StrSrc::G64(alloc_store_imm64_source(0, alloc_reg, out_insts)))
-            }
-            ConstData::Int(64, value) => {
-                let value = *value as u64;
-                Some(StrSrc::G64(alloc_store_imm64_source(value, alloc_reg, out_insts)))
-            }
-            ConstData::Int(32, value) => {
-                let value = *value as u32;
-                Some(StrSrc::G32(alloc_store_imm32_source(value, alloc_reg, out_insts)))
-            }
-            ConstData::Int(bits, value) => {
-                let value = if *bits == 1 {
-                    *value as u64
-                } else {
-                    ConstData::iconst_value_get_real_signed(*bits, *value) as u64
-                };
-                Some(StrSrc::G64(alloc_store_imm64_source(value, alloc_reg, out_insts)))
-            }
-            ConstData::Float(FloatTypeKind::Ieee32, f) => {
-                let fvalue = (*f as f32).to_bits();
-                Some(StrSrc::G32(alloc_store_imm32_source(fvalue, alloc_reg, out_insts)))
-            }
-            ConstData::Float(FloatTypeKind::Ieee64, f) => {
-                let fvalue = (*f as f64).to_bits();
-                Some(StrSrc::G64(alloc_store_imm64_source(fvalue, alloc_reg, out_insts)))
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 enum StrDest {
@@ -144,23 +45,24 @@ pub(crate) fn generate_store_inst(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<'_, Slab<UseData>>,
 ) -> Option<Result<(), InstDispatchError>> {
+    type StrSrc = crate::mir::translate::mirgen::operandgen::PureSourceReg;
+
     let InstData::Store(_, store) = ir_ref.to_slabref_unwrap(alloc_inst) else {
         panic!("Expected Store instruction");
     };
 
     let src_ir = store.source.get_operand(&alloc_use);
-    let src_mir = match operand_map.find_operand_no_constdata(&src_ir) {
-        Ok(value) => match value {
-            MirOperand::GPReg(GPReg(id, si, uf)) => StrSrc::from_reg(id, si, uf, false),
-            MirOperand::VFReg(VFReg(id, si, uf)) => StrSrc::from_reg(id, si, uf, true),
-            _ => panic!("Invalid source operand for store: {value:?}"),
-        },
-        Err(OperandMapError::IsConstData(c)) => {
-            match StrSrc::from_constdata(&c, ir_module, vreg_alloc, out_insts) {
-                Some(src) => src,
-                None => return Some(Ok(())), // Skip undef/zero-sized stores
-            }
-        }
+    let src_mir = StrSrc::from_valuessa(
+        operand_map,
+        &ir_module.type_ctx,
+        vreg_alloc,
+        out_insts,
+        &src_ir,
+        false,
+    );
+    let src_mir = match src_mir {
+        Ok(x) => x,
+        Err(OperandMapError::OperandUndefined) => return Some(Ok(())),
         Err(e) => panic!("Failed to find source operand for store: {e:?}"),
     };
 
