@@ -1,8 +1,8 @@
 use crate::{
     base::NullableValue,
     mir::{
-        module::{MirGlobalRef, block::MirBlockRef},
-        operand::{IMirSubOperand, MirOperand},
+        module::{block::MirBlockRef, MirGlobalRef},
+        operand::{subop::SwitchTab, IMirSubOperand, MirOperand},
     },
 };
 
@@ -45,5 +45,13 @@ impl IMirSubOperand for MirSymbolOp {
     }
     fn insert_to_real(self, _: Self) -> Self {
         self
+    }
+
+    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FormatContext<'_>) -> std::fmt::Result {
+        match self {
+            MirSymbolOp::Label(x) => x.fmt_asm(formatter),
+            MirSymbolOp::Global(x) => x.fmt_asm(formatter),
+            MirSymbolOp::SwitchTab(tab) => SwitchTab(*tab).fmt_asm(formatter),
+        }
     }
 }

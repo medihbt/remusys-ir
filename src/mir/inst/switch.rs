@@ -1,9 +1,15 @@
-use std::{cell::{Cell, RefCell}, ops::Range, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    fmt::Write,
+    ops::Range,
+    rc::Rc,
+};
 
 use crate::mir::{
+    fmt::FormatContext,
     inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
     module::block::MirBlockRef,
-    operand::MirOperand,
+    operand::{IMirSubOperand, MirOperand},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,5 +231,17 @@ impl MirSwitch {
     pub fn set_switch_tab(&self, switch_tab: Rc<VecSwitchTab>) {
         self._operands[2].set(MirOperand::SwitchTab(switch_tab.tab_index.get()));
         self.switch_tab.replace(switch_tab);
+    }
+
+    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let switch_value = self.condition().get();
+        write!(formatter, "mir.switch ")?;
+        switch_value.fmt_asm(formatter)?;
+        write!(formatter, ", ")?;
+        self.get_default_case().fmt_asm(formatter)?;
+        write!(formatter, ", ")?;
+        let switch_tab = self.get_switch_tab();
+        write!(formatter, ".switch.{:x}", switch_tab.tab_index.get())?;
+        Ok(())
     }
 }

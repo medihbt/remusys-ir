@@ -1,8 +1,14 @@
-use std::cell::Cell;
+use std::{
+    cell::{Cell, RefCell},
+    fmt::Write,
+    rc::Rc,
+};
 
 use crate::mir::{
+    fmt::FormatContext,
     inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
-    operand::MirOperand,
+    module::func::MirFunc,
+    operand::{IMirSubOperand, MirOperand},
 };
 
 /// Call pesudo instruction.
@@ -14,6 +20,7 @@ use crate::mir::{
 pub struct MirCall {
     pub(super) common: MirInstCommon,
     pub operands: Vec<Cell<MirOperand>>,
+    callee_func: RefCell<Option<Rc<MirFunc>>>,
 }
 
 impl MirCall {
@@ -23,14 +30,38 @@ impl MirCall {
         Self {
             common: MirInstCommon::new(MirOP::MirCall),
             operands,
+            callee_func: RefCell::new(None),
         }
     }
-
+    pub fn get_callee_func(&self) -> Option<Rc<MirFunc>> {
+        self.callee_func.borrow().clone()
+    }
+    pub fn set_callee_func(&self, func: Rc<MirFunc>) {
+        self.callee_func.replace(Some(func));
+    }
     pub fn callee(&self) -> &Cell<MirOperand> {
         &self.operands[0]
     }
+
     pub fn args(&self) -> &[Cell<MirOperand>] {
         &self.operands[1..]
+    }
+
+    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        write!(formatter, "mir.call ")?;
+        let callee = self.callee().get();
+        if let MirOperand::Global(global_ref) = callee {
+            global_ref.fmt_asm(formatter)?;
+        } else {
+            return Err(std::fmt::Error);
+        }
+        for (i, arg) in self.args().iter().enumerate() {
+            if i != 0 {
+                formatter.write_str(", ")?;
+            }
+            arg.get().fmt_asm(formatter)?;
+        }
+        Ok(())
     }
 }
 
@@ -52,6 +83,7 @@ impl IMirSubInst for MirCall {
         Self {
             common: MirInstCommon::new(MirOP::MirCall),
             operands: Vec::new(),
+            callee_func: RefCell::new(None),
         }
     }
 }
@@ -94,6 +126,16 @@ impl MirReturn {
         } else {
             &[]
         }
+    }
+
+    pub fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        if let Some(retval) = self.retval() {
+            write!(formatter, "mir.return ")?;
+            retval.get().fmt_asm(formatter)?;
+        } else {
+            write!(formatter, "mir.return")?;
+        }
+        Ok(())
     }
 }
 

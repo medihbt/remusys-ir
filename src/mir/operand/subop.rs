@@ -1,5 +1,5 @@
 use crate::{
-    base::NullableValue,
+    base::{NullableValue, slabref::SlabRef},
     mir::{
         fmt::FormatContext,
         module::{MirGlobalRef, block::MirBlockRef},
@@ -20,12 +20,7 @@ pub trait IMirSubOperand {
     fn into_real(self) -> Self::RealRepresents;
 
     fn insert_to_real(self, real: Self::RealRepresents) -> Self::RealRepresents;
-
-    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result {
-        todo!(
-            "Format context has not been implemented. Implement this after the context is ready."
-        );
-    }
+    fn fmt_asm(&self, _formatter: &mut FormatContext<'_>) -> std::fmt::Result;
 }
 
 impl IMirSubOperand for MirBlockRef {
@@ -54,6 +49,12 @@ impl IMirSubOperand for MirBlockRef {
     fn insert_to_real(self, real: Self) -> Self {
         real
     }
+
+    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let alloc_block = formatter.mir_module.borrow_alloc_block();
+        let name = self.to_slabref_unwrap(&alloc_block).name.as_str();
+        write!(formatter, ".LBB.{name}")
+    }
 }
 
 impl IMirSubOperand for MirGlobalRef {
@@ -79,6 +80,15 @@ impl IMirSubOperand for MirGlobalRef {
     }
     fn insert_to_real(self, real: Self) -> Self {
         real
+    }
+
+    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let alloc_global = formatter.mir_module.borrow_alloc_item();
+        let name = self
+            .to_slabref_unwrap(&alloc_global)
+            .get_name()
+            .unwrap_or("");
+        formatter.write_str(name)
     }
 }
 
@@ -110,6 +120,21 @@ impl IMirSubOperand for SwitchTab {
     }
     fn insert_to_real(self, real: Self) -> Self {
         real
+    }
+
+    fn fmt_asm(&self, formatter: &mut FormatContext<'_>) -> std::fmt::Result {
+        let func = match formatter.get_current_func() {
+            Some(func) => func,
+            None => return Err(std::fmt::Error),
+        };
+        let func_name = func.get_name();
+        let Self(index) = *self;
+        match func.get_vec_switch_tab(index as usize) {
+            Some(_) => {
+                write!(formatter, ".{func_name}.switch.{index}")
+            }
+            None => return Err(std::fmt::Error),
+        }
     }
 }
 

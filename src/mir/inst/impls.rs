@@ -228,6 +228,166 @@ impl BLinkReg {
     }
 }
 #[derive(Debug, Clone)]
+pub struct TBZ64 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3usize],
+}
+impl IMirSubInst for TBZ64 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..0usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[0usize..3usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::TBZ64 | MirOP::TBNZ64)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm32::new_empty().into_mir()),
+                Cell::new(MirBlockRef::new_empty().into_mir()),
+            ],
+        }
+    }
+}
+impl TBZ64 {
+    pub fn new(opcode: MirOP, cond: GPR64, bits: Imm32, target: MirBlockRef) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(cond.into_mir()),
+                Cell::new(bits.into_mir()),
+                Cell::new(target.into_mir()),
+            ],
+        }
+    }
+    #[doc = "operand cond at index 0 of type GPReg"]
+    pub fn cond(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand cond at index 0 of type GPReg"]
+    pub fn get_cond(&self) -> GPReg {
+        GPReg::from_mir(self.cond().get())
+    }
+    #[doc = "set the value of operand cond at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_cond(&self, value: GPReg) {
+        let prev_value = self.get_cond();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.cond().set(next_value.into_mir());
+    }
+    #[doc = "operand bits at index 1 of type Imm32"]
+    pub fn bits(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand bits at index 1 of type Imm32"]
+    pub fn get_bits(&self) -> Imm32 {
+        Imm32::from_mir(self.bits().get())
+    }
+    #[doc = "set the value of operand bits at 1 to a value of type Imm32 (checked by Imm32)"]
+    pub fn set_bits(&self, value: Imm32) {
+        self.bits().set(value.into_mir());
+    }
+    #[doc = "operand target at index 2 of type MirBlockRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand target at index 2 of type MirBlockRef"]
+    pub fn get_target(&self) -> MirBlockRef {
+        MirBlockRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 2 to a value of type MirBlockRef (checked by MirBlockRef)"]
+    pub fn set_target(&self, value: MirBlockRef) {
+        self.target().set(value.into_mir());
+    }
+}
+#[derive(Debug, Clone)]
+pub struct TBZ32 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3usize],
+}
+impl IMirSubInst for TBZ32 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..0usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[0usize..3usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::TBZ32 | MirOP::TBNZ32)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm32::new_empty().into_mir()),
+                Cell::new(MirBlockRef::new_empty().into_mir()),
+            ],
+        }
+    }
+}
+impl TBZ32 {
+    pub fn new(opcode: MirOP, cond: GPR32, bits: Imm32, target: MirBlockRef) -> Self {
+        Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(cond.into_mir()),
+                Cell::new(bits.into_mir()),
+                Cell::new(target.into_mir()),
+            ],
+        }
+    }
+    #[doc = "operand cond at index 0 of type GPReg"]
+    pub fn cond(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand cond at index 0 of type GPReg"]
+    pub fn get_cond(&self) -> GPReg {
+        GPReg::from_mir(self.cond().get())
+    }
+    #[doc = "set the value of operand cond at 0 to a value of type GPReg (checked by GPR32)"]
+    pub fn set_cond(&self, value: GPReg) {
+        let prev_value = self.get_cond();
+        let checked_value = GPR32::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.cond().set(next_value.into_mir());
+    }
+    #[doc = "operand bits at index 1 of type Imm32"]
+    pub fn bits(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand bits at index 1 of type Imm32"]
+    pub fn get_bits(&self) -> Imm32 {
+        Imm32::from_mir(self.bits().get())
+    }
+    #[doc = "set the value of operand bits at 1 to a value of type Imm32 (checked by Imm32)"]
+    pub fn set_bits(&self, value: Imm32) {
+        self.bits().set(value.into_mir());
+    }
+    #[doc = "operand target at index 2 of type MirBlockRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand target at index 2 of type MirBlockRef"]
+    pub fn get_target(&self) -> MirBlockRef {
+        MirBlockRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 2 to a value of type MirBlockRef (checked by MirBlockRef)"]
+    pub fn set_target(&self, value: MirBlockRef) {
+        self.target().set(value.into_mir());
+    }
+}
+#[derive(Debug, Clone)]
 pub struct ICmp64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6648,11 +6808,11 @@ impl CondBr {
     }
 }
 #[derive(Debug, Clone)]
-pub struct RegCondBr {
+pub struct CBZs {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
 }
-impl IMirSubInst for RegCondBr {
+impl IMirSubInst for CBZs {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
@@ -6663,7 +6823,7 @@ impl IMirSubInst for RegCondBr {
         &self._operands[0usize..2usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::CBZ | MirOP::CBNZ | MirOP::TBZ | MirOP::TBNZ)
+        matches!(opcode, MirOP::CBZ | MirOP::CBNZ)
     }
     fn new_empty(opcode: MirOP) -> Self {
         Self {
@@ -6675,7 +6835,7 @@ impl IMirSubInst for RegCondBr {
         }
     }
 }
-impl RegCondBr {
+impl CBZs {
     pub fn new(opcode: MirOP, cond: GPR64, target: MirBlockRef) -> Self {
         Self {
             _common: MirInstCommon::new(opcode),

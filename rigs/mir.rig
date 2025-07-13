@@ -27,12 +27,24 @@ template[TargetT] BranchLinks {
     }
 }
 
-class RegCondBr {
+class CBZs {
     in: {
         cond: GPR64,
         target: Label,
     },
-    insts: [ CBZ, CBNZ, TBZ, TBNZ ],
+    insts: [ CBZ, CBNZ ],
+}
+
+template[Reg] TBZs {
+    in: {
+        cond: Reg,
+        bits: Imm32,
+        target: Label,
+    };
+    impl {
+        [GPR64] => TBZ64 { insts: [ TBZ64, TBNZ64 ], },
+        [GPR32] => TBZ32 { insts: [ TBZ32, TBNZ32 ], },
+    }
 }
 
 extern class MirCall;
