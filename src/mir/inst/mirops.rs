@@ -6,7 +6,7 @@ use std::{
 
 use crate::mir::{
     fmt::FuncFormatContext,
-    inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
+    inst::{IMirSubInst, MirInstCommon, inst::MirInst, opcode::MirOP},
     module::func::MirFunc,
     operand::{IMirSubOperand, MirOperand},
 };
@@ -86,13 +86,23 @@ impl IMirSubInst for MirCall {
             callee_func: RefCell::new(None),
         }
     }
+
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirCall(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirCall(self)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct MirReturn {
     pub common: MirInstCommon,
     operands_storage: [Cell<MirOperand>; 1],
-    has_retval: bool,
+    has_retval: Cell<bool>,
 }
 
 impl MirReturn {
@@ -100,28 +110,28 @@ impl MirReturn {
         Self {
             common: MirInstCommon::new(MirOP::MirReturn),
             operands_storage: [Cell::new(MirOperand::None)],
-            has_retval,
+            has_retval: Cell::new(has_retval),
         }
     }
 
-    pub fn set_retval(&mut self, retval: MirOperand) {
+    pub fn set_retval(&self, retval: MirOperand) {
         self.operands_storage[0].set(retval);
-        self.has_retval = true;
+        self.has_retval.set(true);
     }
 
     pub fn has_retval(&self) -> bool {
-        self.has_retval
+        self.has_retval.get()
     }
 
     pub fn retval(&self) -> Option<&Cell<MirOperand>> {
-        if self.has_retval {
+        if self.has_retval() {
             Some(&self.operands_storage[0])
         } else {
             None
         }
     }
     pub fn operands(&self) -> &[Cell<MirOperand>] {
-        if self.has_retval {
+        if self.has_retval() {
             &self.operands_storage[..1]
         } else {
             &[]
@@ -155,6 +165,16 @@ impl IMirSubInst for MirReturn {
     }
     fn new_empty(_: MirOP) -> Self {
         Self::new(false)
+    }
+
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirReturn(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirReturn(self)
     }
 }
 

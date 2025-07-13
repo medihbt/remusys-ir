@@ -7,7 +7,7 @@ use std::{
 
 use crate::mir::{
     fmt::FuncFormatContext,
-    inst::{IMirSubInst, MirInstCommon, opcode::MirOP},
+    inst::{inst::MirInst, opcode::MirOP, IMirSubInst, MirInstCommon},
     module::{block::MirBlockRef, func::MirFunc},
     operand::{IMirSubOperand, MirOperand},
 };
@@ -197,6 +197,17 @@ impl IMirSubInst for MirSwitch {
                 tab_index: Cell::new(0),
             })),
         }
+    }
+    
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirSwitch(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    
+    fn into_mir(self) -> MirInst {
+        MirInst::MirSwitch(self)
     }
 }
 

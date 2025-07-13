@@ -525,8 +525,26 @@ impl IMirSubOperand for GPR64 {
     }
 }
 
+impl GPR64 {
+    pub fn zr() -> Self {
+        GPR64(31, RegUseFlags::empty())
+    }
+    pub fn sp() -> Self {
+        GPR64(32, RegUseFlags::empty())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FPR32(pub u32, pub RegUseFlags);
+
+impl FPR32 {
+    pub fn zr() -> Self {
+        FPR32(31, RegUseFlags::empty())
+    }
+    pub fn sp() -> Self {
+        FPR32(32, RegUseFlags::empty())
+    }
+}
 
 impl IMirSubOperand for FPR32 {
     type RealRepresents = VFReg;
@@ -649,5 +667,16 @@ impl From<VFReg> for RegOperand {
     fn from(reg: VFReg) -> Self {
         let VFReg(id, si, uf) = reg;
         RegOperand(id, si, uf, true)
+    }
+}
+
+impl Into<MirOperand> for RegOperand {
+    fn into(self) -> MirOperand {
+        let RegOperand(id, si, uf, is_fp) = self;
+        if is_fp {
+            MirOperand::VFReg(VFReg(id, si, uf))
+        } else {
+            MirOperand::GPReg(GPReg(id, si, uf))
+        }
     }
 }

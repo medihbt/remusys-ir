@@ -29,6 +29,15 @@ impl IMirSubInst for UncondBr {
             _operands: [Cell::new(MirBlockRef::new_empty().into_mir())],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UncondBr(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UncondBr(self)
+    }
 }
 impl UncondBr {
     pub fn new(opcode: MirOP, target: MirBlockRef) -> Self {
@@ -73,6 +82,15 @@ impl IMirSubInst for BReg {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(GPReg::new_empty().into_mir())],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BReg(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BReg(self)
     }
 }
 impl BReg {
@@ -124,6 +142,15 @@ impl IMirSubInst for BLinkLabel {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BLinkLabel(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BLinkLabel(self)
     }
 }
 impl BLinkLabel {
@@ -187,6 +214,15 @@ impl IMirSubInst for BLinkReg {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BLinkReg(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BLinkReg(self)
     }
 }
 impl BLinkReg {
@@ -254,6 +290,15 @@ impl IMirSubInst for TBZ64 {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TBZ64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TBZ64(self)
     }
 }
 impl TBZ64 {
@@ -334,6 +379,15 @@ impl IMirSubInst for TBZ32 {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TBZ32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TBZ32(self)
     }
 }
 impl TBZ32 {
@@ -416,6 +470,15 @@ impl IMirSubInst for ICmp64R {
             ],
             rm_op: None,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICmp64R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICmp64R(self)
     }
 }
 impl ICmp64R {
@@ -512,6 +575,15 @@ impl IMirSubInst for ICmp32R {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICmp32R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICmp32R(self)
+    }
 }
 impl ICmp32R {
     pub fn new(opcode: MirOP, csr: PState, rn: GPR32, rhs: GPR32, rm_op: Option<RegOP>) -> Self {
@@ -605,6 +677,15 @@ impl IMirSubInst for ICmp64I {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICmp64I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICmp64I(self)
+    }
 }
 impl ICmp64I {
     pub fn new(opcode: MirOP, csr: PState, rn: GPR64, rhs: ImmCalc) -> Self {
@@ -688,6 +769,15 @@ impl IMirSubInst for ICmp32I {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICmp32I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICmp32I(self)
+    }
 }
 impl ICmp32I {
     pub fn new(opcode: MirOP, csr: PState, rn: GPR32, rhs: ImmCalc) -> Self {
@@ -770,6 +860,15 @@ impl IMirSubInst for FCmp32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FCmp32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FCmp32(self)
     }
 }
 impl FCmp32 {
@@ -856,6 +955,15 @@ impl IMirSubInst for FCmp64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FCmp64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FCmp64(self)
     }
 }
 impl FCmp64 {
@@ -946,6 +1054,15 @@ impl IMirSubInst for ICCmp64R {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICCmp64R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICCmp64R(self)
     }
 }
 impl ICCmp64R {
@@ -1058,6 +1175,15 @@ impl IMirSubInst for ICCmp32R {
             nzcv: NZCV::empty(),
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICCmp32R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICCmp32R(self)
+    }
 }
 impl ICCmp32R {
     pub fn new(
@@ -1169,6 +1295,15 @@ impl IMirSubInst for ICCmp64I {
             nzcv: NZCV::empty(),
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICCmp64I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICCmp64I(self)
+    }
 }
 impl ICCmp64I {
     pub fn new(
@@ -1277,6 +1412,15 @@ impl IMirSubInst for ICCmp32I {
             nzcv: NZCV::empty(),
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ICCmp32I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ICCmp32I(self)
+    }
 }
 impl ICCmp32I {
     pub fn new(
@@ -1384,6 +1528,15 @@ impl IMirSubInst for FCCmp32 {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FCCmp32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FCCmp32(self)
     }
 }
 impl FCCmp32 {
@@ -1495,6 +1648,15 @@ impl IMirSubInst for FCCmp64 {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FCCmp64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FCCmp64(self)
     }
 }
 impl FCCmp64 {
@@ -1629,6 +1791,15 @@ impl IMirSubInst for Bin64R {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64R(self)
+    }
 }
 impl Bin64R {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: GPR64, rm_op: Option<RegOP>) -> Self {
@@ -1746,6 +1917,15 @@ impl IMirSubInst for Bin32R {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32R(self)
+    }
 }
 impl Bin32R {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR32, rm: GPR32, rm_op: Option<RegOP>) -> Self {
@@ -1842,6 +2022,15 @@ impl IMirSubInst for MulL {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MulL(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MulL(self)
+    }
 }
 impl MulL {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR32, rm: GPR32) -> Self {
@@ -1928,6 +2117,15 @@ impl IMirSubInst for Bin64RC {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64RC(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64RC(self)
+    }
 }
 impl Bin64RC {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmCalc) -> Self {
@@ -2010,6 +2208,15 @@ impl IMirSubInst for Bin32RC {
                 Cell::new(ImmCalc::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32RC(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32RC(self)
     }
 }
 impl Bin32RC {
@@ -2102,6 +2309,15 @@ impl IMirSubInst for Bin64RL {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64RL(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64RL(self)
+    }
 }
 impl Bin64RL {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLogic) -> Self {
@@ -2193,6 +2409,15 @@ impl IMirSubInst for Bin32RL {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32RL(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32RL(self)
+    }
 }
 impl Bin32RL {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR32, rm: ImmLogic) -> Self {
@@ -2275,6 +2500,15 @@ impl IMirSubInst for Bin64RS {
                 Cell::new(ImmSMax::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64RS(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64RS(self)
     }
 }
 impl Bin64RS {
@@ -2359,6 +2593,15 @@ impl IMirSubInst for Bin64RU {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64RU(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64RU(self)
+    }
 }
 impl Bin64RU {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmUMax) -> Self {
@@ -2442,6 +2685,15 @@ impl IMirSubInst for Bin32RS {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32RS(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32RS(self)
+    }
 }
 impl Bin32RS {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR32, rm: ImmSMax) -> Self {
@@ -2524,6 +2776,15 @@ impl IMirSubInst for Bin32RU {
                 Cell::new(ImmUMax::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32RU(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32RU(self)
     }
 }
 impl Bin32RU {
@@ -2611,6 +2872,15 @@ impl IMirSubInst for Bin64RShift {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin64RShift(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin64RShift(self)
+    }
 }
 impl Bin64RShift {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmShift) -> Self {
@@ -2697,6 +2967,15 @@ impl IMirSubInst for Bin32RShift {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Bin32RShift(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Bin32RShift(self)
+    }
 }
 impl Bin32RShift {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR32, rm: ImmShift) -> Self {
@@ -2782,6 +3061,15 @@ impl IMirSubInst for BinF64R {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BinF64R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BinF64R(self)
     }
 }
 impl BinF64R {
@@ -2872,6 +3160,15 @@ impl IMirSubInst for BinF32R {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BinF32R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BinF32R(self)
+    }
 }
 impl BinF32R {
     pub fn new(opcode: MirOP, rd: FPR32, rn: FPR32, rm: FPR32) -> Self {
@@ -2957,6 +3254,15 @@ impl IMirSubInst for MirCopy64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirCopy64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirCopy64(self)
+    }
 }
 impl MirCopy64 {
     pub fn new(opcode: MirOP, dst: GPR64, src: MirOperand) -> Self {
@@ -3019,6 +3325,15 @@ impl IMirSubInst for MirCopy32 {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirCopy32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirCopy32(self)
     }
 }
 impl MirCopy32 {
@@ -3083,6 +3398,15 @@ impl IMirSubInst for MirFCopy64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirFCopy64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirFCopy64(self)
+    }
 }
 impl MirFCopy64 {
     pub fn new(opcode: MirOP, dst: FPR64, src: MirOperand) -> Self {
@@ -3146,6 +3470,15 @@ impl IMirSubInst for MirFCopy32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirFCopy32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirFCopy32(self)
+    }
 }
 impl MirFCopy32 {
     pub fn new(opcode: MirOP, dst: FPR32, src: MirOperand) -> Self {
@@ -3208,6 +3541,15 @@ impl IMirSubInst for MirPCopy {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirPCopy(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirPCopy(self)
     }
 }
 impl MirPCopy {
@@ -3284,6 +3626,15 @@ impl IMirSubInst for Una64R {
             ],
             dst_op: None,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Una64R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Una64R(self)
     }
 }
 impl Una64R {
@@ -3376,6 +3727,15 @@ impl IMirSubInst for Una32R {
             dst_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Una32R(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Una32R(self)
+    }
 }
 impl Una32R {
     pub fn new(opcode: MirOP, dst: GPR32, src: GPR32, dst_op: Option<RegOP>) -> Self {
@@ -3452,6 +3812,15 @@ impl IMirSubInst for ExtR {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::ExtR(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::ExtR(self)
+    }
 }
 impl ExtR {
     pub fn new(opcode: MirOP, dst: GPR64, src: GPR32) -> Self {
@@ -3521,6 +3890,15 @@ impl IMirSubInst for Mov64I {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Mov64I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Mov64I(self)
+    }
 }
 impl Mov64I {
     pub fn new(opcode: MirOP, dst: GPR64, src: ImmMov) -> Self {
@@ -3587,6 +3965,15 @@ impl IMirSubInst for Mov32I {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Mov32I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Mov32I(self)
+    }
 }
 impl Mov32I {
     pub fn new(opcode: MirOP, dst: GPR32, src: ImmMov) -> Self {
@@ -3650,6 +4037,15 @@ impl IMirSubInst for Adr {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::Adr(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::Adr(self)
+    }
 }
 impl Adr {
     pub fn new(opcode: MirOP, dst: GPR64, src: MirBlockRef) -> Self {
@@ -3712,6 +4108,15 @@ impl IMirSubInst for UnaFG64 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaFG64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaFG64(self)
     }
 }
 impl UnaFG64 {
@@ -3792,6 +4197,15 @@ impl IMirSubInst for UnaGF64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaGF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaGF64(self)
+    }
 }
 impl UnaGF64 {
     pub fn new(opcode: MirOP, dst: GPR64, src: FPR64) -> Self {
@@ -3858,6 +4272,15 @@ impl IMirSubInst for UnaF64G32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaF64G32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaF64G32(self)
+    }
 }
 impl UnaF64G32 {
     pub fn new(opcode: MirOP, dst: FPR64, src: GPR32) -> Self {
@@ -3923,6 +4346,15 @@ impl IMirSubInst for UnaFG32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaFG32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaFG32(self)
     }
 }
 impl UnaFG32 {
@@ -4003,6 +4435,15 @@ impl IMirSubInst for UnaGF32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaGF32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaGF32(self)
+    }
 }
 impl UnaGF32 {
     pub fn new(opcode: MirOP, dst: GPR32, src: FPR32) -> Self {
@@ -4081,6 +4522,15 @@ impl IMirSubInst for UnaG64F32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaG64F32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaG64F32(self)
+    }
 }
 impl UnaG64F32 {
     pub fn new(opcode: MirOP, dst: GPR64, src: FPR32) -> Self {
@@ -4146,6 +4596,15 @@ impl IMirSubInst for UnaG32F64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaG32F64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaG32F64(self)
     }
 }
 impl UnaG32F64 {
@@ -4230,6 +4689,15 @@ impl IMirSubInst for UnaF64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaF64(self)
+    }
 }
 impl UnaF64 {
     pub fn new(opcode: MirOP, dst: FPR64, src: FPR64) -> Self {
@@ -4313,6 +4781,15 @@ impl IMirSubInst for UnaF32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaF32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaF32(self)
+    }
 }
 impl UnaF32 {
     pub fn new(opcode: MirOP, dst: FPR32, src: FPR32) -> Self {
@@ -4378,6 +4855,15 @@ impl IMirSubInst for UnaryF32F64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaryF32F64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaryF32F64(self)
     }
 }
 impl UnaryF32F64 {
@@ -4445,6 +4931,15 @@ impl IMirSubInst for UnaryF64F32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::UnaryF64F32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::UnaryF64F32(self)
+    }
 }
 impl UnaryF64F32 {
     pub fn new(opcode: MirOP, dst: FPR64, src: FPR32) -> Self {
@@ -4511,6 +5006,15 @@ impl IMirSubInst for FMov64I {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FMov64I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FMov64I(self)
+    }
 }
 impl FMov64I {
     pub fn new(opcode: MirOP, dst: FPR64, src: ImmFMov64) -> Self {
@@ -4573,6 +5077,15 @@ impl IMirSubInst for FMov32I {
                 Cell::new(ImmFMov32::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::FMov32I(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::FMov32I(self)
     }
 }
 impl FMov32I {
@@ -4638,6 +5151,15 @@ impl IMirSubInst for TenaryG64 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TenaryG64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TenaryG64(self)
     }
 }
 impl TenaryG64 {
@@ -4745,6 +5267,15 @@ impl IMirSubInst for TenaryG64G32 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TenaryG64G32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TenaryG64G32(self)
+    }
 }
 impl TenaryG64G32 {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR32, rm: GPR32, rs: GPR64) -> Self {
@@ -4847,6 +5378,15 @@ impl IMirSubInst for TenaryG32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TenaryG32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TenaryG32(self)
     }
 }
 impl TenaryG32 {
@@ -4954,6 +5494,15 @@ impl IMirSubInst for TenaryF64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TenaryF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TenaryF64(self)
+    }
 }
 impl TenaryF64 {
     pub fn new(opcode: MirOP, rd: FPR64, rn: FPR64, rm: FPR64, rs: FPR64) -> Self {
@@ -5059,6 +5608,15 @@ impl IMirSubInst for TenaryF32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::TenaryF32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::TenaryF32(self)
     }
 }
 impl TenaryF32 {
@@ -5174,6 +5732,15 @@ impl IMirSubInst for LoadStoreGr64 {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr64(self)
+    }
 }
 impl LoadStoreGr64 {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: GPR64, rm_op: Option<RegOP>) -> Self {
@@ -5279,6 +5846,15 @@ impl IMirSubInst for LoadStoreGr32 {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr32(self)
+    }
 }
 impl LoadStoreGr32 {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: GPR64, rm_op: Option<RegOP>) -> Self {
@@ -5374,6 +5950,15 @@ impl IMirSubInst for LoadStoreF64 {
             rm_op: None,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF64(self)
+    }
 }
 impl LoadStoreF64 {
     pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: GPR64, rm_op: Option<RegOP>) -> Self {
@@ -5468,6 +6053,15 @@ impl IMirSubInst for LoadStoreF32 {
             ],
             rm_op: None,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF32(self)
     }
 }
 impl LoadStoreF32 {
@@ -5572,6 +6166,15 @@ impl IMirSubInst for LoadStoreGr64Base {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr64Base(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr64Base(self)
+    }
 }
 impl LoadStoreGr64Base {
     pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLoad64) -> Self {
@@ -5665,6 +6268,15 @@ impl IMirSubInst for LoadStoreGr32Base {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr32Base(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr32Base(self)
+    }
 }
 impl LoadStoreGr32Base {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLoad32) -> Self {
@@ -5748,6 +6360,15 @@ impl IMirSubInst for LoadStoreF64Base {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF64Base(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF64Base(self)
+    }
 }
 impl LoadStoreF64Base {
     pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLoad64) -> Self {
@@ -5830,6 +6451,15 @@ impl IMirSubInst for LoadStoreF32Base {
                 Cell::new(ImmLoad32::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF32Base(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF32Base(self)
     }
 }
 impl LoadStoreF32Base {
@@ -5925,6 +6555,15 @@ impl IMirSubInst for LoadStoreGr64Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr64Indexed(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr64Indexed(self)
     }
 }
 impl LoadStoreGr64Indexed {
@@ -6028,6 +6667,15 @@ impl IMirSubInst for LoadStoreGr32Indexed {
             addr_mode: AddrMode::PostIndex,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr32Indexed(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr32Indexed(self)
+    }
 }
 impl LoadStoreGr32Indexed {
     pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLoad32, addr_mode: AddrMode) -> Self {
@@ -6120,6 +6768,15 @@ impl IMirSubInst for LoadStoreF64Indexed {
             addr_mode: AddrMode::PostIndex,
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF64Indexed(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF64Indexed(self)
+    }
 }
 impl LoadStoreF64Indexed {
     pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLoad64, addr_mode: AddrMode) -> Self {
@@ -6211,6 +6868,15 @@ impl IMirSubInst for LoadStoreF32Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF32Indexed(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF32Indexed(self)
     }
 }
 impl LoadStoreF32Indexed {
@@ -6311,6 +6977,15 @@ impl IMirSubInst for LoadStoreGr64Literal {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr64Literal(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr64Literal(self)
+    }
 }
 impl LoadStoreGr64Literal {
     pub fn new(opcode: MirOP, rd: GPR64, from: MirSymbolOp) -> Self {
@@ -6384,6 +7059,15 @@ impl IMirSubInst for LoadStoreGr32Literal {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreGr32Literal(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreGr32Literal(self)
+    }
 }
 impl LoadStoreGr32Literal {
     pub fn new(opcode: MirOP, rd: GPR32, from: MirSymbolOp) -> Self {
@@ -6446,6 +7130,15 @@ impl IMirSubInst for LoadStoreF64Literal {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF64Literal(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF64Literal(self)
     }
 }
 impl LoadStoreF64Literal {
@@ -6510,6 +7203,15 @@ impl IMirSubInst for LoadStoreF32Literal {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadStoreF32Literal(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadStoreF32Literal(self)
+    }
 }
 impl LoadStoreF32Literal {
     pub fn new(opcode: MirOP, rd: FPR32, from: MirSymbolOp) -> Self {
@@ -6572,6 +7274,15 @@ impl IMirSubInst for LoadConst64 {
                 Cell::new(Imm64::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadConst64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadConst64(self)
     }
 }
 impl LoadConst64 {
@@ -6636,6 +7347,15 @@ impl IMirSubInst for LoadConstF64 {
             ],
         }
     }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadConstF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadConstF64(self)
+    }
 }
 impl LoadConstF64 {
     pub fn new(opcode: MirOP, rd: FPR64, src: Imm64) -> Self {
@@ -6698,6 +7418,15 @@ impl IMirSubInst for LoadConst64Symbol {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::LoadConst64Symbol(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::LoadConst64Symbol(self)
     }
 }
 impl LoadConst64Symbol {
@@ -6763,6 +7492,15 @@ impl IMirSubInst for CondBr {
             ],
             cond: MirCondFlag::AL,
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::CondBr(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::CondBr(self)
     }
 }
 impl CondBr {
@@ -6833,6 +7571,15 @@ impl IMirSubInst for CBZs {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::CBZs(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::CBZs(self)
     }
 }
 impl CBZs {

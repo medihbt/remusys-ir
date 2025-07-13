@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::mir::{
-    inst::{MirInstCommon, opcode::MirOP},
+    inst::{inst::MirInst, opcode::MirOP, MirInstCommon},
     operand::MirOperand,
 };
 
@@ -18,4 +18,7 @@ pub trait IMirSubInst {
     fn is_pseudo(&self) -> bool {
         false
     }
+
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self>;
+    fn into_mir(self) -> MirInst;
 }
