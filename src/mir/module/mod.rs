@@ -32,15 +32,15 @@ pub enum MirGlobal {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MirGlobalRef(u32);
+pub struct MirGlobalRef(usize);
 
 impl SlabRef for MirGlobalRef {
     type RefObject = MirGlobal;
     fn from_handle(handle: usize) -> Self {
-        MirGlobalRef(handle as u32)
+        MirGlobalRef(handle)
     }
     fn get_handle(&self) -> usize {
-        self.0 as usize
+        self.0
     }
 }
 
@@ -50,7 +50,7 @@ impl MirGlobalRef {
         if index == usize::MAX {
             panic!("Failed to allocate ModuleItem in slab");
         }
-        let ret = Self(index as u32);
+        let ret = Self(index);
         ret.read_slabref(alloc, |data| {
             data.get_common().set_self_ref(ret);
         });

@@ -47,8 +47,6 @@ pub enum Linkage {
 
 #[derive(Debug, Clone)]
 pub struct MirGlobalCommon {
-    /// Slab RefList Head
-    pub node_head: Cell<SlabRefListNodeHead>,
     /// Useless when name is empty (e.g. when this global data is "unnamed global data" pesudo op).
     pub name: String,
     /// Section where this global data resides.
@@ -66,7 +64,6 @@ pub struct MirGlobalCommon {
 impl MirGlobalCommon {
     pub fn new(name: String, section: Section, align_log2: u8, linkage: Linkage) -> Self {
         Self {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
             name,
             section,
             linkage,

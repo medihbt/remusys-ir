@@ -109,7 +109,7 @@ impl<'a> AsmWriter<'a> {
         // Now write extern globals
         if !extern_globals.is_empty() {
             self.wrap_indent();
-            writeln!(self, "// External symbols").expect("Failed to write comment");
+            write!(self, "; External symbols").expect("Failed to write comment");
             for g in extern_globals {
                 let mod_item = g.data_from_module(module);
                 let name = mod_item.get_name().unwrap();
@@ -234,9 +234,8 @@ impl<'a> AsmWriter<'a> {
         if writes_name {
             self.dec_indent();
             self.wrap_indent();
-            let func_name = func.get_name();
             let bb_name = block.name.as_str();
-            write!(self, ".LBB.{func_name}.{bb_name}:").unwrap();
+            write!(self, "{bb_name}:").unwrap();
             self.inc_indent();
         }
         for (_, inst) in block.insts.view(&module.borrow_alloc_inst()).into_iter() {

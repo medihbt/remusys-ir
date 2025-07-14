@@ -1,6 +1,7 @@
-use std::rc::Rc;
+use std::{fmt::Debug, rc::Rc};
 
 use crate::{
+    base::slabref::SlabRef,
     ir::{
         PtrStorage,
         global::{GlobalData, GlobalRef, func::FuncStorage},
@@ -130,17 +131,22 @@ pub struct MirFuncInfo {
 }
 
 /// A read-only map of all MIR globals, no `new` method
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MirGlobalItems {
     pub all: Box<[(GlobalRef, MirGlobalRef)]>,
     pub funcs: Box<[MirFuncInfo]>,
+    pub extern_funcs: Box<[MirFuncInfo]>,
 }
 
 impl MirGlobalItems {
     pub fn find_func(&self, ir_ref: GlobalRef) -> Option<&MirFuncInfo> {
+        eprintln!("Searching for function with: {:?}", ir_ref);
         match self.funcs.binary_search_by_key(&ir_ref, |f| f.key) {
             Ok(idx) => Some(&self.funcs[idx]),
-            Err(_) => None,
+            Err(_) => match self.extern_funcs.binary_search_by_key(&ir_ref, |f| f.key) {
+                Ok(idx) => Some(&self.extern_funcs[idx]),
+                Err(_) => None,
+            },
         }
     }
     pub fn find_mir_ref(&self, ir_ref: GlobalRef) -> Option<MirGlobalRef> {
@@ -158,6 +164,7 @@ impl MirGlobalItems {
     ) -> Self {
         let mut all_globals = Vec::with_capacity(statistics.all_globals.len());
         let mut funcs = Vec::with_capacity(statistics.funcs().len());
+        let mut extern_funcs = Vec::with_capacity(statistics.extern_funcs().len());
 
         for &gref in statistics.extern_vars() {
             let global = ir_module.get_global(gref);
@@ -181,7 +188,12 @@ impl MirGlobalItems {
                 _ => panic!("Expected a function type for extern function, got {global:?}"),
             };
             let func_ty = funcdef.get_stored_func_type();
-            let (mir_ref, _) = mir_builder.extern_func(name, func_ty, &ir_module.type_ctx);
+            let (mir_ref, _) = mir_builder.extern_func(name.clone(), func_ty, &ir_module.type_ctx);
+            extern_funcs.push(MirFuncInfo {
+                key: gref,
+                mir: mir_ref.clone(),
+                rc: Rc::new(MirFunc::new_extern(name, func_ty, &ir_module.type_ctx)),
+            });
             all_globals.push((gref, mir_ref));
         }
 
@@ -219,14 +231,47 @@ impl MirGlobalItems {
         }
         all_globals.sort_by_key(|(gref, _)| *gref);
         funcs.sort_by_key(|f| f.key);
+        extern_funcs.sort_by_key(|f| f.key);
         Self {
             all: all_globals.into_boxed_slice(),
             funcs: funcs.into_boxed_slice(),
+            extern_funcs: extern_funcs.into_boxed_slice(),
         }
     }
 
     pub fn build_mir(ir_module: &IRModule, mir_builder: &mut MirBuilder) -> Self {
         let statistics = GlobalStatistics::new(ir_module);
         Self::build_mir_from_statusics(ir_module, mir_builder, &statistics)
+    }
+}
+
+impl std::fmt::Debug for MirGlobalItems {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn get_funcs(funcs: &[MirFuncInfo]) -> Vec<String> {
+            let mut func_names = Vec::with_capacity(funcs.len());
+            for func in funcs {
+                let func_name = func.rc.get_name();
+                let func_mir = func.mir.get_handle();
+                let func_ir = func.key.get_handle();
+                func_names.push(format!(
+                    "func `{func_name}` (MIR idx {func_mir}, IR idx {func_ir})"
+                ));
+            }
+            func_names
+        }
+        fn get_alls(globals: &[(GlobalRef, MirGlobalRef)]) -> Vec<String> {
+            let mut global_names = Vec::with_capacity(globals.len());
+            for (gref, mir_ref) in globals {
+                let mir_idx = mir_ref.get_handle();
+                let ir_idx = gref.get_handle();
+                global_names.push(format!("ir {ir_idx} -> mir {mir_idx}"));
+            }
+            global_names
+        }
+        f.debug_struct("MirGlobalItems")
+            .field("all", &get_alls(&self.all))
+            .field("funcs", &get_funcs(&self.funcs))
+            .field("extern_funcs", &get_funcs(&self.extern_funcs))
+            .finish()
     }
 }

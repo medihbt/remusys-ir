@@ -51,11 +51,9 @@ impl IMirSubOperand for MirBlockRef {
     }
 
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
-        let func = formatter.get_current_func();
-        let func_name = func.get_name();
         let alloc_block = formatter.mir_module.borrow_alloc_block();
         let bb_name = self.to_slabref_unwrap(&alloc_block).name.as_str();
-        write!(formatter, ".LBB.{func_name}.{bb_name}")
+        write!(formatter, "{bb_name}")
     }
 }
 
@@ -171,6 +169,8 @@ impl IMirSubOperand for MirOperand {
             MirOperand::Label(bb) => bb.fmt_asm(formatter),
             MirOperand::Global(global) => global.fmt_asm(formatter),
             MirOperand::SwitchTab(id) => SwitchTab(*id).fmt_asm(formatter),
+            MirOperand::F32(f) => write!(formatter, "{f:e}f32"),
+            MirOperand::F64(f) => write!(formatter, "{f:e}f64"),
         }
     }
 }

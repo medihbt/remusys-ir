@@ -11,6 +11,7 @@ use crate::{
         operand::MirOperand,
         translate::mirgen::operandgen::{OperandMap, PureSourceReg},
     },
+    typing::id::ValTypeID,
 };
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
@@ -24,8 +25,8 @@ pub(crate) fn dispatch_call(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<'_, Slab<UseData>>,
 ) {
-    let call_inst = match ir_ref.to_slabref_unwrap(alloc_inst) {
-        InstData::Call(_, call) => call,
+    let (call_inst, has_retval) = match ir_ref.to_slabref_unwrap(alloc_inst) {
+        InstData::Call(c, call) => (call, c.ret_type != ValTypeID::Void),
         _ => panic!("Expected Call instruction"),
     };
     let callee = match call_inst.callee.get_operand(&alloc_use) {
@@ -54,7 +55,14 @@ pub(crate) fn dispatch_call(
             .into_mir()
         })
         .collect::<Vec<_>>();
-    let call_inst = MirCall::new(MirOperand::Global(callee_mir), &args);
+    let call_inst = if has_retval {
+        let ret_mir = operand_map
+            .find_operand_for_inst(ir_ref)
+            .expect("Failed to find return operand for call instruction");
+        MirCall::with_retreg(MirOperand::Global(callee_mir), ret_mir, &args)
+    } else {
+        MirCall::with_return_void(MirOperand::Global(callee_mir), &args)
+    };
     call_inst.set_callee_func(func);
     out_insts.push_back(call_inst.into_mir());
 }

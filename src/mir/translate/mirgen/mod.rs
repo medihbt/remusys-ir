@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, rc::Rc};
 
 use crate::{
-    base::slabref::SlabRef,
+    base::{NullableValue, slabref::SlabRef},
     ir::{
         block::BlockRef,
         global::GlobalRef,
@@ -9,6 +9,7 @@ use crate::{
         module::Module as IRModule,
     },
     mir::{
+        inst::MirInstRef,
         module::{
             MirModule,
             block::{MirBlock, MirBlockRef},
@@ -103,6 +104,8 @@ impl MirTranslateCtx {
             let mir_func = Rc::clone(&mir_func_info.rc);
             self.do_translate_function(cfg, &globals, ir_func_ref, &mir_func);
         }
+
+        eprintln!("{globals:#?}");
 
         self.mir_module
     }
@@ -246,6 +249,7 @@ impl MirTranslateCtx {
         for MirBlockInfo { insts, .. } in block_map {
             for InstTranslateInfo { ir, ty, kind } in insts {
                 type K = InstDataKind;
+                eprintln!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
                 match kind {
                     K::ListGuideNode | K::PhiInstEnd | K::Unreachable => {
                         // 功能结点不需要分配寄存器或存储空间
@@ -263,6 +267,10 @@ impl MirTranslateCtx {
                 let mut inner = func.borrow_inner_mut();
                 let alloc_reg = &mut inner.vreg_alloc;
                 let vreg = match ty {
+                    ValTypeID::Void => {
+                        // Void 类型的指令不需要分配寄存器
+                        continue;
+                    }
                     ValTypeID::Int(32) => {
                         let to_insert = GPR32::new_empty();
                         let vreg = alloc_reg.insert_gp(to_insert.into_real());
@@ -316,20 +324,21 @@ impl MirTranslateCtx {
                 &mut inst_queue,
             ) {
                 Ok(()) => {
+                    let mut inst_ref = MirInstRef::new_null();
                     while !inst_queue.is_empty() {
                         let inst = inst_queue
                             .pop_front()
                             .expect("Inst queue should not be empty");
-                        mir_builder.add_inst(inst);
+                        inst_ref = mir_builder.add_inst(inst);
+                    }
+                    if state.pstate_modifier_matches(ir_inst.ir) {
+                        // 如果当前指令修改了 PState, 则更新状态
+                        state.last_pstate_modifier = Some((ir_inst.ir, inst_ref));
                     }
                 }
                 Err(InstDispatchError::ShouldNotTranslate(..)) => {}
                 Err(e) => panic!("Instruction dispatchong error {e:?}"),
             }
-            todo!(
-                "Translate instruction {:?} in block {ir_block:?}",
-                ir_inst.ir
-            );
         }
 
         // Step .2: 为每个 Phi 添加拷贝函数.

@@ -144,9 +144,9 @@ impl<'a> MirBuilder<'a> {
         } else {
             panic!("Cannot add instruction when focus is not on a block");
         };
-        let mut alloc_inst = self.mir_module.borrow_alloc_inst_mut();
         let block_data = block.data_from_module(&self.mir_module);
-        block_data.push_inst_ref(inst, &mut alloc_inst);
+        let alloc_inst = self.mir_module.borrow_alloc_inst();
+        block_data.push_inst_ref(inst, &alloc_inst);
     }
     pub fn add_inst(&self, inst: MirInst) -> MirInstRef {
         let inst_ref = MirInstRef::from_module(&self.mir_module, inst);

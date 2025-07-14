@@ -13,7 +13,7 @@ use crate::{
         },
         translate::mirgen::{MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst},
     },
-    typing::{context::TypeContext, types::FloatTypeKind},
+    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
 pub struct OperandMap<'a> {
@@ -115,6 +115,29 @@ impl<'a> OperandMap<'a> {
             ValueSSA::ConstData(c) => Err(OperandMapError::IsConstData(*c)),
         }
     }
+
+    pub fn make_pseudo_operand(&self, retval_ir: ValueSSA) -> MirOperand {
+        match self.find_operand_no_constdata(&retval_ir) {
+            Ok(o) => o,
+            Err(OperandMapError::IsConstData(c)) => match c {
+                ConstData::Undef(_) => MirOperand::None,
+                ConstData::Zero(ty) => match ty {
+                    ValTypeID::Ptr | ValTypeID::Int(64) => Imm64::new_empty().into_mir(),
+                    ValTypeID::Int(32) => Imm32::new_empty().into_mir(),
+                    ValTypeID::Float(FloatTypeKind::Ieee32) => MirOperand::F32(0.0),
+                    ValTypeID::Float(FloatTypeKind::Ieee64) => MirOperand::F64(0.0),
+                    _ => panic!("Unexpected type for zero constant: {ty:?}"),
+                },
+                ConstData::PtrNull(_) => Imm64::new_empty().into_mir(),
+                ConstData::Int(32, value) => Imm32(value as u32, ImmKind::Full).into_mir(),
+                ConstData::Int(64, value) => Imm64(value as u64, ImmKind::Full).into_mir(),
+                ConstData::Float(FloatTypeKind::Ieee32, f) => MirOperand::F32(f as f32),
+                ConstData::Float(FloatTypeKind::Ieee64, f) => MirOperand::F64(f as f64),
+                _ => panic!("Unexpected constant data type for return value: {c:?}"),
+            },
+            Err(e) => panic!("Failed to find operand for return value: {e:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -154,8 +177,8 @@ impl PureSourceReg {
                     .get_instance_size(type_ctx)
                     .expect("Failed to get type size");
                 match ty_size {
-                    4 => PureSourceReg::G32(Self::make_ldr_for_imm32(0, alloc_reg, out_insts)),
-                    8 => PureSourceReg::G64(Self::make_ldr_for_imm64(0, alloc_reg, out_insts)),
+                    4 => PureSourceReg::G32(GPR32::zr()),
+                    8 => PureSourceReg::G64(GPR64::zr()),
                     _ => panic!("Unsupported zero-sized type for store: {ty:?}"),
                 }
             }
@@ -164,11 +187,21 @@ impl PureSourceReg {
             }
             ConstData::Int(64, value) => {
                 let value = *value as u64;
-                PureSourceReg::G64(Self::make_ldr_for_imm64(value, alloc_reg, out_insts))
+                let reg = if value == 0 {
+                    GPR64::zr()
+                } else {
+                    Self::make_ldr_for_imm64(value, alloc_reg, out_insts)
+                };
+                PureSourceReg::G64(reg)
             }
             ConstData::Int(32, value) => {
                 let value = *value as u32;
-                PureSourceReg::G32(Self::make_ldr_for_imm32(value, alloc_reg, out_insts))
+                let reg = if value == 0 {
+                    GPR32::zr()
+                } else {
+                    Self::make_ldr_for_imm32(value, alloc_reg, out_insts)
+                };
+                PureSourceReg::G32(reg)
             }
             ConstData::Int(bits, value) => {
                 let value = if *bits == 1 {

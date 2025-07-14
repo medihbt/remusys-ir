@@ -31,7 +31,7 @@ mod jumps_gen;
 mod load_store_gen;
 
 pub struct InstDispatchState {
-    last_pstate_modifier: Option<(InstRef, MirInstRef)>,
+    pub last_pstate_modifier: Option<(InstRef, MirInstRef)>,
 }
 
 impl InstDispatchState {
@@ -126,6 +126,7 @@ pub fn dispatch_inst(
         InstDataKind::Cmp => cmp_gen::dispatch_cmp(
             ir_module,
             operand_map,
+            state,
             vreg_alloc,
             out_insts,
             ir_ref,
@@ -243,9 +244,12 @@ fn dispatch_mir_return(
         if ir_value_is_cmp(retval_ir, alloc_inst) {
             todo!("Handle return of comparison values");
         } else {
-            let retval_mir = operand_map.find_operand_no_constdata(&retval_ir).unwrap();
-            let retinst = MirReturn::new(true);
-            retinst.set_retval(retval_mir);
+            let retval_mir = operand_map.make_pseudo_operand(retval_ir);
+            let has_retval = !matches!(retval_mir, MirOperand::None);
+            let retinst = MirReturn::new(has_retval);
+            if has_retval {
+                retinst.set_retval(retval_mir);
+            }
             retinst
         }
     } else {

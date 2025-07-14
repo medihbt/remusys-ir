@@ -99,7 +99,7 @@ impl MirBlock {
             .expect("Failed to add instruction to block");
         inst_ref
     }
-    pub fn push_inst_ref(&self, inst: MirInstRef, alloc_inst: &mut Slab<MirInst>) {
+    pub fn push_inst_ref(&self, inst: MirInstRef, alloc_inst: &Slab<MirInst>) {
         self.insts
             .push_back_ref(alloc_inst, inst)
             .expect("Failed to add instruction reference to block");

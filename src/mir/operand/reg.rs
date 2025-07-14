@@ -311,7 +311,7 @@ impl IMirSubOperand for GPReg {
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let id_str = match self.get_id() {
             RegID::Phys(id) => id.to_string(),
-            RegID::Virt(id) => format!("v{}", id + 33),
+            RegID::Virt(id) => format!("v{}", id),
             RegID::SP => "sp".to_string(),
             RegID::ZR => "zr".to_string(),
         };
@@ -497,6 +497,15 @@ impl IMirSubOperand for GPR32 {
     }
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         self.into_real().fmt_asm(_formatter)
+    }
+}
+
+impl GPR32 {
+    pub fn zr() -> Self {
+        GPR32(31, RegUseFlags::empty())
+    }
+    pub fn sp() -> Self {
+        GPR32(32, RegUseFlags::empty())
     }
 }
 

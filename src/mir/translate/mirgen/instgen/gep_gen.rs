@@ -14,7 +14,7 @@ use crate::{
             compound::MirSymbolOp,
             imm::*,
             imm_traits,
-            reg::{GPR64, GPReg, RegOP},
+            reg::{GPR64, GPReg, RegOP, RegUseFlags},
         },
         translate::mirgen::operandgen::OperandMap,
     },
@@ -41,15 +41,28 @@ pub(crate) fn dispatch_gep(
     };
 
     let base_ptr_mir = operand_map.find_operand_no_constdata(&base_ptr).unwrap();
-    let base_ptr_mir = MirSymbolOp::from_mir(base_ptr_mir);
-    let curr_ptr = vreg_alloc.insert_gp(GPR64::new_empty().into_real());
-    let mut curr_ptr = GPR64::from_real(curr_ptr);
+    // let base_ptr_mir = MirSymbolOp::from_mir(base_ptr_mir);
+    // let curr_ptr = vreg_alloc.insert_gp(GPR64::new_empty().into_real());
+    // let mut curr_ptr = GPR64::from_real(curr_ptr);
 
-    // 把基地址转移到当前指针寄存器. 这里的 LoadConst64Symbol 是 Aarch64 伪指令,
-    // 表示把基地址的数值而非指向的内容加载到寄存器中.
-    let loadsym_inst =
-        LoadConst64Symbol::new(MirOP::LoadConst64Symbol, curr_ptr, base_ptr_mir).into_mir();
-    out_insts.push_back(loadsym_inst);
+    let mut curr_ptr = {
+        use MirOperand::{F32, F64, Global, Imm32, Imm64, Label, None, PState, SwitchTab, VFReg};
+
+        match base_ptr_mir {
+            MirOperand::GPReg(GPReg(id, ..)) => GPR64(id, RegUseFlags::empty()),
+            Label(bb) => symbol_to_gpreg_ptr(MirSymbolOp::Label(bb), vreg_alloc, out_insts),
+            Global(g) => symbol_to_gpreg_ptr(MirSymbolOp::Global(g), vreg_alloc, out_insts),
+            SwitchTab(index) => {
+                symbol_to_gpreg_ptr(MirSymbolOp::SwitchTab(index), vreg_alloc, out_insts)
+            }
+            VFReg(_) | PState(_) | Imm64(_) | Imm32(_) | F32(_) | F64(_) => {
+                panic!(
+                    "Expected GEP base pointer to be a valid operand (GPReg or symbol), found {base_ptr_mir:?}"
+                );
+            }
+            None => panic!("Expected GEP base pointer to be a valid operand"),
+        }
+    };
 
     let mut integral_offset: Option<usize> = None;
     let mut type_before_unpack = ValTypeID::Void;
@@ -83,13 +96,25 @@ pub(crate) fn dispatch_gep(
                 &mut curr_ptr,
                 &mut integral_offset,
                 index,
-                unpacked_ty,
+                type_before_unpack,
                 ty_size,
             );
         }
         // 更新当前指针和类型
         type_before_unpack = unpacked_ty;
     }
+}
+
+fn symbol_to_gpreg_ptr(
+    symbol: MirSymbolOp,
+    vreg_alloc: &mut VirtRegAlloc,
+    out_insts: &mut VecDeque<MirInst>,
+) -> GPR64 {
+    let curr_ptr = vreg_alloc.insert_gp(GPR64::new_empty().into_real());
+    let curr_ptr = GPR64::from_real(curr_ptr);
+    let loadaddr_inst = LoadConst64Symbol::new(MirOP::LoadConst64Symbol, curr_ptr, symbol);
+    out_insts.push_back(loadaddr_inst.into_mir());
+    curr_ptr
 }
 
 fn handle_nonconst_index(
@@ -99,7 +124,7 @@ fn handle_nonconst_index(
     curr_ptr: &mut GPR64,
     integral_offset: &mut Option<usize>,
     index: ValueSSA,
-    unpacked_ty: ValTypeID,
+    type_before_unpack: ValTypeID,
     ty_size: usize,
 ) {
     // 遇到一个不是整数的索引. 现在要把前面的账结了.
@@ -109,8 +134,8 @@ fn handle_nonconst_index(
     }
 
     // 现在处理这个非整数索引.
-    if !matches!(unpacked_ty, ValTypeID::Void | ValTypeID::Array(_)) {
-        panic!("Unsupported type for index pointer with non-constant index: {unpacked_ty:?}");
+    if !matches!(type_before_unpack, ValTypeID::Void | ValTypeID::Array(_)) {
+        panic!("Unsupported type for index pointer with non-constant index: {type_before_unpack:?}");
     }
 
     let index = operand_map.find_operand_no_constdata(&index).unwrap();

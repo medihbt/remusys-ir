@@ -1,15 +1,18 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::{slabref::SlabRef, NullableValue},
     ir::{
-        inst::{InstData, InstRef, usedef::UseData},
+        inst::{usedef::UseData, InstData, InstRef},
         module::Module,
         opcode::Opcode,
     },
     mir::{
-        inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
+        inst::{impls::*, inst::MirInst, opcode::MirOP, IMirSubInst, MirInstRef},
         module::stack::VirtRegAlloc,
         operand::reg::*,
-        translate::mirgen::operandgen::{OperandMap, PureSourceReg},
+        translate::mirgen::{
+            instgen::InstDispatchState,
+            operandgen::{OperandMap, PureSourceReg},
+        },
     },
 };
 use slab::Slab;
@@ -18,6 +21,7 @@ use std::{cell::Ref, collections::VecDeque};
 pub(crate) fn dispatch_cmp(
     ir_module: &Module,
     operand_map: &OperandMap<'_>,
+    state: &mut InstDispatchState,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
@@ -31,24 +35,12 @@ pub(crate) fn dispatch_cmp(
     let lhs_ir = inst.lhs.get_operand(&alloc_use);
     let rhs_ir = inst.rhs.get_operand(&alloc_use);
     let type_ctx = &ir_module.type_ctx;
-    let lhs_mir = PureSourceReg::from_valuessa(
-        operand_map,
-        type_ctx,
-        vreg_alloc,
-        out_insts,
-        &lhs_ir,
-        true,
-    )
-    .expect("Failed to convert LHS operand to MIR");
-    let rhs_mir = PureSourceReg::from_valuessa(
-        operand_map,
-        type_ctx,
-        vreg_alloc,
-        out_insts,
-        &rhs_ir,
-        true,
-    )
-    .expect("Failed to convert LHS operand to MIR");
+    let lhs_mir =
+        PureSourceReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &lhs_ir, true)
+            .expect("Failed to convert LHS operand to MIR");
+    let rhs_mir =
+        PureSourceReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &rhs_ir, true)
+            .expect("Failed to convert LHS operand to MIR");
     use PureSourceReg::*;
     let inst = match (lhs_mir, rhs_mir) {
         (F32(lhs), F32(rhs)) => {
@@ -73,4 +65,5 @@ pub(crate) fn dispatch_cmp(
         ),
     };
     out_insts.push_back(inst);
+    state.last_pstate_modifier = Some((ir_ref, MirInstRef::new_null()));
 }
