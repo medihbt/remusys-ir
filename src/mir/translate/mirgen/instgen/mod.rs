@@ -142,6 +142,7 @@ pub fn dispatch_inst(
                 ir_ref,
                 alloc_inst,
                 alloc_use,
+                state.last_pstate_modifier.map(|(ref_inst, _)| ref_inst),
             ) {
                 return value;
             }

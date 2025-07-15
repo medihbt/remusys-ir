@@ -1168,3 +1168,91 @@ pub fn fmt_load_const64_symbol(
     write!(formatter, ", ")?;
     load_const64_symbol.get_src().fmt_asm(formatter)
 }
+
+pub fn fmt_csel64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    csel64: &CSel64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    csel64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel64.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel64.get_rm().fmt_asm(formatter)?;
+    write!(formatter, ", {}", csel64.get_cond().get_name())?;
+    Ok(())
+}
+
+pub fn fmt_csel32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    csel32: &CSel32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    csel32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel32.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel32.get_rm().fmt_asm(formatter)?;
+    write!(formatter, ", {}", csel32.get_cond().get_name())?;
+    Ok(())
+}
+
+pub fn fmt_csel_f64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    csel_f64: &CSelF64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    csel_f64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel_f64.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel_f64.get_rm().fmt_asm(formatter)?;
+    write!(formatter, ", {}", csel_f64.get_cond().get_name())?;
+    Ok(())
+}
+
+pub fn fmt_csel_f32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    csel_f32: &CSelF32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    csel_f32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel_f32.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    csel_f32.get_rm().fmt_asm(formatter)?;
+    write!(formatter, ", {}", csel_f32.get_cond().get_name())?;
+    Ok(())
+}
+
+pub fn fmt_cset64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    cset64: &CSet64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    cset64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", {}", cset64.get_cond().get_name())?;
+    Ok(())
+}
+
+pub fn fmt_cset32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    cset32: &CSet32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    cset32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", {}", cset32.get_cond().get_name())?;
+    Ok(())
+}

@@ -249,6 +249,25 @@ impl DataGen {
             }
         }
     }
+    pub fn add_ir_value(
+        &mut self,
+        value: ValueSSA,
+        type_ctx: &TypeContext,
+        alloc_expr: &Slab<ConstExprData>,
+    ) -> Result<(), String> {
+        match value {
+            ValueSSA::ConstData(data) => self.add_ir_data(data, type_ctx),
+            ValueSSA::ConstExpr(expr) => self.add_ir_expr(expr, type_ctx, alloc_expr),
+            ValueSSA::None
+            | ValueSSA::FuncArg(..)
+            | ValueSSA::Block(_)
+            | ValueSSA::Inst(_)
+            | ValueSSA::Global(_) => {
+                return Err(format!("Unsupported value type in DataGen: {value:?}"));
+            }
+        }
+        Ok(())
+    }
 
     pub fn collect_data(&self, section: Section) -> Vec<MirGlobalData> {
         let mut data = Vec::with_capacity(self.data.len());

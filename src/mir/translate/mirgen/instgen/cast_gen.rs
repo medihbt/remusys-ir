@@ -1,21 +1,27 @@
 use super::InstDispatchError;
 use crate::{
-    base::slabref::SlabRef,
+    base::{NullableValue, slabref::SlabRef},
     ir::{
-        inst::{InstData, InstRef, usedef::UseData},
+        ValueSSA,
+        constant::data::ConstData,
+        inst::{InstData, InstRef, cmp::CmpOp, usedef::UseData},
         module::Module,
         opcode::Opcode,
     },
     mir::{
-        inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
+        inst::{IMirSubInst, cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP},
         module::stack::VirtRegAlloc,
         operand::{
+            IMirSubOperand,
             imm::ImmLogic,
-            reg::{GPR32, GPR64},
+            reg::{GPR32, GPR64, PState},
         },
-        translate::mirgen::operandgen::{OperandMap, PureSourceReg},
+        translate::mirgen::{
+            instgen::ir_value_as_cmp,
+            operandgen::{OperandMap, PureSourceReg},
+        },
     },
-    typing::id::ValTypeID,
+    typing::{id::ValTypeID, types::FloatTypeKind},
 };
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
@@ -28,6 +34,7 @@ pub(crate) fn dispatch_casts(
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<Slab<UseData>>,
+    last_pstate_modifier: Option<InstRef>,
 ) -> Option<Result<(), InstDispatchError>> {
     use PureSourceReg::*;
     fn int_cast_get_bits(src_ty: ValTypeID, dst_ty: ValTypeID) -> (u8, u8) {
@@ -46,6 +53,21 @@ pub(crate) fn dispatch_casts(
     if src_ty == dst_ty {
         return Some(Ok(())); // No cast needed if types match
     }
+    let dst_mir = operand_map
+        .find_operand_for_inst(ir_ref)
+        .expect("Failed to find destination operand for cast instruction");
+    let dst_mir = PureSourceReg::from_reg(dst_mir);
+
+    if let Some(cmp) = ir_value_as_cmp(src_ir, alloc_inst) {
+        let cmp_ref = match src_ir {
+            ValueSSA::Inst(i) => i,
+            _ => unreachable!("Expected source operand to be an instruction"),
+        };
+        if InstRef::from_option(last_pstate_modifier) == cmp_ref {
+            return dispach_cast_cmp_to_int(ir_module, vreg_alloc, out_insts, dst_mir, cmp);
+        }
+    }
+
     let src_mir = PureSourceReg::from_valuessa(
         operand_map,
         &ir_module.type_ctx,
@@ -55,11 +77,7 @@ pub(crate) fn dispatch_casts(
         true,
     )
     .expect("Failed to convert source operand to MIR");
-    let dst_mir = operand_map
-        .find_operand_for_inst(ir_ref)
-        .expect("Failed to find destination operand for cast instruction");
-    let dst_mir = PureSourceReg::from_reg(dst_mir);
-    let extinst = match opcode {
+    let castinst = match opcode {
         Opcode::Zext => match (dst_mir, src_mir) {
             (G32(_), G32(_)) | (G32(_), G64(_)) | (G64(_), G64(_)) => {
                 return Some(Ok(()));
@@ -140,6 +158,91 @@ pub(crate) fn dispatch_casts(
         },
         _ => panic!("Unexpected opcode for Cast instruction: {opcode:?}"),
     };
-    out_insts.push_back(extinst);
+    out_insts.push_back(castinst);
     None
+}
+
+fn dispach_cast_cmp_to_int(
+    ir_module: &Module,
+    vreg_alloc: &mut VirtRegAlloc,
+    out_insts: &mut VecDeque<MirInst>,
+    dst_mir: PureSourceReg,
+    cmp: &CmpOp,
+) -> Option<Result<(), InstDispatchError>> {
+    use PureSourceReg::*;
+
+    let cmp_cond = cmp.cond;
+    let select_cond = MirCondFlag::from_cmp_cond(cmp_cond);
+    let cset_inst = match dst_mir {
+        F32(fpr32) => {
+            let rn = match PureSourceReg::from_constdata(
+                &ConstData::Float(FloatTypeKind::Ieee32, 0.0),
+                &ir_module.type_ctx,
+                vreg_alloc,
+                out_insts,
+                true,
+            ) {
+                PureSourceReg::F32(fpr32) => fpr32,
+                _ => panic!("Expected source operand to be F32"),
+            };
+            let rm = match PureSourceReg::from_constdata(
+                &ConstData::Float(FloatTypeKind::Ieee32, 1.0),
+                &ir_module.type_ctx,
+                vreg_alloc,
+                out_insts,
+                true,
+            ) {
+                PureSourceReg::F32(fpr32) => fpr32,
+                _ => panic!("Expected source operand to be F32"),
+            };
+            CSelF32::new(
+                MirOP::CSelF32,
+                fpr32,
+                rn,
+                rm,
+                PState::new_empty(),
+                select_cond,
+            )
+            .into_mir()
+        }
+        F64(fpr64) => {
+            let rn = match PureSourceReg::from_constdata(
+                &ConstData::Float(FloatTypeKind::Ieee64, 0.0),
+                &ir_module.type_ctx,
+                vreg_alloc,
+                out_insts,
+                true,
+            ) {
+                PureSourceReg::F64(fpr64) => fpr64,
+                _ => panic!("Expected source operand to be F64"),
+            };
+            let rm = match PureSourceReg::from_constdata(
+                &ConstData::Float(FloatTypeKind::Ieee64, 1.0),
+                &ir_module.type_ctx,
+                vreg_alloc,
+                out_insts,
+                true,
+            ) {
+                PureSourceReg::F64(fpr64) => fpr64,
+                _ => panic!("Expected source operand to be F64"),
+            };
+            CSelF64::new(
+                MirOP::CSelF64,
+                fpr64,
+                rn,
+                rm,
+                PState::new_empty(),
+                select_cond,
+            )
+            .into_mir()
+        }
+        G32(gpr32) => {
+            CSet32::new(MirOP::CSet32, gpr32, PState::new_empty(), select_cond).into_mir()
+        }
+        G64(gpr64) => {
+            CSet64::new(MirOP::CSet64, gpr64, PState::new_empty(), select_cond).into_mir()
+        }
+    };
+    out_insts.push_back(cset_inst);
+    Some(Ok(()))
 }

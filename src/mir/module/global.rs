@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefListNodeHead},
+    base::NullableValue,
     mir::module::MirGlobalRef,
     typing::{context::TypeContext, id::ValTypeID},
 };
@@ -309,6 +309,30 @@ impl MirGlobalVariable {
             common: MirGlobalCommon::new(name, section, align_log2, Linkage::Extern),
             ty,
             initval: Vec::new(),
+        }
+    }
+    pub fn with_init(
+        name: String,
+        section: Section,
+        ty: ValTypeID,
+        initval: Vec<MirGlobalData>,
+        type_ctx: &TypeContext,
+    ) -> Self {
+        let instance_align = ty
+            .get_instance_align(type_ctx)
+            .expect("Type must have instance alignment");
+        let align_log2 = if instance_align.is_power_of_two() {
+            instance_align.trailing_zeros() as u8
+        } else {
+            panic!(
+                "Instance alignment is not a power of two: {}",
+                instance_align
+            );
+        };
+        Self {
+            common: MirGlobalCommon::new(name, section, align_log2, Linkage::Global),
+            ty,
+            initval,
         }
     }
 

@@ -311,6 +311,24 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::LoadConst64Symbol(load_const64_symbol) => {
                 format_inst::fmt_load_const64_symbol(self, inst.get_opcode(), load_const64_symbol)
             }
+            MirInst::CSel64(c_sel64) => {
+                format_inst::fmt_csel64(self, inst.get_opcode(), c_sel64)
+            }
+            MirInst::CSel32(c_sel32) => {
+                format_inst::fmt_csel32(self, inst.get_opcode(), c_sel32)
+            }
+            MirInst::CSelF64(c_sel_f64) => {
+                format_inst::fmt_csel_f64(self, inst.get_opcode(), c_sel_f64)
+            }
+            MirInst::CSelF32(c_sel_f32) => {
+                format_inst::fmt_csel_f32(self, inst.get_opcode(), c_sel_f32)
+            }
+            MirInst::CSet64(c_set64) => {
+                format_inst::fmt_cset64(self, inst.get_opcode(), c_set64)
+            }
+            MirInst::CSet32(c_set32) => {
+                format_inst::fmt_cset32(self, inst.get_opcode(), c_set32)
+            }
             MirInst::MirCall(mir_call) => mir_call.fmt_asm(self),
             MirInst::MirReturn(mir_return) => mir_return.fmt_asm(self),
             MirInst::MirSwitch(mir_switch) => mir_switch.fmt_asm(self),

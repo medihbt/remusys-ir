@@ -430,6 +430,24 @@ pub enum MirOP {
     LoadConstF64,
     #[doc = "Opcode class: LoadConst64Symbol"]
     LoadConst64Symbol,
+    #[doc = "Opcode class: CSel64"]
+    CSel64,
+    CSInc64,
+    CSInv64,
+    CSNeg64,
+    #[doc = "Opcode class: CSel32"]
+    CSel32,
+    CSInc32,
+    CSInv32,
+    CSNeg32,
+    #[doc = "Opcode class: CSelF64"]
+    CSelF64,
+    #[doc = "Opcode class: CSelF32"]
+    CSelF32,
+    #[doc = "Opcode class: CSet64"]
+    CSet64,
+    #[doc = "Opcode class: CSet32"]
+    CSet32,
     #[doc = "Opcode class: MirCall"]
     MirCall,
     #[doc = "Opcode class: MirReturn"]
@@ -784,6 +802,18 @@ impl MirOP {
             MirOP::LoadConst64 => "LoadConst64",
             MirOP::LoadConstF64 => "LoadConstF64",
             MirOP::LoadConst64Symbol => "LoadConst64Symbol",
+            MirOP::CSel64 => "CSel64",
+            MirOP::CSInc64 => "CSInc64",
+            MirOP::CSInv64 => "CSInv64",
+            MirOP::CSNeg64 => "CSNeg64",
+            MirOP::CSel32 => "CSel32",
+            MirOP::CSInc32 => "CSInc32",
+            MirOP::CSInv32 => "CSInv32",
+            MirOP::CSNeg32 => "CSNeg32",
+            MirOP::CSelF64 => "CSelF64",
+            MirOP::CSelF32 => "CSelF32",
+            MirOP::CSet64 => "CSet64",
+            MirOP::CSet32 => "CSet32",
             MirOP::MirCall => "MirCall",
             MirOP::MirReturn => "MirReturn",
             MirOP::MirSwitch => "MirSwitch",
@@ -1143,6 +1173,18 @@ impl std::str::FromStr for MirOP {
             "LoadConst64" => Ok(MirOP::LoadConst64),
             "LoadConstF64" => Ok(MirOP::LoadConstF64),
             "LoadConst64Symbol" => Ok(MirOP::LoadConst64Symbol),
+            "CSel64" => Ok(MirOP::CSel64),
+            "CSInc64" => Ok(MirOP::CSInc64),
+            "CSInv64" => Ok(MirOP::CSInv64),
+            "CSNeg64" => Ok(MirOP::CSNeg64),
+            "CSel32" => Ok(MirOP::CSel32),
+            "CSInc32" => Ok(MirOP::CSInc32),
+            "CSInv32" => Ok(MirOP::CSInv32),
+            "CSNeg32" => Ok(MirOP::CSNeg32),
+            "CSelF64" => Ok(MirOP::CSelF64),
+            "CSelF32" => Ok(MirOP::CSelF32),
+            "CSet64" => Ok(MirOP::CSet64),
+            "CSet32" => Ok(MirOP::CSet32),
             "MirCall" => Ok(MirOP::MirCall),
             "MirReturn" => Ok(MirOP::MirReturn),
             "MirSwitch" => Ok(MirOP::MirSwitch),

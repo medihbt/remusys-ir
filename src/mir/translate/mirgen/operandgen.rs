@@ -173,13 +173,33 @@ impl PureSourceReg {
     ) -> Self {
         match constdata {
             ConstData::Zero(ty) => {
-                let ty_size = ty
-                    .get_instance_size(type_ctx)
-                    .expect("Failed to get type size");
-                match ty_size {
-                    4 => PureSourceReg::G32(GPR32::zr()),
-                    8 => PureSourceReg::G64(GPR64::zr()),
-                    _ => panic!("Unsupported zero-sized type for store: {ty:?}"),
+                fn get_zr_by_size(ty: &ValTypeID, type_ctx: &TypeContext) -> PureSourceReg {
+                    let ty_size = ty
+                        .get_instance_size(type_ctx)
+                        .expect("Failed to get type size");
+                    match ty_size {
+                        4 => PureSourceReg::G32(GPR32::zr()),
+                        8 => PureSourceReg::G64(GPR64::zr()),
+                        _ => panic!("Unsupported ZR {ty:?} for size {ty_size}"),
+                    }
+                }
+                match ty {
+                    ValTypeID::Ptr | ValTypeID::Int(_) => get_zr_by_size(ty, type_ctx),
+                    ValTypeID::Float(FloatTypeKind::Ieee32) => {
+                        let f32_reg = alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
+                        let f32_reg = FPR32::from_real(f32_reg);
+                        // fmov s0, wzr
+                        out_insts.push_back(UnaFG32::new(MirOP::FMovGF32, f32_reg, GPR32::zr()).into_mir());
+                        PureSourceReg::F32(f32_reg)
+                    }
+                    ValTypeID::Float(FloatTypeKind::Ieee64) => {
+                        let f64_reg = alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
+                        let f64_reg = FPR64::from_real(f64_reg);
+                        // fmov d0, xzr
+                        out_insts.push_back(UnaFG64::new(MirOP::FMovGF64, f64_reg, GPR64::zr()).into_mir());
+                        PureSourceReg::F64(f64_reg)
+                    }
+                    _ => panic!("Unsupported zero constant type: {ty:?}"),
                 }
             }
             ConstData::PtrNull(_) => {

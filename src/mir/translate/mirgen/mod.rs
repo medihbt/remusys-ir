@@ -16,8 +16,8 @@ use crate::{
             func::MirFunc,
         },
         operand::{
-            IMirSubOperand,
-            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand},
+            IMirSubOperand, MirOperand,
+            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags},
         },
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
@@ -95,6 +95,8 @@ impl MirTranslateCtx {
         // Step 0: 为每个 MIR 全局量分配位置, 其中全局变量和外部量会立即初始化
         let globals = MirGlobalItems::build_mir(&self.ir_module, &mut builder);
 
+        eprintln!("{globals:#?}");
+
         // Step 1: 翻译每个函数的 CFG
         for cfg in cfgs {
             let ir_func_ref = cfg.func;
@@ -104,8 +106,6 @@ impl MirTranslateCtx {
             let mir_func = Rc::clone(&mir_func_info.rc);
             self.do_translate_function(cfg, &globals, ir_func_ref, &mir_func);
         }
-
-        eprintln!("{globals:#?}");
 
         self.mir_module
     }
@@ -329,6 +329,23 @@ impl MirTranslateCtx {
                         let inst = inst_queue
                             .pop_front()
                             .expect("Inst queue should not be empty");
+                        for operand in inst.in_operands() {
+                            let prev = operand.get();
+                            let next = match prev {
+                                MirOperand::GPReg(gpreg) => {
+                                    let mut uf = gpreg.get_use_flags();
+                                    uf.insert(RegUseFlags::DEF);
+                                    gpreg.insert_use_flags(uf).into_mir()
+                                }
+                                MirOperand::VFReg(vfreg) => {
+                                    let mut uf = vfreg.get_use_flags();
+                                    uf.insert(RegUseFlags::DEF);
+                                    vfreg.insert_use_flags(uf).into_mir()
+                                }
+                                _ => continue,
+                            };
+                            operand.set(next);
+                        }
                         inst_ref = mir_builder.add_inst(inst);
                     }
                     if state.pstate_modifier_matches(ir_inst.ir) {

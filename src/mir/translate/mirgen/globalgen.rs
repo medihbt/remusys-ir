@@ -4,11 +4,16 @@ use crate::{
     base::slabref::SlabRef,
     ir::{
         PtrStorage,
-        global::{GlobalData, GlobalRef, func::FuncStorage},
+        global::{self, GlobalData, GlobalRef, func::FuncStorage},
         module::Module as IRModule,
     },
     mir::{
-        module::{MirGlobalRef, func::MirFunc, global::Section},
+        module::{
+            MirGlobalRef,
+            func::MirFunc,
+            global::{MirGlobalVariable, Section},
+        },
+        translate::mirgen::datagen::DataGen,
         util::builder::MirBuilder,
     },
 };
@@ -65,30 +70,39 @@ impl GlobalStatistics {
         for &gref in &all_globals {
             let global = ir_module.get_global(gref);
             let global = &*global;
+            let name = global.get_name();
             match global {
                 GlobalData::Var(var) => {
                     if var.is_extern() {
+                        eprintln!("Discovered extern variable: {gref:?} name {name}");
                         extern_vars.push(gref);
                         continue;
                     }
                     if var.is_readonly() {
+                        eprintln!("Discovered global constant: {gref:?} name {name}");
                         global_consts.push(gref);
                         continue;
                     }
                     let init = match var.get_init() {
-                        None => unreachable!("Has handled above"),
+                        None => panic!("Has handled above"),
                         Some(init) => init,
                     };
                     if init.binary_is_zero(ir_module) {
+                        eprintln!(
+                            "Discovered global zero-initialized variable: {gref:?} name {name}"
+                        );
                         global_zero_inits.push(gref);
                     } else {
+                        eprintln!("Discovered global variable: {gref:?} name {name}");
                         global_vars.push(gref);
                     }
                 }
                 GlobalData::Func(func_data) => {
                     if func_data.is_extern() {
+                        eprintln!("Discovered extern function: {gref:?} name {name}");
                         extern_funcs.push(gref);
                     } else {
+                        eprintln!("Discovered function: {gref:?} name {name}");
                         funcs.push(gref);
                     }
                 }
@@ -98,28 +112,31 @@ impl GlobalStatistics {
 
         all_globals.clear();
         all_globals.extend(extern_vars.into_iter());
+
         let extern_func_off = all_globals.len() as u32;
-
         all_globals.extend(extern_funcs.into_iter());
+
         let func_off = all_globals.len() as u32;
-
         all_globals.extend(funcs.into_iter());
+
         let global_const_off = all_globals.len() as u32;
-
         all_globals.extend(global_consts.into_iter());
+
         let global_var_off = all_globals.len() as u32;
-
         all_globals.extend(global_vars.into_iter());
-        let global_zero_init_off = all_globals.len() as u32;
 
-        Self {
+        let global_zero_init_off = all_globals.len() as u32;
+        all_globals.extend(global_zero_inits.into_iter());
+
+        let ret = Self {
             all_globals: all_globals.into_boxed_slice(),
             extern_func_off,
             func_off,
             global_const_off,
             global_var_off,
             global_zero_init_off,
-        }
+        };
+        ret
     }
 }
 
@@ -157,7 +174,7 @@ impl MirGlobalItems {
     }
 
     /// Builds MIR globals from the IR module and the global statistics.
-    fn build_mir_from_statusics(
+    fn build_mir_from_statistics(
         ir_module: &IRModule,
         mir_builder: &mut MirBuilder,
         statistics: &GlobalStatistics,
@@ -175,6 +192,7 @@ impl MirGlobalItems {
             } else {
                 Section::Data
             };
+            eprintln!("Translating extern variable: {gref:?} name {name} section {section:?}");
             let (mir_ref, _) = mir_builder.extern_variable(name, section, ty, &ir_module.type_ctx);
             all_globals.push((gref, mir_ref));
         }
@@ -189,6 +207,7 @@ impl MirGlobalItems {
             };
             let func_ty = funcdef.get_stored_func_type();
             let (mir_ref, _) = mir_builder.extern_func(name.clone(), func_ty, &ir_module.type_ctx);
+            eprintln!("Translating extern function: {gref:?} name {name}");
             extern_funcs.push(MirFuncInfo {
                 key: gref,
                 mir: mir_ref.clone(),
@@ -206,6 +225,7 @@ impl MirGlobalItems {
                 _ => panic!("Expected a function type for MIR function, got {global:?}"),
             };
             let func_ty = funcdef.get_stored_func_type();
+            eprintln!("Translating function: {gref:?} name {name}");
             let mir_func = MirFunc::new_define(
                 name,
                 func_ty,
@@ -220,14 +240,35 @@ impl MirGlobalItems {
             });
             all_globals.push((gref, mir_ref));
         }
-        for gref in statistics.global_consts() {
-            todo!("Handle global constants in MIR generation");
+        for &gref in statistics.global_consts() {
+            eprint!("Translating global constant: {gref:?} ");
+            Self::translate_global_var(
+                ir_module,
+                mir_builder,
+                &mut all_globals,
+                gref,
+                Section::RoData,
+            );
         }
-        for gref in statistics.global_vars() {
-            todo!("Handle global variables in MIR generation");
+        for &gref in statistics.global_vars() {
+            eprint!("Translating global variable: {gref:?} ");
+            Self::translate_global_var(
+                ir_module,
+                mir_builder,
+                &mut all_globals,
+                gref,
+                Section::Data,
+            );
         }
-        for gref in statistics.global_zero_inits() {
-            todo!("Handle global variables with zero initializer in MIR generation");
+        for &gref in statistics.global_zero_inits() {
+            eprint!("Translating global zero-initialized variable: {gref:?} ");
+            Self::translate_global_var(
+                ir_module,
+                mir_builder,
+                &mut all_globals,
+                gref,
+                Section::Bss,
+            );
         }
         all_globals.sort_by_key(|(gref, _)| *gref);
         funcs.sort_by_key(|f| f.key);
@@ -241,7 +282,50 @@ impl MirGlobalItems {
 
     pub fn build_mir(ir_module: &IRModule, mir_builder: &mut MirBuilder) -> Self {
         let statistics = GlobalStatistics::new(ir_module);
-        Self::build_mir_from_statusics(ir_module, mir_builder, &statistics)
+        Self::build_mir_from_statistics(ir_module, mir_builder, &statistics)
+    }
+
+    fn translate_global_var(
+        ir_module: &IRModule,
+        mir_builder: &mut MirBuilder<'_>,
+        all_globals: &mut Vec<(GlobalRef, MirGlobalRef)>,
+        gref: GlobalRef,
+        section: Section,
+    ) {
+        let global = ir_module.get_global(gref);
+        let name = global.get_name();
+        eprintln!("name {name} section {section:?}");
+        let global = match &*global {
+            GlobalData::Var(var) => var,
+            GlobalData::Func(_) => {
+                panic!("Expected a global constant, got function {name}")
+            }
+            GlobalData::Alias(_) => {
+                panic!("Expected a global constant, got alias {name}")
+            }
+        };
+        let initval = match global.get_init() {
+            Some(init) => init,
+            None => panic!("Global constant {name} has no initializer"),
+        };
+        let mut data_gen = DataGen::new();
+        let alloc_value = ir_module.borrow_value_alloc();
+        let alloc_expr = &alloc_value.alloc_expr;
+        match data_gen.add_ir_value(initval, &ir_module.type_ctx, alloc_expr) {
+            Ok(()) => {}
+            Err(e) => {
+                panic!("Failed to add IR value for global constant {name}: {e}");
+            }
+        }
+        let constdef = MirGlobalVariable::with_init(
+            name.to_string(),
+            section,
+            global.get_stored_pointee_type(),
+            data_gen.collect_data(section),
+            &ir_module.type_ctx,
+        );
+        let (mir_ref, _) = mir_builder.push_variable(constdef);
+        all_globals.push((gref, mir_ref));
     }
 }
 
