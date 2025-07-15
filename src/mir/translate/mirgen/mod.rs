@@ -1,4 +1,9 @@
-use std::{collections::VecDeque, rc::Rc};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    rc::Rc,
+};
+
+use log::debug;
 
 use crate::{
     base::{NullableValue, slabref::SlabRef},
@@ -7,6 +12,7 @@ use crate::{
         global::GlobalRef,
         inst::{InstData, InstDataKind, InstRef},
         module::Module as IRModule,
+        util::numbering::{IRValueNumberMap, NumberOption},
     },
     mir::{
         inst::MirInstRef,
@@ -22,7 +28,7 @@ use crate::{
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
             mirgen::{
-                globalgen::MirGlobalItems,
+                globalgen::{MirGlobalItems, MirGlobalMapFormatter},
                 instgen::{InstDispatchError, InstDispatchState, dispatch_inst},
                 operandgen::OperandMap,
             },
@@ -57,6 +63,7 @@ pub struct MirTranslateCtx {
     ir_module: Rc<IRModule>,
     mir_module: MirModule,
     copy_map: CopyMap,
+    number_maps: BTreeMap<GlobalRef, IRValueNumberMap>,
 }
 
 pub struct MirBlockInfo {
@@ -75,7 +82,7 @@ pub struct InstTranslateInfo {
 #[derive(Debug, Clone, Copy)]
 struct AllocaInfo {
     pub ir: InstRef,
-    pub align_log2: u8,
+    pub _align_log2: u8,
     pub pointee_ty: ValTypeID,
 }
 
@@ -86,6 +93,7 @@ impl MirTranslateCtx {
             ir_module,
             mir_module: MirModule::new(name),
             copy_map,
+            number_maps: BTreeMap::new(),
         }
     }
 
@@ -95,7 +103,10 @@ impl MirTranslateCtx {
         // Step 0: 为每个 MIR 全局量分配位置, 其中全局变量和外部量会立即初始化
         let globals = MirGlobalItems::build_mir(&self.ir_module, &mut builder);
 
-        eprintln!("{globals:#?}");
+        debug!(
+            "{:#?}",
+            MirGlobalMapFormatter::new(&globals, &self.ir_module)
+        );
 
         // Step 1: 翻译每个函数的 CFG
         for cfg in cfgs {
@@ -103,8 +114,14 @@ impl MirTranslateCtx {
             let mir_func_info = globals
                 .find_func(ir_func_ref)
                 .expect("MIR function info not found for IR function reference");
+            let numbers = IRValueNumberMap::from_func(
+                &self.ir_module,
+                ir_func_ref,
+                NumberOption::ignore_all(),
+            );
+            self.number_maps.insert(ir_func_ref, numbers);
             let mir_func = Rc::clone(&mir_func_info.rc);
-            self.do_translate_function(cfg, &globals, ir_func_ref, &mir_func);
+            self.do_translate_function(cfg, &globals, &mir_func);
         }
 
         self.mir_module
@@ -114,7 +131,6 @@ impl MirTranslateCtx {
         &mut self,
         cfg: &CfgSnapshot,
         globals: &MirGlobalItems,
-        ir_func: GlobalRef,
         mir_func: &Rc<MirFunc>,
     ) {
         // Step 1.1 为每个函数的基本块分配 MIR 块引用
@@ -181,18 +197,43 @@ impl MirTranslateCtx {
 
         // 设置 MIR 基本块的后继
         for &(_, succ) in node.next_set.iter() {
-            let mir_succ = block_map
-                .binary_search_by_key(&succ, |info| info.ir)
-                .expect("Successor block not found in block map");
+            let mir_succ = match block_map.binary_search_by_key(&succ, |info| info.ir) {
+                Ok(idx) => idx,
+                Err(_) => {
+                    let numbers = self
+                        .number_maps
+                        .get(&cfg.func)
+                        .expect("Number map not found for function");
+                    let number = numbers
+                        .block_get_number(succ)
+                        .expect("Block number not found");
+                    let cfg_func = cfg.func;
+                    panic!(
+                        "Successor block {succ:?} (%{number}) not found in block map for function {cfg_func:?}"
+                    );
+                }
+            };
             let mir_succ = block_map[mir_succ].mir;
             mir_bb_data.successors.insert(mir_succ);
         }
 
         // 设置 MIR 基本块的前驱
         for &(_, pred) in node.prev_set.iter() {
-            let mir_pred = block_map
-                .binary_search_by_key(&pred, |info| info.ir)
-                .expect("Predecessor block not found in block map");
+            let mir_pred = match block_map.binary_search_by_key(&pred, |info| info.ir) {
+                Ok(idx) => idx,
+                Err(_) => {
+                    let numbers = self
+                        .number_maps
+                        .get(&cfg.func)
+                        .expect("Number map not found for function");
+                    let number = numbers
+                        .block_get_number(pred)
+                        .expect("Block number not found");
+                    let func = cfg.func;
+                    println!("Found unreachable block {pred:?} (%{number}) for function {func:?}");
+                    continue;
+                }
+            };
             let mir_pred = block_map[mir_pred].mir;
             mir_bb_data.predecessors.insert(mir_pred);
         }
@@ -216,7 +257,7 @@ impl MirTranslateCtx {
                 if let InstData::Alloca(_, a) = inst {
                     allocas.push(AllocaInfo {
                         ir,
-                        align_log2: a.align_log2,
+                        _align_log2: a.align_log2,
                         pointee_ty: a.pointee_ty,
                     });
                 }
@@ -249,7 +290,7 @@ impl MirTranslateCtx {
         for MirBlockInfo { insts, .. } in block_map {
             for InstTranslateInfo { ir, ty, kind } in insts {
                 type K = InstDataKind;
-                eprintln!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
+                debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
                 match kind {
                     K::ListGuideNode | K::PhiInstEnd | K::Unreachable => {
                         // 功能结点不需要分配寄存器或存储空间

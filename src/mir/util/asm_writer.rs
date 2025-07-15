@@ -85,7 +85,6 @@ impl<'a> AsmWriter<'a> {
             }
             if section != global_status.last_section {
                 self.wrap_indent();
-                // self.write_str(&format!(".section {}", section.asm_name()));
                 write!(self, ".section {}", section.asm_name()).expect("Failed to write section");
                 global_status.last_section = section;
             }
@@ -108,8 +107,11 @@ impl<'a> AsmWriter<'a> {
         }
         // Now write extern globals
         if !extern_globals.is_empty() {
+            self.dec_indent();
+            self.wrap_indent();
             self.wrap_indent();
             write!(self, "; External symbols").expect("Failed to write comment");
+            self.inc_indent();
             for g in extern_globals {
                 let mod_item = g.data_from_module(module);
                 let name = mod_item.get_name().unwrap();
@@ -132,12 +134,15 @@ impl<'a> AsmWriter<'a> {
     /// * or else: `<unit-kind> <unit>, <unit>, ...`
     fn write_global_data(&mut self, gdata: &MirGlobalData) {
         self.wrap_indent();
-        if let Some(asciz_str) = gdata.as_asciz_string() {
+        if gdata.common.section == Section::Bss {
+            // For BSS section, we don't write the data, just the size.
+            write!(self, ".zero {}", gdata.data.len()).expect("Failed to write zero data");
+        } else if let Some(asciz_str) = gdata.as_asciz_string() {
             write!(self, ".asciz {asciz_str}").expect("Failed to write asciz string");
         } else {
             let unit_kind = gdata.get_unit_kind_name();
             let nunits = gdata.get_nunits();
-            write!(self, "{unit_kind}").expect("Failed to write unit kind");
+            write!(self, ".{unit_kind} ").expect("Failed to write unit kind");
             for i in 0..nunits {
                 if i > 0 {
                     write!(self, ", ").expect("Failed to write comma");
@@ -152,13 +157,13 @@ impl<'a> AsmWriter<'a> {
     fn write_variable(&mut self, gvar: &MirGlobalVariable) {
         self.dec_indent();
         self.wrap_indent();
+        self.wrap_indent();
         // self.write_str(gvar.get_name()).write_str(":");
         let gvar_name = gvar.get_name();
         write!(self, "{gvar_name}:").unwrap();
         self.inc_indent();
         let mut size = 0;
         for initval in &gvar.initval {
-            self.wrap_indent();
             self.write_global_data(initval);
             size += initval.data.len();
         }
@@ -197,6 +202,7 @@ impl<'a> AsmWriter<'a> {
     fn write_function(&mut self, module: &MirModule, func: &Rc<MirFunc>) {
         let func_name = func.common.name.as_str();
         self.dec_indent();
+        self.wrap_indent();
         self.wrap_indent();
         write!(self, "{func_name}:").unwrap();
         self.inc_indent();

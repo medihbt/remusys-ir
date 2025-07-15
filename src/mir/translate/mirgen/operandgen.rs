@@ -7,6 +7,7 @@ use crate::{
         module::{MirGlobalRef, block::MirBlockRef, func::MirFunc, stack::VirtRegAlloc},
         operand::{
             IMirSubOperand, MirOperand,
+            compound::MirSymbolOp,
             imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind},
             imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
             reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, SubRegIndex, VFReg},
@@ -186,17 +187,23 @@ impl PureSourceReg {
                 match ty {
                     ValTypeID::Ptr | ValTypeID::Int(_) => get_zr_by_size(ty, type_ctx),
                     ValTypeID::Float(FloatTypeKind::Ieee32) => {
-                        let f32_reg = alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
+                        let f32_reg =
+                            alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
                         let f32_reg = FPR32::from_real(f32_reg);
                         // fmov s0, wzr
-                        out_insts.push_back(UnaFG32::new(MirOP::FMovGF32, f32_reg, GPR32::zr()).into_mir());
+                        out_insts.push_back(
+                            UnaFG32::new(MirOP::FMovGF32, f32_reg, GPR32::zr()).into_mir(),
+                        );
                         PureSourceReg::F32(f32_reg)
                     }
                     ValTypeID::Float(FloatTypeKind::Ieee64) => {
-                        let f64_reg = alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
+                        let f64_reg =
+                            alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
                         let f64_reg = FPR64::from_real(f64_reg);
                         // fmov d0, xzr
-                        out_insts.push_back(UnaFG64::new(MirOP::FMovGF64, f64_reg, GPR64::zr()).into_mir());
+                        out_insts.push_back(
+                            UnaFG64::new(MirOP::FMovGF64, f64_reg, GPR64::zr()).into_mir(),
+                        );
                         PureSourceReg::F64(f64_reg)
                     }
                     _ => panic!("Unsupported zero constant type: {ty:?}"),
@@ -253,7 +260,22 @@ impl PureSourceReg {
             Ok(value) => match value {
                 MirOperand::GPReg(GPReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, false)),
                 MirOperand::VFReg(VFReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, true)),
-                _ => panic!("Invalid source operand for store: {value:?}"),
+                MirOperand::Label(bb) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                    MirSymbolOp::Label(bb),
+                    vreg_alloc,
+                    out_insts,
+                ))),
+                MirOperand::Global(g) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                    MirSymbolOp::Global(g),
+                    vreg_alloc,
+                    out_insts,
+                ))),
+                MirOperand::SwitchTab(idx) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                    MirSymbolOp::SwitchTab(idx),
+                    vreg_alloc,
+                    out_insts,
+                ))),
+                _ => panic!("Unexpected MIR operand type for store: {value:?}"),
             },
             Err(OperandMapError::IsConstData(c)) => {
                 if let ConstData::Undef(_) = c {
@@ -305,6 +327,17 @@ impl PureSourceReg {
             out_insts,
         );
         GPR64::from_real(reg)
+    }
+    fn make_ldr_for_symbol(
+        symbol: MirSymbolOp,
+        alloc_reg: &mut VirtRegAlloc,
+        out_insts: &mut VecDeque<MirInst>,
+    ) -> GPR64 {
+        let reg = alloc_reg.insert_gp(GPR64(0, RegUseFlags::DEF).into_real());
+        let reg = GPR64::from_real(reg);
+        let inst = LoadConst64Symbol::new(MirOP::LoadConst64Symbol, reg, symbol);
+        out_insts.push_back(inst.into_mir());
+        reg
     }
 
     fn f32const_to_reg(
