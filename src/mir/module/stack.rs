@@ -1,7 +1,3 @@
-use std::cell::Cell;
-
-use slab::Slab;
-
 use crate::{
     mir::operand::{
         IMirSubOperand,
@@ -9,6 +5,8 @@ use crate::{
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
+use slab::Slab;
+use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackItemKind {
@@ -57,12 +55,51 @@ impl MirStackItem {
     // }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SavedReg {
+    pub preg: RegOperand,
+    pub vpos: u32,
+}
+
+impl SavedReg {
+    pub fn new(preg: RegOperand, vpos: u32) -> Self {
+        Self { preg, vpos }
+    }
+    pub fn from_vreg_alloc(vreg_alloc: &mut VirtRegAlloc, preg: RegOperand) -> Self {
+        let RegOperand(id, si, uf, is_fp) = preg;
+        let vpos = if is_fp {
+            let vf = vreg_alloc.insert_float(VFReg(id, si, uf));
+            vf.get_id()
+        } else {
+            let gp = vreg_alloc.insert_gp(GPReg(id, si, uf));
+            gp.get_id()
+        };
+        let vpos = match vpos {
+            RegID::Virt(x) => x,
+            _ => unreachable!("Expected a virtual register ID"),
+        };
+        Self { preg, vpos }
+    }
+    pub fn get_vreg(&self) -> RegOperand {
+        self.preg.insert_id(RegID::Virt(self.vpos))
+    }
+    pub fn to_pair(&self) -> (RegOperand, RegOperand) {
+        (self.preg, self.get_vreg())
+    }
+    pub fn get_size_bytes(&self) -> u64 {
+        let bits_log2 = self.preg.get_subreg_index().get_bits_log2();
+        (1 << bits_log2) as u64 / 8
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MirStackLayout {
     /// The stack layout for variables.
     pub vars: Vec<MirStackItem>,
     /// Cellee-saved registers that will be restored only at the end of the function. Positioned
     /// after the variables section in the stack frame.
+    ///
+    /// #### Which registers are saved?
     ///
     /// In AAPCS64 ABI, these are the registers that are callee-saved:
     ///
@@ -77,7 +114,13 @@ pub struct MirStackLayout {
     ///
     /// NOTE that not all saved registers are in this list, since some instructions like
     /// `call (MIR pesudo op)` will also save some registers to the stack temporarily.
-    pub saved_regs: Vec<RegOperand>,
+    ///
+    /// #### Where are saved registers positioned?
+    ///
+    /// Remusys-MIR has no opreand kind representing "stack position", while it uses virtual registers.
+    /// Maybe we'll offer a function to help users know whether a virtual register is representing
+    /// a stack position or not.
+    pub saved_regs: Vec<SavedReg>,
     /// The stack layout for spilled arguments.
     pub args: Vec<MirStackItem>,
     /// The total size of the variables section in the stack frame.
@@ -100,6 +143,10 @@ impl MirStackLayout {
             finished_arg_build: false,
             _saved_regs_size_cache: Cell::new(0),
         }
+    }
+
+    pub fn save_a_register_for_index(&mut self, vreg_alloc: &mut VirtRegAlloc, reg: RegOperand) {
+        let RegOperand(id, si, uf, is_fp) = reg;
     }
 
     /// Updates the stack top size based on the current size and alignment.
