@@ -223,6 +223,9 @@ impl RegID {
 pub struct GPReg(pub u32, pub SubRegIndex, pub RegUseFlags);
 
 impl GPReg {
+    pub const RETVAL_POS:  u32 = 0;
+    pub const RETADDR_POS: u32 = 30;
+
     pub fn is_virtual(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
@@ -328,6 +331,8 @@ impl IMirSubOperand for GPReg {
 pub struct VFReg(pub u32, pub SubRegIndex, pub RegUseFlags);
 
 impl VFReg {
+    pub const RETVAL_POS: u32 = 0;
+
     pub fn is_virtual(self) -> bool {
         self.0 >= 31
     }
@@ -668,6 +673,34 @@ impl RegOperand {
     }
     pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
         *self = self.insert_use_flags(use_flags)
+    }
+
+    pub fn as_physical(&self) -> Option<u32> {
+        match self.get_id() {
+            RegID::Phys(x) => Some(x),
+            _ => None,
+        }
+    }
+    pub fn is_physical(&self) -> bool {
+        matches!(self.get_id(), RegID::Phys(_))
+    }
+
+    pub fn as_virtual(&self) -> Option<u32> {
+        match self.get_id() {
+            RegID::Virt(x) => Some(x),
+            _ => None,
+        }
+    }
+    pub fn is_virtual(&self) -> bool {
+        matches!(self.get_id(), RegID::Virt(_))
+    }
+
+    pub fn same_pos_as<T>(&self, other: T) -> bool
+    where
+        Self: From<T>,
+    {
+        let other = Self::from(other);
+        self.get_id() == other.get_id() && self.get_use_flags() == other.get_use_flags()
     }
 }
 

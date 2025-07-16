@@ -15,7 +15,8 @@ use crate::{
             stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
         },
         operand::{
-            reg::{GPReg, RegID, RegOperand, RegUseFlags, SubRegIndex, FPR32, FPR64, GPR64}, IMirSubOperand
+            IMirSubOperand,
+            reg::{FPR32, FPR64, GPR64, GPReg, RegID, RegOperand, RegUseFlags, SubRegIndex},
         },
     },
     typing::{
@@ -133,13 +134,11 @@ impl MirFunc {
         let inner = &mut *inner;
         if force_stack_alloc {
             // 强制在栈上分配变量
-            return (
-                inner
-                    .stack_layout
-                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
-                    .virtreg,
-                true,
-            );
+            let stackpos = inner
+                .stack_layout
+                .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
+                .virtreg;
+            return (stackpos, true);
         }
         match irtype {
             ValTypeID::Ptr => {
@@ -163,21 +162,19 @@ impl MirFunc {
             ValTypeID::Float(fpkind) => {
                 // 浮点类型的变量需要分配一个虚拟寄存器。
                 let vfreg = match fpkind {
-                    FloatTypeKind::Ieee32 => FPR32::new_empty().into_real(), 
-                    FloatTypeKind::Ieee64 => FPR64::new_empty().into_real(), 
+                    FloatTypeKind::Ieee32 => FPR32::new_empty().into_real(),
+                    FloatTypeKind::Ieee64 => FPR64::new_empty().into_real(),
                 };
                 let vreg = inner.vreg_alloc.insert_float(vfreg);
                 (RegOperand::from(vreg), false)
             }
             ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
                 // 结构体和数组类型的变量需要在栈上分配空间。
-                (
-                    inner
-                        .stack_layout
-                        .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
-                        .virtreg,
-                    true,
-                )
+                let stackpos = inner
+                    .stack_layout
+                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
+                    .virtreg;
+                (stackpos, true)
             }
             _ => panic!(
                 "Invalid variable type for MIR function: {}",
