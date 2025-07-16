@@ -14,7 +14,7 @@ template[TargetT] UnCondBranches {
     in: { target: TargetT };
     impl {
         [Label] => UncondBr { insts: [B], },
-        [GPR64] => BReg     { insts: [Br], },
+        [GPR64] => BReg     { insts: [Br, Ret], },
     }
 }
 
@@ -413,5 +413,43 @@ template[Dst, Src] MirLoadConst {
         [GPR64, Imm64] => LoadConst64 { insts: [ LoadConst64 ], },
         [FPR64, Imm64] => LoadConstF64 { insts: [ LoadConstF64 ], },
         [GPR64, Symbol] => LoadConst64Symbol { insts: [ LoadConst64Symbol ], },
+    }
+}
+
+template[T] CondSelects {
+    out: { rd: T, },
+    in: {
+        rn: T,
+        rm: T,
+        csr: PState,
+    },
+    props: {
+        cond: MirCondFlag = MirCondFlag::AL;
+    };
+
+    impl {
+        [GPR64] => CSel64 {
+            insts: [ CSel64, CSInc64, CSInv64, CSNeg64 ],
+        },
+        [GPR32] => CSel32 {
+            insts: [ CSel32, CSInc32, CSInv32, CSNeg32 ],
+        },
+        [FPR64] => CSelF64 { insts: [ CSelF64 ], },
+        [FPR32] => CSelF32 { insts: [ CSelF32 ], },
+    }
+}
+
+template[T] CondSets {
+    out: { rd: T, },
+    in: {
+        csr: PState,
+    },
+    props: {
+        cond: MirCondFlag = MirCondFlag::AL;
+    };
+
+    impl {
+        [GPR64] => CSet64 { insts: [ CSet64 ], },
+        [GPR32] => CSet32 { insts: [ CSet32 ], },
     }
 }

@@ -6,7 +6,7 @@ use crate::mir::{
         // generated from `data/mir.rig`, please do not visit
         opcode::MirOP,
     },
-    operand::IMirSubOperand,
+    operand::{IMirSubOperand, reg::RegID},
 };
 use std::fmt::Write;
 
@@ -32,7 +32,11 @@ pub fn fmt_cbzs(formatter: &mut FuncFormatContext, opcode: MirOP, cbzs: &CBZs) -
     cbzs.get_target().fmt_asm(formatter)
 }
 
-pub fn fmt_tbz64(formatter: &mut FuncFormatContext, opcode: MirOP, tbz64: &TBZ64) -> std::fmt::Result {
+pub fn fmt_tbz64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    tbz64: &TBZ64,
+) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     tbz64.get_cond().fmt_asm(formatter)?;
@@ -42,7 +46,11 @@ pub fn fmt_tbz64(formatter: &mut FuncFormatContext, opcode: MirOP, tbz64: &TBZ64
     tbz64.get_target().fmt_asm(formatter)
 }
 
-pub fn fmt_tbz32(formatter: &mut FuncFormatContext, opcode: MirOP, tbz32: &TBZ32) -> std::fmt::Result {
+pub fn fmt_tbz32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    tbz32: &TBZ32,
+) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     tbz32.get_cond().fmt_asm(formatter)?;
@@ -65,9 +73,14 @@ pub fn fmt_uncond_br(
 
 // 寄存器分支指令格式化
 pub fn fmt_breg(formatter: &mut FuncFormatContext, opcode: MirOP, breg: &BReg) -> std::fmt::Result {
-    let name = opcode_get_name_str(opcode);
-    write!(formatter, "{name} ")?;
-    breg.get_target().fmt_asm(formatter)
+    if opcode == MirOP::Ret && breg.get_target().get_id() == RegID::Phys(30) {
+        // 特殊处理返回指令
+        write!(formatter, "ret")
+    } else {
+        let name = opcode_get_name_str(opcode);
+        write!(formatter, "{name} ")?;
+        breg.get_target().fmt_asm(formatter)
+    }
 }
 
 // 链接分支指令格式化
@@ -583,7 +596,11 @@ pub fn fmt_una32_r(
 }
 
 // ===== Extension operations =====
-pub fn fmt_ext_r(formatter: &mut FuncFormatContext, opcode: MirOP, ext_r: &ExtR) -> std::fmt::Result {
+pub fn fmt_ext_r(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    ext_r: &ExtR,
+) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     ext_r.get_dst().fmt_asm(formatter)?;

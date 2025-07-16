@@ -157,6 +157,11 @@ impl MirStackLayout {
         }
     }
 
+    pub fn find_saved_preg(&self, preg: RegOperand) -> Option<&SavedReg> {
+        assert!(preg.is_physical());
+        self.saved_regs.iter().find(|&reg| reg.matches_saved_preg(preg))
+    }
+
     pub fn find_vreg_spilled_arg_pos(&self, vreg: RegOperand) -> Option<u32> {
         for i in &self.args {
             if i.virtreg.same_pos_as(vreg) {

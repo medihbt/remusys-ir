@@ -80,7 +80,7 @@ impl IMirSubInst for BReg {
         &self._operands[0usize..1usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::Br)
+        matches!(opcode, MirOP::Br | MirOP::Ret)
     }
     fn new_empty(opcode: MirOP) -> Self {
         let ret = Self {
