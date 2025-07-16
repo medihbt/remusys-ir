@@ -1,3 +1,4 @@
+use core::panic;
 use std::num::NonZero;
 
 use block::{BlockData, BlockRef};
@@ -205,4 +206,17 @@ pub trait IValueVisitor:
             }
         }
     }
+}
+
+pub trait ISubValueSSA {
+    fn try_from_ir(ir: &ValueSSA) -> Option<&Self>;
+
+    fn from_ir(ir: &ValueSSA) -> &Self {
+        match Self::try_from_ir(ir) {
+            Some(x) => x,
+            None => panic!("cannot cast {ir:?} to self"),
+        }
+    }
+
+    fn into_ir(self) -> ValueSSA;
 }
