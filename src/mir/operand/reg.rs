@@ -528,6 +528,9 @@ impl IMirSubOperand for GPR32 {
 }
 
 impl GPR32 {
+    pub fn retval() -> Self {
+        GPR32(0, RegUseFlags::empty())
+    }
     pub fn zr() -> Self {
         GPR32(31, RegUseFlags::empty())
     }
@@ -568,6 +571,9 @@ impl IMirSubOperand for GPR64 {
 }
 
 impl GPR64 {
+    pub fn retval() -> Self {
+        GPR64(0, RegUseFlags::empty())
+    }
     pub fn zr() -> Self {
         GPR64(31, RegUseFlags::empty())
     }
@@ -583,11 +589,8 @@ impl GPR64 {
 pub struct FPR32(pub u32, pub RegUseFlags);
 
 impl FPR32 {
-    pub fn zr() -> Self {
-        FPR32(31, RegUseFlags::empty())
-    }
-    pub fn sp() -> Self {
-        FPR32(32, RegUseFlags::empty())
+    pub fn retval() -> Self {
+        FPR32(0, RegUseFlags::empty())
     }
 }
 
@@ -621,6 +624,12 @@ impl IMirSubOperand for FPR32 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FPR64(pub u32, pub RegUseFlags);
+
+impl FPR64 {
+    pub fn retval() -> Self {
+        FPR64(0, RegUseFlags::empty())
+    }
+}
 
 impl IMirSubOperand for FPR64 {
     type RealRepresents = VFReg;

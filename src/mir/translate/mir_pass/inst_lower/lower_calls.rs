@@ -13,6 +13,7 @@ use crate::mir::{
         imm_traits,
         reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand, RegUseFlags, VFReg},
     },
+    translate::mirgen::operandgen::PureSourceReg,
 };
 use std::collections::VecDeque;
 
@@ -91,8 +92,38 @@ pub fn lower_mir_call(
         out_insts.push_back(restore_inst);
     }
 
+    // After the call, we need to prepare the return value.
+    let mut saved_regs = call_inst.get_saved_regs();
+    if let Some(ret_val) = call_inst.get_ret_arg() {
+        saved_regs = prepare_return_value(out_insts, ret_val, saved_regs);
+    }
+
     // After the call, we need to restore the registers.
-    make_restore_regs_inst(call_inst.get_saved_regs(), out_insts);
+    make_restore_regs_inst(saved_regs, out_insts);
+}
+
+fn prepare_return_value(
+    out_insts: &mut VecDeque<MirInst>,
+    ret_val: RegOperand,
+    mut saved_regs: MirCallerSavedRegs,
+) -> MirCallerSavedRegs {
+    saved_regs.unsave_reg(ret_val);
+    if ret_val.get_id() == RegID::Phys(0) {
+        return saved_regs;
+    }
+    let ret_reg = PureSourceReg::from_reg(ret_val);
+    let mov_inst = match ret_reg {
+        PureSourceReg::F32(retr) => UnaF32::new(MirOP::FMov32R, retr, FPR32::retval()).into_mir(),
+        PureSourceReg::F64(retr) => UnaF64::new(MirOP::FMov64R, retr, FPR64::retval()).into_mir(),
+        PureSourceReg::G32(retr) => {
+            Una32R::new(MirOP::Mov32R, retr, GPR32::retval(), None).into_mir()
+        }
+        PureSourceReg::G64(retr) => {
+            Una64R::new(MirOP::Mov64R, retr, GPR64::retval(), None).into_mir()
+        }
+    };
+    out_insts.push_back(mov_inst);
+    saved_regs
 }
 
 fn prepare_fpreg_arg(
