@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::mir::{
     inst::{addr::*, cond::*, *},
-    module::{block::*, func::*, global::*},
+    module::{block::*, func::*, global::*, *},
     operand::{compound::*, imm::*, reg::*, subop::*, MirOperand},
 };
 #[derive(Debug, Clone)]
@@ -198,6 +198,82 @@ impl BLinkLabel {
     }
     #[doc = "set the value of operand target at 1 to a value of type MirBlockRef (checked by MirBlockRef)"]
     pub fn set_target(&self, value: MirBlockRef) {
+        self.target().set(value.into_mir());
+    }
+}
+#[derive(Debug, Clone)]
+pub struct BLinkGlobal {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 2usize],
+}
+impl IMirSubInst for BLinkGlobal {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..1usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[1usize..2usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::BLinkGlobal)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(MirGlobalRef::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_in_operands_defined(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::BLinkGlobal(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::BLinkGlobal(self)
+    }
+}
+impl BLinkGlobal {
+    pub fn new(opcode: MirOP, ra: GPR64, target: MirGlobalRef) -> Self {
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
+        };
+        super::utils::mark_in_operands_defined(ret.in_operands());
+        ret
+    }
+    #[doc = "operand ra at index 0 of type GPReg"]
+    pub fn ra(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand ra at index 0 of type GPReg"]
+    pub fn get_ra(&self) -> GPReg {
+        GPReg::from_mir(self.ra().get())
+    }
+    #[doc = "set the value of operand ra at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_ra(&self, value: GPReg) {
+        let prev_value = self.get_ra();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.ra().set(next_value.into_mir());
+    }
+    #[doc = "operand target at index 1 of type MirGlobalRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand target at index 1 of type MirGlobalRef"]
+    pub fn get_target(&self) -> MirGlobalRef {
+        MirGlobalRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 1 to a value of type MirGlobalRef (checked by MirGlobalRef)"]
+    pub fn set_target(&self, value: MirGlobalRef) {
         self.target().set(value.into_mir());
     }
 }

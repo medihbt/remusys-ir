@@ -2,14 +2,12 @@ pub mod addr;
 pub mod cond;
 pub mod impls;
 pub mod inst;
+pub mod mir_call;
 pub mod mirops;
 pub mod opcode;
 pub mod pseudo;
 pub mod subinst;
 pub mod switch;
-use std::cell::Cell;
-
-use slab::Slab;
 
 use crate::{
     base::{
@@ -22,6 +20,8 @@ use crate::{
         operand::MirOperand,
     },
 };
+use slab::Slab;
+use std::cell::Cell;
 
 pub use self::subinst::IMirSubInst;
 

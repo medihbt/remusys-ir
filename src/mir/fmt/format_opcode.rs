@@ -17,7 +17,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::B => "b",
         MirOP::Br => "br",
         MirOP::Ret => "ret",
-        MirOP::BLink => "bl",
+        MirOP::BLink | MirOP::BLinkGlobal => "bl",
         MirOP::BLinkReg => "blr",
 
         // 64位整数比较指令（寄存器操作数）

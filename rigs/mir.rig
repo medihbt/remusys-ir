@@ -23,6 +23,7 @@ template[TargetT] BranchLinks {
     out: { ra: GPR64, };
     impl {
         [Label] => BLinkLabel { insts: [ BLink ], },
+        [Global] => BLinkGlobal { insts: [ BLinkGlobal ], },
         [GPR64] => BLinkReg   { insts: [ BLinkReg ], },
     }
 }

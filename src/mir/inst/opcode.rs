@@ -15,6 +15,8 @@ pub enum MirOP {
     Ret,
     #[doc = "Opcode class: BLinkLabel"]
     BLink,
+    #[doc = "Opcode class: BLinkGlobal"]
+    BLinkGlobal,
     #[doc = "Opcode class: BLinkReg"]
     BLinkReg,
     #[doc = "Opcode class: TBZ64"]
@@ -467,6 +469,7 @@ impl MirOP {
             MirOP::Br => "Br",
             MirOP::Ret => "Ret",
             MirOP::BLink => "BLink",
+            MirOP::BLinkGlobal => "BLinkGlobal",
             MirOP::BLinkReg => "BLinkReg",
             MirOP::TBZ64 => "TBZ64",
             MirOP::TBNZ64 => "TBNZ64",
@@ -839,6 +842,7 @@ impl std::str::FromStr for MirOP {
             "Br" => Ok(MirOP::Br),
             "Ret" => Ok(MirOP::Ret),
             "BLink" => Ok(MirOP::BLink),
+            "BLinkGlobal" => Ok(MirOP::BLinkGlobal),
             "BLinkReg" => Ok(MirOP::BLinkReg),
             "TBZ64" => Ok(MirOP::TBZ64),
             "TBNZ64" => Ok(MirOP::TBNZ64),

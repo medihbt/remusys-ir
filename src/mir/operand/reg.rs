@@ -87,6 +87,8 @@ bitflags! {
         const DEAD = 0b0000_0000_0000_0010;
         /// The last use of this register in this instruction
         const KILL = 0b0000_0000_0000_0100;
+        /// This register is used in this instruction
+        const USE  = 0b0000_0000_0000_1000;
         /// This register is defined implicitly in this instruction
         const IMPLICIT_DEF = 0b0000_0000_0000_1000;
     }
@@ -259,6 +261,16 @@ impl GPReg {
     pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
         *self = self.insert_subreg_index(subreg_index)
     }
+    pub fn get_bits_log2(self) -> u8 {
+        self.1.get_bits_log2()
+    }
+    pub fn insert_bits_log2(self, bits_log2: u8) -> Self {
+        let Self(id, si, uf) = self;
+        Self(id, si.insert_bits_log2(bits_log2), uf)
+    }
+    pub fn set_bits_log2(&mut self, bits_log2: u8) {
+        *self = self.insert_bits_log2(bits_log2)
+    }
 
     pub fn get_use_flags(self) -> RegUseFlags {
         self.2
@@ -370,6 +382,16 @@ impl VFReg {
     }
     pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
         *self = self.insert_subreg_index(subreg_index)
+    }
+    pub fn get_bits_log2(self) -> u8 {
+        self.1.get_bits_log2()
+    }
+    pub fn insert_bits_log2(self, bits_log2: u8) -> Self {
+        let Self(id, si, uf) = self;
+        Self(id, si.insert_bits_log2(bits_log2), uf)
+    }
+    pub fn set_bits_log2(&mut self, bits_log2: u8) {
+        *self = self.insert_bits_log2(bits_log2)
     }
 
     pub fn get_use_flags(self) -> RegUseFlags {
@@ -552,6 +574,9 @@ impl GPR64 {
     pub fn sp() -> Self {
         GPR64(32, RegUseFlags::empty())
     }
+    pub fn ra() -> Self {
+        GPR64(30, RegUseFlags::empty())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -662,6 +687,16 @@ impl RegOperand {
     }
     pub fn set_subreg_index(&mut self, subreg_index: SubRegIndex) {
         *self = self.insert_subreg_index(subreg_index)
+    }
+    pub fn get_bits_log2(&self) -> u8 {
+        self.1.get_bits_log2()
+    }
+    pub fn insert_bits_log2(&self, bits_log2: u8) -> Self {
+        let Self(id, si, uf, is_fp) = self;
+        Self(*id, si.insert_bits_log2(bits_log2), *uf, *is_fp)
+    }
+    pub fn set_bits_log2(&mut self, bits_log2: u8) {
+        *self = self.insert_bits_log2(bits_log2)
     }
 
     pub fn get_use_flags(&self) -> RegUseFlags {

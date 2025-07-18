@@ -94,6 +94,16 @@ pub fn fmt_blink_label(
     blink_label.get_target().fmt_asm(formatter)
 }
 
+pub fn fmt_blink_global(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    blink_global: &BLinkGlobal,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    blink_global.get_target().fmt_asm(formatter)
+}
+
 pub fn fmt_blink_reg(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,

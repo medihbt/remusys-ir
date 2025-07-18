@@ -22,6 +22,8 @@ pub fn lower_mir_ret(
     if let Some(retval) = mir_ret.retval() {
         prepare_retval(vreg_alloc, out_insts, retval.get());
     }
+
+    // 恢复返回地址寄存器 ra 的值。
     let func_inner = parent_func.borrow_inner();
     let stack_layout = &func_inner.stack_layout;
     if let Some(saved_reg) = stack_layout.find_saved_preg(GPReg::new_ra().into()) {
