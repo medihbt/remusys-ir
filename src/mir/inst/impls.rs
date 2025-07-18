@@ -29,7 +29,8 @@ impl IMirSubInst for UncondBr {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(MirBlockRef::new_empty().into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -48,7 +49,8 @@ impl UncondBr {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand target at index 0 of type MirBlockRef"]
@@ -87,7 +89,8 @@ impl IMirSubInst for BReg {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(GPReg::new_empty().into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -106,7 +109,8 @@ impl BReg {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand target at index 0 of type GPReg"]
@@ -151,7 +155,8 @@ impl IMirSubInst for BLinkLabel {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -170,7 +175,8 @@ impl BLinkLabel {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand ra at index 0 of type GPReg"]
@@ -227,7 +233,8 @@ impl IMirSubInst for BLinkGlobal {
                 Cell::new(MirGlobalRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -246,7 +253,8 @@ impl BLinkGlobal {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand ra at index 0 of type GPReg"]
@@ -303,7 +311,8 @@ impl IMirSubInst for BLinkReg {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -322,7 +331,8 @@ impl BLinkReg {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand ra at index 0 of type GPReg"]
@@ -383,7 +393,8 @@ impl IMirSubInst for TBZ64 {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -406,7 +417,8 @@ impl TBZ64 {
                 Cell::new(target.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand cond at index 0 of type GPReg"]
@@ -476,7 +488,8 @@ impl IMirSubInst for TBZ32 {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -499,7 +512,8 @@ impl TBZ32 {
                 Cell::new(target.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand cond at index 0 of type GPReg"]
@@ -571,7 +585,8 @@ impl IMirSubInst for ICmp64R {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -595,7 +610,8 @@ impl ICmp64R {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -679,7 +695,8 @@ impl IMirSubInst for ICmp32R {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -703,7 +720,8 @@ impl ICmp32R {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -785,7 +803,8 @@ impl IMirSubInst for ICmp64I {
                 Cell::new(ImmCalc::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -808,7 +827,8 @@ impl ICmp64I {
                 Cell::new(rhs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -881,7 +901,8 @@ impl IMirSubInst for ICmp32I {
                 Cell::new(ImmCalc::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -904,7 +925,8 @@ impl ICmp32I {
                 Cell::new(rhs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -977,7 +999,8 @@ impl IMirSubInst for FCmp32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1000,7 +1023,8 @@ impl FCmp32 {
                 Cell::new(rhs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1076,7 +1100,8 @@ impl IMirSubInst for FCmp64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1099,7 +1124,8 @@ impl FCmp64 {
                 Cell::new(rhs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1179,7 +1205,8 @@ impl IMirSubInst for ICCmp64R {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1211,7 +1238,8 @@ impl ICCmp64R {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1303,7 +1331,8 @@ impl IMirSubInst for ICCmp32R {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1335,7 +1364,8 @@ impl ICCmp32R {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1427,7 +1457,8 @@ impl IMirSubInst for ICCmp64I {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1459,7 +1490,8 @@ impl ICCmp64I {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1548,7 +1580,8 @@ impl IMirSubInst for ICCmp32I {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1580,7 +1613,8 @@ impl ICCmp32I {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1669,7 +1703,8 @@ impl IMirSubInst for FCCmp32 {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1701,7 +1736,8 @@ impl FCCmp32 {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1793,7 +1829,8 @@ impl IMirSubInst for FCCmp64 {
             cond: MirCondFlag::AL,
             nzcv: NZCV::empty(),
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1825,7 +1862,8 @@ impl FCCmp64 {
             cond,
             nzcv,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand csr at index 0 of type PState"]
@@ -1939,7 +1977,8 @@ impl IMirSubInst for Bin64R {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -1963,7 +2002,8 @@ impl Bin64R {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2069,7 +2109,8 @@ impl IMirSubInst for Bin32R {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2093,7 +2134,8 @@ impl Bin32R {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2178,7 +2220,8 @@ impl IMirSubInst for MulL {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2201,7 +2244,8 @@ impl MulL {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2277,7 +2321,8 @@ impl IMirSubInst for Bin64RC {
                 Cell::new(ImmCalc::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2300,7 +2345,8 @@ impl Bin64RC {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2373,7 +2419,8 @@ impl IMirSubInst for Bin32RC {
                 Cell::new(ImmCalc::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2396,7 +2443,8 @@ impl Bin32RC {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2477,7 +2525,8 @@ impl IMirSubInst for Bin64RL {
                 Cell::new(ImmLogic::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2500,7 +2549,8 @@ impl Bin64RL {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2581,7 +2631,8 @@ impl IMirSubInst for Bin32RL {
                 Cell::new(ImmLogic::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2604,7 +2655,8 @@ impl Bin32RL {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2677,7 +2729,8 @@ impl IMirSubInst for Bin64RS {
                 Cell::new(ImmSMax::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2700,7 +2753,8 @@ impl Bin64RS {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2773,7 +2827,8 @@ impl IMirSubInst for Bin64RU {
                 Cell::new(ImmUMax::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2796,7 +2851,8 @@ impl Bin64RU {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2869,7 +2925,8 @@ impl IMirSubInst for Bin32RS {
                 Cell::new(ImmSMax::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2892,7 +2949,8 @@ impl Bin32RS {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -2965,7 +3023,8 @@ impl IMirSubInst for Bin32RU {
                 Cell::new(ImmUMax::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -2988,7 +3047,8 @@ impl Bin32RU {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -3064,7 +3124,8 @@ impl IMirSubInst for Bin64RShift {
                 Cell::new(ImmShift::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3087,7 +3148,8 @@ impl Bin64RShift {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -3163,7 +3225,8 @@ impl IMirSubInst for Bin32RShift {
                 Cell::new(ImmShift::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3186,7 +3249,8 @@ impl Bin32RShift {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -3262,7 +3326,8 @@ impl IMirSubInst for BinF64R {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3285,7 +3350,8 @@ impl BinF64R {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -3364,7 +3430,8 @@ impl IMirSubInst for BinF32R {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3387,7 +3454,8 @@ impl BinF32R {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -3462,7 +3530,8 @@ impl IMirSubInst for MirCopy64 {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3481,7 +3550,8 @@ impl MirCopy64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -3538,7 +3608,8 @@ impl IMirSubInst for MirCopy32 {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3557,7 +3628,8 @@ impl MirCopy32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -3614,7 +3686,8 @@ impl IMirSubInst for MirFCopy64 {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3633,7 +3706,8 @@ impl MirFCopy64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -3690,7 +3764,8 @@ impl IMirSubInst for MirFCopy32 {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3709,7 +3784,8 @@ impl MirFCopy32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -3766,7 +3842,8 @@ impl IMirSubInst for MirPCopy {
                 Cell::new(MirOperand::None.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3785,7 +3862,8 @@ impl MirPCopy {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type PState"]
@@ -3855,7 +3933,8 @@ impl IMirSubInst for Una64R {
             ],
             dst_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3875,7 +3954,8 @@ impl Una64R {
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
             dst_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -3959,7 +4039,8 @@ impl IMirSubInst for Una32R {
             ],
             dst_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -3979,7 +4060,8 @@ impl Una32R {
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
             dst_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4048,7 +4130,8 @@ impl IMirSubInst for ExtR {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4067,7 +4150,8 @@ impl ExtR {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4130,7 +4214,8 @@ impl IMirSubInst for Mov64I {
                 Cell::new(ImmMov::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4149,7 +4234,8 @@ impl Mov64I {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4209,7 +4295,8 @@ impl IMirSubInst for Mov32I {
                 Cell::new(ImmMov::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4228,7 +4315,8 @@ impl Mov32I {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4285,7 +4373,8 @@ impl IMirSubInst for Adr {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4304,7 +4393,8 @@ impl Adr {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4361,7 +4451,8 @@ impl IMirSubInst for UnaFG64 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4380,7 +4471,8 @@ impl UnaFG64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -4453,7 +4545,8 @@ impl IMirSubInst for UnaGF64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4472,7 +4565,8 @@ impl UnaGF64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4532,7 +4626,8 @@ impl IMirSubInst for UnaF64G32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4551,7 +4646,8 @@ impl UnaF64G32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -4611,7 +4707,8 @@ impl IMirSubInst for UnaFG32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4630,7 +4727,8 @@ impl UnaFG32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -4690,7 +4788,8 @@ impl IMirSubInst for UnaF32G64 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4709,7 +4808,8 @@ impl UnaF32G64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -4782,7 +4882,8 @@ impl IMirSubInst for UnaGF32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4801,7 +4902,8 @@ impl UnaGF32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4873,7 +4975,8 @@ impl IMirSubInst for UnaG64F32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4892,7 +4995,8 @@ impl UnaG64F32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -4952,7 +5056,8 @@ impl IMirSubInst for UnaG32F64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -4971,7 +5076,8 @@ impl UnaG32F64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type GPReg"]
@@ -5048,7 +5154,8 @@ impl IMirSubInst for UnaF64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5067,7 +5174,8 @@ impl UnaF64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5144,7 +5252,8 @@ impl IMirSubInst for UnaF32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5163,7 +5272,8 @@ impl UnaF32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5223,7 +5333,8 @@ impl IMirSubInst for UnaryF32F64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5242,7 +5353,8 @@ impl UnaryF32F64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5302,7 +5414,8 @@ impl IMirSubInst for UnaryF64F32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5321,7 +5434,8 @@ impl UnaryF64F32 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5381,7 +5495,8 @@ impl IMirSubInst for FMov64I {
                 Cell::new(ImmFMov64::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5400,7 +5515,8 @@ impl FMov64I {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5457,7 +5573,8 @@ impl IMirSubInst for FMov32I {
                 Cell::new(ImmFMov32::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5476,7 +5593,8 @@ impl FMov32I {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand dst at index 0 of type VFReg"]
@@ -5535,7 +5653,8 @@ impl IMirSubInst for TenaryG64 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5559,7 +5678,8 @@ impl TenaryG64 {
                 Cell::new(rs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -5654,7 +5774,8 @@ impl IMirSubInst for TenaryG64G32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5678,7 +5799,8 @@ impl TenaryG64G32 {
                 Cell::new(rs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -5770,7 +5892,8 @@ impl IMirSubInst for TenaryG32 {
                 Cell::new(GPReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5794,7 +5917,8 @@ impl TenaryG32 {
                 Cell::new(rs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -5889,7 +6013,8 @@ impl IMirSubInst for TenaryF64 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -5913,7 +6038,8 @@ impl TenaryF64 {
                 Cell::new(rs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6008,7 +6134,8 @@ impl IMirSubInst for TenaryF32 {
                 Cell::new(VFReg::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6032,7 +6159,8 @@ impl TenaryF32 {
                 Cell::new(rs.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6135,7 +6263,8 @@ impl IMirSubInst for LoadStoreGr64 {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6159,7 +6288,8 @@ impl LoadStoreGr64 {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -6253,7 +6383,8 @@ impl IMirSubInst for LoadStoreGr32 {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6277,7 +6408,8 @@ impl LoadStoreGr32 {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -6361,7 +6493,8 @@ impl IMirSubInst for LoadStoreF64 {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6385,7 +6518,8 @@ impl LoadStoreF64 {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6469,7 +6603,8 @@ impl IMirSubInst for LoadStoreF32 {
             ],
             rm_op: None,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6493,7 +6628,8 @@ impl LoadStoreF32 {
             ],
             rm_op,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6585,7 +6721,8 @@ impl IMirSubInst for LoadStoreGr64Base {
                 Cell::new(ImmLoad64::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6608,7 +6745,8 @@ impl LoadStoreGr64Base {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -6691,7 +6829,8 @@ impl IMirSubInst for LoadStoreGr32Base {
                 Cell::new(ImmLoad32::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6714,7 +6853,8 @@ impl LoadStoreGr32Base {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -6787,7 +6927,8 @@ impl IMirSubInst for LoadStoreF64Base {
                 Cell::new(ImmLoad64::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6810,7 +6951,8 @@ impl LoadStoreF64Base {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6883,7 +7025,8 @@ impl IMirSubInst for LoadStoreF32Base {
                 Cell::new(ImmLoad32::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -6906,7 +7049,8 @@ impl LoadStoreF32Base {
                 Cell::new(rm.into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -6991,7 +7135,11 @@ impl IMirSubInst for LoadStoreGr64Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7015,7 +7163,11 @@ impl LoadStoreGr64Indexed {
             ],
             addr_mode,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7106,7 +7258,11 @@ impl IMirSubInst for LoadStoreGr32Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7130,7 +7286,11 @@ impl LoadStoreGr32Indexed {
             ],
             addr_mode,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7211,7 +7371,11 @@ impl IMirSubInst for LoadStoreF64Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7235,7 +7399,11 @@ impl LoadStoreF64Indexed {
             ],
             addr_mode,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -7316,7 +7484,11 @@ impl IMirSubInst for LoadStoreF32Indexed {
             ],
             addr_mode: AddrMode::PostIndex,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7340,7 +7512,11 @@ impl LoadStoreF32Indexed {
             ],
             addr_mode,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        {
+            super::utils::mark_in_operands_used(ret.rd());
+        }
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -7428,7 +7604,8 @@ impl IMirSubInst for LoadStoreGr64Literal {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7447,7 +7624,8 @@ impl LoadStoreGr64Literal {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7514,7 +7692,8 @@ impl IMirSubInst for LoadStoreGr32Literal {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7533,7 +7712,8 @@ impl LoadStoreGr32Literal {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7590,7 +7770,8 @@ impl IMirSubInst for LoadStoreF64Literal {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7609,7 +7790,8 @@ impl LoadStoreF64Literal {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -7666,7 +7848,8 @@ impl IMirSubInst for LoadStoreF32Literal {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7685,7 +7868,8 @@ impl LoadStoreF32Literal {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -7742,7 +7926,8 @@ impl IMirSubInst for LoadConst64 {
                 Cell::new(Imm64::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7761,7 +7946,8 @@ impl LoadConst64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7818,7 +8004,8 @@ impl IMirSubInst for LoadConstF64 {
                 Cell::new(Imm64::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7837,7 +8024,8 @@ impl LoadConstF64 {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -7894,7 +8082,8 @@ impl IMirSubInst for LoadConst64Symbol {
                 Cell::new(MirSymbolOp::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -7913,7 +8102,8 @@ impl LoadConst64Symbol {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -7977,7 +8167,8 @@ impl IMirSubInst for CSel64 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8009,7 +8200,8 @@ impl CSel64 {
             ],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -8112,7 +8304,8 @@ impl IMirSubInst for CSel32 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8144,7 +8337,8 @@ impl CSel32 {
             ],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -8244,7 +8438,8 @@ impl IMirSubInst for CSelF64 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8276,7 +8471,8 @@ impl CSelF64 {
             ],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -8376,7 +8572,8 @@ impl IMirSubInst for CSelF32 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8408,7 +8605,8 @@ impl CSelF32 {
             ],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type VFReg"]
@@ -8506,7 +8704,8 @@ impl IMirSubInst for CSet64 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8526,7 +8725,8 @@ impl CSet64 {
             _operands: [Cell::new(rd.into_mir()), Cell::new(csr.into_mir())],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -8594,7 +8794,8 @@ impl IMirSubInst for CSet32 {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8614,7 +8815,8 @@ impl CSet32 {
             _operands: [Cell::new(rd.into_mir()), Cell::new(csr.into_mir())],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand rd at index 0 of type GPReg"]
@@ -8682,7 +8884,8 @@ impl IMirSubInst for CondBr {
             ],
             cond: MirCondFlag::AL,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8702,7 +8905,8 @@ impl CondBr {
             _operands: [Cell::new(label.into_mir()), Cell::new(csr.into_mir())],
             cond,
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand label at index 0 of type MirBlockRef"]
@@ -8765,7 +8969,8 @@ impl IMirSubInst for CBZs {
                 Cell::new(MirBlockRef::new_empty().into_mir()),
             ],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -8784,7 +8989,8 @@ impl CBZs {
             _common: MirInstCommon::new(opcode),
             _operands: [Cell::new(cond.into_mir()), Cell::new(target.into_mir())],
         };
-        super::utils::mark_in_operands_defined(ret.in_operands());
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
         ret
     }
     #[doc = "operand cond at index 0 of type GPReg"]

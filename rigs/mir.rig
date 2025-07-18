@@ -22,9 +22,9 @@ template[TargetT] BranchLinks {
     in: { target: TargetT, },
     out: { ra: GPR64, };
     impl {
-        [Label] => BLinkLabel { insts: [ BLink ], },
+        [Label]  => BLinkLabel { insts: [ BLink ], },
         [Global] => BLinkGlobal { insts: [ BLinkGlobal ], },
-        [GPR64] => BLinkReg   { insts: [ BLinkReg ], },
+        [GPR64]  => BLinkReg   { insts: [ BLinkReg ], },
     }
 }
 
@@ -357,6 +357,9 @@ template[Dst, Offset] LoadStoreRRIndexed {
     in: { rm: Offset, },
     props: {
         addr_mode: AddrMode = AddrMode::PostIndex;
+    },
+    init: {
+        super::utils::mark_in_operands_used(ret.rd());
     };
 
     impl {

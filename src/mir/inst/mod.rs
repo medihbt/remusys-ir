@@ -86,21 +86,44 @@ pub mod utils {
     use crate::mir::operand::reg::{GPReg, RegUseFlags, VFReg};
 
     use super::*;
-    pub fn mark_in_operands_defined(operands: &[Cell<MirOperand>]) {
+    pub fn mark_out_operands_defined(operands: &[Cell<MirOperand>]) {
         for operand in operands {
-            let old = operand.get();
-            let new = match old {
-                MirOperand::GPReg(GPReg(id, si, mut uf)) => {
-                    uf.insert(RegUseFlags::DEF);
-                    MirOperand::GPReg(GPReg(id, si, uf))
-                }
-                MirOperand::VFReg(VFReg(id, si, mut uf)) => {
-                    uf.insert(RegUseFlags::DEF);
-                    MirOperand::VFReg(VFReg(id, si, uf))
-                }
-                _ => continue,
-            };
-            operand.set(new);
+            mark_operand_defined(operand);
         }
+    }
+    pub fn mark_operand_defined(operand: &Cell<MirOperand>) {
+        let old = operand.get();
+        let new = match old {
+            MirOperand::GPReg(GPReg(id, si, mut uf)) => {
+                uf.insert(RegUseFlags::DEF);
+                MirOperand::GPReg(GPReg(id, si, uf))
+            }
+            MirOperand::VFReg(VFReg(id, si, mut uf)) => {
+                uf.insert(RegUseFlags::DEF);
+                MirOperand::VFReg(VFReg(id, si, uf))
+            }
+            _ => return,
+        };
+        operand.set(new);
+    }
+    pub fn mark_in_operands_used(operands: &[Cell<MirOperand>]) {
+        for operand in operands {
+            mark_operand_used(operand);
+        }
+    }
+    pub fn mark_operand_used(operand: &Cell<MirOperand>) {
+        let old = operand.get();
+        let new = match old {
+            MirOperand::GPReg(GPReg(id, si, mut uf)) => {
+                uf.insert(RegUseFlags::USE);
+                MirOperand::GPReg(GPReg(id, si, uf))
+            }
+            MirOperand::VFReg(VFReg(id, si, mut uf)) => {
+                uf.insert(RegUseFlags::USE);
+                MirOperand::VFReg(VFReg(id, si, uf))
+            }
+            _ => return,
+        };
+        operand.set(new);
     }
 }
