@@ -8,10 +8,9 @@ use slab::Slab;
 use crate::{
     base::slablist::SlabRefList,
     mir::{
-        inst::
-            switch::VecSwitchTab
-        ,
+        inst::{MirInstRef, inst::MirInst, switch::VecSwitchTab},
         module::{
+            MirModule,
             block::{MirBlock, MirBlockRef},
             global::{Linkage, MirGlobalCommon, Section},
             stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
@@ -216,26 +215,51 @@ impl MirFunc {
         self.inner.borrow().vec_switch_tabs.get(index).cloned()
     }
 
-    // pub fn get_saved_regs(&self) -> MirPhysRegSet {
-    //     self.saved_regs.get()
-    // }
-    // pub fn set_saved_regs(&self, regs: MirPhysRegSet) {
-    //     self.saved_regs.set(regs);
-    // }
-    // pub fn save_reg<T>(&self, reg: T)
-    // where
-    //     RegOperand: From<T>,
-    // {
-    //     let saved_regs = self.saved_regs.get();
-    //     let new_regs = saved_regs.insert_saved_reg(RegOperand::from(reg));
-    //     self.saved_regs.set(new_regs);
-    // }
-    // pub fn unsave_reg<T>(&self, reg: T)
-    // where
-    //     RegOperand: From<T>,
-    // {
-    //     let mut saved_regs = self.saved_regs.get();
-    //     saved_regs.unsave_reg(RegOperand::from(reg));
-    //     self.saved_regs.set(saved_regs);
-    // }
+    pub fn dump_all_insts(
+        &self,
+        alloc_block: &Slab<MirBlock>,
+        alloc_inst: &Slab<MirInst>,
+    ) -> Vec<(MirBlockRef, MirInstRef)> {
+        if self.is_extern() {
+            return Vec::new();
+        }
+        let mut ret = Vec::new();
+        for (block_ref, block) in self.blocks.view(alloc_block) {
+            for (inst_ref, _) in block.insts.view(alloc_inst) {
+                ret.push((block_ref.clone(), inst_ref.clone()));
+            }
+        }
+        ret
+    }
+    pub fn dump_insts_when(
+        &self,
+        alloc_block: &Slab<MirBlock>,
+        alloc_inst: &Slab<MirInst>,
+        condition: impl Fn(&MirInst) -> bool,
+    ) -> Vec<(MirBlockRef, MirInstRef)> {
+        if self.is_extern() {
+            return Vec::new();
+        }
+        let mut ret = Vec::new();
+        for (block_ref, block) in self.blocks.view(alloc_block) {
+            for (inst_ref, inst) in block.insts.view(alloc_inst) {
+                if condition(inst) {
+                    ret.push((block_ref.clone(), inst_ref.clone()));
+                }
+            }
+        }
+        ret
+    }
+    pub fn dump_insts_with_module(&self, module: &MirModule) -> Vec<(MirBlockRef, MirInstRef)> {
+        let allocs = module.allocs.borrow();
+        self.dump_all_insts(&allocs.block, &allocs.inst)
+    }
+    pub fn dump_insts_with_module_when(
+        &self,
+        module: &MirModule,
+        condition: impl Fn(&MirInst) -> bool,
+    ) -> Vec<(MirBlockRef, MirInstRef)> {
+        let allocs = module.allocs.borrow();
+        self.dump_insts_when(&allocs.block, &allocs.inst, condition)
+    }
 }

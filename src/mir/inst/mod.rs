@@ -21,7 +21,7 @@ use crate::{
     },
 };
 use slab::Slab;
-use std::cell::Cell;
+use std::cell::{Cell, Ref};
 
 pub use self::subinst::IMirSubInst;
 
@@ -79,6 +79,13 @@ impl MirInstRef {
     pub fn from_module(module: &MirModule, data: MirInst) -> Self {
         let mut alloc_inst = module.borrow_alloc_inst_mut();
         MirInstRef::from_alloc(&mut alloc_inst, data)
+    }
+
+    pub fn data_from_module<'a>(&self, module: &'a MirModule) -> Ref<'a, MirInst> {
+        let alloc_inst = module.borrow_alloc_inst();
+        Ref::map(alloc_inst, |alloc| {
+            alloc.get(self.get_handle()).expect("Invalid MirInstRef")
+        })
     }
 }
 

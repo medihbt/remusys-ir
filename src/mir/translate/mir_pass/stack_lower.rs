@@ -1,20 +1,34 @@
-use std::cmp::Ordering;
-
 use crate::mir::{
     inst::{IMirSubInst, MirInstRef, impls::*, inst::MirInst, opcode::MirOP},
     module::{
-        MirModule,
+        MirGlobal, MirModule,
         block::{MirBlock, MirBlockRef},
         func::MirFunc,
-        stack::{MirStackLayout, SavedReg},
+        stack::{MirStackLayout, SavedReg, StackItemKind},
     },
     operand::{
+        IMirSubOperand,
         imm::*,
         imm_traits,
-        reg::{GPR64, RegOperand, RegUseFlags},
+        reg::{GPR64, GPReg, RegOperand, RegUseFlags},
     },
     translate::mirgen::operandgen::PureSourceReg,
 };
+use std::{cmp::Ordering, collections::VecDeque, rc::Rc};
+
+pub fn lower_stack_for_module(module: &mut MirModule) {
+    let mut all_funcs = Vec::new();
+    for &globals in &module.items {
+        let f = match &*globals.data_from_module(module) {
+            MirGlobal::Function(f) if f.is_define() => Rc::clone(f),
+            _ => continue,
+        };
+        all_funcs.push(f);
+    }
+    for func in &all_funcs {
+        lower_function_stack(func, module);
+    }
+}
 
 /// Remusys-MIR 栈布局指的是局部变量、函数参数、保存的寄存器在栈上的布局方式。
 /// 在最终确定翻译到汇编之前，Remusys MIR 函数的栈布局会随时发生改变, 因此一开始
@@ -32,19 +46,397 @@ pub fn lower_function_stack(func: &MirFunc, module: &MirModule) {
 
     // 首先确定栈空间预留和寄存器保存的指令模板.
     // 这两个模板后面在预留变量的时候还会滚雪球一样的加指令, 所以暂时不插进 MIR 中。
-    let (mut save, restore) = preserve_and_restore_stack_space(&stack_layout);
+    let StackInfo {
+        save_insts: asi,
+        restore_insts: ari,
+        section_size: asz,
+    } = manage_callee_reg_stack_space(&mut stack_layout);
 
     // 然后预留局部变量的存储空间.
-    let (reserve_vars, mut restore_vars) = make_local_variable_layout(&mut stack_layout);
-    save.extend(reserve_vars); // 先保存寄存器再预留变量空间
-    restore_vars.extend(restore); // 先恢复变量再恢复寄存器
+    let StackInfo {
+        save_insts: vsi,
+        restore_insts: vri,
+        section_size: vsz,
+    } = make_local_variable_layout(&mut stack_layout);
+
+    let save_insts = {
+        let mut save_insts = Vec::with_capacity(asi.len() + vsi.len());
+        save_insts.extend(asi);
+        save_insts.extend(vsi);
+        save_insts
+    };
+    let restore_insts = {
+        let mut restore_insts = Vec::with_capacity(ari.len() + vri.len());
+        restore_insts.extend(vri);
+        restore_insts.extend(ari);
+        restore_insts
+    };
+    let this_frame_size = asz + vsz;
 
     // 模板已经准备好了, 现在把它们插入到函数的 MIR 中.
-    apply_save_restore_templates(func, module, save, restore_vars);
+    apply_save_restore_templates(func, module, save_insts, restore_insts);
 
     // 接下来, 把所有表示栈空间位置的虚拟寄存器(因为这个 pass 在寄存器分配之后进行, 因此这也是最后留下的虚拟寄存器)
     // 替换成对应的 SP 偏移量.
-    todo!("Replace all stack position virtual registers with SP offsets");
+    // 经过寄存器分配, 这种虚拟寄存器只有可能是指针了; 而且只读.
+    let insts = find_maybe_stackpos_insts(func, module);
+
+    // 在这些指令中, 遇到虚拟寄存器时, 尝试替换成 SP 偏移量.
+    // 如果偏移量太大, 或者指令的操作数模式不允许使用偏移量, 就使用 X29 寄存器来保存偏移量。
+    // X29 原来是帧指针, 但 SysY 不支持 alloca 这种动态分配栈空间的操作, 因此不需要帧指针。
+    // X29 就当成一个专用的临时寄存器来使用, 在寄存器分配 pass 会刻意忽略它。
+    for (block_ref, inst_ref) in insts {
+        let mut added_insts: VecDeque<MirInst> = VecDeque::new();
+        update_stack_instruction_refs(
+            func,
+            module,
+            &stack_layout,
+            this_frame_size,
+            inst_ref,
+            &mut added_insts,
+        );
+        while let Some(inst) = added_insts.pop_front() {
+            let new_inst = MirInstRef::from_module(module, inst);
+            let allocs = module.allocs.borrow();
+            block_ref
+                .get_insts(&allocs.block)
+                .node_add_prev(&allocs.inst, inst_ref, new_inst)
+                .expect("Failed to add new instruction");
+        }
+    }
+    // todo!("Replace all stack position virtual registers with SP offsets");
+}
+
+fn update_stack_instruction_refs(
+    func: &MirFunc,
+    module: &MirModule,
+    stack_layout: &MirStackLayout,
+    this_frame_size: u64,
+    inst_ref: MirInstRef,
+    added_insts: &mut VecDeque<MirInst>,
+) {
+    match &*inst_ref.data_from_module(module) {
+        MirInst::Bin64R(x) => {
+            let stack_pos = x.get_rn();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            x.set_rn(reg.into_real());
+        }
+        MirInst::Bin64RC(x) => {
+            let stack_pos = x.get_rn();
+            let orig_offset = x.get_rm().0 as u64;
+            let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+            let offset = offset + orig_offset;
+            let sp = GPR64::sp();
+            let x29 = GPR64(29, RegUseFlags::empty());
+            let (rn, imm) = if imm_traits::is_calc_imm(offset) {
+                (sp, ImmCalc::new(offset as u32))
+            } else {
+                added_insts.push_back(
+                    LoadConst64::new(MirOP::LoadConst64, x29, Imm64(offset, ImmKind::Full))
+                        .into_mir(),
+                );
+                (x29, ImmCalc::new(0))
+            };
+            x.set_rn(rn.into_real());
+            x.set_rm(imm);
+        }
+        MirInst::Una64R(x) => {
+            let stack_pos = x.get_src();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            x.set_src(reg.into_real());
+        }
+        MirInst::TenaryG64(x) => {
+            let stack_pos = x.get_rs();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            x.set_rs(reg.into_real());
+        }
+        MirInst::LoadStoreGr64(ls) => {
+            let stack_pos = ls.get_rn();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            ls.set_rn(reg.into_real());
+        }
+        MirInst::LoadStoreGr32(ls) => {
+            let stack_pos = ls.get_rn();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            ls.set_rn(reg.into_real());
+        }
+        MirInst::LoadStoreF64(ls) => {
+            let stack_pos = ls.get_rn();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            ls.set_rn(reg.into_real());
+        }
+        MirInst::LoadStoreF32(ls) => {
+            let stack_pos = ls.get_rn();
+            let reg = make_regonly_target_reg(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+            );
+            ls.set_rn(reg.into_real());
+        }
+        MirInst::LoadStoreGr64Base(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load64_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad64(imm as i64));
+        }
+        MirInst::LoadStoreGr32Base(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load32_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad32(imm as i32));
+        }
+        MirInst::LoadStoreF64Base(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load64_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad64(imm as i64));
+        }
+        MirInst::LoadStoreF32Base(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load32_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad32(imm as i32));
+        }
+        MirInst::LoadStoreGr64Indexed(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load64_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad64(imm as i64));
+        }
+        MirInst::LoadStoreGr32Indexed(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load32_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad32(imm as i32));
+        }
+        MirInst::LoadStoreF64Indexed(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load64_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad64(imm as i64));
+        }
+        MirInst::LoadStoreF32Indexed(ls) => {
+            let stack_pos = ls.get_rn();
+            let orig_offset = ls.get_rm().0 as u64;
+            let (rn, imm) = make_reg_imm_for_loadstore(
+                func,
+                stack_layout,
+                this_frame_size,
+                added_insts,
+                stack_pos,
+                orig_offset,
+                |x| imm_traits::is_load32_imm(x as i64),
+            );
+            ls.set_rn(rn.into_real());
+            ls.set_rm(ImmLoad32(imm as i32));
+        }
+        _ => {}
+    }
+}
+
+fn make_reg_imm_for_loadstore(
+    func: &MirFunc,
+    stack_layout: &MirStackLayout,
+    this_frame_size: u64,
+    added_insts: &mut VecDeque<MirInst>,
+    stack_pos: GPReg,
+    orig_offset: u64,
+    immload_judge: impl Fn(u64) -> bool,
+) -> (GPR64, u64) {
+    let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+    let offset = offset + orig_offset;
+    let sp = GPR64::sp();
+    let x29 = GPR64(29, RegUseFlags::empty());
+    let (rn, imm) = if immload_judge(offset) {
+        (sp, offset)
+    } else if imm_traits::is_calc_imm(offset) {
+        added_insts.push_back(
+            Bin64RC::new(MirOP::Add64I, x29, sp, ImmCalc::new(offset as u32)).into_mir(),
+        );
+        (x29, 0)
+    } else {
+        added_insts.push_back(
+            LoadConst64::new(MirOP::LoadConst64, x29, Imm64(offset, ImmKind::Full)).into_mir(),
+        );
+        added_insts.push_back(Bin64R::new(MirOP::Add64R, x29, x29, sp, None).into_mir());
+        (x29, 0)
+    };
+    (rn, imm)
+}
+
+fn make_regonly_target_reg(
+    func: &MirFunc,
+    stack_layout: &MirStackLayout,
+    this_frame_size: u64,
+    added_insts: &mut VecDeque<MirInst>,
+    stack_pos: GPReg,
+) -> GPR64 {
+    let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+    let x29 = GPR64(29, RegUseFlags::empty());
+    let sp = GPR64::sp();
+    let reg = if offset == 0 {
+        // 如果偏移量为 0, 则直接使用 SP 寄存器.
+        sp
+    } else if imm_traits::is_calc_imm(offset) {
+        added_insts.push_back(
+            Bin64RC::new(MirOP::Add64I, x29, sp, ImmCalc::new(offset as u32)).into_mir(),
+        );
+        x29
+    } else {
+        added_insts.push_back(
+            LoadConst64::new(MirOP::LoadConst64, x29, Imm64(offset, ImmKind::Full)).into_mir(),
+        );
+        added_insts.push_back(Bin64R::new(MirOP::Add64R, x29, x29, sp, None).into_mir());
+        x29
+    };
+    reg
+}
+
+fn get_stackpos_stack_offset(
+    func: &MirFunc,
+    stack_layout: &MirStackLayout,
+    this_frame_size: u64,
+    stack_pos: GPReg,
+) -> u64 {
+    let (kind, idx) = match stack_layout.find_vreg_stackpos(stack_pos.into()) {
+        Some((kind, idx)) => (kind, idx as usize),
+        _ => panic!(
+            "Found non-stackpos vreg {stack_pos:?} in MirFunc {}",
+            func.get_name()
+        ),
+    };
+    match kind {
+        StackItemKind::Variable => stack_layout.vars[idx].offset as u64,
+        StackItemKind::SpilledArg => stack_layout.args[idx].offset as u64 + this_frame_size,
+        StackItemKind::SavedReg => panic!(
+            "Found saved register vreg {stack_pos:?} in MirFunc {}",
+            func.get_name()
+        ),
+    }
+}
+
+fn find_maybe_stackpos_insts(func: &MirFunc, module: &MirModule) -> Vec<(MirBlockRef, MirInstRef)> {
+    func.dump_insts_with_module_when(module, |inst| match inst {
+        MirInst::Bin64R(x) => x.get_rn().is_virtual() || x.get_rm().is_virtual(),
+        MirInst::Bin64RC(x) => x.get_rn().is_virtual(),
+        MirInst::Una64R(x) => x.get_src().is_virtual(),
+        MirInst::TenaryG64(x) => x.get_rs().is_virtual(),
+        MirInst::LoadStoreGr64(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreGr32(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF64(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF32(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreGr64Base(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreGr32Base(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF64Base(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF32Base(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreGr64Indexed(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreGr32Indexed(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF64Indexed(ls) => ls.get_rn().is_virtual(),
+        MirInst::LoadStoreF32Indexed(ls) => ls.get_rn().is_virtual(),
+        _ => false,
+    })
 }
 
 fn apply_save_restore_templates(
@@ -136,8 +528,14 @@ fn apply_save_restore_templates(
     }
 }
 
+struct StackInfo {
+    save_insts: Vec<MirInst>,
+    restore_insts: Vec<MirInst>,
+    section_size: u64,
+}
+
 /// 生成预留 & 恢复栈空间的指令模板
-fn preserve_and_restore_stack_space(stack_layout: &MirStackLayout) -> (Vec<MirInst>, Vec<MirInst>) {
+fn manage_callee_reg_stack_space(stack_layout: &mut MirStackLayout) -> StackInfo {
     // 预留“保存寄存器”的栈空间
     let reserved_regs = &stack_layout.saved_regs;
     let (saved_regs, total_size) = make_regs_offset(reserved_regs);
@@ -190,7 +588,11 @@ fn preserve_and_restore_stack_space(stack_layout: &MirStackLayout) -> (Vec<MirIn
     reg_restore_template.push(Bin64RC::new(MirOP::Add64I, sp, sp, total_size).into_mir());
 
     // 返回预留和恢复栈空间的指令模板
-    (reg_save_template, reg_restore_template)
+    StackInfo {
+        save_insts: reg_save_template,
+        restore_insts: reg_restore_template,
+        section_size: total_size.0 as u64,
+    }
 }
 
 fn saved_reg_cmp(a: &SavedReg, b: &SavedReg) -> std::cmp::Ordering {
@@ -223,7 +625,7 @@ fn make_regs_offset(regs: &[SavedReg]) -> (Vec<(PureSourceReg, u64)>, ImmCalc) {
     (result, ImmCalc::new(total_size as u32))
 }
 
-fn make_local_variable_layout(stack_layout: &mut MirStackLayout) -> (Vec<MirInst>, Vec<MirInst>) {
+fn make_local_variable_layout(stack_layout: &mut MirStackLayout) -> StackInfo {
     // 和前面一样, 先给栈布局排个序
     stack_layout.vars.sort_by_key(|i| i.size);
     // 然后计算每个变量的偏移量
@@ -263,5 +665,10 @@ fn make_local_variable_layout(stack_layout: &mut MirStackLayout) -> (Vec<MirInst
         restore_insts.push(restore_inst.into_mir());
     }
 
-    (reserve_insts, restore_insts)
+    // 返回预留和恢复栈空间的指令模板
+    StackInfo {
+        save_insts: reserve_insts,
+        restore_insts,
+        section_size,
+    }
 }

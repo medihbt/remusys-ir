@@ -20,16 +20,19 @@ use crate::{
 use std::rc::Rc;
 
 pub mod ir_pass;
-pub mod mirgen;
 pub mod mir_pass;
+pub mod mirgen;
 
 pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
     ir_pass::critical_edge::break_critical_edges(ir_module);
     let (copy_map, cfgs) = CopyMap::new_and_cfg(ir_module);
-    let mir_module = mirgen::codegen_ir_to_mir(Rc::clone(ir_module), copy_map, cfgs);
+    let mut mir_module = mirgen::codegen_ir_to_mir(Rc::clone(ir_module), copy_map, cfgs);
 
     // Perform additional MIR passes
     mir_pass::inst_lower::lower_a_module(&mir_module);
+
+    // Final pass: lower stack operations
+    mir_pass::stack_lower::lower_stack_for_module(&mut mir_module);
 
     // return the generated MIR module
     mir_module

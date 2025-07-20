@@ -293,7 +293,12 @@ template[T, U] TenaryOP {
     in: { rn: U, rm: U, rs: T, };
 
     impl {
-        [GPR64, GPR64] => TenaryG64 { insts: [ MAdd64, MSub64 ] },
+        [GPR64, GPR64] => TenaryG64 {
+            insts: [
+                MAdd64, // rd = rn + rm * rs
+                MSub64  // rd = rn - rm * rs
+            ]
+        },
         [GPR64, GPR32] => TenaryG64G32 {
             insts: [ SMAddL, SMSubL, UMAddL, UMSubL ],
         },
