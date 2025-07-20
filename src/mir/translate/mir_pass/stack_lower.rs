@@ -120,6 +120,7 @@ fn update_stack_instruction_refs(
             let stack_pos = x.get_rn();
             let reg = make_regonly_target_reg(
                 func,
+                x.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -130,7 +131,7 @@ fn update_stack_instruction_refs(
         MirInst::Bin64RC(x) => {
             let stack_pos = x.get_rn();
             let orig_offset = x.get_rm().0 as u64;
-            let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+            let offset = get_stackpos_stack_offset(func, x.get_common().opcode, stack_layout, this_frame_size, stack_pos);
             let offset = offset + orig_offset;
             let sp = GPR64::sp();
             let x29 = GPR64(29, RegUseFlags::empty());
@@ -150,6 +151,7 @@ fn update_stack_instruction_refs(
             let stack_pos = x.get_src();
             let reg = make_regonly_target_reg(
                 func,
+                x.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -161,6 +163,7 @@ fn update_stack_instruction_refs(
             let stack_pos = x.get_rs();
             let reg = make_regonly_target_reg(
                 func,
+                x.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -172,6 +175,7 @@ fn update_stack_instruction_refs(
             let stack_pos = ls.get_rn();
             let reg = make_regonly_target_reg(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -183,6 +187,7 @@ fn update_stack_instruction_refs(
             let stack_pos = ls.get_rn();
             let reg = make_regonly_target_reg(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -194,6 +199,7 @@ fn update_stack_instruction_refs(
             let stack_pos = ls.get_rn();
             let reg = make_regonly_target_reg(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -205,6 +211,7 @@ fn update_stack_instruction_refs(
             let stack_pos = ls.get_rn();
             let reg = make_regonly_target_reg(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -217,6 +224,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -232,6 +240,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -247,6 +256,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -262,6 +272,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -277,6 +288,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -292,6 +304,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -307,6 +320,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -322,6 +336,7 @@ fn update_stack_instruction_refs(
             let orig_offset = ls.get_rm().0 as u64;
             let (rn, imm) = make_reg_imm_for_loadstore(
                 func,
+                ls.get_common().opcode,
                 stack_layout,
                 this_frame_size,
                 added_insts,
@@ -338,6 +353,7 @@ fn update_stack_instruction_refs(
 
 fn make_reg_imm_for_loadstore(
     func: &MirFunc,
+    opcode: MirOP,
     stack_layout: &MirStackLayout,
     this_frame_size: u64,
     added_insts: &mut VecDeque<MirInst>,
@@ -345,7 +361,7 @@ fn make_reg_imm_for_loadstore(
     orig_offset: u64,
     immload_judge: impl Fn(u64) -> bool,
 ) -> (GPR64, u64) {
-    let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+    let offset = get_stackpos_stack_offset(func, opcode, stack_layout, this_frame_size, stack_pos);
     let offset = offset + orig_offset;
     let sp = GPR64::sp();
     let x29 = GPR64(29, RegUseFlags::empty());
@@ -368,12 +384,13 @@ fn make_reg_imm_for_loadstore(
 
 fn make_regonly_target_reg(
     func: &MirFunc,
+    opcode: MirOP,
     stack_layout: &MirStackLayout,
     this_frame_size: u64,
     added_insts: &mut VecDeque<MirInst>,
     stack_pos: GPReg,
 ) -> GPR64 {
-    let offset = get_stackpos_stack_offset(func, stack_layout, this_frame_size, stack_pos);
+    let offset = get_stackpos_stack_offset(func, opcode, stack_layout, this_frame_size, stack_pos);
     let x29 = GPR64(29, RegUseFlags::empty());
     let sp = GPR64::sp();
     let reg = if offset == 0 {
@@ -396,6 +413,7 @@ fn make_regonly_target_reg(
 
 fn get_stackpos_stack_offset(
     func: &MirFunc,
+    opcode: MirOP,
     stack_layout: &MirStackLayout,
     this_frame_size: u64,
     stack_pos: GPReg,
@@ -403,7 +421,7 @@ fn get_stackpos_stack_offset(
     let (kind, idx) = match stack_layout.find_vreg_stackpos(stack_pos.into()) {
         Some((kind, idx)) => (kind, idx as usize),
         _ => panic!(
-            "Found non-stackpos vreg {stack_pos:?} in MirFunc {}",
+            "Found non-stackpos vreg {stack_pos:?} in MirFunc {} MIR opcode {opcode:?}",
             func.get_name()
         ),
     };

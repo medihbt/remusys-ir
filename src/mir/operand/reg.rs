@@ -346,7 +346,7 @@ impl VFReg {
     pub const RETVAL_POS: u32 = 0;
 
     pub fn is_virtual(self) -> bool {
-        self.0 >= 31
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
     pub fn get_id(self) -> RegID {
         if self.0 < 31 {

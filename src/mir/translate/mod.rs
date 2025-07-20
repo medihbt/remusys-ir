@@ -27,9 +27,14 @@ pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
     ir_pass::critical_edge::break_critical_edges(ir_module);
     let (copy_map, cfgs) = CopyMap::new_and_cfg(ir_module);
     let mut mir_module = mirgen::codegen_ir_to_mir(Rc::clone(ir_module), copy_map, cfgs);
+    eprintln!("Generated MIR module:\n{}", mir_module.name);
 
     // Perform additional MIR passes
     mir_pass::inst_lower::lower_a_module(&mir_module);
+    eprintln!("Lowered MIR module:\n{}", mir_module.name);
+
+    mir_pass::simple_reg_alloc::roughly_allocate_register(&mut mir_module);
+    eprintln!("Roughly allocated registers in MIR module:\n{}", mir_module.name);
 
     // Final pass: lower stack operations
     mir_pass::stack_lower::lower_stack_for_module(&mut mir_module);

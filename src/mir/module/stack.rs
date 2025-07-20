@@ -1,7 +1,10 @@
 use crate::{
-    mir::operand::{
-        IMirSubOperand,
-        reg::{FPR64, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
+    mir::{
+        operand::{
+            IMirSubOperand,
+            reg::{FPR64, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
+        },
+        translate::mirgen::operandgen::PureSourceReg,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
@@ -165,7 +168,9 @@ impl MirStackLayout {
 
     pub fn find_saved_preg(&self, preg: RegOperand) -> Option<&SavedReg> {
         assert!(preg.is_physical());
-        self.saved_regs.iter().find(|&reg| reg.matches_saved_preg(preg))
+        self.saved_regs
+            .iter()
+            .find(|&reg| reg.matches_saved_preg(preg))
     }
 
     pub fn find_vreg_spilled_arg_pos(&self, vreg: RegOperand) -> Option<u32> {
@@ -347,6 +352,16 @@ impl MirStackLayout {
                 "Invalid size or alignment for type `{irtype:?}`: size={size:?}, align={align:?}",
             ),
         };
+        self.add_variable_item(irtype, vreg_alloc, size, align_log2)
+    }
+
+    fn add_variable_item(
+        &mut self,
+        irtype: ValTypeID,
+        vreg_alloc: &mut VirtRegAlloc,
+        size: usize,
+        align_log2: u8,
+    ) -> &mut MirStackItem {
         let new_top = Self::update_stack_top(self.vars_size, align_log2);
         if let Some(prev_top) = self.vars.last_mut() {
             // Update the previous top item to reflect the new size
@@ -368,6 +383,22 @@ impl MirStackLayout {
         self.vars_size = new_top + size as u64;
         self.vars.push(item);
         self.vars.last_mut().unwrap()
+    }
+
+    pub fn add_spilled_virtreg_variable(
+        &mut self,
+        vreg: RegOperand,
+        vreg_alloc: &mut VirtRegAlloc,
+    ) -> &mut MirStackItem {
+        assert!(vreg.is_virtual(), "Expected a virtual register, found ID {:?}", vreg.get_id());
+        let pure = PureSourceReg::from_reg(vreg);
+        let (irtype, size, align_log2) = match pure {
+            PureSourceReg::F32(_) => (ValTypeID::Float(FloatTypeKind::Ieee32), 4, 2),
+            PureSourceReg::F64(_) => (ValTypeID::Float(FloatTypeKind::Ieee64), 8, 3),
+            PureSourceReg::G32(_) => (ValTypeID::Int(32), 4, 2),
+            PureSourceReg::G64(_) => (ValTypeID::Int(64), 8, 3),
+        };
+        self.add_variable_item(irtype, vreg_alloc, size, align_log2)
     }
 }
 
