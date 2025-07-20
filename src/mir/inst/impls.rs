@@ -3922,6 +3922,8 @@ impl IMirSubInst for Una64R {
                 | MirOP::CNT64
                 | MirOP::CTZ64
                 | MirOP::RBit64
+                | MirOP::LoadStackPosGr64
+                | MirOP::StoreStackPosGr64
         )
     }
     fn new_empty(opcode: MirOP) -> Self {
@@ -4028,6 +4030,8 @@ impl IMirSubInst for Una32R {
                 | MirOP::SXTW32
                 | MirOP::UXTB32
                 | MirOP::UXTH32
+                | MirOP::LoadStackPosGr32
+                | MirOP::StoreStackPosGr32
         )
     }
     fn new_empty(opcode: MirOP) -> Self {
@@ -5144,6 +5148,8 @@ impl IMirSubInst for UnaF64 {
                 | MirOP::FAbs64
                 | MirOP::FNeg64
                 | MirOP::FSqrt64
+                | MirOP::LoadStackPosF64
+                | MirOP::StoreStackPosF64
         )
     }
     fn new_empty(opcode: MirOP) -> Self {
@@ -5242,6 +5248,8 @@ impl IMirSubInst for UnaF32 {
                 | MirOP::FAbs32
                 | MirOP::FNeg32
                 | MirOP::FSqrt32
+                | MirOP::LoadStackPosF32
+                | MirOP::StoreStackPosF32
         )
     }
     fn new_empty(opcode: MirOP) -> Self {
@@ -7138,7 +7146,7 @@ impl IMirSubInst for LoadStoreGr64Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7166,7 +7174,7 @@ impl LoadStoreGr64Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7261,7 +7269,7 @@ impl IMirSubInst for LoadStoreGr32Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7289,7 +7297,7 @@ impl LoadStoreGr32Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7374,7 +7382,7 @@ impl IMirSubInst for LoadStoreF64Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7402,7 +7410,7 @@ impl LoadStoreF64Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7487,7 +7495,7 @@ impl IMirSubInst for LoadStoreF32Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }
@@ -7515,7 +7523,7 @@ impl LoadStoreF32Indexed {
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
         {
-            super::utils::mark_in_operands_used(ret.rd());
+            super::utils::mark_operand_used(ret.rd());
         }
         ret
     }

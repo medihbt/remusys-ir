@@ -8,16 +8,15 @@ use slab::Slab;
 use crate::{
     base::slablist::SlabRefList,
     mir::{
-        inst::switch::VecSwitchTab,
+        inst::
+            switch::VecSwitchTab
+        ,
         module::{
             block::{MirBlock, MirBlockRef},
             global::{Linkage, MirGlobalCommon, Section},
             stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
         },
-        operand::{
-            IMirSubOperand,
-            reg::{FPR32, FPR64, GPR64, GPReg, RegID, RegOperand, RegUseFlags, SubRegIndex},
-        },
+        operand::{IMirSubOperand, reg::*},
     },
     typing::{
         context::TypeContext,
@@ -216,4 +215,27 @@ impl MirFunc {
     pub fn get_vec_switch_tab(&self, index: usize) -> Option<Rc<VecSwitchTab>> {
         self.inner.borrow().vec_switch_tabs.get(index).cloned()
     }
+
+    // pub fn get_saved_regs(&self) -> MirPhysRegSet {
+    //     self.saved_regs.get()
+    // }
+    // pub fn set_saved_regs(&self, regs: MirPhysRegSet) {
+    //     self.saved_regs.set(regs);
+    // }
+    // pub fn save_reg<T>(&self, reg: T)
+    // where
+    //     RegOperand: From<T>,
+    // {
+    //     let saved_regs = self.saved_regs.get();
+    //     let new_regs = saved_regs.insert_saved_reg(RegOperand::from(reg));
+    //     self.saved_regs.set(new_regs);
+    // }
+    // pub fn unsave_reg<T>(&self, reg: T)
+    // where
+    //     RegOperand: From<T>,
+    // {
+    //     let mut saved_regs = self.saved_regs.get();
+    //     saved_regs.unsave_reg(RegOperand::from(reg));
+    //     self.saved_regs.set(saved_regs);
+    // }
 }

@@ -144,6 +144,12 @@ pub struct MirStackLayout {
     _saved_regs_size_cache: Cell<u64>,
 }
 
+impl Default for MirStackLayout {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MirStackLayout {
     pub fn new() -> Self {
         Self {

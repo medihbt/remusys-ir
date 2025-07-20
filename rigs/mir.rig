@@ -198,7 +198,8 @@ template[D, T] UnaryOP {
     impl {
         [GPR64, GPR64] => Una64R {
             insts: [
-                Neg64R, MVN64R, Mov64R, Abs64R, CLS64, CLZ64, CNT64, CTZ64, RBit64
+                Neg64R, MVN64R, Mov64R, Abs64R, CLS64, CLZ64, CNT64, CTZ64, RBit64,
+                LoadStackPosGr64, StoreStackPosGr64
             ],
             props: {
                 dst_op: Option<RegOP> = None;
@@ -207,7 +208,8 @@ template[D, T] UnaryOP {
         [GPR32, GPR32] => Una32R {
             insts: [
                 Neg32R, MVN32R, Mov32R, Abs32R, CLS32, CLZ32, CNT32, CTZ32, RBit32,
-                SXTB32, SXTH32, SXTW32, UXTB32, UXTH32
+                SXTB32, SXTH32, SXTW32, UXTB32, UXTH32,
+                LoadStackPosGr32, StoreStackPosGr32
             ],
             props: {
                 dst_op: Option<RegOP> = None;
@@ -262,6 +264,8 @@ template[D, T] UnaryOP {
                 FRInt32X64, FRIntZ32X64, FRInt64X64, FRIntZ64X64,
                 // Floating Arithmetic with unary source
                 FAbs64, FNeg64, FSqrt64,
+                // MIR pseudo-instructions
+                LoadStackPosF64, StoreStackPosF64
             ],
         },
         [FPR32, FPR32] => UnaF32 {
@@ -272,6 +276,8 @@ template[D, T] UnaryOP {
                 FRInt32X32, FRIntZ32X32, FRInt64X32, FRIntZ64X32,
                 // Floating Arithmetic with unary source
                 FAbs32, FNeg32, FSqrt32,
+                // MIR pseudo-instructions
+                LoadStackPosF32, StoreStackPosF32
             ],
         },
         [FPR32, FPR64] => UnaryF32F64 { insts: [ FCvt32F64 ] },
@@ -359,7 +365,7 @@ template[Dst, Offset] LoadStoreRRIndexed {
         addr_mode: AddrMode = AddrMode::PostIndex;
     },
     init: {
-        super::utils::mark_in_operands_used(ret.rd());
+        super::utils::mark_operand_used(ret.rd());
     };
 
     impl {

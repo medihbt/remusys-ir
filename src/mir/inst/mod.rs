@@ -47,7 +47,7 @@ impl MirInstCommon {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MirInstRef(usize);
 
 impl SlabRef for MirInstRef {

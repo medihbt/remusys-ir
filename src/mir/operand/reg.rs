@@ -208,7 +208,7 @@ impl RegID {
         }
     }
 
-    pub fn from_real(id: u32) -> Self {
+    pub const fn from_real(id: u32) -> Self {
         if id < 31 {
             RegID::Phys(id)
         } else if id == 31 {

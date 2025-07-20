@@ -103,9 +103,16 @@ pub trait SlabRefListNode {
 
 pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
     fn load_node_head(&self, alloc: &Slab<Self::RefObject>) -> SlabRefListNodeHead {
-        self.to_slabref(alloc)
-            .map(SlabRefListNode::load_node_head)
-            .expect("SlabRefListNodeRef::load_node_head() called on invalid reference")
+        if self.is_null() {
+            panic!("SlabRefListNodeRef::load_node_head() called on null reference");
+        }
+        match self.to_slabref(alloc).map(SlabRefListNode::load_node_head) {
+            Some(node) => node,
+            None => panic!(
+                "SlabRefListNodeRef::load_node_head() called on invalid reference {}",
+                self.get_handle()
+            ),
+        }
     }
     fn store_node_head(&self, alloc: &Slab<Self::RefObject>, node_head: SlabRefListNodeHead) {
         self.to_slabref(alloc)

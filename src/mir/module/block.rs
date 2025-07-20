@@ -13,7 +13,7 @@ use crate::{
         slabref::SlabRef,
     },
     mir::{
-        inst::{inst::MirInst, MirInstRef},
+        inst::{MirInstRef, inst::MirInst},
         module::MirModule,
         operand::reg::RegOperand,
     },
@@ -31,12 +31,12 @@ pub struct MirBlock {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct MirBlockRef(u32);
+pub struct MirBlockRef(usize);
 
 impl SlabRef for MirBlockRef {
     type RefObject = MirBlock;
     fn from_handle(handle: usize) -> Self {
-        MirBlockRef(handle as u32)
+        MirBlockRef(handle)
     }
     fn get_handle(&self) -> usize {
         self.0 as usize
@@ -113,7 +113,7 @@ impl MirBlock {
 
 impl MirBlockRef {
     pub fn from_alloc(alloc: &mut Slab<MirBlock>, data: MirBlock) -> Self {
-        MirBlockRef(alloc.insert(data) as u32)
+        MirBlockRef(alloc.insert(data))
     }
     pub fn from_module(module: &MirModule, data: MirBlock) -> Self {
         let mut alloc = module.borrow_alloc_block_mut();
@@ -140,5 +140,14 @@ impl MirBlockRef {
     pub fn get_insts_from_module(self, module: &MirModule) -> Ref<SlabRefList<MirInstRef>> {
         let alloc = module.borrow_alloc_block();
         Ref::map(alloc, |a| self.get_insts(a))
+    }
+
+    pub fn get_predecessors(self, alloc: &Slab<MirBlock>) -> &BTreeSet<MirBlockRef> {
+        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        &block.predecessors
+    }
+    pub fn has_predecessors(self, alloc: &Slab<MirBlock>) -> bool {
+        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        !block.predecessors.is_empty()
     }
 }

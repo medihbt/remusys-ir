@@ -9,6 +9,7 @@ use crate::mir::{
 pub mod compound;
 pub mod imm;
 pub mod imm_traits;
+pub mod physreg_set;
 pub mod reg;
 pub mod subop;
 

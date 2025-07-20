@@ -23,7 +23,7 @@ pub(super) mod global;
 pub(super) mod stack;
 
 /// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MirGlobal {
     Variable(Rc<MirGlobalVariable>),
     UnnamedData(MirGlobalData),

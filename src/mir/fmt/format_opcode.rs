@@ -456,9 +456,18 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::CSet64 | MirOP::CSet32 => "cset",
 
         // 特殊MIR伪指令（手动实现）
-        MirOP::MirCall => "call",
-        MirOP::MirReturn => "return",
-        MirOP::MirSwitch => "switch",
+        MirOP::MirCall => "mir.call",
+        MirOP::MirReturn => "mir.return",
+        MirOP::MirSwitch => "mir.switch",
+
+        MirOP::LoadStackPosGr64 => "mir.load_stack_pos_gr64",
+        MirOP::StoreStackPosGr64 => "mir.store_stack_pos_gr64",
+        MirOP::LoadStackPosGr32 => "mir.load_stack_pos_gr32",
+        MirOP::StoreStackPosGr32 => "mir.store_stack_pos_gr32",
+        MirOP::LoadStackPosF64 => "mir.load_stack_pos_f64",
+        MirOP::StoreStackPosF64 => "mir.store_stack_pos_f64",
+        MirOP::LoadStackPosF32 => "mir.load_stack_pos_f32",
+        MirOP::StoreStackPosF32 => "mir.store_stack_pos_f32",
     }
 }
 

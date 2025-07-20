@@ -1,8 +1,8 @@
-use std::collections::VecDeque;
-
 use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, mirops::MirReturn, opcode::MirOP},
-    module::{func::MirFunc, stack::VirtRegAlloc},
+    module::
+        stack::{MirStackLayout, VirtRegAlloc}
+    ,
     operand::{
         IMirSubOperand, MirOperand,
         compound::MirSymbolOp,
@@ -11,11 +11,12 @@ use crate::mir::{
         reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegUseFlags, VFReg},
     },
 };
+use std::collections::VecDeque;
 
 /// Generate MIR instructions for a return operation.
 pub fn lower_mir_ret(
     mir_ret: &MirReturn,
-    parent_func: &MirFunc,
+    stack_layout: &MirStackLayout,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
 ) {
@@ -24,8 +25,6 @@ pub fn lower_mir_ret(
     }
 
     // 恢复返回地址寄存器 ra 的值。
-    let func_inner = parent_func.borrow_inner();
-    let stack_layout = &func_inner.stack_layout;
     if let Some(saved_reg) = stack_layout.find_saved_preg(GPReg::new_ra().into()) {
         let restore_ra = Una64R::new(
             MirOP::Mov64R,

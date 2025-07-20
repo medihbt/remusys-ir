@@ -138,12 +138,12 @@ pub fn lower_copy64_inst(copy64: &MirCopy64, out_insts: &mut VecDeque<MirInst>) 
 }
 
 pub fn lower_fcopy32_inst(
-    copy_f32: &MirFCopy32,
+    fcopy32: &MirFCopy32,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
 ) {
-    let src = copy_f32.get_src();
-    let dst = FPR32::from_real(copy_f32.get_dst());
+    let src = fcopy32.get_src();
+    let dst = FPR32::from_real(fcopy32.get_dst());
 
     match src {
         MirOperand::GPReg(src) => {
@@ -204,12 +204,12 @@ pub fn lower_fcopy32_inst(
 }
 
 pub fn lower_fcopy64_inst(
-    copy_f64: &MirFCopy64,
+    fcopy64: &MirFCopy64,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
 ) {
-    let src = copy_f64.get_src();
-    let dst = FPR64::from_real(copy_f64.get_dst());
+    let src = fcopy64.get_src();
+    let dst = FPR64::from_real(fcopy64.get_dst());
 
     match src {
         MirOperand::GPReg(src) => {
