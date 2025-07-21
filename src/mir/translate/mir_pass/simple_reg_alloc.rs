@@ -231,8 +231,6 @@ impl SpillVRegsResult {
         });
         let mut stackpos_map = Vec::with_capacity(vregs.len());
         for vreg in vregs {
-            // let stack_item = inner.stack_layout.add_spilled_virtreg_variable(vreg, &mut inner.vreg_alloc);
-            // vreg_info.push((vreg, stack_item.virtreg));
             let MirFuncInner {
                 stack_layout,
                 vreg_alloc,

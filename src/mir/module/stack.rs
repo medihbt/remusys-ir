@@ -2,6 +2,7 @@ use crate::{
     mir::{
         operand::{
             IMirSubOperand,
+            physreg_set::MirPhysRegSet,
             reg::{FPR64, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
         },
         translate::mirgen::operandgen::PureSourceReg,
@@ -164,6 +165,17 @@ impl MirStackLayout {
             finished_arg_build: false,
             _saved_regs_size_cache: Cell::new(0),
         }
+    }
+    pub fn new_aapcs_callee(vreg_alloc: &mut VirtRegAlloc) -> Self {
+        let mut layout = Self::new();
+        let saved_regs = MirPhysRegSet::new_aapcs_callee();
+        layout.saved_regs.reserve(saved_regs.num_regs() as usize);
+        for preg in saved_regs {
+            layout
+                .saved_regs
+                .push(SavedReg::from_vreg_alloc(vreg_alloc, preg));
+        }
+        layout
     }
 
     pub fn find_saved_preg(&self, preg: RegOperand) -> Option<&SavedReg> {
@@ -390,7 +402,11 @@ impl MirStackLayout {
         vreg: RegOperand,
         vreg_alloc: &mut VirtRegAlloc,
     ) -> &mut MirStackItem {
-        assert!(vreg.is_virtual(), "Expected a virtual register, found ID {:?}", vreg.get_id());
+        assert!(
+            vreg.is_virtual(),
+            "Expected a virtual register, found ID {:?}",
+            vreg.get_id()
+        );
         let pure = PureSourceReg::from_reg(vreg);
         let (irtype, size, align_log2) = match pure {
             PureSourceReg::F32(_) => (ValTypeID::Float(FloatTypeKind::Ieee32), 4, 2),

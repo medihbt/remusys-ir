@@ -202,8 +202,8 @@ impl RegID {
     pub fn get_real(self) -> u32 {
         match self {
             RegID::Virt(id) => id + 33,
-            RegID::SP => 32,
             RegID::ZR => 31,
+            RegID::SP => 32,
             RegID::Phys(id) => id,
         }
     }
@@ -221,11 +221,18 @@ impl RegID {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GPReg(pub u32, pub SubRegIndex, pub RegUseFlags);
 
+impl Debug for GPReg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, si, uf) = self;
+        write!(f, "GPReg({:?}{si}, {uf})", RegID::from_real(id))
+    }
+}
+
 impl GPReg {
-    pub const RETVAL_POS:  u32 = 0;
+    pub const RETVAL_POS: u32 = 0;
     pub const RETADDR_POS: u32 = 30;
 
     pub fn is_virtual(self) -> bool {
@@ -318,29 +325,40 @@ impl IMirSubOperand for GPReg {
         self
     }
     fn insert_to_real(self, real: Self) -> Self {
-        let Self(_, _, uf) = real;
         let Self(id, si, _) = self;
+        let Self(_, _, uf) = real;
         Self(id, si, uf)
     }
 
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
-        let id_str = match self.get_id() {
-            RegID::Phys(id) => id.to_string(),
-            RegID::Virt(id) => format!("v{}", id),
-            RegID::SP => "sp".to_string(),
-            RegID::ZR => "zr".to_string(),
-        };
         match self.get_subreg_index().get_bits_log2() {
-            5 => write!(formatter, "w{}", id_str),
-            _ => write!(formatter, "x{}", id_str),
+            5 => match self.get_id() {
+                RegID::Phys(id) => write!(formatter, "w{}", id),
+                RegID::Virt(id) => write!(formatter, "wv{}", id),
+                RegID::SP => write!(formatter, "wsp"),
+                RegID::ZR => write!(formatter, "wzr"),
+            },
+            _ => match self.get_id() {
+                RegID::Phys(id) => write!(formatter, "x{}", id),
+                RegID::Virt(id) => write!(formatter, "xv{}", id),
+                RegID::SP => write!(formatter, "sp"),
+                RegID::ZR => write!(formatter, "zr"),
+            },
         }
     }
 }
 
 /// vector or floating-point register
 /// This is used for both vector registers (Vn) and floating-point registers (Dn).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct VFReg(pub u32, pub SubRegIndex, pub RegUseFlags);
+
+impl Debug for VFReg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, si, uf) = self;
+        write!(f, "VFReg({:?}{si}, {uf})", RegID::from_real(id))
+    }
+}
 
 impl VFReg {
     pub const RETVAL_POS: u32 = 0;
@@ -349,11 +367,7 @@ impl VFReg {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
     pub fn get_id(self) -> RegID {
-        if self.0 < 31 {
-            RegID::Phys(self.0)
-        } else {
-            RegID::Virt(self.0)
-        }
+        RegID::from_real(self.0)
     }
 
     pub fn get_id_raw(self) -> u32 {
@@ -438,16 +452,17 @@ impl IMirSubOperand for VFReg {
         self
     }
     fn insert_to_real(self, real: Self) -> Self {
-        let Self(_, _, uf) = real;
         let Self(id, si, _) = self;
+        let Self(_, _, uf) = real;
         Self(id, si, uf)
     }
 
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let id_str = match self.get_id() {
             RegID::Phys(id) => id.to_string(),
-            RegID::Virt(id) => format!("v{}", id + 33),
-            RegID::SP | RegID::ZR => panic!("VFReg cannot be SP or ZR"),
+            RegID::ZR => "31".to_string(),
+            RegID::Virt(id) => format!("v{}", id),
+            RegID::SP => panic!("VFReg cannot be SP"),
         };
         match self.get_subreg_index().get_bits_log2() {
             5 => write!(_formatter, "s{}", id_str),
@@ -496,8 +511,15 @@ impl IMirSubOperand for PState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct GPR32(pub u32, pub RegUseFlags);
+
+impl Debug for GPR32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, uf) = self;
+        write!(f, "GPR32(id: {:?}, {uf:?})", RegID::from_real(id),)
+    }
+}
 
 impl IMirSubOperand for GPR32 {
     type RealRepresents = GPReg;
@@ -518,8 +540,8 @@ impl IMirSubOperand for GPR32 {
         GPReg(self.0, SubRegIndex::new(5, 0), self.1)
     }
     fn insert_to_real(self, real: GPReg) -> GPReg {
-        let Self(_, uf) = self;
-        let GPReg(id, _, _) = real;
+        let Self(id, _) = self;
+        let GPReg(_, _, uf) = real;
         GPReg(id, SubRegIndex::new(5, 0), uf)
     }
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
@@ -539,8 +561,15 @@ impl GPR32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct GPR64(pub u32, pub RegUseFlags);
+
+impl Debug for GPR64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, uf) = self;
+        write!(f, "GPR64(id: {:?}, {uf:?})", RegID::from_real(id),)
+    }
+}
 
 impl IMirSubOperand for GPR64 {
     type RealRepresents = GPReg;
@@ -561,8 +590,8 @@ impl IMirSubOperand for GPR64 {
         GPReg(self.0, SubRegIndex::new(6, 0), self.1)
     }
     fn insert_to_real(self, real: GPReg) -> GPReg {
-        let Self(_, uf) = self;
-        let GPReg(id, _, _) = real;
+        let Self(id, _) = self;
+        let GPReg(_, _, uf) = real;
         GPReg(id, SubRegIndex::new(6, 0), uf)
     }
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
@@ -585,8 +614,15 @@ impl GPR64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct FPR32(pub u32, pub RegUseFlags);
+
+impl Debug for FPR32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, uf) = self;
+        write!(f, "FPR32(id: {:?}, {uf:?})", RegID::from_real(id),)
+    }
+}
 
 impl FPR32 {
     pub fn retval() -> Self {
@@ -613,8 +649,8 @@ impl IMirSubOperand for FPR32 {
         VFReg(self.0, SubRegIndex::new(5, 0), self.1)
     }
     fn insert_to_real(self, real: VFReg) -> VFReg {
-        let Self(_, uf) = self;
-        let VFReg(id, _, _) = real;
+        let Self(id, _) = self;
+        let VFReg(_, _, uf) = real;
         VFReg(id, SubRegIndex::new(5, 0), uf)
     }
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
@@ -622,8 +658,15 @@ impl IMirSubOperand for FPR32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct FPR64(pub u32, pub RegUseFlags);
+
+impl Debug for FPR64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, uf) = self;
+        write!(f, "FPR64(id: {:?}, {uf:?})", RegID::from_real(id),)
+    }
+}
 
 impl FPR64 {
     pub fn retval() -> Self {
@@ -650,8 +693,8 @@ impl IMirSubOperand for FPR64 {
         VFReg(self.0, SubRegIndex::new(6, 0), self.1)
     }
     fn insert_to_real(self, real: VFReg) -> VFReg {
-        let Self(_, uf) = self;
-        let VFReg(id, _, _) = real;
+        let Self(id, _) = self;
+        let VFReg(_, _, uf) = real;
         VFReg(id, SubRegIndex::new(6, 0), uf)
     }
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
@@ -659,8 +702,19 @@ impl IMirSubOperand for FPR64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RegOperand(pub u32, pub SubRegIndex, pub RegUseFlags, pub bool);
+
+impl Debug for RegOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(id, si, uf, is_fp) = self;
+        if is_fp {
+            write!(f, "Reg:FP({:?}{si}, {uf})", RegID::from_real(id))
+        } else {
+            write!(f, "Reg:GP({:?}{si}, {uf})", RegID::from_real(id))
+        }
+    }
+}
 
 impl RegOperand {
     pub fn is_fp(&self) -> bool {
@@ -744,7 +798,7 @@ impl RegOperand {
         Self: From<T>,
     {
         let other = Self::from(other);
-        self.get_id() == other.get_id() && self.get_use_flags() == other.get_use_flags()
+        self.get_id() == other.get_id() && self.is_fp() == other.is_fp()
     }
 }
 

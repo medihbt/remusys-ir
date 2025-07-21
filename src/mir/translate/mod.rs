@@ -38,6 +38,7 @@ pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
 
     // Final pass: lower stack operations
     mir_pass::stack_lower::lower_stack_for_module(&mut mir_module);
+    eprintln!("Lowered stack operations in MIR module:\n{}", mir_module.name);
 
     // return the generated MIR module
     mir_module

@@ -1,5 +1,5 @@
 use crate::mir::operand::{IMirSubOperand, MirOperand, imm_traits};
-use std::fmt::Write;
+use std::fmt::{Debug, Write};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImmKind {
@@ -56,8 +56,15 @@ impl ImmKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Imm64(pub u64, pub ImmKind);
+
+impl Debug for Imm64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(value, kind) = self;
+        write!(f, "Imm64({value:#x}:{kind:?})")
+    }
+}
 
 impl Imm64 {
     pub fn new(value: u64, flags: ImmKind) -> Self {
@@ -138,8 +145,15 @@ impl IMirSubOperand for Imm64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Imm32(pub u32, pub ImmKind);
+
+impl Debug for Imm32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(value, kind) = self;
+        write!(f, "Imm32({value:#x}:{kind:?})")
+    }
+}
 
 impl Imm32 {
     pub fn new(value: u32, flags: ImmKind) -> Self {
@@ -220,8 +234,15 @@ impl IMirSubOperand for Imm32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmCalc(pub u32);
+
+impl Debug for ImmCalc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Calc({value:#x})")
+    }
+}
 
 impl ImmCalc {
     pub fn new(value: u32) -> Self {
@@ -297,8 +318,15 @@ impl IMirSubOperand for ImmCalc {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmLogic(pub u64);
+
+impl Debug for ImmLogic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Logic({value:#x})")
+    }
+}
 
 impl ImmLogic {
     pub fn new(value: u64) -> Self {
@@ -377,8 +405,15 @@ impl IMirSubOperand for ImmLogic {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmSMax(pub i64);
+
+impl Debug for ImmSMax {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:SMax({value:#x})")
+    }
+}
 
 impl ImmSMax {
     pub fn new(value: i64) -> Self {
@@ -455,8 +490,15 @@ impl IMirSubOperand for ImmSMax {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmUMax(pub u64);
+
+impl Debug for ImmUMax {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:UMax({value:#x})")
+    }
+}
 
 impl ImmUMax {
     pub fn new(value: u64) -> Self {
@@ -532,8 +574,15 @@ impl IMirSubOperand for ImmUMax {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmShift(pub u64);
+
+impl Debug for ImmShift {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Shift({value:#x})")
+    }
+}
 
 impl ImmShift {
     pub fn new(value: u64) -> Self {
@@ -612,8 +661,15 @@ impl IMirSubOperand for ImmShift {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmLoad32(pub i32);
+
+impl Debug for ImmLoad32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Load32({value:#x})")
+    }
+}
 
 impl ImmLoad32 {
     pub fn new(value: i32) -> Self {
@@ -681,8 +737,15 @@ impl IMirSubOperand for ImmLoad32 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmLoad64(pub i64);
+
+impl Debug for ImmLoad64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Load64({value:#x})")
+    }
+}
 
 impl ImmLoad64 {
     pub fn new(value: i64) -> Self {
@@ -750,8 +813,15 @@ impl IMirSubOperand for ImmLoad64 {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmCCmp(pub u32);
+
+impl Debug for ImmCCmp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:CCmp({value:#x})")
+    }
+}
 
 impl ImmCCmp {
     pub fn new(value: u32) -> Self {
@@ -819,8 +889,15 @@ impl IMirSubOperand for ImmCCmp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ImmMov(pub u32);
+
+impl Debug for ImmMov {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:Mov({value:#x})")
+    }
+}
 
 impl ImmMov {
     pub fn new(value: u32) -> Self {
@@ -888,8 +965,15 @@ impl IMirSubOperand for ImmMov {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct ImmFMov32(pub f32);
+
+impl Debug for ImmFMov32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:FMov32({value})")
+    }
+}
 
 impl ImmFMov32 {
     pub fn new(value: f32) -> Self {
@@ -967,8 +1051,15 @@ impl IMirSubOperand for ImmFMov32 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct ImmFMov64(pub f64);
+
+impl Debug for ImmFMov64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(value) = self;
+        write!(f, "Imm:FMov64({value})")
+    }
+}
 
 impl ImmFMov64 {
     pub fn new(value: f64) -> Self {

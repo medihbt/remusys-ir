@@ -131,7 +131,13 @@ fn update_stack_instruction_refs(
         MirInst::Bin64RC(x) => {
             let stack_pos = x.get_rn();
             let orig_offset = x.get_rm().0 as u64;
-            let offset = get_stackpos_stack_offset(func, x.get_common().opcode, stack_layout, this_frame_size, stack_pos);
+            let offset = get_stackpos_stack_offset(
+                func,
+                x.get_common().opcode,
+                stack_layout,
+                this_frame_size,
+                stack_pos,
+            );
             let offset = offset + orig_offset;
             let sp = GPR64::sp();
             let x29 = GPR64(29, RegUseFlags::empty());

@@ -6,7 +6,7 @@ use crate::mir::{
     module::{block::*, func::*, global::*, *},
     operand::{compound::*, imm::*, reg::*, subop::*, MirOperand},
 };
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UncondBr {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 1usize],
@@ -66,7 +66,21 @@ impl UncondBr {
         self.target().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UncondBr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UncondBr))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("target=op[0]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BReg {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 1usize],
@@ -129,7 +143,21 @@ impl BReg {
         self.target().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BReg {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BReg))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("target=op[0]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BLinkLabel {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -207,7 +235,22 @@ impl BLinkLabel {
         self.target().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BLinkLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BLinkLabel))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("ra=op[0]", &self.get_ra())
+            .field("target=op[1]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BLinkGlobal {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -285,7 +328,22 @@ impl BLinkGlobal {
         self.target().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BLinkGlobal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BLinkGlobal))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("ra=op[0]", &self.get_ra())
+            .field("target=op[1]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BLinkReg {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -366,7 +424,22 @@ impl BLinkReg {
         self.target().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BLinkReg {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BLinkReg))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("ra=op[0]", &self.get_ra())
+            .field("target=op[1]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TBZ64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -461,7 +534,23 @@ impl TBZ64 {
         self.target().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TBZ64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TBZ64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("cond=op[0]", &self.get_cond())
+            .field("bits=op[1]", &self.get_bits())
+            .field("target=op[2]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TBZ32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -556,7 +645,23 @@ impl TBZ32 {
         self.target().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TBZ32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TBZ32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("cond=op[0]", &self.get_cond())
+            .field("bits=op[1]", &self.get_bits())
+            .field("target=op[2]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICmp64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -666,7 +771,24 @@ impl ICmp64R {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICmp64R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICmp64R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICmp32R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -776,7 +898,24 @@ impl ICmp32R {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICmp32R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICmp32R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICmp64I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -874,7 +1013,23 @@ impl ICmp64I {
         self.rhs().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICmp64I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICmp64I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICmp32I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -972,7 +1127,23 @@ impl ICmp32I {
         self.rhs().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICmp32I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICmp32I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FCmp32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1073,7 +1244,23 @@ impl FCmp32 {
         self.rhs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FCmp32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FCmp32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FCmp64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1174,7 +1361,23 @@ impl FCmp64 {
         self.rhs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FCmp64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FCmp64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICCmp64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1300,7 +1503,25 @@ impl ICCmp64R {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICCmp64R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICCmp64R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICCmp32R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1426,7 +1647,25 @@ impl ICCmp32R {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICCmp32R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICCmp32R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICCmp64I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1549,7 +1788,25 @@ impl ICCmp64I {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICCmp64I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICCmp64I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ICCmp32I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1672,7 +1929,25 @@ impl ICCmp32I {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ICCmp32I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ICCmp32I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FCCmp32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1798,7 +2073,25 @@ impl FCCmp32 {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FCCmp32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FCCmp32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FCCmp64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -1924,7 +2217,25 @@ impl FCCmp64 {
         self.nzcv = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FCCmp64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FCCmp64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("csr=op[0]", &self.get_csr())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rhs=op[2]", &self.get_rhs())
+            .field("cond", &self.cond)
+            .field("nzcv", &self.nzcv)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2058,7 +2369,24 @@ impl Bin64R {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2190,7 +2518,24 @@ impl Bin32R {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MulL {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2294,7 +2639,23 @@ impl MulL {
         self.rm().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MulL {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MulL))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64RC {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2392,7 +2753,23 @@ impl Bin64RC {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64RC {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64RC))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32RC {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2490,7 +2867,23 @@ impl Bin32RC {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32RC {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32RC))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64RL {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2596,7 +2989,23 @@ impl Bin64RL {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64RL {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64RL))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32RL {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2702,7 +3111,23 @@ impl Bin32RL {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32RL {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32RL))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64RS {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2800,7 +3225,23 @@ impl Bin64RS {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64RS {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64RS))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64RU {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2898,7 +3339,23 @@ impl Bin64RU {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64RU {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64RU))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32RS {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -2996,7 +3453,23 @@ impl Bin32RS {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32RS {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32RS))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32RU {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -3094,7 +3567,23 @@ impl Bin32RU {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32RU {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32RU))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin64RShift {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -3195,7 +3684,23 @@ impl Bin64RShift {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin64RShift {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin64RShift))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Bin32RShift {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -3296,7 +3801,23 @@ impl Bin32RShift {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Bin32RShift {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Bin32RShift))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BinF64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -3400,7 +3921,23 @@ impl BinF64R {
         self.rm().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BinF64R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BinF64R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct BinF32R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -3504,7 +4041,23 @@ impl BinF32R {
         self.rm().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for BinF32R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(BinF32R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MirCopy64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3582,7 +4135,22 @@ impl MirCopy64 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MirCopy64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirCopy64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MirCopy32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3660,7 +4228,22 @@ impl MirCopy32 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MirCopy32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirCopy32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MirFCopy64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3738,7 +4321,22 @@ impl MirFCopy64 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MirFCopy64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirFCopy64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MirFCopy32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3816,7 +4414,22 @@ impl MirFCopy32 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MirFCopy32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirFCopy32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct MirPCopy {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3894,7 +4507,22 @@ impl MirPCopy {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for MirPCopy {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirPCopy))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Una64R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -3997,7 +4625,23 @@ impl Una64R {
         self.dst_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Una64R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Una64R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .field("dst_op", &self.dst_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Una32R {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4105,7 +4749,23 @@ impl Una32R {
         self.dst_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Una32R {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Una32R))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .field("dst_op", &self.dst_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct ExtR {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4189,7 +4849,22 @@ impl ExtR {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for ExtR {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(ExtR))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Mov64I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4270,7 +4945,22 @@ impl Mov64I {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Mov64I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Mov64I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Mov32I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4351,7 +5041,22 @@ impl Mov32I {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Mov32I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Mov32I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct Adr {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4429,7 +5134,22 @@ impl Adr {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for Adr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(Adr))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaFG64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4510,7 +5230,22 @@ impl UnaFG64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaFG64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaFG64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaGF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4604,7 +5339,22 @@ impl UnaGF64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaGF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaGF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaF64G32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4685,7 +5435,22 @@ impl UnaF64G32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaF64G32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaF64G32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaFG32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4766,7 +5531,22 @@ impl UnaFG32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaFG32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaFG32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaF32G64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4847,7 +5627,22 @@ impl UnaF32G64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaF32G64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaF32G64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaGF32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -4941,7 +5736,22 @@ impl UnaGF32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaGF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaGF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaG64F32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5034,7 +5844,22 @@ impl UnaG64F32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaG64F32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaG64F32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaG32F64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5115,7 +5940,22 @@ impl UnaG32F64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaG32F64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaG32F64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5215,7 +6055,22 @@ impl UnaF64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaF32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5315,7 +6170,22 @@ impl UnaF32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaryF32F64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5396,7 +6266,22 @@ impl UnaryF32F64 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaryF32F64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaryF32F64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct UnaryF64F32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5477,7 +6362,22 @@ impl UnaryF64F32 {
         self.src().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for UnaryF64F32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(UnaryF64F32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FMov64I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5555,7 +6455,22 @@ impl FMov64I {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FMov64I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FMov64I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct FMov32I {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -5633,7 +6548,22 @@ impl FMov32I {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for FMov32I {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(FMov32I))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("dst=op[0]", &self.get_dst())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TenaryG64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -5751,7 +6681,24 @@ impl TenaryG64 {
         self.rs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TenaryG64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TenaryG64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rs=op[3]", &self.get_rs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TenaryG64G32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -5872,7 +6819,24 @@ impl TenaryG64G32 {
         self.rs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TenaryG64G32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TenaryG64G32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rs=op[3]", &self.get_rs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TenaryG32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -5990,7 +6954,24 @@ impl TenaryG32 {
         self.rs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TenaryG32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TenaryG32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rs=op[3]", &self.get_rs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TenaryF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -6111,7 +7092,24 @@ impl TenaryF64 {
         self.rs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TenaryF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TenaryF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rs=op[3]", &self.get_rs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct TenaryF32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -6232,7 +7230,24 @@ impl TenaryF32 {
         self.rs().set(next_value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for TenaryF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(TenaryF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rs=op[3]", &self.get_rs())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6352,7 +7367,24 @@ impl LoadStoreGr64 {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6472,7 +7504,24 @@ impl LoadStoreGr32 {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6582,7 +7631,24 @@ impl LoadStoreF64 {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6692,7 +7758,24 @@ impl LoadStoreF32 {
         self.rm_op = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("rm_op", &self.rm_op)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr64Base {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6800,7 +7883,23 @@ impl LoadStoreGr64Base {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr64Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr64Base))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr32Base {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -6908,7 +8007,23 @@ impl LoadStoreGr32Base {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr32Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr32Base))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF64Base {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7006,7 +8121,23 @@ impl LoadStoreF64Base {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF64Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF64Base))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF32Base {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7104,7 +8235,23 @@ impl LoadStoreF32Base {
         self.rm().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF32Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF32Base))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr64Indexed {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7227,7 +8374,24 @@ impl LoadStoreGr64Indexed {
         self.addr_mode = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr64Indexed {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr64Indexed))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("addr_mode", &self.addr_mode)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr32Indexed {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7350,7 +8514,24 @@ impl LoadStoreGr32Indexed {
         self.addr_mode = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr32Indexed {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr32Indexed))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("addr_mode", &self.addr_mode)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF64Indexed {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7463,7 +8644,24 @@ impl LoadStoreF64Indexed {
         self.addr_mode = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF64Indexed {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF64Indexed))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("addr_mode", &self.addr_mode)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF32Indexed {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 3usize],
@@ -7576,7 +8774,24 @@ impl LoadStoreF32Indexed {
         self.addr_mode = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF32Indexed {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF32Indexed))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("addr_mode", &self.addr_mode)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr64Literal {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -7664,7 +8879,22 @@ impl LoadStoreGr64Literal {
         self.from().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr64Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr64Literal))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("from=op[1]", &self.get_from())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreGr32Literal {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -7752,7 +8982,22 @@ impl LoadStoreGr32Literal {
         self.from().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreGr32Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreGr32Literal))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("from=op[1]", &self.get_from())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF64Literal {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -7830,7 +9075,22 @@ impl LoadStoreF64Literal {
         self.from().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF64Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF64Literal))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("from=op[1]", &self.get_from())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadStoreF32Literal {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -7908,7 +9168,22 @@ impl LoadStoreF32Literal {
         self.from().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadStoreF32Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadStoreF32Literal))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("from=op[1]", &self.get_from())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadConst64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -7986,7 +9261,22 @@ impl LoadConst64 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadConst64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadConst64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadConstF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -8064,7 +9354,22 @@ impl LoadConstF64 {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadConstF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadConstF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadConst64Symbol {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -8142,7 +9447,22 @@ impl LoadConst64Symbol {
         self.src().set(value.into_mir());
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for LoadConst64Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(LoadConst64Symbol))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSel64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -8279,7 +9599,25 @@ impl CSel64 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSel64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSel64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("csr=op[3]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSel32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -8416,7 +9754,25 @@ impl CSel32 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSel32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSel32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("csr=op[3]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSelF64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -8550,7 +9906,25 @@ impl CSelF64 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSelF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSelF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("csr=op[3]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSelF32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 4usize],
@@ -8684,7 +10058,25 @@ impl CSelF32 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSelF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSelF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("rn=op[1]", &self.get_rn())
+            .field("rm=op[2]", &self.get_rm())
+            .field("csr=op[3]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSet64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -8774,7 +10166,23 @@ impl CSet64 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSet64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSet64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("csr=op[1]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CSet32 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -8864,7 +10272,23 @@ impl CSet32 {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CSet32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CSet32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("csr=op[1]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CondBr {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -8951,7 +10375,23 @@ impl CondBr {
         self.cond = value;
     }
 }
-#[derive(Debug, Clone)]
+impl std::fmt::Debug for CondBr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CondBr))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("label=op[0]", &self.get_label())
+            .field("csr=op[1]", &self.get_csr())
+            .field("cond", &self.cond)
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct CBZs {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -9027,5 +10467,20 @@ impl CBZs {
     #[doc = "set the value of operand target at 1 to a value of type MirBlockRef (checked by MirBlockRef)"]
     pub fn set_target(&self, value: MirBlockRef) {
         self.target().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for CBZs {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(CBZs))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("cond=op[0]", &self.get_cond())
+            .field("target=op[1]", &self.get_target())
+            .finish()
     }
 }

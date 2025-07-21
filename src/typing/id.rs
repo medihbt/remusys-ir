@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use crate::base::slabref::SlabRef;
 
 use super::{
@@ -6,7 +8,7 @@ use super::{
     types::{ArrayTypeRef, FloatTypeKind, FuncTypeRef, StructAliasRef, StructTypeRef},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValTypeID {
     Void,
     Ptr,
@@ -16,6 +18,21 @@ pub enum ValTypeID {
     Struct(StructTypeRef),
     StructAlias(StructAliasRef),
     Func(FuncTypeRef),
+}
+
+impl Debug for ValTypeID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ValTypeID::Void => write!(f, "void"),
+            ValTypeID::Ptr => write!(f, "ptr"),
+            ValTypeID::Int(binbits) => write!(f, "i{binbits}"),
+            ValTypeID::Float(fp_kind) => write!(f, "f:{fp_kind:?}"),
+            ValTypeID::Array(arr) => write!(f, "Array(ref:{})", arr.get_handle()),
+            ValTypeID::Struct(st) => write!(f, "Struct(ref:{})", st.get_handle()),
+            ValTypeID::StructAlias(sa) => write!(f, "StructAlias(ref:{})", sa.get_handle()),
+            ValTypeID::Func(func) => write!(f, "Func(ref:{})", func.get_handle()),
+        }
+    }
 }
 
 impl ValTypeID {

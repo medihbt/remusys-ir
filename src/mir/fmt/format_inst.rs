@@ -1,12 +1,10 @@
 use crate::mir::{
-    fmt::{FuncFormatContext, format_opcode::opcode_get_name_str},
+    fmt::{format_opcode::opcode_get_name_str, FuncFormatContext},
     inst::{
         // generated from `data/mir.rig`, please do not visit
-        impls::*,
-        // generated from `data/mir.rig`, please do not visit
-        opcode::MirOP,
+        addr::AddrMode, impls::*, opcode::MirOP
     },
-    operand::{IMirSubOperand, reg::RegID},
+    operand::{reg::RegID, IMirSubOperand},
 };
 use std::fmt::Write;
 
@@ -1036,6 +1034,10 @@ pub fn fmt_load_store_f32_base(
 }
 
 // ===== Load/Store Indexed instructions =====
+/// Syntax:
+///
+/// * PostIndex: `LDR <Xd>, [<Xn|SP>], #<simm>`
+/// * PreIndex:  `LDR <Xd>, [<Xn|SP>, #<simm>]!`
 pub fn fmt_load_store_gr64_indexed(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
@@ -1046,14 +1048,19 @@ pub fn fmt_load_store_gr64_indexed(
     load_store_gr64_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
     load_store_gr64_indexed.get_rn().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
-    load_store_gr64_indexed.get_rm().fmt_asm(formatter)?;
-    // aarch64 地址模式：PostIndex="]!", PreIndex="]!", NoOffset="]"
+
     match load_store_gr64_indexed.get_addr_mode() {
-        // 假设 AddrMode 有合适的方法获取模式信息
-        _ => write!(formatter, "]!")?, // 简化处理，实际需要根据具体枚举值判断
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            load_store_gr64_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        },
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            load_store_gr64_indexed.get_rm().fmt_asm(formatter)
+        },
+        _ => panic!("Unsupported address mode for load/store indexed"),
     }
-    Ok(())
 }
 
 pub fn fmt_load_store_gr32_indexed(
@@ -1066,12 +1073,19 @@ pub fn fmt_load_store_gr32_indexed(
     load_store_gr32_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
     load_store_gr32_indexed.get_rn().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
-    load_store_gr32_indexed.get_rm().fmt_asm(formatter)?;
+
     match load_store_gr32_indexed.get_addr_mode() {
-        _ => write!(formatter, "]!")?,
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            load_store_gr32_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        },
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            load_store_gr32_indexed.get_rm().fmt_asm(formatter)
+        },
+        _ => panic!("Unsupported address mode for load/store indexed"),
     }
-    Ok(())
 }
 
 pub fn fmt_load_store_f64_indexed(
@@ -1084,12 +1098,19 @@ pub fn fmt_load_store_f64_indexed(
     load_store_f64_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
     load_store_f64_indexed.get_rn().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
-    load_store_f64_indexed.get_rm().fmt_asm(formatter)?;
+    
     match load_store_f64_indexed.get_addr_mode() {
-        _ => write!(formatter, "]!")?,
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            load_store_f64_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        },
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            load_store_f64_indexed.get_rm().fmt_asm(formatter)
+        },
+        _ => panic!("Unsupported address mode for load/store indexed"),
     }
-    Ok(())
 }
 
 pub fn fmt_load_store_f32_indexed(
@@ -1102,12 +1123,19 @@ pub fn fmt_load_store_f32_indexed(
     load_store_f32_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
     load_store_f32_indexed.get_rn().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
-    load_store_f32_indexed.get_rm().fmt_asm(formatter)?;
+
     match load_store_f32_indexed.get_addr_mode() {
-        _ => write!(formatter, "]!")?,
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            load_store_f32_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        },
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            load_store_f32_indexed.get_rm().fmt_asm(formatter)
+        },
+        _ => panic!("Unsupported address mode for load/store indexed"),
     }
-    Ok(())
 }
 
 // ===== Load/Store Literal instructions =====

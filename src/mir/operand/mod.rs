@@ -1,8 +1,13 @@
-use crate::mir::{
-    module::{block::MirBlockRef, MirGlobalRef},
-    operand::{
-        imm::{Imm32, Imm64},
-        reg::{GPReg, PState, VFReg},
+use std::fmt::Debug;
+
+use crate::{
+    base::slabref::SlabRef,
+    mir::{
+        module::{MirGlobalRef, block::MirBlockRef},
+        operand::{
+            imm::{Imm32, Imm64},
+            reg::{GPReg, PState, VFReg},
+        },
     },
 };
 
@@ -15,7 +20,7 @@ pub mod subop;
 
 pub use subop::IMirSubOperand;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum MirOperand {
     None,
     GPReg(GPReg),
@@ -52,4 +57,23 @@ impl PartialEq for MirOperand {
     }
 }
 
-impl Eq for MirOperand { }
+impl Eq for MirOperand {}
+
+impl Debug for MirOperand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use MirOperand::*;
+        match self {
+            None => write!(f, "None"),
+            GPReg(reg) => reg.fmt(f),
+            VFReg(reg) => reg.fmt(f),
+            PState(state) => state.fmt(f),
+            Imm64(imm) => imm.fmt(f),
+            Imm32(imm) => imm.fmt(f),
+            Label(block) => write!(f, "Label({})", block.get_handle()),
+            Global(global) => write!(f, "Global({})", global.get_handle()),
+            SwitchTab(tab) => write!(f, "SwitchTab({tab})"),
+            F32(value) => write!(f, "F32({value})"),
+            F64(value) => write!(f, "F64({value})"),
+        }
+    }
+}

@@ -110,7 +110,7 @@ impl<'a> AsmWriter<'a> {
             self.dec_indent();
             self.wrap_indent();
             self.wrap_indent();
-            write!(self, "; External symbols").expect("Failed to write comment");
+            write!(self, "# External symbols").expect("Failed to write comment");
             self.inc_indent();
             for g in extern_globals {
                 let mod_item = g.data_from_module(module);

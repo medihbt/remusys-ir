@@ -443,9 +443,9 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrF32Literal => "str",
 
         // 常量加载指令
-        MirOP::LoadConst64 => "mir.loadconst",
-        MirOP::LoadConstF64 => "mir.loadconst",
-        MirOP::LoadConst64Symbol => "mir.loadconst",
+        MirOP::LoadConst64 => "ldr",
+        MirOP::LoadConstF64 => "ldr",
+        MirOP::LoadConst64Symbol => "ldr",
 
         // 条件选择指令
         MirOP::CSel64 | MirOP::CSel32 => "csel",

@@ -77,6 +77,8 @@ impl MirFunc {
         alloc_block: &mut Slab<MirBlock>,
     ) -> Self {
         let mut ret = Self::new_extern(name, func_ty, type_ctx);
+        let inner_mut = ret.inner.get_mut();
+        MirStackLayout::new_aapcs_callee(&mut inner_mut.vreg_alloc);
         ret.blocks = SlabRefList::from_slab(alloc_block);
         ret.common.linkage = Linkage::Global;
         ret
