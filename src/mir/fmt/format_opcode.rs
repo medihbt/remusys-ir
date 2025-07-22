@@ -119,8 +119,8 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::UMNegL => "umnegl",
 
         // 64位二元运算指令（立即数操作数）
-        MirOP::Add64I => "add",
-        MirOP::Sub64I => "sub",
+        MirOP::Add64I | MirOP::Add64Sym => "add",
+        MirOP::Sub64I | MirOP::Sub64Sym => "sub",
         MirOP::And64I => "and",
         MirOP::Bic64I => "bic",
         MirOP::EON64I => "eon",
@@ -311,12 +311,10 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::FSqrt32 => "fsqrt",
 
         // 浮点精度转换指令
-        MirOP::FCvt32F64 => "fcvt",
-        MirOP::FCvt64F32 => "fcvt",
+        MirOP::FCvt32F64 | MirOP::FCvt64F32 => "fcvt",
 
         // 浮点立即数移动指令
-        MirOP::FMov64I => "fmov",
-        MirOP::FMov32I => "fmov",
+        MirOP::FMov64I | MirOP::FMov32I => "fmov",
 
         // 三元运算指令
         MirOP::MAdd64 => "madd",
@@ -359,10 +357,8 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrHGr32 => "strh",
 
         // 浮点加载/存储指令（寄存器寻址）
-        MirOP::LdrF64 => "ldr",
-        MirOP::StrF64 => "str",
-        MirOP::LdrF32 => "ldr",
-        MirOP::StrF32 => "str",
+        MirOP::LdrF64 | MirOP::LdrF32 => "ldr",
+        MirOP::StrF64 | MirOP::StrF32 => "str",
 
         // 64位加载/存储指令（基址偏移寻址）
         MirOP::LdrGr64Base => "ldr",
@@ -374,6 +370,16 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrBGr64Base => "strb",
         MirOP::StrHGr64Base => "strh",
 
+        // 64位加载/存储指令（基址偏移寻址，偏移来自全局变量等符号）
+        MirOP::LdrGr64BaseS => "ldr",
+        MirOP::LdrBGr64BaseS => "ldrb",
+        MirOP::LdrHGr64BaseS => "ldrh",
+        MirOP::LdrSBGr64BaseS => "ldrsb",
+        MirOP::LdrSHGr64BaseS => "ldrsh",
+        MirOP::StrGr64BaseS => "str",
+        MirOP::StrBGr64BaseS => "strb",
+        MirOP::StrHGr64BaseS => "strh",
+
         // 32位加载/存储指令（基址偏移寻址）
         MirOP::LdrGr32Base => "ldr",
         MirOP::LdrBGr32Base => "ldrb",
@@ -384,11 +390,23 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrBGr32Base => "strb",
         MirOP::StrHGr32Base => "strh",
 
+        // 32位加载/存储指令（基址偏移寻址，偏移来自全局变量等符号）
+        MirOP::LdrGr32BaseS => "ldr",
+        MirOP::LdrBGr32BaseS => "ldrb",
+        MirOP::LdrHGr32BaseS => "ldrh",
+        MirOP::LdrSBGr32BaseS => "ldrsb",
+        MirOP::LdrSHGr32BaseS => "ldrsh",
+        MirOP::StrGr32BaseS => "str",
+        MirOP::StrBGr32BaseS => "strb",
+        MirOP::StrHGr32BaseS => "strh",
+
         // 浮点加载/存储指令（基址偏移寻址）
-        MirOP::LdrF64Base => "ldr",
-        MirOP::StrF64Base => "str",
-        MirOP::LdrF32Base => "ldr",
-        MirOP::StrF32Base => "str",
+        MirOP::LdrF64Base | MirOP::LdrF32Base => "ldr",
+        MirOP::StrF64Base | MirOP::StrF32Base => "str",
+
+        // 浮点加载/存储指令（基址偏移寻址，偏移来自全局变量等符号）
+        MirOP::LdrF64BaseS | MirOP::LdrF32BaseS => "ldr",
+        MirOP::StrF64BaseS | MirOP::StrF32BaseS => "str",
 
         // 64位加载/存储指令（索引寻址）
         MirOP::LdrGr64Indexed => "ldr",
@@ -411,10 +429,8 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrHGr32Indexed => "strh",
 
         // 浮点加载/存储指令（索引寻址）
-        MirOP::LdrF64Indexed => "ldr",
-        MirOP::StrF64Indexed => "str",
-        MirOP::LdrF32Indexed => "ldr",
-        MirOP::StrF32Indexed => "str",
+        MirOP::LdrF64Indexed | MirOP::LdrF32Indexed => "ldr",
+        MirOP::StrF64Indexed | MirOP::StrF32Indexed => "str",
 
         // 64位加载/存储指令（字面量寻址）
         MirOP::LdrGr64Literal => "ldr",
@@ -422,9 +438,6 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrHGr64Literal => "ldrh",
         MirOP::LdrSBGr64Literal => "ldrsb",
         MirOP::LdrSHGr64Literal => "ldrsh",
-        MirOP::StrGr64Literal => "str",
-        MirOP::StrBGr64Literal => "strb",
-        MirOP::StrHGr64Literal => "strh",
 
         // 32位加载/存储指令（字面量寻址）
         MirOP::LdrGr32Literal => "ldr",
@@ -432,20 +445,12 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrHGr32Literal => "ldrh",
         MirOP::LdrSBGr32Literal => "ldrsb",
         MirOP::LdrSHGr32Literal => "ldrsh",
-        MirOP::StrGr32Literal => "str",
-        MirOP::StrBGr32Literal => "strb",
-        MirOP::StrHGr32Literal => "strh",
 
         // 浮点加载/存储指令（字面量寻址）
-        MirOP::LdrF64Literal => "ldr",
-        MirOP::StrF64Literal => "str",
-        MirOP::LdrF32Literal => "ldr",
-        MirOP::StrF32Literal => "str",
+        MirOP::LdrF64Literal | MirOP::LdrF32Literal => "ldr",
 
         // 常量加载指令
-        MirOP::LoadConst64 => "ldr",
-        MirOP::LoadConstF64 => "ldr",
-        MirOP::LoadConst64Symbol => "ldr",
+        MirOP::LoadConst64 | MirOP::LoadConstF64 | MirOP::LoadConst64Symbol => "ldr",
 
         // 条件选择指令
         MirOP::CSel64 | MirOP::CSel32 => "csel",

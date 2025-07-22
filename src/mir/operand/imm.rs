@@ -1,5 +1,8 @@
-use crate::mir::operand::{IMirSubOperand, MirOperand, imm_traits};
-use std::fmt::{Debug, Write};
+use crate::mir::{
+    fmt::FuncFormatContext,
+    operand::{IMirSubOperand, MirOperand, imm_traits},
+};
+use std::fmt::Debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImmKind {
@@ -14,6 +17,8 @@ pub enum ImmKind {
     CCmp,
     /// 移动指令相关的立即数.
     Mov,
+    /// 常量加载相关的立即数, 规则是: 16 位整数, 通过移位和无符号扩展得到原数.
+    MovZNK,
     /// 浮点移动指令相关的立即数.
     FMov,
     /// 最大/最小值相关的立即数, 有符号变体
@@ -33,6 +38,7 @@ impl ImmKind {
             ImmKind::Load => imm_traits::is_load32_imm(imm as i64),
             ImmKind::CCmp => imm_traits::is_condcmp_imm(imm as u64),
             ImmKind::Mov => imm_traits::is_mov_imm(imm as u64),
+            ImmKind::MovZNK => ImmMovZNK::try_from_u64(imm as u64).is_some(),
             ImmKind::FMov => imm_traits::try_cast_f32_to_aarch8(f32::from_bits(imm)).is_some(),
             ImmKind::SMax => imm_traits::is_smax_imm(imm as i32 as i64),
             ImmKind::UMax => imm_traits::is_umax_imm(imm as u64),
@@ -48,6 +54,7 @@ impl ImmKind {
             ImmKind::Load => imm_traits::is_load64_imm(imm as i64),
             ImmKind::CCmp => imm_traits::is_condcmp_imm(imm),
             ImmKind::Mov => imm_traits::is_mov_imm(imm),
+            ImmKind::MovZNK => ImmMovZNK::try_from_u64(imm).is_some(),
             ImmKind::FMov => imm_traits::try_cast_f64_to_aarch8(f64::from_bits(imm)).is_some(),
             ImmKind::SMax => imm_traits::is_smax_imm(imm as i64),
             ImmKind::UMax => imm_traits::is_umax_imm(imm),
@@ -104,6 +111,9 @@ impl IMirSubOperand for Imm64 {
         MirOperand::Imm64(self)
     }
 
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
     fn from_real(real: Self) -> Self {
         real
     }
@@ -124,23 +134,25 @@ impl IMirSubOperand for Imm64 {
 
     fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         let is_fp = formatter.operand_context.is_fp;
-        match self.get_kind() {
+        let &Self(value, kind) = self;
+        match kind {
             ImmKind::Full => {
                 if is_fp {
-                    write!(formatter.writer, "#{:e}", f64::from_bits(self.0))
+                    write!(formatter.writer, "{:e}", f64::from_bits(value))
                 } else {
-                    write!(formatter.writer, "#{:#X}", self.0)
+                    write!(formatter.writer, "{:#X}", value)
                 }
             }
-            ImmKind::Calc => write!(formatter.writer, "#{:#X}", self.0),
-            ImmKind::Logic => write!(formatter.writer, "#{:#X}", self.0),
-            ImmKind::Load => write!(formatter.writer, "#{:#X}", self.0),
-            ImmKind::CCmp => write!(formatter.writer, "#{:#X}", self.0),
-            ImmKind::Mov => write!(formatter.writer, "#{:#X}", self.0),
-            ImmKind::FMov => write!(formatter.writer, "#{:e}", f64::from_bits(self.0)),
-            ImmKind::SMax => write!(formatter.writer, "#{:#X}", self.0 as i64),
-            ImmKind::UMax => write!(formatter.writer, "#{:#X}", self.0 as u8 as u64),
-            ImmKind::Shift => write!(formatter.writer, "#{:#X}", self.0),
+            ImmKind::Calc => ImmCalc::new(value as u32).fmt_asm(formatter),
+            ImmKind::Logic => ImmLogic::new(value).fmt_asm(formatter),
+            ImmKind::Load => ImmLoad64::new(value as i64).fmt_asm(formatter),
+            ImmKind::CCmp => ImmCCmp::new(value as u32).fmt_asm(formatter),
+            ImmKind::Mov => ImmMov::new(value).fmt_asm(formatter),
+            ImmKind::MovZNK => ImmMovZNK::from_raw(value as u32).fmt_asm(formatter),
+            ImmKind::FMov => ImmFMov64::new(f64::from_bits(value)).fmt_asm(formatter),
+            ImmKind::SMax => ImmSMax::new(value as i64).fmt_asm(formatter),
+            ImmKind::UMax => ImmUMax::new(value).fmt_asm(formatter),
+            ImmKind::Shift => ImmShift::new(value).fmt_asm(formatter),
         }
     }
 }
@@ -193,6 +205,9 @@ impl IMirSubOperand for Imm32 {
         MirOperand::Imm32(self)
     }
 
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
     fn from_real(real: Self) -> Self {
         real
     }
@@ -213,23 +228,25 @@ impl IMirSubOperand for Imm32 {
 
     fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         let is_fp = formatter.operand_context.is_fp;
-        match self.get_kind() {
+        let &Self(imm, kind) = self;
+        match kind {
             ImmKind::Full => {
                 if is_fp {
-                    write!(formatter.writer, "#{:e}", f32::from_bits(self.0))
+                    write!(formatter.writer, "{:e}", f32::from_bits(imm))
                 } else {
-                    write!(formatter.writer, "#{:#X}", self.0)
+                    write!(formatter.writer, "{:#X}", imm)
                 }
             }
-            ImmKind::Calc => write!(formatter.writer, "#0x{:#X}", self.0),
-            ImmKind::Logic => write!(formatter.writer, "#0x{:#X}", self.0),
-            ImmKind::Load => write!(formatter.writer, "#0x{:#X}", self.0),
-            ImmKind::CCmp => write!(formatter.writer, "#0x{:#X}", self.0),
-            ImmKind::Mov => write!(formatter.writer, "#0x{:#X}", self.0),
-            ImmKind::FMov => write!(formatter.writer, "#{:e}", f32::from_bits(self.0)),
-            ImmKind::SMax => write!(formatter.writer, "#{:#X}", self.0 as i32 as i64),
-            ImmKind::UMax => write!(formatter.writer, "#{:#X}", self.0 as u8 as u64),
-            ImmKind::Shift => write!(formatter.writer, "#{:#X}", self.0),
+            ImmKind::Calc => ImmCalc::new(imm as u32).fmt_asm(formatter),
+            ImmKind::Logic => ImmLogic::new(imm as u64).fmt_asm(formatter),
+            ImmKind::Load => ImmLoad32::new(imm as i32).fmt_asm(formatter),
+            ImmKind::CCmp => ImmCCmp::new(imm as u32).fmt_asm(formatter),
+            ImmKind::Mov => ImmMov::new(imm as u64).fmt_asm(formatter),
+            ImmKind::MovZNK => ImmMovZNK::from_raw(imm).fmt_asm(formatter),
+            ImmKind::FMov => ImmFMov32::new(f32::from_bits(imm)).fmt_asm(formatter),
+            ImmKind::SMax => ImmSMax::new(imm as i32 as i64).fmt_asm(formatter),
+            ImmKind::UMax => ImmUMax::new(imm as u64).fmt_asm(formatter),
+            ImmKind::Shift => ImmShift::new(imm as u64).fmt_asm(formatter),
         }
     }
 }
@@ -289,6 +306,13 @@ impl IMirSubOperand for ImmCalc {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Calc))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Calc {
+            Some(Self(real.get_value() as u32))
+        } else {
+            None
+        }
+    }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Calc {
             Self(real.get_value() as u32)
@@ -314,7 +338,13 @@ impl IMirSubOperand for ImmCalc {
     }
 
     fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
-        write!(formatter, "#0x{:X}", self.0)
+        let &Self(imm) = self;
+        if imm < 4096 {
+            write!(formatter.writer, "#{imm:#x}")
+        } else {
+            let imm = imm >> 12;
+            write!(formatter.writer, "#{imm:#x}, LSL #12")
+        }
     }
 }
 
@@ -373,6 +403,13 @@ impl IMirSubOperand for ImmLogic {
         MirOperand::Imm64(Imm64(self.0, ImmKind::Logic))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Logic {
+            Some(Self(real.get_value()))
+        } else {
+            None
+        }
+    }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Logic {
             Self(real.get_value())
@@ -460,6 +497,13 @@ impl IMirSubOperand for ImmSMax {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::SMax))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::SMax {
+            Some(Self(real.get_value() as i64))
+        } else {
+            None
+        }
+    }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::SMax {
             Self(real.get_value() as i64)
@@ -545,6 +589,13 @@ impl IMirSubOperand for ImmUMax {
         MirOperand::Imm64(Imm64(self.0, ImmKind::UMax))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::UMax {
+            Some(Self(real.get_value()))
+        } else {
+            None
+        }
+    }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::UMax {
             Self(real.get_value())
@@ -629,6 +680,14 @@ impl IMirSubOperand for ImmShift {
         MirOperand::Imm64(Imm64(self.0, ImmKind::Shift))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Shift {
+            Some(Self(real.get_value()))
+        } else {
+            None
+        }
+    }
+
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Shift {
             Self(real.get_value())
@@ -708,6 +767,14 @@ impl IMirSubOperand for ImmLoad32 {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Load))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Load {
+            Some(Self(real.get_value() as i32))
+        } else {
+            None
+        }
+    }
+
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Load {
             Self(real.get_value() as i32)
@@ -782,6 +849,14 @@ impl IMirSubOperand for ImmLoad64 {
 
     fn into_mir(self) -> MirOperand {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Load))
+    }
+
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Load {
+            Some(Self(real.get_value() as i64))
+        } else {
+            None
+        }
     }
 
     fn from_real(real: Imm64) -> Self {
@@ -860,6 +935,14 @@ impl IMirSubOperand for ImmCCmp {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::CCmp))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::CCmp {
+            Some(Self(real.get_value() as u32))
+        } else {
+            None
+        }
+    }
+
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::CCmp {
             Self(real.get_value() as u32)
@@ -890,7 +973,7 @@ impl IMirSubOperand for ImmCCmp {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImmMov(pub u32);
+pub struct ImmMov(pub u16);
 
 impl Debug for ImmMov {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -900,9 +983,9 @@ impl Debug for ImmMov {
 }
 
 impl ImmMov {
-    pub fn new(value: u32) -> Self {
-        if imm_traits::is_mov_imm(value as u64) {
-            Self(value)
+    pub fn new(value: u64) -> Self {
+        if imm_traits::is_mov_imm(value) {
+            Self(value as u16)
         } else {
             panic!("Invalid immediate value: {} for Mov kind", value);
         }
@@ -918,15 +1001,15 @@ impl IMirSubOperand for ImmMov {
 
     fn from_mir(mir: MirOperand) -> Self {
         let (value, flag) = match mir {
-            MirOperand::Imm64(Imm64(value, flag)) => (value as u32, flag),
-            MirOperand::Imm32(Imm32(value, flag)) => (value, flag),
+            MirOperand::Imm64(Imm64(value, flag)) => (value, flag),
+            MirOperand::Imm32(Imm32(value, flag)) => (value as u64, flag),
             _ => panic!("Expected Imm64 or Imm32, found {mir:?}"),
         };
         if flag != ImmKind::Mov {
             panic!("Expected Imm64 or Imm32 with Mov kind, found {:?}", flag);
         }
-        if imm_traits::is_mov_imm(value as u64) {
-            Self(value)
+        if imm_traits::is_mov_imm(value) {
+            Self(value as u16)
         } else {
             panic!("Invalid immediate value: {} for Mov kind", value);
         }
@@ -936,9 +1019,17 @@ impl IMirSubOperand for ImmMov {
         MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Mov))
     }
 
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::Mov {
+            Some(Self(real.get_value() as u16))
+        } else {
+            None
+        }
+    }
+
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Mov {
-            Self(real.get_value() as u32)
+            Self(real.get_value() as u16)
         } else {
             panic!("Expected Imm64 with Mov kind, found {:?}", real.get_kind());
         }
@@ -962,6 +1053,121 @@ impl IMirSubOperand for ImmMov {
 
     fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:#X}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ImmMovZNK(pub u16, pub u8);
+
+impl ImmMovZNK {
+    pub const fn try_from_u64(value: u64) -> Option<Self> {
+        if imm_traits::is_mov_imm(value) {
+            let (v, s) = if imm_traits::is_mov_imm(value >> 16) {
+                (value as u16, 16)
+            } else if imm_traits::is_mov_imm(value >> 32) {
+                (value as u16, 32)
+            } else if imm_traits::is_mov_imm(value >> 48) {
+                (value as u16, 48)
+            } else {
+                (value as u16, 0)
+            };
+            Some(Self(v, s))
+        } else {
+            None
+        }
+    }
+    pub fn from_u64(value: u64) -> Self {
+        let Some(imm) = Self::try_from_u64(value) else {
+            panic!("Invalid immediate value: {value} for MovZNK kind");
+        };
+        imm
+    }
+
+    pub fn from_raw<T: Into<u64>>(value: T) -> Self {
+        let value: u64 = value.into();
+        if imm_traits::is_mov_imm(value) {
+            Self::from_u64(value)
+        } else {
+            panic!("Invalid immediate value: {value} for MovZNK kind");
+        }
+    }
+
+    pub fn new(value: u16, shift: u8) -> Self {
+        // u16 一定是合法的 mov 立即数
+        if matches!(shift, 0 | 16 | 32 | 48) {
+            Self(value, shift)
+        } else {
+            panic!("Invalid shift value: {shift} for MovZNK kind");
+        }
+    }
+}
+
+impl Debug for ImmMovZNK {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(value, shift) = self;
+        let real_value = value as u64;
+        let real_value = real_value << shift;
+        write!(f, "Imm:MovZNK({real_value:#x} = {value:#x} << {shift})")
+    }
+}
+
+impl IMirSubOperand for ImmMovZNK {
+    type RealRepresents = Imm64;
+
+    fn new_empty() -> Self {
+        Self(0, 0)
+    }
+
+    fn from_mir(mir: MirOperand) -> Self {
+        let MirOperand::Imm64(imm) = mir else {
+            panic!("Expected MirOperand::Imm64, found {mir:?}");
+        };
+        Self::from_real(imm)
+    }
+
+    fn into_mir(self) -> MirOperand {
+        MirOperand::Imm64(self.into_real())
+    }
+
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        let Imm64(value, _) = real;
+        let (v, s) = if imm_traits::is_mov_imm(value) {
+            (value as u16, 0)
+        } else if imm_traits::is_mov_imm(value >> 16) {
+            (value as u16, 16)
+        } else if imm_traits::is_mov_imm(value >> 32) {
+            (value as u16, 32)
+        } else if imm_traits::is_mov_imm(value >> 48) {
+            (value as u16, 48)
+        } else {
+            return None;
+        };
+        Some(Self(v, s))
+    }
+
+    fn from_real(real: Imm64) -> Self {
+        let Some(imm) = Self::try_from_real(real) else {
+            panic!("Expected Imm64 with MovZNK kind, found {:?}", real.get_kind());
+        };
+        imm
+    }
+
+    fn into_real(self) -> Imm64 {
+        let Self(value, shift) = self;
+        Imm64((value as u64) << shift, ImmKind::MovZNK)
+    }
+
+    fn insert_to_real(self, _: Imm64) -> Imm64 {
+        self.into_real()
+    }
+
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
+        let &Self(value, shift) = self;
+        if shift != 0 {
+            write!(formatter.writer, "#{value:#x}, LSL #{shift}")
+        } else {
+            write!(formatter.writer, "#{value:#x}")
+        }
     }
 }
 
@@ -1020,6 +1226,14 @@ impl IMirSubOperand for ImmFMov32 {
 
     fn into_mir(self) -> MirOperand {
         MirOperand::Imm32(Imm32(self.0.to_bits(), ImmKind::FMov))
+    }
+
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::FMov {
+            Some(Self(f32::from_bits(real.get_value() as u32)))
+        } else {
+            None
+        }
     }
 
     fn from_real(real: Imm64) -> Self {
@@ -1106,6 +1320,14 @@ impl IMirSubOperand for ImmFMov64 {
 
     fn into_mir(self) -> MirOperand {
         MirOperand::Imm64(Imm64(self.0.to_bits(), ImmKind::FMov))
+    }
+
+    fn try_from_real(real: Imm64) -> Option<Self> {
+        if real.get_kind() == ImmKind::FMov {
+            Some(Self(f64::from_bits(real.get_value())))
+        } else {
+            None
+        }
     }
 
     fn from_real(real: Imm64) -> Self {

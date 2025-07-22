@@ -258,6 +258,14 @@ impl GPReg {
         self.set_id_raw(id.get_real())
     }
 
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        !other.is_fp() && self.get_id() == other.get_id()
+    }
+
     pub fn get_subreg_index(self) -> SubRegIndex {
         self.1
     }
@@ -318,6 +326,9 @@ impl IMirSubOperand for GPReg {
     fn into_mir(self) -> MirOperand {
         MirOperand::GPReg(self)
     }
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
     fn from_real(real: GPReg) -> Self {
         real
     }
@@ -342,7 +353,7 @@ impl IMirSubOperand for GPReg {
                 RegID::Phys(id) => write!(formatter, "x{}", id),
                 RegID::Virt(id) => write!(formatter, "xv{}", id),
                 RegID::SP => write!(formatter, "sp"),
-                RegID::ZR => write!(formatter, "zr"),
+                RegID::ZR => write!(formatter, "xzr"),
             },
         }
     }
@@ -385,6 +396,13 @@ impl VFReg {
     }
     pub fn set_id(&mut self, id: RegID) {
         self.set_id_raw(id.get_real())
+    }
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        other.is_fp() && self.get_id() == other.get_id()
     }
 
     pub fn get_subreg_index(self) -> SubRegIndex {
@@ -441,9 +459,12 @@ impl IMirSubOperand for VFReg {
             panic!("Expected MirOperand::VFReg, found {:?}", mir);
         }
     }
-
     fn into_mir(self) -> MirOperand {
         MirOperand::VFReg(self)
+    }
+
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
     }
     fn from_real(real: Self) -> Self {
         real
@@ -497,6 +518,9 @@ impl IMirSubOperand for PState {
         MirOperand::PState(self)
     }
 
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
     fn from_real(real: Self) -> Self {
         real
     }
@@ -533,8 +557,13 @@ impl IMirSubOperand for GPR32 {
     fn into_mir(self) -> MirOperand {
         MirOperand::GPReg(self.into_real())
     }
-    fn from_real(real: GPReg) -> Self {
-        Self(real.0, real.2)
+
+    fn try_from_real(real: GPReg) -> Option<Self> {
+        if real.get_bits_log2() == 5 {
+            Some(Self(real.0, real.2))
+        } else {
+            None
+        }
     }
     fn into_real(self) -> GPReg {
         GPReg(self.0, SubRegIndex::new(5, 0), self.1)
@@ -558,6 +587,33 @@ impl GPR32 {
     }
     pub fn sp() -> Self {
         GPR32(32, RegUseFlags::empty())
+    }
+
+    pub fn get_id(self) -> RegID {
+        let Self(id, _) = self;
+        RegID::from_real(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        let Self(_, uf) = self;
+        Self(id.get_real(), uf)
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        *self = self.insert_id(id);
+    }
+
+    pub fn is_virtual(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
+    }
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_))
+    }
+
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        !other.is_fp() && other.get_id() == self.get_id()
     }
 }
 
@@ -583,8 +639,12 @@ impl IMirSubOperand for GPR64 {
     fn into_mir(self) -> MirOperand {
         MirOperand::GPReg(self.into_real())
     }
-    fn from_real(real: GPReg) -> Self {
-        Self(real.0, real.2)
+    fn try_from_real(real: GPReg) -> Option<Self> {
+        if real.get_bits_log2() == 6 {
+            Some(Self(real.0, real.2))
+        } else {
+            None
+        }
     }
     fn into_real(self) -> GPReg {
         GPReg(self.0, SubRegIndex::new(6, 0), self.1)
@@ -612,6 +672,33 @@ impl GPR64 {
     pub fn ra() -> Self {
         GPR64(30, RegUseFlags::empty())
     }
+
+    pub fn get_id(self) -> RegID {
+        let Self(id, _) = self;
+        RegID::from_real(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        let Self(_, uf) = self;
+        Self(id.get_real(), uf)
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        *self = self.insert_id(id);
+    }
+
+    pub fn is_virtual(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
+    }
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_))
+    }
+
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        !other.is_fp() && other.get_id() == self.get_id()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -628,6 +715,33 @@ impl FPR32 {
     pub fn retval() -> Self {
         FPR32(0, RegUseFlags::empty())
     }
+    pub fn get_id(self) -> RegID {
+        let Self(id, _) = self;
+        RegID::from_real(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        let Self(_, uf) = self;
+        Self(id.get_real(), uf)
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        *self = self.insert_id(id);
+    }
+
+    pub fn is_virtual(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
+    }
+    /// RegID 设计有缺陷, D31|S31 会被误认为是 ZR...
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+    }
+    /// 检查是否与另一个寄存器在位置上相同 -- 即使它们的子寄存器索引不同。
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        other.is_fp() && self.get_id() == other.get_id()
+    }
 }
 
 impl IMirSubOperand for FPR32 {
@@ -642,8 +756,12 @@ impl IMirSubOperand for FPR32 {
     fn into_mir(self) -> MirOperand {
         MirOperand::VFReg(self.into_real())
     }
-    fn from_real(real: VFReg) -> Self {
-        Self(real.0, real.2)
+    fn try_from_real(real: VFReg) -> Option<Self> {
+        if real.get_bits_log2() == 5 {
+            Some(Self(real.0, real.2))
+        } else {
+            None
+        }
     }
     fn into_real(self) -> VFReg {
         VFReg(self.0, SubRegIndex::new(5, 0), self.1)
@@ -672,6 +790,34 @@ impl FPR64 {
     pub fn retval() -> Self {
         FPR64(0, RegUseFlags::empty())
     }
+
+    pub fn get_id(self) -> RegID {
+        let Self(id, _) = self;
+        RegID::from_real(id)
+    }
+    pub fn insert_id(self, id: RegID) -> Self {
+        let Self(_, uf) = self;
+        Self(id.get_real(), uf)
+    }
+    pub fn set_id(&mut self, id: RegID) {
+        *self = self.insert_id(id);
+    }
+
+    pub fn is_virtual(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Virt(_))
+    }
+    /// RegID 设计有缺陷, D31|S31 会被误认为是 ZR...
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+    }
+    /// 检查是否与另一个寄存器在位置上相同 -- 即使它们的子寄存器索引不同。
+    pub fn same_pos_as<T>(self, other: T) -> bool
+    where
+        RegOperand: From<T>,
+    {
+        let other = RegOperand::from(other);
+        other.is_fp() && self.get_id() == other.get_id()
+    }
 }
 
 impl IMirSubOperand for FPR64 {
@@ -686,8 +832,12 @@ impl IMirSubOperand for FPR64 {
     fn into_mir(self) -> MirOperand {
         MirOperand::VFReg(self.into_real())
     }
-    fn from_real(real: VFReg) -> Self {
-        Self(real.0, real.2)
+    fn try_from_real(real: VFReg) -> Option<Self> {
+        if real.get_bits_log2() == 6 {
+            Some(Self(real.0, real.2))
+        } else {
+            None
+        }
     }
     fn into_real(self) -> VFReg {
         VFReg(self.0, SubRegIndex::new(6, 0), self.1)
@@ -809,6 +959,20 @@ impl From<GPReg> for RegOperand {
     }
 }
 
+impl From<GPR32> for RegOperand {
+    fn from(reg: GPR32) -> Self {
+        let GPR32(id, uf) = reg;
+        RegOperand(id, SubRegIndex::new(5, 0), uf, false)
+    }
+}
+
+impl From<GPR64> for RegOperand {
+    fn from(reg: GPR64) -> Self {
+        let GPR64(id, uf) = reg;
+        RegOperand(id, SubRegIndex::new(6, 0), uf, false)
+    }
+}
+
 impl From<VFReg> for RegOperand {
     fn from(reg: VFReg) -> Self {
         let VFReg(id, si, uf) = reg;
@@ -816,23 +980,81 @@ impl From<VFReg> for RegOperand {
     }
 }
 
-impl Into<GPReg> for RegOperand {
-    fn into(self) -> GPReg {
-        let RegOperand(id, si, uf, is_fp) = self;
-        if is_fp {
-            panic!("Cannot convert RegOperand to GPReg, it is a VFReg");
-        }
-        GPReg(id, si, uf)
+impl From<FPR32> for RegOperand {
+    fn from(reg: FPR32) -> Self {
+        let FPR32(id, uf) = reg;
+        RegOperand(id, SubRegIndex::new(5, 0), uf, true)
     }
 }
 
-impl Into<VFReg> for RegOperand {
-    fn into(self) -> VFReg {
-        let RegOperand(id, si, uf, is_fp) = self;
-        if !is_fp {
+impl From<FPR64> for RegOperand {
+    fn from(reg: FPR64) -> Self {
+        let FPR64(id, uf) = reg;
+        RegOperand(id, SubRegIndex::new(6, 0), uf, true)
+    }
+}
+
+// impl Into<GPReg> for RegOperand {
+//     fn into(self) -> GPReg {
+//         let RegOperand(id, si, uf, is_fp) = self;
+//         if is_fp {
+//             panic!("Cannot convert RegOperand to GPReg, it is a VFReg");
+//         }
+//         GPReg(id, si, uf)
+//     }
+// }
+
+impl From<RegOperand> for GPReg {
+    fn from(op: RegOperand) -> Self {
+        if op.is_fp() {
+            panic!("Cannot convert RegOperand to GPReg, it is a VFReg");
+        }
+        GPReg(op.0, op.1, op.2)
+    }
+}
+
+impl From<RegOperand> for GPR32 {
+    fn from(op: RegOperand) -> Self {
+        if op.is_fp() {
+            panic!("Cannot convert RegOperand to GPR32, it is a VFReg");
+        }
+        GPR32(op.0, op.2)
+    }
+}
+
+impl From<RegOperand> for GPR64 {
+    fn from(op: RegOperand) -> Self {
+        if op.is_fp() {
+            panic!("Cannot convert RegOperand to GPR64, it is a VFReg");
+        }
+        GPR64(op.0, op.2)
+    }
+}
+
+impl From<RegOperand> for VFReg {
+    fn from(op: RegOperand) -> Self {
+        if !op.is_fp() {
             panic!("Cannot convert RegOperand to VFReg, it is a GPReg");
         }
-        VFReg(id, si, uf)
+        VFReg(op.0, op.1, op.2)
+    }
+}
+
+impl From<RegOperand> for FPR32 {
+    fn from(op: RegOperand) -> Self {
+        if !op.is_fp() {
+            panic!("Cannot convert RegOperand to FPR32, it is a GPReg");
+        }
+        FPR32(op.0, op.2)
+    }
+}
+
+impl From<RegOperand> for FPR64 {
+    fn from(op: RegOperand) -> Self {
+        if !op.is_fp() {
+            panic!("Cannot convert RegOperand to FPR64, it is a GPReg");
+        }
+        FPR64(op.0, op.2)
     }
 }
 

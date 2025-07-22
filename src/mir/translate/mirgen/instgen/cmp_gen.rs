@@ -11,7 +11,7 @@ use crate::{
         operand::reg::*,
         translate::mirgen::{
             instgen::InstDispatchState,
-            operandgen::{OperandMap, PureSourceReg},
+            operandgen::{OperandMap, DispatchedReg},
         },
     },
 };
@@ -36,12 +36,12 @@ pub(crate) fn dispatch_cmp(
     let rhs_ir = inst.rhs.get_operand(&alloc_use);
     let type_ctx = &ir_module.type_ctx;
     let lhs_mir =
-        PureSourceReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &lhs_ir, true)
+        DispatchedReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &lhs_ir, true)
             .expect("Failed to convert LHS operand to MIR");
     let rhs_mir =
-        PureSourceReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &rhs_ir, true)
+        DispatchedReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &rhs_ir, true)
             .expect("Failed to convert LHS operand to MIR");
-    use PureSourceReg::*;
+    use DispatchedReg::*;
     let inst = match (lhs_mir, rhs_mir) {
         (F32(lhs), F32(rhs)) => {
             assert_eq!(opcode, Opcode::Fcmp);

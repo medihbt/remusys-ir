@@ -148,8 +148,8 @@ impl<'a> MirBuilder<'a> {
         let alloc_inst = self.mir_module.borrow_alloc_inst();
         block_data.push_inst_ref(inst, &alloc_inst);
     }
-    pub fn add_inst(&self, inst: MirInst) -> MirInstRef {
-        let inst_ref = MirInstRef::from_module(&self.mir_module, inst);
+    pub fn add_inst(&mut self, inst: MirInst) -> MirInstRef {
+        let inst_ref = MirInstRef::from_mut_module(self.mir_module, inst);
         self.add_inst_ref(inst_ref);
         inst_ref
     }

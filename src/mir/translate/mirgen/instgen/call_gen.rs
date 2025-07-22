@@ -9,7 +9,7 @@ use crate::{
         inst::{IMirSubInst, inst::MirInst, mirops::MirCall},
         module::stack::VirtRegAlloc,
         operand::MirOperand,
-        translate::mirgen::operandgen::{OperandMap, PureSourceReg},
+        translate::mirgen::operandgen::{OperandMap, DispatchedReg},
     },
     typing::id::ValTypeID,
 };
@@ -43,7 +43,7 @@ pub(crate) fn dispatch_call(
         .iter()
         .map(|arg| arg.get_operand(&alloc_use))
         .map(|arg| {
-            PureSourceReg::from_valuessa(
+            DispatchedReg::from_valuessa(
                 operand_map,
                 &ir_module.type_ctx,
                 vreg_alloc,

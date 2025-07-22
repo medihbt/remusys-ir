@@ -6,22 +6,13 @@ use crate::{
         module::Module,
     },
     mir::{
-        inst::{
-            IMirSubInst,
-            impls::{
-                LoadStoreF32, LoadStoreF32Base, LoadStoreF32Literal, LoadStoreF64Base,
-                LoadStoreF64Literal, LoadStoreGr32Base, LoadStoreGr32Literal, LoadStoreGr64Base,
-                LoadStoreGr64Literal,
-            },
-            inst::MirInst,
-            opcode::MirOP,
-        },
+        inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
         module::{MirGlobalRef, stack::VirtRegAlloc},
         operand::{
             MirOperand,
             compound::MirSymbolOp,
             imm::{ImmLoad32, ImmLoad64},
-            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand},
+            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand},
             subop::IMirSubOperand,
         },
         translate::mirgen::operandgen::{OperandMap, OperandMapError},
@@ -45,7 +36,7 @@ pub(crate) fn generate_store_inst(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<'_, Slab<UseData>>,
 ) -> Option<Result<(), InstDispatchError>> {
-    type StrSrc = crate::mir::translate::mirgen::operandgen::PureSourceReg;
+    type StrSrc = crate::mir::translate::mirgen::operandgen::DispatchedReg;
 
     let InstData::Store(_, store) = ir_ref.to_slabref_unwrap(alloc_inst) else {
         panic!("Expected Store instruction");
@@ -75,40 +66,48 @@ pub(crate) fn generate_store_inst(
     };
     let zoff32 = ImmLoad32::new(0);
     let zoff64 = ImmLoad64::new(0);
-    let store_inst = match dst_mir {
-        StrDest::G64(dst_ptr) => match src_mir {
-            StrSrc::F32(fpr32) => {
-                LoadStoreF32Base::new(MirOP::StrF32, fpr32, dst_ptr, zoff32).into_mir()
-            }
-            StrSrc::F64(fpr64) => {
-                LoadStoreF64Base::new(MirOP::StrF64, fpr64, dst_ptr, zoff64).into_mir()
-            }
-            StrSrc::G32(gpr32) => {
-                LoadStoreGr32Base::new(MirOP::StrGr32, gpr32, dst_ptr, zoff32).into_mir()
-            }
-            StrSrc::G64(gpr64) => {
-                LoadStoreGr64Base::new(MirOP::StrGr64, gpr64, dst_ptr, zoff64).into_mir()
-            }
-        },
-        StrDest::Global(global) => {
-            let global = MirSymbolOp::Global(global);
-            match src_mir {
+    match dst_mir {
+        StrDest::G64(dst_ptr) => {
+            let store_inst = match src_mir {
                 StrSrc::F32(fpr32) => {
-                    LoadStoreF32Literal::new(MirOP::StrF32Literal, fpr32, global).into_mir()
+                    StoreF32Base::new(MirOP::StrF32Base, fpr32, dst_ptr, zoff32).into_mir()
                 }
                 StrSrc::F64(fpr64) => {
-                    LoadStoreF64Literal::new(MirOP::StrF64Literal, fpr64, global).into_mir()
+                    StoreF64Base::new(MirOP::StrF64Base, fpr64, dst_ptr, zoff64).into_mir()
                 }
                 StrSrc::G32(gpr32) => {
-                    LoadStoreGr32Literal::new(MirOP::StrGr32Literal, gpr32, global).into_mir()
+                    StoreGr32Base::new(MirOP::StrGr32Base, gpr32, dst_ptr, zoff32).into_mir()
                 }
                 StrSrc::G64(gpr64) => {
-                    LoadStoreGr64Literal::new(MirOP::StrGr64Literal, gpr64, global).into_mir()
+                    StoreGr64Base::new(MirOP::StrGr64Base, gpr64, dst_ptr, zoff64).into_mir()
                 }
-            }
+            };
+            out_insts.push_back(store_inst);
+        }
+        StrDest::Global(global) => {
+            let global = MirSymbolOp::Global(global);
+            let hi20_addr_vreg = vreg_alloc.insert_gp(GPReg::new_long(RegID::Virt(0)));
+            let hi20_addr_vreg = GPR64::from_real(hi20_addr_vreg);
+            let adr_hi20 = Adr::new(MirOP::Adr, hi20_addr_vreg, global);
+            out_insts.push_back(adr_hi20.into_mir());
+
+            let store_inst = match src_mir {
+                StrSrc::F32(src) => {
+                    StoreF32BaseS::new(MirOP::StrF32BaseS, src, hi20_addr_vreg, global).into_mir()
+                }
+                StrSrc::F64(src) => {
+                    StoreF64BaseS::new(MirOP::StrF64BaseS, src, hi20_addr_vreg, global).into_mir()
+                }
+                StrSrc::G32(src) => {
+                    StoreGr32BaseS::new(MirOP::StrGr32BaseS, src, hi20_addr_vreg, global).into_mir()
+                }
+                StrSrc::G64(src) => {
+                    StoreGr64BaseS::new(MirOP::StrGr64BaseS, src, hi20_addr_vreg, global).into_mir()
+                }
+            };
+            out_insts.push_back(store_inst);
         }
     };
-    out_insts.push_back(store_inst);
     None
 }
 
@@ -152,7 +151,7 @@ pub(crate) fn dispatch_load(
     let dst_kind = LdrDest::from_reg_operand(dst_mir);
     let ldr_inst = match dst_kind {
         LdrDest::F32(fpr32) => match src_mir {
-            MirOperand::GPReg(gpreg) => LoadStoreF32::new(
+            MirOperand::GPReg(gpreg) => LoadF32::new(
                 MirOP::LdrF32,
                 fpr32,
                 GPR64::from_real(gpreg),
@@ -161,17 +160,17 @@ pub(crate) fn dispatch_load(
             )
             .into_mir(),
             MirOperand::Label(label) => {
-                LoadStoreF32Literal::new(MirOP::LdrF32Literal, fpr32, MirSymbolOp::Label(label))
+                LoadF32Literal::new(MirOP::LdrF32Literal, fpr32, MirSymbolOp::Label(label))
                     .into_mir()
             }
             MirOperand::Global(globl) => {
-                LoadStoreF32Literal::new(MirOP::LdrF32Literal, fpr32, MirSymbolOp::Global(globl))
+                LoadF32Literal::new(MirOP::LdrF32Literal, fpr32, MirSymbolOp::Global(globl))
                     .into_mir()
             }
             _ => panic!("Invalid source operand load from {src_mir:?} to {dst_mir:?}"),
         },
         LdrDest::F64(fpr64) => match src_mir {
-            MirOperand::GPReg(gpreg) => LoadStoreF64Base::new(
+            MirOperand::GPReg(gpreg) => LoadF64Base::new(
                 MirOP::LdrF64Base,
                 fpr64,
                 GPR64::from_real(gpreg),
@@ -179,17 +178,17 @@ pub(crate) fn dispatch_load(
             )
             .into_mir(),
             MirOperand::Label(label) => {
-                LoadStoreF64Literal::new(MirOP::LdrF64Literal, fpr64, MirSymbolOp::Label(label))
+                LoadF64Literal::new(MirOP::LdrF64Literal, fpr64, MirSymbolOp::Label(label))
                     .into_mir()
             }
             MirOperand::Global(globl) => {
-                LoadStoreF64Literal::new(MirOP::LdrF64Literal, fpr64, MirSymbolOp::Global(globl))
+                LoadF64Literal::new(MirOP::LdrF64Literal, fpr64, MirSymbolOp::Global(globl))
                     .into_mir()
             }
             _ => panic!("Invalid source operand load from {src_mir:?} to {dst_mir:?}"),
         },
         LdrDest::G32(gpr32) => match src_mir {
-            MirOperand::GPReg(gpreg) => LoadStoreGr32Base::new(
+            MirOperand::GPReg(gpreg) => LoadGr32Base::new(
                 MirOP::LdrGr32Base,
                 gpr32,
                 GPR64::from_real(gpreg),
@@ -197,17 +196,17 @@ pub(crate) fn dispatch_load(
             )
             .into_mir(),
             MirOperand::Label(label) => {
-                LoadStoreGr32Literal::new(MirOP::LdrGr32Literal, gpr32, MirSymbolOp::Label(label))
+                LoadGr32Literal::new(MirOP::LdrGr32Literal, gpr32, MirSymbolOp::Label(label))
                     .into_mir()
             }
             MirOperand::Global(globl) => {
-                LoadStoreGr32Literal::new(MirOP::LdrGr32Literal, gpr32, MirSymbolOp::Global(globl))
+                LoadGr32Literal::new(MirOP::LdrGr32Literal, gpr32, MirSymbolOp::Global(globl))
                     .into_mir()
             }
             _ => panic!("Invalid source operand load from {src_mir:?} to {dst_mir:?}"),
         },
         LdrDest::G64(gpr64) => match src_mir {
-            MirOperand::GPReg(gpreg) => LoadStoreGr64Base::new(
+            MirOperand::GPReg(gpreg) => LoadGr64Base::new(
                 MirOP::LdrGr64Base,
                 gpr64,
                 GPR64::from_real(gpreg),
@@ -215,19 +214,17 @@ pub(crate) fn dispatch_load(
             )
             .into_mir(),
             MirOperand::Label(label) => {
-                LoadStoreGr64Literal::new(MirOP::LdrGr64Literal, gpr64, MirSymbolOp::Label(label))
+                LoadGr64Literal::new(MirOP::LdrGr64Literal, gpr64, MirSymbolOp::Label(label))
                     .into_mir()
             }
             MirOperand::Global(globl) => {
-                LoadStoreGr64Literal::new(MirOP::LdrGr64Literal, gpr64, MirSymbolOp::Global(globl))
+                LoadGr64Literal::new(MirOP::LdrGr64Literal, gpr64, MirSymbolOp::Global(globl))
                     .into_mir()
             }
-            MirOperand::SwitchTab(index) => LoadStoreGr64Literal::new(
-                MirOP::LdrGr64Literal,
-                gpr64,
-                MirSymbolOp::SwitchTab(index),
-            )
-            .into_mir(),
+            MirOperand::SwitchTab(index) => {
+                LoadGr64Literal::new(MirOP::LdrGr64Literal, gpr64, MirSymbolOp::SwitchTab(index))
+                    .into_mir()
+            }
             _ => panic!("Invalid source operand load from {src_mir:?} to {dst_mir:?}"),
         },
     };

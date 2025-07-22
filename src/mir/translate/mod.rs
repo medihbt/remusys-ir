@@ -40,6 +40,9 @@ pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
     mir_pass::stack_lower::lower_stack_for_module(&mut mir_module);
     eprintln!("Lowered stack operations in MIR module:\n{}", mir_module.name);
 
+    mir_pass::inst_lower::preasm_pass_for_module(&mut mir_module);
+    eprintln!("Pre-assembly pass completed for MIR module:\n{}", mir_module.name);
+
     // return the generated MIR module
     mir_module
 }

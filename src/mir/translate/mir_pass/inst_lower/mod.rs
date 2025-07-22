@@ -1,5 +1,6 @@
 mod lower_calls;
 mod lower_copy;
+mod lower_ldr_const;
 mod lower_returns;
 mod lower_stack;
 
@@ -16,6 +17,7 @@ use std::{collections::VecDeque, rc::Rc};
 pub use lower_calls::lower_mir_call;
 pub use lower_copy::*;
 pub use lower_returns::lower_mir_ret;
+pub use lower_ldr_const::preasm_pass_for_module;
 
 fn lower_an_inst(
     inst: &MirInst,

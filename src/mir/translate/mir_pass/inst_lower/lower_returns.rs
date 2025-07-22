@@ -1,8 +1,6 @@
 use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, mirops::MirReturn, opcode::MirOP},
-    module::
-        stack::{MirStackLayout, VirtRegAlloc}
-    ,
+    module::stack::{MirStackLayout, VirtRegAlloc},
     operand::{
         IMirSubOperand, MirOperand,
         compound::MirSymbolOp,
@@ -25,7 +23,7 @@ pub fn lower_mir_ret(
     }
 
     // 恢复返回地址寄存器 ra 的值。
-    if let Some(saved_reg) = stack_layout.find_saved_preg(GPReg::new_ra().into()) {
+    if let Some(saved_reg) = stack_layout.find_saved_preg(GPR64::from_real(GPReg::new_ra())) {
         let restore_ra = Una64R::new(
             MirOP::Mov64R,
             GPR64(GPReg::RETADDR_POS, RegUseFlags::DEF),
@@ -63,7 +61,7 @@ fn prepare_retval(
             let inst = if value == 0 {
                 Bin64R::new(MirOP::EOR64R, r0_dest, r0_src, r0_src, None).into_mir()
             } else if imm_traits::is_mov_imm(value as u64) {
-                Mov64I::new(MirOP::Mov64I, r0_dest, ImmMov::new(value as u32)).into_mir()
+                Mov64I::new(MirOP::Mov64I, r0_dest, ImmMov::new(value)).into_mir()
             } else {
                 LoadConst64::new(MirOP::LoadConst64, r0_dest, imm64).into_mir()
             };
@@ -77,7 +75,7 @@ fn prepare_retval(
             let inst = if value == 0 {
                 Bin32R::new(MirOP::EOR32R, r0_dest, r0_src, r0_src, None).into_mir()
             } else if imm_traits::is_mov_imm(value as u64) {
-                Mov32I::new(MirOP::Mov32I, r0_dest, ImmMov::new(value as u32)).into_mir()
+                Mov32I::new(MirOP::Mov32I, r0_dest, ImmMov::new(value as u64)).into_mir()
             } else {
                 LoadConst64::new(
                     MirOP::LoadConst64,

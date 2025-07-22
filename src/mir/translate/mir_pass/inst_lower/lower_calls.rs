@@ -2,10 +2,7 @@ use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, mirops::MirCall, opcode::MirOP},
     module::{MirGlobalRef, block::MirBlock, func::MirFunc, stack::MirStackLayout},
     operand::{IMirSubOperand, MirOperand, imm::*, imm_traits, physreg_set::MirPhysRegSet, reg::*},
-    translate::{
-        mir_pass::inst_lower::lower_stack::*,
-        mirgen::operandgen::PureSourceReg,
-    },
+    translate::{mir_pass::inst_lower::lower_stack::*, mirgen::operandgen::DispatchedReg},
 };
 use slab::Slab;
 use std::collections::VecDeque;
@@ -101,14 +98,14 @@ fn prepare_return_value(
     if ret_val.get_id() == RegID::Phys(0) {
         return saved_regs;
     }
-    let ret_reg = PureSourceReg::from_reg(ret_val);
+    let ret_reg = DispatchedReg::from_reg(ret_val);
     let mov_inst = match ret_reg {
-        PureSourceReg::F32(retr) => UnaF32::new(MirOP::FMov32R, retr, FPR32::retval()).into_mir(),
-        PureSourceReg::F64(retr) => UnaF64::new(MirOP::FMov64R, retr, FPR64::retval()).into_mir(),
-        PureSourceReg::G32(retr) => {
+        DispatchedReg::F32(retr) => UnaF32::new(MirOP::FMov32R, retr, FPR32::retval()).into_mir(),
+        DispatchedReg::F64(retr) => UnaF64::new(MirOP::FMov64R, retr, FPR64::retval()).into_mir(),
+        DispatchedReg::G32(retr) => {
             Una32R::new(MirOP::Mov32R, retr, GPR32::retval(), None).into_mir()
         }
-        PureSourceReg::G64(retr) => {
+        DispatchedReg::G64(retr) => {
             Una64R::new(MirOP::Mov64R, retr, GPR64::retval(), None).into_mir()
         }
     };
@@ -135,12 +132,12 @@ fn prepare_fpreg_arg(
             5 => {
                 let source_fpr = FPR32::from_real(vfreg);
                 let arg_fpr = FPR32::from_real(arg_vfreg);
-                UnaF32::new(MirOP::Mov32R, arg_fpr, source_fpr).into_mir()
+                UnaF32::new(MirOP::FMov32R, arg_fpr, source_fpr).into_mir()
             }
             6 => {
                 let source_fpr = FPR64::from_real(vfreg);
                 let arg_fpr = FPR64::from_real(arg_vfreg);
-                UnaF64::new(MirOP::Mov64R, arg_fpr, source_fpr).into_mir()
+                UnaF64::new(MirOP::FMov64R, arg_fpr, source_fpr).into_mir()
             }
             _ => panic!("Invalid VFReg bits: {}", arg_vfreg.get_bits_log2()),
         };
@@ -208,11 +205,11 @@ pub fn make_restore_regs_inst(saved_regs: MirPhysRegSet, out_insts: &mut VecDequ
         let offset = ImmLoad64::new(stack_pos as i64 * 8);
         if is_fp {
             let rd = FPR64(id, RegUseFlags::KILL);
-            let load = LoadStoreF64Base::new(MirOP::LdrF64Base, rd, sp, offset);
+            let load = LoadF64Base::new(MirOP::LdrF64Base, rd, sp, offset);
             out_insts.push_back(load.into_mir());
         } else {
             let rd = GPR64(id, RegUseFlags::KILL);
-            let load = LoadStoreGr64Base::new(MirOP::LdrGr64Base, rd, sp, offset);
+            let load = LoadGr64Base::new(MirOP::LdrGr64Base, rd, sp, offset);
             out_insts.push_back(load.into_mir());
         }
     }
@@ -226,7 +223,7 @@ pub fn make_restore_regs_inst(saved_regs: MirPhysRegSet, out_insts: &mut VecDequ
 fn save_gpr32_arg_to_stack(gpreg: GPReg, sp_offset: u64, out_insts: &mut VecDeque<MirInst>) {
     let sp = GPR64::sp();
     if imm_traits::is_load32_imm(sp_offset as i64) {
-        let store_inst = LoadStoreGr32Base::new(
+        let store_inst = StoreGr32Base::new(
             MirOP::StrGr32Base,
             GPR32::from_real(gpreg),
             sp,
@@ -242,7 +239,7 @@ fn save_gpr32_arg_to_stack(gpreg: GPReg, sp_offset: u64, out_insts: &mut VecDequ
             Imm64(sp_offset, ImmKind::Full),
         );
         out_insts.push_back(load_offset.into_mir());
-        let store_inst = LoadStoreGr32::new(
+        let store_inst = StoreGr32::new(
             MirOP::StrGr32,
             GPR32::from_real(gpreg),
             sp,
@@ -256,7 +253,7 @@ fn save_gpr32_arg_to_stack(gpreg: GPReg, sp_offset: u64, out_insts: &mut VecDequ
 fn save_gpr64_arg_to_stack(gpreg: GPReg, sp_offset: u64, out_insts: &mut VecDeque<MirInst>) {
     let sp = GPR64::sp();
     if imm_traits::is_load64_imm(sp_offset as i64) {
-        let store_inst = LoadStoreGr64Base::new(
+        let store_inst = StoreGr64Base::new(
             MirOP::StrGr64Base,
             GPR64::from_real(gpreg),
             sp,
@@ -272,7 +269,7 @@ fn save_gpr64_arg_to_stack(gpreg: GPReg, sp_offset: u64, out_insts: &mut VecDequ
             Imm64(sp_offset, ImmKind::Full),
         );
         out_insts.push_back(load_offset.into_mir());
-        let store_inst = LoadStoreGr64::new(
+        let store_inst = StoreGr64::new(
             MirOP::StrGr64,
             GPR64::from_real(gpreg),
             sp,
@@ -303,7 +300,7 @@ fn save_fpr64_arg_to_stack(fpr: FPR64, sp_offset: u64, out_insts: &mut VecDeque<
 
     if imm_traits::is_load64_imm(sp_offset as i64) {
         let store_inst =
-            LoadStoreF64Base::new(MirOP::StrF64Base, fpr, sp, ImmLoad64::new(sp_offset as i64));
+            StoreF64Base::new(MirOP::StrF64Base, fpr, sp, ImmLoad64::new(sp_offset as i64));
         out_insts.push_back(store_inst.into_mir());
     } else {
         // 偏移量太大，使用寄存器间接寻址
@@ -314,8 +311,7 @@ fn save_fpr64_arg_to_stack(fpr: FPR64, sp_offset: u64, out_insts: &mut VecDeque<
             Imm64(sp_offset, ImmKind::Full),
         );
         out_insts.push_back(load_offset.into_mir());
-        let store_inst =
-            LoadStoreF64::new(MirOP::StrF64, fpr, sp, GPR64(0, RegUseFlags::USE), None);
+        let store_inst = StoreF64::new(MirOP::StrF64, fpr, sp, GPR64(0, RegUseFlags::USE), None);
         out_insts.push_back(store_inst.into_mir());
     }
 }
@@ -325,7 +321,7 @@ fn save_fpr32_arg_to_stack(fpr: FPR32, sp_offset: u64, out_insts: &mut VecDeque<
 
     if imm_traits::is_load32_imm(sp_offset as i64) {
         let store_inst =
-            LoadStoreF32Base::new(MirOP::StrF32Base, fpr, sp, ImmLoad32::new(sp_offset as i32));
+            StoreF32Base::new(MirOP::StrF32Base, fpr, sp, ImmLoad32::new(sp_offset as i32));
         out_insts.push_back(store_inst.into_mir());
     } else {
         // 偏移量太大，使用寄存器间接寻址
@@ -336,8 +332,7 @@ fn save_fpr32_arg_to_stack(fpr: FPR32, sp_offset: u64, out_insts: &mut VecDeque<
             Imm64(sp_offset, ImmKind::Full),
         );
         out_insts.push_back(load_offset.into_mir());
-        let store_inst =
-            LoadStoreF32::new(MirOP::StrF32, fpr, sp, GPR64(0, RegUseFlags::USE), None);
+        let store_inst = StoreF32::new(MirOP::StrF32, fpr, sp, GPR64(0, RegUseFlags::USE), None);
         out_insts.push_back(store_inst.into_mir());
     }
 }

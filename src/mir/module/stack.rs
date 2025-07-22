@@ -3,9 +3,9 @@ use crate::{
         operand::{
             IMirSubOperand,
             physreg_set::MirPhysRegSet,
-            reg::{FPR64, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
+            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
         },
-        translate::mirgen::operandgen::PureSourceReg,
+        translate::mirgen::operandgen::DispatchedReg,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
@@ -31,7 +31,7 @@ pub struct MirStackItem {
     /// The index of the item in the stack layout array.
     pub index: usize,
     /// The virtual register pointer to the stack slot.
-    pub virtreg: RegOperand,
+    pub stackpos_reg: GPR64,
     /// The offset of the item in its own section inside the stack.
     /// * If `is_arg` is false, this is the offset from the start of the stack frame.
     /// * If `is_arg` is true, the real offset should add the `vars_size` to this value.
@@ -44,19 +44,6 @@ pub struct MirStackItem {
     pub align_log2: u8,
     /// Whether the item is a spilled argument.
     pub kind: StackItemKind,
-}
-
-impl MirStackItem {
-    // pub fn offset_from_sp(&self, layout: &MirStackLayout) -> i64 {
-    //     match self.kind {
-    //         StackItemKind::Variable => self.offset,
-    //         StackItemKind::SavedReg => self.offset + layout.vars_size as i64,
-    //         StackItemKind::SpilledArg => {
-    //             // Spilled arguments are offset from the end of the variable section
-    //             self.offset + (layout.vars_size + layout.saved_regs_size) as i64
-    //         }
-    //     }
-    // }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -102,7 +89,7 @@ impl SavedReg {
         assert!(preg.is_physical());
         self.preg.get_id() == preg.get_id()
     }
-    pub fn matches_stackpos(&self, vreg: RegOperand) -> bool {
+    pub fn matches_stackpos(&self, vreg: GPR64) -> bool {
         assert!(vreg.is_virtual());
         RegID::Virt(self.vreg_id) == vreg.get_id()
     }
@@ -178,22 +165,22 @@ impl MirStackLayout {
         layout
     }
 
-    pub fn find_saved_preg(&self, preg: RegOperand) -> Option<&SavedReg> {
+    pub fn find_saved_preg(&self, preg: GPR64) -> Option<&SavedReg> {
         assert!(preg.is_physical());
         self.saved_regs
             .iter()
-            .find(|&reg| reg.matches_saved_preg(preg))
+            .find(|&reg| reg.matches_saved_preg(preg.into()))
     }
 
-    pub fn find_vreg_spilled_arg_pos(&self, vreg: RegOperand) -> Option<u32> {
+    pub fn find_vreg_spilled_arg_pos(&self, vreg: GPR64) -> Option<u32> {
         for i in &self.args {
-            if i.virtreg.same_pos_as(vreg) {
+            if i.stackpos_reg.same_pos_as(vreg) {
                 return Some(i.index as u32);
             }
         }
         None
     }
-    pub fn find_vreg_saved_reg_pos(&self, vreg: RegOperand) -> Option<u32> {
+    pub fn find_vreg_saved_reg_pos(&self, vreg: GPR64) -> Option<u32> {
         if vreg.is_physical() {
             return None;
         }
@@ -204,19 +191,19 @@ impl MirStackLayout {
         }
         None
     }
-    pub fn find_vreg_variable_pos(&self, vreg: RegOperand) -> Option<u32> {
+    pub fn find_vreg_variable_pos(&self, vreg: GPR64) -> Option<u32> {
         if vreg.is_physical() {
             return None;
         }
         for pos in &self.vars {
-            if pos.virtreg.same_pos_as(vreg) {
+            if pos.stackpos_reg.same_pos_as(vreg) {
                 return Some(pos.index as u32);
             }
         }
         None
     }
 
-    pub fn find_vreg_stackpos(&self, vreg: RegOperand) -> Option<(StackItemKind, u32)> {
+    pub fn find_vreg_stackpos(&self, vreg: GPR64) -> Option<(StackItemKind, u32)> {
         if let Some(x) = self.find_vreg_spilled_arg_pos(vreg) {
             return Some((StackItemKind::SpilledArg, x));
         }
@@ -228,7 +215,7 @@ impl MirStackLayout {
         }
         None
     }
-    pub fn vreg_is_stackpos(&self, vreg: RegOperand) -> bool {
+    pub fn vreg_is_stackpos(&self, vreg: GPR64) -> bool {
         self.find_vreg_stackpos(vreg).is_some()
     }
 
@@ -263,19 +250,6 @@ impl MirStackLayout {
         new_pos
     }
 
-    /// Updates the stack top size based on the current size and alignment.
-    fn update_stack_top(curr_size: u64, align_log2: u8) -> u64 {
-        let next_align = 1u64 << align_log2;
-        let pmask = next_align - 1;
-        let nmask = !pmask;
-        let new_size_base = curr_size & nmask;
-        if curr_size & pmask != 0 {
-            new_size_base + next_align
-        } else {
-            new_size_base
-        }
-    }
-
     /// Adds a spilled argument to the stack layout.
     pub fn add_spilled_arg(
         &mut self,
@@ -286,38 +260,28 @@ impl MirStackLayout {
             self.finished_arg_build == false,
             "Cannot add more args after building the stack layout"
         );
-        let (natural_size, natural_align_log2) = match irtype {
-            ValTypeID::Ptr => (8, 3),
-            ValTypeID::Int(bits) => match bits {
-                8 => (1, 0),
-                16 => (2, 1),
-                32 => (4, 2),
-                64 => (8, 3),
-                _ => panic!("Unsupported integer size: {}", bits),
-            },
-            ValTypeID::Float(fp_kind) => match fp_kind {
-                FloatTypeKind::Ieee32 => (4, 2),
-                FloatTypeKind::Ieee64 => (8, 3),
-            },
-            _ => panic!("Requires ptr/int/float as args but got `{irtype:?}`"),
+        let (natural_size, align_log2) = match irtype {
+            ValTypeID::Float(FloatTypeKind::Ieee32) => (4, 2),
+            ValTypeID::Float(FloatTypeKind::Ieee64) => (8, 3),
+            ValTypeID::Int(32) => (4, 2),
+            ValTypeID::Int(64) | ValTypeID::Ptr => (8, 3),
+            _ => panic!("Unsupported type for spilled argument: {irtype:?}"),
         };
-
         let size = natural_size.max(8);
-        let align_log2 = natural_align_log2.max(3);
-        let new_top = Self::update_stack_top(self.args_size, align_log2);
+        // Ensure at least 8-byte alignment
+        let align_log2 = align_log2.max(3);
+        let new_top = self.args_size.next_multiple_of(1u64 << align_log2);
         let item = MirStackItem {
             irtype,
             index: self.args.len(),
-            /* this `virtreg` is a pointer to the stack slot, not a register */
-            virtreg: vreg_alloc.alloc(false),
+            stackpos_reg: GPR64::from_real(vreg_alloc.insert_gp(GPR64::new_empty().into_real())),
             offset: new_top as i64,
-            size: size as u64,
-            // Placeholder, will be updated on `finish_arg_building()`
+            size,
             size_with_padding: 0,
-            align_log2: align_log2 as u8,
+            align_log2,
             kind: StackItemKind::SpilledArg,
         };
-        self.args_size = new_top + size as u64;
+        self.args_size = new_top + size;
         self.args.push(item);
         self.args.last_mut().unwrap()
     }
@@ -329,7 +293,7 @@ impl MirStackLayout {
         self.finished_arg_build = true;
 
         // Align the args size to 16.
-        self.args_size = Self::update_stack_top(self.args_size, 4);
+        self.args_size = self.args_size.next_multiple_of(16);
         // Calculate the size with padding for each argument
         let nargs = self.args.len();
         if nargs == 0 {
@@ -374,7 +338,7 @@ impl MirStackLayout {
         size: usize,
         align_log2: u8,
     ) -> &mut MirStackItem {
-        let new_top = Self::update_stack_top(self.vars_size, align_log2);
+        let new_top = self.vars_size.next_multiple_of(1u64 << align_log2);
         if let Some(prev_top) = self.vars.last_mut() {
             // Update the previous top item to reflect the new size
             // This is necessary to ensure that the size_with_padding is correct
@@ -385,7 +349,7 @@ impl MirStackLayout {
         let item = MirStackItem {
             irtype,
             index: self.vars.len(),
-            virtreg: vreg_alloc.alloc(false), // This is a pointer to the stack slot, not a register
+            stackpos_reg: vreg_alloc.insert_gpr64(GPR64::new_empty()),
             offset: new_top as i64,
             size: size as u64,
             size_with_padding: size as u64, // Placeholder, will be updated later
@@ -407,12 +371,12 @@ impl MirStackLayout {
             "Expected a virtual register, found ID {:?}",
             vreg.get_id()
         );
-        let pure = PureSourceReg::from_reg(vreg);
+        let pure = DispatchedReg::from_reg(vreg);
         let (irtype, size, align_log2) = match pure {
-            PureSourceReg::F32(_) => (ValTypeID::Float(FloatTypeKind::Ieee32), 4, 2),
-            PureSourceReg::F64(_) => (ValTypeID::Float(FloatTypeKind::Ieee64), 8, 3),
-            PureSourceReg::G32(_) => (ValTypeID::Int(32), 4, 2),
-            PureSourceReg::G64(_) => (ValTypeID::Int(64), 8, 3),
+            DispatchedReg::F32(_) => (ValTypeID::Float(FloatTypeKind::Ieee32), 4, 2),
+            DispatchedReg::F64(_) => (ValTypeID::Float(FloatTypeKind::Ieee64), 8, 3),
+            DispatchedReg::G32(_) => (ValTypeID::Int(32), 4, 2),
+            DispatchedReg::G64(_) => (ValTypeID::Int(64), 8, 3),
         };
         self.add_variable_item(irtype, vreg_alloc, size, align_log2)
     }
@@ -457,9 +421,25 @@ impl VirtRegAlloc {
         let index = self.insert_gp_for_index(vreg.into_real());
         self.general[index as usize]
     }
+    pub fn insert_gpr64(&mut self, vreg: GPR64) -> GPR64 {
+        let index = self.insert_gp_for_index(vreg.into_real());
+        GPR64::from_real(self.general[index as usize])
+    }
+    pub fn insert_gpr32(&mut self, vreg: GPR32) -> GPR32 {
+        let index = self.insert_gp_for_index(vreg.into_real());
+        GPR32::from_real(self.general[index as usize])
+    }
     pub fn insert_float(&mut self, vreg: VFReg) -> VFReg {
         let index = self.insert_float_for_index(vreg.into_real());
         self.float[index as usize]
+    }
+    pub fn insert_fpr64(&mut self, vreg: FPR64) -> FPR64 {
+        let index = self.insert_float_for_index(vreg.into_real());
+        FPR64::from_real(self.float[index as usize])
+    }
+    pub fn insert_fpr32(&mut self, vreg: FPR32) -> FPR32 {
+        let index = self.insert_float_for_index(vreg.into_real());
+        FPR32::from_real(self.float[index as usize])
     }
     pub fn insert_reg(&mut self, reg: RegOperand) -> RegOperand {
         let (is_fp, index) = self.insert_reg_for_index(reg);

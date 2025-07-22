@@ -1,10 +1,3 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    rc::Rc,
-};
-
-use slab::Slab;
-
 use crate::{
     base::slablist::SlabRefList,
     mir::{
@@ -17,11 +10,12 @@ use crate::{
         },
         operand::{IMirSubOperand, reg::*},
     },
-    typing::{
-        context::TypeContext,
-        id::ValTypeID,
-        types::{FloatTypeKind, FuncTypeRef},
-    },
+    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+};
+use slab::Slab;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    rc::Rc,
 };
 
 #[derive(Debug)]
@@ -120,67 +114,14 @@ impl MirFunc {
         stack.finish_arg_building();
     }
 
-    /// 在虚拟寄存器 / 虚拟栈空间中添加一个变量，并返回其虚拟寄存器。
-    ///
-    /// 如果变量是整数、浮点或者指针这类一个寄存器就能装下并且没有什么内部结构的类型, 直接分配寄存器返回即可
-    /// 除此之外, 结构体和数组类型的变量需要在栈上分配空间, 返回一个指向栈上分配的虚拟寄存器。
-    pub fn add_variable(
-        &self,
-        irtype: ValTypeID,
-        type_ctx: &TypeContext,
-        force_stack_alloc: bool,
-    ) -> (RegOperand, bool) {
+    /// 在虚拟寄存器 / 虚拟栈空间中添加一个变量，并返回指向这块栈空间的位置虚拟寄存器。
+    pub fn add_spilled_variable(&self, irtype: ValTypeID, type_ctx: &TypeContext) -> GPR64 {
         let mut inner = self.inner.borrow_mut();
         let inner = &mut *inner;
-        if force_stack_alloc {
-            // 强制在栈上分配变量
-            let stackpos = inner
-                .stack_layout
-                .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
-                .virtreg;
-            return (stackpos, true);
-        }
-        match irtype {
-            ValTypeID::Ptr => {
-                // 指针类型的变量需要分配一个虚拟寄存器。
-                let vreg = inner.vreg_alloc.insert_gp(GPR64::new_empty().into_real());
-                (RegOperand::from(vreg), false)
-            }
-            ValTypeID::Int(bits) => {
-                // 整数类型的变量需要分配一个虚拟寄存器。
-                // 不支持大于 64 位的整数类型。
-                if bits > 64 || !bits.is_power_of_two() {
-                    panic!("Unsupported integer type for MIR function: {irtype:?}");
-                }
-                let vreg = inner.vreg_alloc.insert_gp(GPReg(
-                    0,
-                    SubRegIndex::new(bits.trailing_zeros() as u8, 0),
-                    RegUseFlags::empty(),
-                ));
-                (RegOperand::from(vreg), false)
-            }
-            ValTypeID::Float(fpkind) => {
-                // 浮点类型的变量需要分配一个虚拟寄存器。
-                let vfreg = match fpkind {
-                    FloatTypeKind::Ieee32 => FPR32::new_empty().into_real(),
-                    FloatTypeKind::Ieee64 => FPR64::new_empty().into_real(),
-                };
-                let vreg = inner.vreg_alloc.insert_float(vfreg);
-                (RegOperand::from(vreg), false)
-            }
-            ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
-                // 结构体和数组类型的变量需要在栈上分配空间。
-                let stackpos = inner
-                    .stack_layout
-                    .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
-                    .virtreg;
-                (stackpos, true)
-            }
-            _ => panic!(
-                "Invalid variable type for MIR function: {}",
-                irtype.get_display_name(type_ctx)
-            ),
-        }
+        inner
+            .stack_layout
+            .add_variable(irtype, type_ctx, &mut inner.vreg_alloc)
+            .stackpos_reg
     }
 
     pub fn is_extern(&self) -> bool {

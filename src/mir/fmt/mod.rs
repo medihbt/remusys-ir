@@ -121,6 +121,9 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::Bin32RC(bin32_rc) => {
                 format_inst::fmt_bin32rc(self, inst.get_opcode(), bin32_rc)
             }
+            MirInst::Bin64RSym(bin64_rsym) => {
+                format_inst::fmt_bin64rsym(self, inst.get_opcode(), bin64_rsym)
+            }
             MirInst::Bin64RL(bin64_rl) => {
                 format_inst::fmt_bin64rl(self, inst.get_opcode(), bin64_rl)
             }
@@ -171,6 +174,8 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::ExtR(ext_r) => format_inst::fmt_ext_r(self, inst.get_opcode(), ext_r),
             MirInst::Mov64I(mov64_i) => format_inst::fmt_mov64_i(self, inst.get_opcode(), mov64_i),
             MirInst::Mov32I(mov32_i) => format_inst::fmt_mov32_i(self, inst.get_opcode(), mov32_i),
+            MirInst::MovZNK64(movznk) => format_inst::fmt_movznk64(self, inst.get_opcode(), movznk),
+            MirInst::MovZNK32(movznk) => format_inst::fmt_movznk32(self, inst.get_opcode(), movznk),
             MirInst::Adr(adr) => format_inst::fmt_adr(self, inst.get_opcode(), adr),
             MirInst::UnaFG64(una_fg64) => {
                 format_inst::fmt_una_fg64(self, inst.get_opcode(), una_fg64)
@@ -225,85 +230,115 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::TenaryF32(tenary_f32) => {
                 format_inst::fmt_tenary_f32(self, inst.get_opcode(), tenary_f32)
             }
-            MirInst::LoadStoreGr64(load_store_gr64) => {
-                format_inst::fmt_load_store_gr64(self, inst.get_opcode(), load_store_gr64)
+
+            MirInst::LoadGr64(load_gr64) => {
+                format_inst::fmt_load_gr64(self, inst.get_opcode(), load_gr64)
             }
-            MirInst::LoadStoreGr32(load_store_gr32) => {
-                format_inst::fmt_load_store_gr32(self, inst.get_opcode(), load_store_gr32)
+            MirInst::LoadGr32(load_gr32) => {
+                format_inst::fmt_load_gr32(self, inst.get_opcode(), load_gr32)
             }
-            MirInst::LoadStoreF64(load_store_f64) => {
-                format_inst::fmt_load_store_f64(self, inst.get_opcode(), load_store_f64)
+            MirInst::LoadF64(load_f64) => {
+                format_inst::fmt_load_f64(self, inst.get_opcode(), load_f64)
             }
-            MirInst::LoadStoreF32(load_store_f32) => {
-                format_inst::fmt_load_store_f32(self, inst.get_opcode(), load_store_f32)
+            MirInst::LoadF32(load_f32) => {
+                format_inst::fmt_load_f32(self, inst.get_opcode(), load_f32)
             }
-            MirInst::LoadStoreGr64Base(load_store_gr64_base) => {
-                format_inst::fmt_load_store_gr64_base(self, inst.get_opcode(), load_store_gr64_base)
+            MirInst::LoadGr64Base(load_gr64_base) => {
+                format_inst::fmt_load_gr64_base(self, inst.get_opcode(), load_gr64_base)
             }
-            MirInst::LoadStoreGr32Base(load_store_gr32_base) => {
-                format_inst::fmt_load_store_gr32_base(self, inst.get_opcode(), load_store_gr32_base)
+            MirInst::LoadGr32Base(load_gr32_base) => {
+                format_inst::fmt_load_gr32_base(self, inst.get_opcode(), load_gr32_base)
             }
-            MirInst::LoadStoreF64Base(load_store_f64_base) => {
-                format_inst::fmt_load_store_f64_base(self, inst.get_opcode(), load_store_f64_base)
+            MirInst::LoadF64Base(load_f64_base) => {
+                format_inst::fmt_load_f64_base(self, inst.get_opcode(), load_f64_base)
             }
-            MirInst::LoadStoreF32Base(load_store_f32_base) => {
-                format_inst::fmt_load_store_f32_base(self, inst.get_opcode(), load_store_f32_base)
+            MirInst::LoadF32Base(load_f32_base) => {
+                format_inst::fmt_load_f32_base(self, inst.get_opcode(), load_f32_base)
             }
-            MirInst::LoadStoreGr64Indexed(load_store_gr64_indexed) => {
-                format_inst::fmt_load_store_gr64_indexed(
-                    self,
-                    inst.get_opcode(),
-                    load_store_gr64_indexed,
-                )
+            MirInst::LoadGr64BaseS(ldst) => {
+                format_inst::fmt_load_gr64_base_s(self, inst.get_opcode(), ldst)
             }
-            MirInst::LoadStoreGr32Indexed(load_store_gr32_indexed) => {
-                format_inst::fmt_load_store_gr32_indexed(
-                    self,
-                    inst.get_opcode(),
-                    load_store_gr32_indexed,
-                )
+            MirInst::LoadGr32BaseS(ldst) => {
+                format_inst::fmt_load_gr32_base_s(self, inst.get_opcode(), ldst)
             }
-            MirInst::LoadStoreF64Indexed(load_store_f64_indexed) => {
-                format_inst::fmt_load_store_f64_indexed(
-                    self,
-                    inst.get_opcode(),
-                    load_store_f64_indexed,
-                )
+            MirInst::LoadF64BaseS(ldst) => {
+                format_inst::fmt_load_f64_base_s(self, inst.get_opcode(), ldst)
             }
-            MirInst::LoadStoreF32Indexed(load_store_f32_indexed) => {
-                format_inst::fmt_load_store_f32_indexed(
-                    self,
-                    inst.get_opcode(),
-                    load_store_f32_indexed,
-                )
+            MirInst::LoadF32BaseS(ldst) => {
+                format_inst::fmt_load_f32_base_s(self, inst.get_opcode(), ldst)
             }
-            MirInst::LoadStoreGr64Literal(load_store_gr64_literal) => {
-                format_inst::fmt_load_store_gr64_literal(
-                    self,
-                    inst.get_opcode(),
-                    load_store_gr64_literal,
-                )
+            MirInst::LoadGr64Indexed(load_gr64_indexed) => {
+                format_inst::fmt_load_gr64_indexed(self, inst.get_opcode(), load_gr64_indexed)
             }
-            MirInst::LoadStoreGr32Literal(load_store_gr32_literal) => {
-                format_inst::fmt_load_store_gr32_literal(
-                    self,
-                    inst.get_opcode(),
-                    load_store_gr32_literal,
-                )
+            MirInst::LoadGr32Indexed(load_gr32_indexed) => {
+                format_inst::fmt_load_gr32_indexed(self, inst.get_opcode(), load_gr32_indexed)
             }
-            MirInst::LoadStoreF64Literal(load_store_f64_literal) => {
-                format_inst::fmt_load_store_f64_literal(
-                    self,
-                    inst.get_opcode(),
-                    load_store_f64_literal,
-                )
+            MirInst::LoadF64Indexed(load_f64_indexed) => {
+                format_inst::fmt_load_f64_indexed(self, inst.get_opcode(), load_f64_indexed)
             }
-            MirInst::LoadStoreF32Literal(load_store_f32_literal) => {
-                format_inst::fmt_load_store_f32_literal(
-                    self,
-                    inst.get_opcode(),
-                    load_store_f32_literal,
-                )
+            MirInst::LoadF32Indexed(load_f32_indexed) => {
+                format_inst::fmt_load_f32_indexed(self, inst.get_opcode(), load_f32_indexed)
+            }
+
+            MirInst::StoreGr64(store_gr64) => {
+                format_inst::fmt_store_gr64(self, inst.get_opcode(), store_gr64)
+            }
+            MirInst::StoreGr32(store_gr32) => {
+                format_inst::fmt_store_gr32(self, inst.get_opcode(), store_gr32)
+            }
+            MirInst::StoreF64(store_f64) => {
+                format_inst::fmt_store_f64(self, inst.get_opcode(), store_f64)
+            }
+            MirInst::StoreF32(store_f32) => {
+                format_inst::fmt_store_f32(self, inst.get_opcode(), store_f32)
+            }
+            MirInst::StoreGr64Base(store_gr64_base) => {
+                format_inst::fmt_store_gr64_base(self, inst.get_opcode(), store_gr64_base)
+            }
+            MirInst::StoreGr32Base(store_gr32_base) => {
+                format_inst::fmt_store_gr32_base(self, inst.get_opcode(), store_gr32_base)
+            }
+            MirInst::StoreF64Base(store_f64_base) => {
+                format_inst::fmt_store_f64_base(self, inst.get_opcode(), store_f64_base)
+            }
+            MirInst::StoreF32Base(store_f32_base) => {
+                format_inst::fmt_store_f32_base(self, inst.get_opcode(), store_f32_base)
+            }
+            MirInst::StoreGr64BaseS(ldst) => {
+                format_inst::fmt_store_gr64_base_s(self, inst.get_opcode(), ldst)
+            }
+            MirInst::StoreGr32BaseS(ldst) => {
+                format_inst::fmt_store_gr32_base_s(self, inst.get_opcode(), ldst)
+            }
+            MirInst::StoreF64BaseS(ldst) => {
+                format_inst::fmt_store_f64_base_s(self, inst.get_opcode(), ldst)
+            }
+            MirInst::StoreF32BaseS(ldst) => {
+                format_inst::fmt_store_f32_base_s(self, inst.get_opcode(), ldst)
+            }
+            MirInst::StoreGr64Indexed(store_gr64_indexed) => {
+                format_inst::fmt_store_gr64_indexed(self, inst.get_opcode(), store_gr64_indexed)
+            }
+            MirInst::StoreGr32Indexed(store_gr32_indexed) => {
+                format_inst::fmt_store_gr32_indexed(self, inst.get_opcode(), store_gr32_indexed)
+            }
+            MirInst::StoreF64Indexed(store_f64_indexed) => {
+                format_inst::fmt_store_f64_indexed(self, inst.get_opcode(), store_f64_indexed)
+            }
+            MirInst::StoreF32Indexed(store_f32_indexed) => {
+                format_inst::fmt_store_f32_indexed(self, inst.get_opcode(), store_f32_indexed)
+            }
+            MirInst::LoadGr64Literal(load_gr64_literal) => {
+                format_inst::fmt_load_gr64_literal(self, inst.get_opcode(), load_gr64_literal)
+            }
+            MirInst::LoadGr32Literal(load_gr32_literal) => {
+                format_inst::fmt_load_gr32_literal(self, inst.get_opcode(), load_gr32_literal)
+            }
+            MirInst::LoadF64Literal(load_f64_literal) => {
+                format_inst::fmt_load_f64_literal(self, inst.get_opcode(), load_f64_literal)
+            }
+            MirInst::LoadF32Literal(load_f32_literal) => {
+                format_inst::fmt_load_f32_literal(self, inst.get_opcode(), load_f32_literal)
             }
             MirInst::LoadConst64(load_const64) => {
                 format_inst::fmt_load_const64(self, inst.get_opcode(), load_const64)

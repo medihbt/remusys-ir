@@ -6,18 +6,24 @@ use crate::{
         operand::MirOperand,
     },
 };
-use std::fmt::Write;
+use std::fmt::{Debug, Write};
 
-pub trait IMirSubOperand {
-    type RealRepresents;
+pub trait IMirSubOperand: Sized {
+    type RealRepresents: Debug + Clone;
 
     fn new_empty() -> Self;
 
     fn from_mir(mir: MirOperand) -> Self;
     fn into_mir(self) -> MirOperand;
 
-    fn from_real(real: Self::RealRepresents) -> Self;
+    fn try_from_real(real: Self::RealRepresents) -> Option<Self>;
     fn into_real(self) -> Self::RealRepresents;
+    fn from_real(real: Self::RealRepresents) -> Self {
+        match Self::try_from_real(real.clone()) {
+            Some(x) => x,
+            None => panic!("Failed to convert from real representation: {real:?}"),
+        }
+    }
 
     fn insert_to_real(self, real: Self::RealRepresents) -> Self::RealRepresents;
     fn fmt_asm(&self, _formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result;
@@ -39,6 +45,9 @@ impl IMirSubOperand for MirBlockRef {
     }
     fn into_mir(self) -> MirOperand {
         MirOperand::Label(self)
+    }
+    fn try_from_real(real: Self) -> Option<Self> {
+        real.to_option()
     }
     fn from_real(real: Self) -> Self {
         real
@@ -71,6 +80,9 @@ impl IMirSubOperand for MirGlobalRef {
     }
     fn into_mir(self) -> MirOperand {
         MirOperand::Global(self)
+    }
+    fn try_from_real(real: Self) -> Option<Self> {
+        real.to_option()
     }
     fn from_real(real: Self) -> Self {
         real
@@ -112,6 +124,9 @@ impl IMirSubOperand for SwitchTab {
     fn into_mir(self) -> MirOperand {
         MirOperand::SwitchTab(self.0)
     }
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
     fn from_real(real: Self) -> Self {
         real
     }
@@ -147,6 +162,9 @@ impl IMirSubOperand for MirOperand {
     }
     fn into_mir(self) -> MirOperand {
         self
+    }
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
     }
     fn from_real(real: Self) -> Self {
         real

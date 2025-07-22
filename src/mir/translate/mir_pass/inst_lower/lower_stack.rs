@@ -70,12 +70,12 @@ impl SavedRegStackPos {
             let RegOperand(id, _, _, is_fp) = reg;
             if is_fp {
                 let rd = FPR64(id, RegUseFlags::USE);
-                let store = LoadStoreF64Base::new(MirOP::StrF64Base, rd, sp, offset_imm);
+                let store = StoreF64Base::new(MirOP::StrF64Base, rd, sp, offset_imm);
                 out_insts.push_back(store.into_mir());
                 ret.fpr_idx[id as usize] = stack_pos as u8;
             } else {
                 let rd = GPR64(id, RegUseFlags::USE);
-                let store = LoadStoreGr64Base::new(MirOP::StrGr64Base, rd, sp, offset_imm);
+                let store = StoreGr64Base::new(MirOP::StrGr64Base, rd, sp, offset_imm);
                 out_insts.push_back(store.into_mir());
                 ret.gpr_idx[id as usize] = stack_pos as u8;
             }

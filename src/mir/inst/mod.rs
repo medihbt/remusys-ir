@@ -80,6 +80,10 @@ impl MirInstRef {
         let mut alloc_inst = module.borrow_alloc_inst_mut();
         MirInstRef::from_alloc(&mut alloc_inst, data)
     }
+    pub fn from_mut_module(module: &mut MirModule, data: MirInst) -> Self {
+        let allocs = module.allocs.get_mut();
+        MirInstRef::from_alloc(&mut allocs.inst, data)
+    }
 
     pub fn data_from_module<'a>(&self, module: &'a MirModule) -> Ref<'a, MirInst> {
         let alloc_inst = module.borrow_alloc_inst();

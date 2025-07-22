@@ -2,7 +2,7 @@ use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
     module::{MirGlobalRef, block::MirBlockRef, stack::VirtRegAlloc},
     operand::{IMirSubOperand, MirOperand, compound::MirSymbolOp, imm::*, imm_traits, reg::*},
-    translate::mirgen::operandgen::PureSourceReg,
+    translate::mirgen::operandgen::DispatchedReg,
 };
 use std::collections::VecDeque;
 
@@ -12,11 +12,11 @@ pub fn lower_copy32_inst(copy32: &MirCopy32, out_insts: &mut VecDeque<MirInst>) 
 
     match src {
         MirOperand::GPReg(gpreg) => {
-            let pure = PureSourceReg::from_reg(gpreg.into());
+            let pure = DispatchedReg::from_reg(gpreg.into());
             copy_from_reg(dst, pure, out_insts);
         }
         MirOperand::VFReg(vfreg) => {
-            let pure = PureSourceReg::from_reg(vfreg.into());
+            let pure = DispatchedReg::from_reg(vfreg.into());
             copy_from_reg(dst, pure, out_insts);
         }
         MirOperand::Imm64(imm64) => copy_from_u64(dst, imm64.get_value(), out_insts),
@@ -30,8 +30,8 @@ pub fn lower_copy32_inst(copy32: &MirCopy32, out_insts: &mut VecDeque<MirInst>) 
         MirOperand::None => { /* Nothing */ }
     }
 
-    fn copy_from_reg(dst: GPR32, src: PureSourceReg, out_insts: &mut VecDeque<MirInst>) {
-        use PureSourceReg::*;
+    fn copy_from_reg(dst: GPR32, src: DispatchedReg, out_insts: &mut VecDeque<MirInst>) {
+        use DispatchedReg::*;
         let inst = match src {
             F32(src) => UnaGF32::new(MirOP::FMovGF32, dst, src).into_mir(),
             F64(src) => UnaGF64::new(MirOP::FMovGF64, GPR64(dst.0, dst.1), src).into_mir(),
@@ -42,7 +42,7 @@ pub fn lower_copy32_inst(copy32: &MirCopy32, out_insts: &mut VecDeque<MirInst>) 
     }
     fn copy_from_u64(dst: GPR32, src: u64, out_insts: &mut VecDeque<MirInst>) {
         let inst = if imm_traits::is_mov_imm(src) {
-            Mov32I::new(MirOP::Mov32I, dst, ImmMov::new(src as u32)).into_mir()
+            Mov32I::new(MirOP::Mov32I, dst, ImmMov::new(src)).into_mir()
         } else {
             let GPR32(id, uf) = dst;
             let dst64 = GPR64(id, uf);
@@ -57,7 +57,7 @@ pub fn lower_copy32_inst(copy32: &MirCopy32, out_insts: &mut VecDeque<MirInst>) 
     }
     fn copy_from_u32(dst: GPR32, src: u32, out_insts: &mut VecDeque<MirInst>) {
         let inst = if imm_traits::is_mov_imm(src as u64) {
-            Mov32I::new(MirOP::Mov32I, dst, ImmMov::new(src)).into_mir()
+            Mov32I::new(MirOP::Mov32I, dst, ImmMov::new(src as u64)).into_mir()
         } else {
             let GPR32(id, uf) = dst;
             let dst64 = GPR64(id, uf);
@@ -78,11 +78,11 @@ pub fn lower_copy64_inst(copy64: &MirCopy64, out_insts: &mut VecDeque<MirInst>) 
 
     match src {
         MirOperand::GPReg(gpreg) => {
-            let pure = PureSourceReg::from_reg(gpreg.into());
+            let pure = DispatchedReg::from_reg(gpreg.into());
             copy_from_reg(dst, pure, out_insts);
         }
         MirOperand::VFReg(vfreg) => {
-            let pure = PureSourceReg::from_reg(vfreg.into());
+            let pure = DispatchedReg::from_reg(vfreg.into());
             copy_from_reg(dst, pure, out_insts);
         }
         MirOperand::Imm64(imm64) => copy_from_u64(dst, imm64.get_value(), out_insts),
@@ -96,8 +96,8 @@ pub fn lower_copy64_inst(copy64: &MirCopy64, out_insts: &mut VecDeque<MirInst>) 
         MirOperand::None => { /* Nothing */ }
     }
 
-    fn copy_from_reg(dst: GPR64, src: PureSourceReg, out_insts: &mut VecDeque<MirInst>) {
-        use PureSourceReg::*;
+    fn copy_from_reg(dst: GPR64, src: DispatchedReg, out_insts: &mut VecDeque<MirInst>) {
+        use DispatchedReg::*;
         let inst = match src {
             F32(src) => UnaGF64::new(MirOP::FMovGF64, dst, FPR64(src.0, src.1)).into_mir(),
             F64(src) => UnaGF64::new(MirOP::FMovGF64, dst, src).into_mir(),
@@ -108,7 +108,7 @@ pub fn lower_copy64_inst(copy64: &MirCopy64, out_insts: &mut VecDeque<MirInst>) 
     }
     fn copy_from_u64(dst: GPR64, src: u64, out_insts: &mut VecDeque<MirInst>) {
         let inst = if imm_traits::is_mov_imm(src) {
-            Mov64I::new(MirOP::Mov64I, dst, ImmMov::new(src as u32)).into_mir()
+            Mov64I::new(MirOP::Mov64I, dst, ImmMov::new(src)).into_mir()
         } else {
             LoadConst64::new(MirOP::LoadConst64, dst, Imm64(src, ImmKind::Full)).into_mir()
         };
@@ -116,7 +116,7 @@ pub fn lower_copy64_inst(copy64: &MirCopy64, out_insts: &mut VecDeque<MirInst>) 
     }
     fn copy_from_u32(dst: GPR64, src: u32, out_insts: &mut VecDeque<MirInst>) {
         let inst = if imm_traits::is_mov_imm(src as u64) {
-            Mov64I::new(MirOP::Mov64I, dst, ImmMov::new(src)).into_mir()
+            Mov64I::new(MirOP::Mov64I, dst, ImmMov::new(src as u64)).into_mir()
         } else {
             LoadConst64::new(MirOP::LoadConst64, dst, Imm64(src as u64, ImmKind::Full)).into_mir()
         };
@@ -147,11 +147,11 @@ pub fn lower_fcopy32_inst(
 
     match src {
         MirOperand::GPReg(src) => {
-            let src = PureSourceReg::from_reg(src.into());
+            let src = DispatchedReg::from_reg(src.into());
             copy_from_reg(dst, src, out_insts)
         }
         MirOperand::VFReg(src) => {
-            let src = PureSourceReg::from_reg(src.into());
+            let src = DispatchedReg::from_reg(src.into());
             copy_from_reg(dst, src, out_insts)
         }
         MirOperand::Imm64(src) => copy_from_u64full(dst, src.get_value(), vreg_alloc, out_insts),
@@ -191,8 +191,8 @@ pub fn lower_fcopy32_inst(
         let inst = UnaFG32::new(MirOP::FMovFG32, dst, vreg32);
         out_insts.push_back(inst.into_mir());
     }
-    fn copy_from_reg(dst: FPR32, src: PureSourceReg, out_insts: &mut VecDeque<MirInst>) {
-        use PureSourceReg::*;
+    fn copy_from_reg(dst: FPR32, src: DispatchedReg, out_insts: &mut VecDeque<MirInst>) {
+        use DispatchedReg::*;
         let inst = match src {
             F32(src) => UnaF32::new(MirOP::FMov32R, dst, src).into_mir(),
             F64(src) => UnaryF32F64::new(MirOP::FCvt32F64, dst, src).into_mir(),
@@ -213,11 +213,11 @@ pub fn lower_fcopy64_inst(
 
     match src {
         MirOperand::GPReg(src) => {
-            let src = PureSourceReg::from_reg(src.into());
+            let src = DispatchedReg::from_reg(src.into());
             copy_from_reg(dst, src, out_insts)
         }
         MirOperand::VFReg(src) => {
-            let src = PureSourceReg::from_reg(src.into());
+            let src = DispatchedReg::from_reg(src.into());
             copy_from_reg(dst, src, out_insts)
         }
         MirOperand::Imm64(src) => copy_from_u64full(dst, src.get_value(), vreg_alloc, out_insts),
@@ -256,8 +256,8 @@ pub fn lower_fcopy64_inst(
         let inst = UnaFG64::new(MirOP::FMovFG64, dst, vreg);
         out_insts.push_back(inst.into_mir());
     }
-    fn copy_from_reg(dst: FPR64, src: PureSourceReg, out_insts: &mut VecDeque<MirInst>) {
-        use PureSourceReg::*;
+    fn copy_from_reg(dst: FPR64, src: DispatchedReg, out_insts: &mut VecDeque<MirInst>) {
+        use DispatchedReg::*;
         let inst = match src {
             F32(src) => UnaryF64F32::new(MirOP::FCvt64F32, dst, src).into_mir(),
             F64(src) => UnaF64::new(MirOP::FMov64R, dst, src).into_mir(),

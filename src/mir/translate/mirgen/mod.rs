@@ -148,7 +148,14 @@ impl MirTranslateCtx {
         let vregs = self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func);
 
         // Step 1.5 翻译每个基本块的指令
-        let operand_map = OperandMap::new(Rc::clone(mir_func), globals, vregs.clone(), block_map);
+        let (operand_map, inst_template) =
+            OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs.clone(), block_map);
+        let entry_block = operand_map.blocks[0].mir;
+        for inst in inst_template {
+            let mut mir_builder = MirBuilder::new(&mut self.mir_module);
+            mir_builder.set_focus(MirFocus::Block(Rc::clone(mir_func), entry_block));
+            mir_builder.add_inst(inst);
+        }
         for i in 0..operand_map.blocks.len() {
             self.inst_dispatch_for_one_mir_block(&operand_map, i);
         }
@@ -282,11 +289,14 @@ impl MirTranslateCtx {
     ) -> Vec<(InstRef, RegOperand)> {
         let mut vregs = Vec::new();
         let type_ctx = &self.ir_module.type_ctx;
+
+        // 为所有 alloca 分配表示栈位置的虚拟寄存器.
         for alloca_info in allocas {
-            let (vreg, _) = func.add_variable(alloca_info.pointee_ty, type_ctx, true);
-            vregs.push((alloca_info.ir, vreg));
+            let vreg = func.add_spilled_variable(alloca_info.pointee_ty, type_ctx);
+            vregs.push((alloca_info.ir, RegOperand::from(vreg)));
         }
 
+        // Remusys-IR 的指令本身也表示它的返回值操作数, 因此为每个有返回值的指令分配一个虚拟寄存器.
         for MirBlockInfo { insts, .. } in block_map {
             for InstTranslateInfo { ir, ty, kind } in insts {
                 type K = InstDataKind;

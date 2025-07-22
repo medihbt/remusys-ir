@@ -41,15 +41,25 @@ pub(crate) fn dispatch_gep(
     };
 
     let base_ptr_mir = operand_map.find_operand_no_constdata(&base_ptr).unwrap();
-    // let base_ptr_mir = MirSymbolOp::from_mir(base_ptr_mir);
-    // let curr_ptr = vreg_alloc.insert_gp(GPR64::new_empty().into_real());
-    // let mut curr_ptr = GPR64::from_real(curr_ptr);
 
     let mut curr_ptr = {
-        use MirOperand::{F32, F64, Global, Imm32, Imm64, Label, None, PState, SwitchTab, VFReg};
+        use MirOperand::{F32, F64, Global, Imm32, Imm64, Label, PState, SwitchTab, VFReg};
 
         match base_ptr_mir {
-            MirOperand::GPReg(GPReg(id, ..)) => GPR64(id, RegUseFlags::empty()),
+            MirOperand::GPReg(GPReg(id, ..)) => {
+                // 该 GEP 生成的指令会直接修改 curr_ptr 的值, 如果后面的指令还要用到这个寄存器的话
+                // 就完蛋了. 所以仍然需要分配一个虚拟寄存器, 然后找个 mov 指令把它的值复制过去.
+                let curr_ptr = vreg_alloc.insert_gp(GPR64::new_empty().into_real());
+                let curr_ptr = GPR64::from_real(curr_ptr);
+                let mov_inst = Una64R::new(
+                    MirOP::Mov64R,
+                    curr_ptr,
+                    GPR64(id, RegUseFlags::empty()),
+                    None,
+                );
+                out_insts.push_back(mov_inst.into_mir());
+                curr_ptr
+            }
             Label(bb) => symbol_to_gpreg_ptr(MirSymbolOp::Label(bb), vreg_alloc, out_insts),
             Global(g) => symbol_to_gpreg_ptr(MirSymbolOp::Global(g), vreg_alloc, out_insts),
             SwitchTab(index) => {
@@ -60,7 +70,7 @@ pub(crate) fn dispatch_gep(
                     "Expected GEP base pointer to be a valid operand (GPReg or symbol), found {base_ptr_mir:?}"
                 );
             }
-            None => panic!("Expected GEP base pointer to be a valid operand"),
+            MirOperand::None => panic!("Expected GEP base pointer to be a valid operand"),
         }
     };
 
@@ -135,7 +145,9 @@ fn handle_nonconst_index(
 
     // 现在处理这个非整数索引.
     if !matches!(type_before_unpack, ValTypeID::Void | ValTypeID::Array(_)) {
-        panic!("Unsupported type for index pointer with non-constant index: {type_before_unpack:?}");
+        panic!(
+            "Unsupported type for index pointer with non-constant index: {type_before_unpack:?}"
+        );
     }
 
     let index = operand_map.find_operand_no_constdata(&index).unwrap();
@@ -208,10 +220,19 @@ fn make_ptr_add(
     }
     if imm_traits::is_calc_imm(integral_offset as u64) {
         let add_inst = Bin64RC::new(
-            MirOP::Add32I,
+            MirOP::Add64I,
             base_ptr_mir,
             base_ptr_mir,
             ImmCalc::new(integral_offset as u32),
+        );
+        out_insts.push_back(add_inst.into_mir());
+        base_ptr_mir
+    } else if imm_traits::is_calc_imm((-integral_offset) as u64) {
+        let add_inst = Bin64RC::new(
+            MirOP::Add64I,
+            base_ptr_mir,
+            base_ptr_mir,
+            ImmCalc::new((-integral_offset) as u32),
         );
         out_insts.push_back(add_inst.into_mir());
         base_ptr_mir

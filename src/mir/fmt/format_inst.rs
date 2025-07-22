@@ -1,10 +1,12 @@
 use crate::mir::{
-    fmt::{format_opcode::opcode_get_name_str, FuncFormatContext},
+    fmt::{FuncFormatContext, format_opcode::opcode_get_name_str},
     inst::{
         // generated from `data/mir.rig`, please do not visit
-        addr::AddrMode, impls::*, opcode::MirOP
+        addr::AddrMode,
+        impls::*,
+        opcode::MirOP,
     },
-    operand::{reg::RegID, IMirSubOperand},
+    operand::{IMirSubOperand, reg::RegID},
 };
 use std::fmt::Write;
 
@@ -363,6 +365,20 @@ pub fn fmt_bin32rc(
     bin32rc.get_rm().fmt_asm(formatter)
 }
 
+pub fn fmt_bin64rsym(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    bin64rsym: &Bin64RSym,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    bin64rsym.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    bin64rsym.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    bin64rsym.get_rm().fmt_asm(formatter)
+}
+
 // 其他立即数变体
 pub fn fmt_bin64rl(
     formatter: &mut FuncFormatContext,
@@ -641,6 +657,30 @@ pub fn fmt_mov32_i(
     mov32_i.get_src().fmt_asm(formatter)
 }
 
+pub fn fmt_movznk64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    movznk64: &MovZNK64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    movznk64.get_dst().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    movznk64.get_src().fmt_asm(formatter)
+}
+
+pub fn fmt_movznk32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    movznk32: &MovZNK32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    movznk32.get_dst().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    movznk32.get_src().fmt_asm(formatter)
+}
+
 pub fn fmt_adr(formatter: &mut FuncFormatContext, opcode: MirOP, adr: &Adr) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
@@ -898,138 +938,198 @@ pub fn fmt_tenary_f32(
     write!(formatter, ", ")?;
     tenary_f32.get_rs().fmt_asm(formatter)
 }
-
-// ===== Load/Store RRR instructions =====
-pub fn fmt_load_store_gr64(
+pub fn fmt_load_gr64(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr64: &LoadStoreGr64,
+    load_gr64: &LoadGr64,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr64.get_rd().fmt_asm(formatter)?;
+    load_gr64.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr64.get_rn().fmt_asm(formatter)?;
+    load_gr64.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr64.get_rm().fmt_asm(formatter)?;
-    if let Some(rm_op) = load_store_gr64.get_rm_op() {
+    load_gr64.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = load_gr64.get_rm_op() {
         write!(formatter, ", {rm_op}")?;
     }
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_gr32(
+pub fn fmt_load_gr32(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr32: &LoadStoreGr32,
+    load_gr32: &LoadGr32,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr32.get_rd().fmt_asm(formatter)?;
+    load_gr32.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr32.get_rn().fmt_asm(formatter)?;
+    load_gr32.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr32.get_rm().fmt_asm(formatter)?;
-    if let Some(rm_op) = load_store_gr32.get_rm_op() {
+    load_gr32.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = load_gr32.get_rm_op() {
         write!(formatter, ", {rm_op}")?;
     }
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_f64(
+pub fn fmt_load_f64(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f64: &LoadStoreF64,
+    load_f64: &LoadF64,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f64.get_rd().fmt_asm(formatter)?;
+    load_f64.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f64.get_rn().fmt_asm(formatter)?;
+    load_f64.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f64.get_rm().fmt_asm(formatter)?;
-    if let Some(rm_op) = load_store_f64.get_rm_op() {
+    load_f64.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = load_f64.get_rm_op() {
         write!(formatter, ", {rm_op}")?;
     }
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_f32(
+pub fn fmt_load_f32(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f32: &LoadStoreF32,
+    load_f32: &LoadF32,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f32.get_rd().fmt_asm(formatter)?;
+    load_f32.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f32.get_rn().fmt_asm(formatter)?;
+    load_f32.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f32.get_rm().fmt_asm(formatter)?;
-    if let Some(rm_op) = load_store_f32.get_rm_op() {
+    load_f32.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = load_f32.get_rm_op() {
         write!(formatter, ", {rm_op}")?;
     }
     write!(formatter, "]")
 }
 
 // ===== Load/Store Base Offset instructions =====
-pub fn fmt_load_store_gr64_base(
+pub fn fmt_load_gr64_base(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr64_base: &LoadStoreGr64Base,
+    load_gr64_base: &LoadGr64Base,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr64_base.get_rd().fmt_asm(formatter)?;
+    load_gr64_base.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr64_base.get_rn().fmt_asm(formatter)?;
+    load_gr64_base.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr64_base.get_rm().fmt_asm(formatter)?;
+    load_gr64_base.get_rm().fmt_asm(formatter)?;
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_gr32_base(
+pub fn fmt_load_gr32_base(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr32_base: &LoadStoreGr32Base,
+    load_gr32_base: &LoadGr32Base,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr32_base.get_rd().fmt_asm(formatter)?;
+    load_gr32_base.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr32_base.get_rn().fmt_asm(formatter)?;
+    load_gr32_base.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr32_base.get_rm().fmt_asm(formatter)?;
+    load_gr32_base.get_rm().fmt_asm(formatter)?;
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_f64_base(
+pub fn fmt_load_f64_base(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f64_base: &LoadStoreF64Base,
+    load_f64_base: &LoadF64Base,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f64_base.get_rd().fmt_asm(formatter)?;
+    load_f64_base.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f64_base.get_rn().fmt_asm(formatter)?;
+    load_f64_base.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f64_base.get_rm().fmt_asm(formatter)?;
+    load_f64_base.get_rm().fmt_asm(formatter)?;
     write!(formatter, "]")
 }
 
-pub fn fmt_load_store_f32_base(
+pub fn fmt_load_f32_base(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f32_base: &LoadStoreF32Base,
+    load_f32_base: &LoadF32Base,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f32_base.get_rd().fmt_asm(formatter)?;
+    load_f32_base.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f32_base.get_rn().fmt_asm(formatter)?;
+    load_f32_base.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f32_base.get_rm().fmt_asm(formatter)?;
+    load_f32_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+// ===== Load/Store Base-Offset instructions with Symbol Offset =====
+// syntax: <opcode> <Rd>, [<Rn|SP>, :lo12:<symbol>]
+pub fn fmt_load_gr64_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &LoadGr64BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_load_gr32_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &LoadGr32BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_load_f64_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &LoadF64BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_load_f32_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &LoadF32BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
     write!(formatter, "]")
 }
 
@@ -1038,153 +1138,454 @@ pub fn fmt_load_store_f32_base(
 ///
 /// * PostIndex: `LDR <Xd>, [<Xn|SP>], #<simm>`
 /// * PreIndex:  `LDR <Xd>, [<Xn|SP>, #<simm>]!`
-pub fn fmt_load_store_gr64_indexed(
+pub fn fmt_load_gr64_indexed(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr64_indexed: &LoadStoreGr64Indexed,
+    load_gr64_indexed: &LoadGr64Indexed,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr64_indexed.get_rd().fmt_asm(formatter)?;
+    load_gr64_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr64_indexed.get_rn().fmt_asm(formatter)?;
+    load_gr64_indexed.get_rn().fmt_asm(formatter)?;
 
-    match load_store_gr64_indexed.get_addr_mode() {
+    match load_gr64_indexed.get_addr_mode() {
         AddrMode::PreIndex => {
             write!(formatter, ", ")?;
-            load_store_gr64_indexed.get_rm().fmt_asm(formatter)?;
+            load_gr64_indexed.get_rm().fmt_asm(formatter)?;
             write!(formatter, "]!")
-        },
+        }
         AddrMode::PostIndex => {
             write!(formatter, "]")?;
-            load_store_gr64_indexed.get_rm().fmt_asm(formatter)
-        },
+            load_gr64_indexed.get_rm().fmt_asm(formatter)
+        }
         _ => panic!("Unsupported address mode for load/store indexed"),
     }
 }
 
-pub fn fmt_load_store_gr32_indexed(
+pub fn fmt_load_gr32_indexed(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr32_indexed: &LoadStoreGr32Indexed,
+    load_gr32_indexed: &LoadGr32Indexed,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr32_indexed.get_rd().fmt_asm(formatter)?;
+    load_gr32_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_gr32_indexed.get_rn().fmt_asm(formatter)?;
+    load_gr32_indexed.get_rn().fmt_asm(formatter)?;
 
-    match load_store_gr32_indexed.get_addr_mode() {
+    match load_gr32_indexed.get_addr_mode() {
         AddrMode::PreIndex => {
             write!(formatter, ", ")?;
-            load_store_gr32_indexed.get_rm().fmt_asm(formatter)?;
+            load_gr32_indexed.get_rm().fmt_asm(formatter)?;
             write!(formatter, "]!")
-        },
+        }
         AddrMode::PostIndex => {
             write!(formatter, "]")?;
-            load_store_gr32_indexed.get_rm().fmt_asm(formatter)
-        },
+            load_gr32_indexed.get_rm().fmt_asm(formatter)
+        }
         _ => panic!("Unsupported address mode for load/store indexed"),
     }
 }
 
-pub fn fmt_load_store_f64_indexed(
+pub fn fmt_load_f64_indexed(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f64_indexed: &LoadStoreF64Indexed,
+    load_f64_indexed: &LoadF64Indexed,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f64_indexed.get_rd().fmt_asm(formatter)?;
+    load_f64_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f64_indexed.get_rn().fmt_asm(formatter)?;
-    
-    match load_store_f64_indexed.get_addr_mode() {
+    load_f64_indexed.get_rn().fmt_asm(formatter)?;
+
+    match load_f64_indexed.get_addr_mode() {
         AddrMode::PreIndex => {
             write!(formatter, ", ")?;
-            load_store_f64_indexed.get_rm().fmt_asm(formatter)?;
+            load_f64_indexed.get_rm().fmt_asm(formatter)?;
             write!(formatter, "]!")
-        },
+        }
         AddrMode::PostIndex => {
             write!(formatter, "]")?;
-            load_store_f64_indexed.get_rm().fmt_asm(formatter)
-        },
+            load_f64_indexed.get_rm().fmt_asm(formatter)
+        }
         _ => panic!("Unsupported address mode for load/store indexed"),
     }
 }
 
-pub fn fmt_load_store_f32_indexed(
+pub fn fmt_load_f32_indexed(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f32_indexed: &LoadStoreF32Indexed,
+    load_f32_indexed: &LoadF32Indexed,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f32_indexed.get_rd().fmt_asm(formatter)?;
+    load_f32_indexed.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", [")?;
-    load_store_f32_indexed.get_rn().fmt_asm(formatter)?;
+    load_f32_indexed.get_rn().fmt_asm(formatter)?;
 
-    match load_store_f32_indexed.get_addr_mode() {
+    match load_f32_indexed.get_addr_mode() {
         AddrMode::PreIndex => {
             write!(formatter, ", ")?;
-            load_store_f32_indexed.get_rm().fmt_asm(formatter)?;
+            load_f32_indexed.get_rm().fmt_asm(formatter)?;
             write!(formatter, "]!")
-        },
+        }
         AddrMode::PostIndex => {
             write!(formatter, "]")?;
-            load_store_f32_indexed.get_rm().fmt_asm(formatter)
-        },
+            load_f32_indexed.get_rm().fmt_asm(formatter)
+        }
+        _ => panic!("Unsupported address mode for load/store indexed"),
+    }
+}
+
+// ===== Load/Store RRR instructions =====
+pub fn fmt_store_gr64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr64: &StoreGr64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr64.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_gr64.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = store_gr64.get_rm_op() {
+        write!(formatter, ", {rm_op}")?;
+    }
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_gr32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr32: &StoreGr32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr32.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_gr32.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = store_gr32.get_rm_op() {
+        write!(formatter, ", {rm_op}")?;
+    }
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f64: &StoreF64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f64.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_f64.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = store_f64.get_rm_op() {
+        write!(formatter, ", {rm_op}")?;
+    }
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f32: &StoreF32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f32.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_f32.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = store_f32.get_rm_op() {
+        write!(formatter, ", {rm_op}")?;
+    }
+    write!(formatter, "]")
+}
+
+// ===== Load/Store Base Offset instructions =====
+pub fn fmt_store_gr64_base(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr64_base: &StoreGr64Base,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr64_base.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr64_base.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_gr64_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_gr32_base(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr32_base: &StoreGr32Base,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr32_base.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr32_base.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_gr32_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f64_base(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f64_base: &StoreF64Base,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f64_base.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f64_base.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_f64_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f32_base(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f32_base: &StoreF32Base,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f32_base.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f32_base.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    store_f32_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+// ===== Load/Store Base-Offset instructions with Symbol Offset =====
+// syntax: <opcode> <Rd>, [<Rn|SP>, :lo12:<symbol>]
+pub fn fmt_store_gr64_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &StoreGr64BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_gr32_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &StoreGr32BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f64_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &StoreF64BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_store_f32_base_s(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    lsdt: &StoreF32BaseS,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    lsdt.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    lsdt.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", :lo12:")?;
+    lsdt.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+// ===== Load/Store Indexed instructions =====
+/// Syntax:
+///
+/// * PostIndex: `LDR <Xd>, [<Xn|SP>], #<simm>`
+/// * PreIndex:  `LDR <Xd>, [<Xn|SP>, #<simm>]!`
+pub fn fmt_store_gr64_indexed(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr64_indexed: &StoreGr64Indexed,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr64_indexed.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr64_indexed.get_rn().fmt_asm(formatter)?;
+
+    match store_gr64_indexed.get_addr_mode() {
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            store_gr64_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        }
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            store_gr64_indexed.get_rm().fmt_asm(formatter)
+        }
+        _ => panic!("Unsupported address mode for load/store indexed"),
+    }
+}
+
+pub fn fmt_store_gr32_indexed(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_gr32_indexed: &StoreGr32Indexed,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_gr32_indexed.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_gr32_indexed.get_rn().fmt_asm(formatter)?;
+
+    match store_gr32_indexed.get_addr_mode() {
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            store_gr32_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        }
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            store_gr32_indexed.get_rm().fmt_asm(formatter)
+        }
+        _ => panic!("Unsupported address mode for load/store indexed"),
+    }
+}
+
+pub fn fmt_store_f64_indexed(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f64_indexed: &StoreF64Indexed,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f64_indexed.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f64_indexed.get_rn().fmt_asm(formatter)?;
+
+    match store_f64_indexed.get_addr_mode() {
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            store_f64_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        }
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            store_f64_indexed.get_rm().fmt_asm(formatter)
+        }
+        _ => panic!("Unsupported address mode for load/store indexed"),
+    }
+}
+
+pub fn fmt_store_f32_indexed(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    store_f32_indexed: &StoreF32Indexed,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    store_f32_indexed.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    store_f32_indexed.get_rn().fmt_asm(formatter)?;
+
+    match store_f32_indexed.get_addr_mode() {
+        AddrMode::PreIndex => {
+            write!(formatter, ", ")?;
+            store_f32_indexed.get_rm().fmt_asm(formatter)?;
+            write!(formatter, "]!")
+        }
+        AddrMode::PostIndex => {
+            write!(formatter, "]")?;
+            store_f32_indexed.get_rm().fmt_asm(formatter)
+        }
         _ => panic!("Unsupported address mode for load/store indexed"),
     }
 }
 
 // ===== Load/Store Literal instructions =====
-pub fn fmt_load_store_gr64_literal(
+pub fn fmt_load_gr64_literal(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr64_literal: &LoadStoreGr64Literal,
+    load_gr64_literal: &LoadGr64Literal,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr64_literal.get_rd().fmt_asm(formatter)?;
+    load_gr64_literal.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr64_literal.get_from().fmt_asm(formatter)
+    load_gr64_literal.get_from().fmt_asm(formatter)
 }
 
-pub fn fmt_load_store_gr32_literal(
+pub fn fmt_load_gr32_literal(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_gr32_literal: &LoadStoreGr32Literal,
+    load_gr32_literal: &LoadGr32Literal,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_gr32_literal.get_rd().fmt_asm(formatter)?;
+    load_gr32_literal.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_gr32_literal.get_from().fmt_asm(formatter)
+    load_gr32_literal.get_from().fmt_asm(formatter)
 }
 
-pub fn fmt_load_store_f64_literal(
+pub fn fmt_load_f64_literal(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f64_literal: &LoadStoreF64Literal,
+    load_f64_literal: &LoadF64Literal,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f64_literal.get_rd().fmt_asm(formatter)?;
+    load_f64_literal.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f64_literal.get_from().fmt_asm(formatter)
+    load_f64_literal.get_from().fmt_asm(formatter)
 }
 
-pub fn fmt_load_store_f32_literal(
+pub fn fmt_load_f32_literal(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
-    load_store_f32_literal: &LoadStoreF32Literal,
+    load_f32_literal: &LoadF32Literal,
 ) -> std::fmt::Result {
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
-    load_store_f32_literal.get_rd().fmt_asm(formatter)?;
+    load_f32_literal.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
-    load_store_f32_literal.get_from().fmt_asm(formatter)
+    load_f32_literal.get_from().fmt_asm(formatter)
 }
 
 // ===== Load Constant instructions =====
@@ -1196,7 +1597,7 @@ pub fn fmt_load_const64(
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     load_const64.get_rd().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
+    write!(formatter, ", =")?;
     load_const64.get_src().fmt_asm(formatter)
 }
 
@@ -1208,7 +1609,7 @@ pub fn fmt_load_const_f64(
     let name = opcode_get_name_str(opcode);
     write!(formatter, "{name} ")?;
     load_const_f64.get_rd().fmt_asm(formatter)?;
-    write!(formatter, ", ")?;
+    write!(formatter, ", =")?;
     load_const_f64.get_src().fmt_asm(formatter)
 }
 

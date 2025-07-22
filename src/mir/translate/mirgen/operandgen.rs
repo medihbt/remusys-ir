@@ -4,11 +4,16 @@ use crate::{
     ir::{ValueSSA, block::BlockRef, constant::data::ConstData, global::GlobalRef, inst::InstRef},
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-        module::{MirGlobalRef, block::MirBlockRef, func::MirFunc, stack::VirtRegAlloc},
+        module::{
+            MirGlobalRef,
+            block::MirBlockRef,
+            func::{MirFunc, MirFuncInner},
+            stack::VirtRegAlloc,
+        },
         operand::{
             IMirSubOperand, MirOperand,
             compound::MirSymbolOp,
-            imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind},
+            imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind, ImmLoad32, ImmLoad64},
             imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
             reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, SubRegIndex, VFReg},
         },
@@ -35,33 +40,100 @@ pub enum OperandMapError {
 }
 
 impl<'a> OperandMap<'a> {
-    pub fn new(
+    pub fn build_from_func(
         func: Rc<MirFunc>,
         globals: &'a MirGlobalItems,
         insts: Vec<(InstRef, RegOperand)>,
         blocks: Vec<MirBlockInfo>,
-    ) -> Self {
+    ) -> (Self, Vec<MirInst>) {
         debug_assert!(insts.is_sorted_by_key(|(inst, _)| *inst));
         debug_assert!(blocks.is_sorted_by_key(|b| b.ir));
 
         let nargs = func.arg_ir_types.len();
         let mut args = Vec::with_capacity(nargs);
+        let mut args_builder_template = Vec::with_capacity(nargs);
         let mut arg_id = 0u32;
         for &preg in &func.arg_regs {
-            args.push((arg_id, preg));
+            let mut inner = func.borrow_inner_mut();
+            let vreg_alloc = &mut inner.vreg_alloc;
+            let parg = DispatchedReg::from_reg(preg);
+            let (virt, mov_inst) = match parg {
+                DispatchedReg::F32(parg) => {
+                    let virt = vreg_alloc.insert_fpr32(parg);
+                    let mov_inst = UnaF32::new(MirOP::FMov32R, virt, parg);
+                    (RegOperand::from(virt), mov_inst.into_mir())
+                }
+                DispatchedReg::F64(parg) => {
+                    let virt = vreg_alloc.insert_fpr64(parg);
+                    let mov_inst = UnaF64::new(MirOP::FMov64R, virt, parg);
+                    (RegOperand::from(virt), mov_inst.into_mir())
+                }
+                DispatchedReg::G32(parg) => {
+                    let virt = vreg_alloc.insert_gpr32(parg);
+                    let mov_inst = Una32R::new(MirOP::Mov32R, virt, parg, None);
+                    (RegOperand::from(virt), mov_inst.into_mir())
+                }
+                DispatchedReg::G64(parg) => {
+                    let virt = vreg_alloc.insert_gpr64(parg);
+                    let mov_inst = Una64R::new(MirOP::Mov64R, virt, parg, None);
+                    (RegOperand::from(virt), mov_inst.into_mir())
+                }
+            };
+            args.push((arg_id, virt));
+            args_builder_template.push(mov_inst);
             arg_id += 1;
         }
-        for spilled_arg in func.borrow_spilled_args().iter() {
-            args.push((arg_id, spilled_arg.virtreg));
+
+        let mut inner = func.borrow_inner_mut();
+        let MirFuncInner {
+            stack_layout,
+            vreg_alloc,
+            ..
+        } = &mut *inner;
+        for spilled_arg in stack_layout.args.iter() {
+            let arg_type = spilled_arg.irtype;
+            let stackpos = spilled_arg.stackpos_reg;
+            let (parg, ldr_inst) = match arg_type {
+                ValTypeID::Ptr | ValTypeID::Int(64) => {
+                    let virt = vreg_alloc.insert_gpr64(GPR64::new_empty());
+                    let ldr_inst =
+                        LoadGr64Base::new(MirOP::LdrGr64Base, virt, stackpos, ImmLoad64(0));
+                    (RegOperand::from(virt), ldr_inst.into_mir())
+                }
+                ValTypeID::Int(32) => {
+                    let virt = vreg_alloc.insert_gpr32(GPR32::new_empty());
+                    let ldr_inst =
+                        LoadGr32Base::new(MirOP::LdrGr32Base, virt, stackpos, ImmLoad32(0));
+                    (RegOperand::from(virt), ldr_inst.into_mir())
+                }
+                ValTypeID::Float(FloatTypeKind::Ieee32) => {
+                    let virt = vreg_alloc.insert_fpr32(FPR32::new_empty());
+                    let ldr_inst =
+                        LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLoad32(0));
+                    (RegOperand::from(virt), ldr_inst.into_mir())
+                }
+                ValTypeID::Float(FloatTypeKind::Ieee64) => {
+                    let virt = vreg_alloc.insert_fpr64(FPR64::new_empty());
+                    let ldr_inst =
+                        LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLoad64(0));
+                    (RegOperand::from(virt), ldr_inst.into_mir())
+                }
+                _ => panic!("Unsupported argument type for spilled argument: {arg_type:?}"),
+            };
+            args.push((arg_id, parg));
             arg_id += 1;
+            args_builder_template.push(ldr_inst);
         }
-        Self {
+        drop(inner);
+
+        let ret = Self {
             args,
             func,
             globals,
             insts,
             blocks,
-        }
+        };
+        (ret, args_builder_template)
     }
 
     pub fn find_operand_for_inst(&self, inst: InstRef) -> Option<RegOperand> {
@@ -142,21 +214,21 @@ impl<'a> OperandMap<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum PureSourceReg {
+pub enum DispatchedReg {
     F32(FPR32),
     F64(FPR64),
     G32(GPR32),
     G64(GPR64),
 }
 
-impl PureSourceReg {
+impl DispatchedReg {
     pub fn from_reg_full(id: u32, si: SubRegIndex, uf: RegUseFlags, is_fp: bool) -> Self {
         let bits_log2 = si.get_bits_log2();
         match (is_fp, bits_log2) {
-            (true, 5) => PureSourceReg::F32(FPR32(id, uf)),
-            (true, 6) => PureSourceReg::F64(FPR64(id, uf)),
-            (false, 5) => PureSourceReg::G32(GPR32(id, uf)),
-            (false, 6) => PureSourceReg::G64(GPR64(id, uf)),
+            (true, 5) => DispatchedReg::F32(FPR32(id, uf)),
+            (true, 6) => DispatchedReg::F64(FPR64(id, uf)),
+            (false, 5) => DispatchedReg::G32(GPR32(id, uf)),
+            (false, 6) => DispatchedReg::G64(GPR64(id, uf)),
             _ => panic!("Unsupported size for store: {bits_log2}"),
         }
     }
@@ -174,13 +246,13 @@ impl PureSourceReg {
     ) -> Self {
         match constdata {
             ConstData::Zero(ty) => {
-                fn get_zr_by_size(ty: &ValTypeID, type_ctx: &TypeContext) -> PureSourceReg {
+                fn get_zr_by_size(ty: &ValTypeID, type_ctx: &TypeContext) -> DispatchedReg {
                     let ty_size = ty
                         .get_instance_size(type_ctx)
                         .expect("Failed to get type size");
                     match ty_size {
-                        4 => PureSourceReg::G32(GPR32::zr()),
-                        8 => PureSourceReg::G64(GPR64::zr()),
+                        4 => DispatchedReg::G32(GPR32::zr()),
+                        8 => DispatchedReg::G64(GPR64::zr()),
                         _ => panic!("Unsupported ZR {ty:?} for size {ty_size}"),
                     }
                 }
@@ -194,7 +266,7 @@ impl PureSourceReg {
                         out_insts.push_back(
                             UnaFG32::new(MirOP::FMovGF32, f32_reg, GPR32::zr()).into_mir(),
                         );
-                        PureSourceReg::F32(f32_reg)
+                        DispatchedReg::F32(f32_reg)
                     }
                     ValTypeID::Float(FloatTypeKind::Ieee64) => {
                         let f64_reg =
@@ -204,13 +276,13 @@ impl PureSourceReg {
                         out_insts.push_back(
                             UnaFG64::new(MirOP::FMovGF64, f64_reg, GPR64::zr()).into_mir(),
                         );
-                        PureSourceReg::F64(f64_reg)
+                        DispatchedReg::F64(f64_reg)
                     }
                     _ => panic!("Unsupported zero constant type: {ty:?}"),
                 }
             }
             ConstData::PtrNull(_) => {
-                PureSourceReg::G64(Self::make_ldr_for_imm64(0, alloc_reg, out_insts))
+                DispatchedReg::G64(Self::make_ldr_for_imm64(0, alloc_reg, out_insts))
             }
             ConstData::Int(64, value) => {
                 let value = *value as u64;
@@ -219,7 +291,7 @@ impl PureSourceReg {
                 } else {
                     Self::make_ldr_for_imm64(value, alloc_reg, out_insts)
                 };
-                PureSourceReg::G64(reg)
+                DispatchedReg::G64(reg)
             }
             ConstData::Int(32, value) => {
                 let value = *value as u32;
@@ -228,7 +300,7 @@ impl PureSourceReg {
                 } else {
                     Self::make_ldr_for_imm32(value, alloc_reg, out_insts)
                 };
-                PureSourceReg::G32(reg)
+                DispatchedReg::G32(reg)
             }
             ConstData::Int(bits, value) => {
                 let value = if *bits == 1 {
@@ -236,7 +308,7 @@ impl PureSourceReg {
                 } else {
                     ConstData::iconst_value_get_real_signed(*bits, *value) as u64
                 };
-                PureSourceReg::G64(Self::make_ldr_for_imm64(value, alloc_reg, out_insts))
+                DispatchedReg::G64(Self::make_ldr_for_imm64(value, alloc_reg, out_insts))
             }
             ConstData::Float(FloatTypeKind::Ieee32, f) => {
                 Self::f32const_to_reg(alloc_reg, out_insts, fpconst_force_float, *f as f32)
@@ -260,17 +332,17 @@ impl PureSourceReg {
             Ok(value) => match value {
                 MirOperand::GPReg(GPReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, false)),
                 MirOperand::VFReg(VFReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, true)),
-                MirOperand::Label(bb) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                MirOperand::Label(bb) => Ok(DispatchedReg::G64(Self::make_ldr_for_symbol(
                     MirSymbolOp::Label(bb),
                     vreg_alloc,
                     out_insts,
                 ))),
-                MirOperand::Global(g) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                MirOperand::Global(g) => Ok(DispatchedReg::G64(Self::make_ldr_for_symbol(
                     MirSymbolOp::Global(g),
                     vreg_alloc,
                     out_insts,
                 ))),
-                MirOperand::SwitchTab(idx) => Ok(PureSourceReg::G64(Self::make_ldr_for_symbol(
+                MirOperand::SwitchTab(idx) => Ok(DispatchedReg::G64(Self::make_ldr_for_symbol(
                     MirSymbolOp::SwitchTab(idx),
                     vreg_alloc,
                     out_insts,
@@ -295,10 +367,10 @@ impl PureSourceReg {
 
     pub fn into_mir(self) -> MirOperand {
         match self {
-            PureSourceReg::F32(fpr32) => fpr32.into_mir(),
-            PureSourceReg::F64(fpr64) => fpr64.into_mir(),
-            PureSourceReg::G32(gpr32) => gpr32.into_mir(),
-            PureSourceReg::G64(gpr64) => gpr64.into_mir(),
+            DispatchedReg::F32(fpr32) => fpr32.into_mir(),
+            DispatchedReg::F64(fpr64) => fpr64.into_mir(),
+            DispatchedReg::G32(gpr32) => gpr32.into_mir(),
+            DispatchedReg::G64(gpr64) => gpr64.into_mir(),
         }
     }
 
@@ -370,7 +442,7 @@ impl PureSourceReg {
         out_insts: &mut VecDeque<MirInst>,
         fpconst_force_float: bool,
         f: f64,
-    ) -> PureSourceReg {
+    ) -> DispatchedReg {
         if try_cast_f64_to_aarch8(f).is_some() {
             let immf64 = ImmFMov64::new(f);
             let f64 = alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());

@@ -18,7 +18,7 @@ use crate::{
         },
         translate::mirgen::{
             instgen::ir_value_as_cmp,
-            operandgen::{OperandMap, PureSourceReg},
+            operandgen::{OperandMap, DispatchedReg},
         },
     },
     typing::{id::ValTypeID, types::FloatTypeKind},
@@ -36,7 +36,7 @@ pub(crate) fn dispatch_casts(
     alloc_use: Ref<Slab<UseData>>,
     last_pstate_modifier: Option<InstRef>,
 ) -> Option<Result<(), InstDispatchError>> {
-    use PureSourceReg::*;
+    use DispatchedReg::*;
     fn int_cast_get_bits(src_ty: ValTypeID, dst_ty: ValTypeID) -> (u8, u8) {
         use ValTypeID::Int;
         match (src_ty, dst_ty) {
@@ -56,7 +56,7 @@ pub(crate) fn dispatch_casts(
     let dst_mir = operand_map
         .find_operand_for_inst(ir_ref)
         .expect("Failed to find destination operand for cast instruction");
-    let dst_mir = PureSourceReg::from_reg(dst_mir);
+    let dst_mir = DispatchedReg::from_reg(dst_mir);
 
     if let Some(cmp) = ir_value_as_cmp(src_ir, alloc_inst) {
         let cmp_ref = match src_ir {
@@ -68,7 +68,7 @@ pub(crate) fn dispatch_casts(
         }
     }
 
-    let src_mir = PureSourceReg::from_valuessa(
+    let src_mir = DispatchedReg::from_valuessa(
         operand_map,
         &ir_module.type_ctx,
         vreg_alloc,
@@ -166,33 +166,33 @@ fn dispach_cast_cmp_to_int(
     ir_module: &Module,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
-    dst_mir: PureSourceReg,
+    dst_mir: DispatchedReg,
     cmp: &CmpOp,
 ) -> Option<Result<(), InstDispatchError>> {
-    use PureSourceReg::*;
+    use DispatchedReg::*;
 
     let cmp_cond = cmp.cond;
     let select_cond = MirCondFlag::from_cmp_cond(cmp_cond);
     let cset_inst = match dst_mir {
         F32(fpr32) => {
-            let rn = match PureSourceReg::from_constdata(
+            let rn = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee32, 0.0),
                 &ir_module.type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
             ) {
-                PureSourceReg::F32(fpr32) => fpr32,
+                DispatchedReg::F32(fpr32) => fpr32,
                 _ => panic!("Expected source operand to be F32"),
             };
-            let rm = match PureSourceReg::from_constdata(
+            let rm = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee32, 1.0),
                 &ir_module.type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
             ) {
-                PureSourceReg::F32(fpr32) => fpr32,
+                DispatchedReg::F32(fpr32) => fpr32,
                 _ => panic!("Expected source operand to be F32"),
             };
             CSelF32::new(
@@ -206,24 +206,24 @@ fn dispach_cast_cmp_to_int(
             .into_mir()
         }
         F64(fpr64) => {
-            let rn = match PureSourceReg::from_constdata(
+            let rn = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee64, 0.0),
                 &ir_module.type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
             ) {
-                PureSourceReg::F64(fpr64) => fpr64,
+                DispatchedReg::F64(fpr64) => fpr64,
                 _ => panic!("Expected source operand to be F64"),
             };
-            let rm = match PureSourceReg::from_constdata(
+            let rm = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee64, 1.0),
                 &ir_module.type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
             ) {
-                PureSourceReg::F64(fpr64) => fpr64,
+                DispatchedReg::F64(fpr64) => fpr64,
                 _ => panic!("Expected source operand to be F64"),
             };
             CSelF64::new(

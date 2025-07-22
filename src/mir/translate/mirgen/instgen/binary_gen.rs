@@ -11,14 +11,14 @@ use crate::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
         module::stack::VirtRegAlloc,
         operand::{IMirSubOperand, imm::ImmCalc, imm_traits, reg::*},
-        translate::mirgen::operandgen::{OperandMap, PureSourceReg},
+        translate::mirgen::operandgen::{OperandMap, DispatchedReg},
     },
     typing::{context::TypeContext, id::ValTypeID},
 };
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
-type BinLHS = crate::mir::translate::mirgen::operandgen::PureSourceReg;
+type BinLHS = crate::mir::translate::mirgen::operandgen::DispatchedReg;
 
 pub(crate) fn dispatch_binaries(
     operand_map: &OperandMap,
@@ -125,10 +125,10 @@ impl<'a> BinGenContext<'a> {
         &mut self,
         res: GPReg,
         opcode: O,
-        lhs: PureSourceReg,
-        rhs: PureSourceReg,
+        lhs: DispatchedReg,
+        rhs: DispatchedReg,
     ) -> MirInst {
-        use PureSourceReg::*;
+        use DispatchedReg::*;
         match (lhs, rhs) {
             (G32(lhs), G32(rhs)) => {
                 let opcode = match self.opcode {
@@ -162,12 +162,12 @@ impl<'a> BinGenContext<'a> {
         self.out_insts.push_back(inst);
     }
     fn do_generate_faddsub_by_mir(
-        lhs: PureSourceReg,
-        rhs: PureSourceReg,
+        lhs: DispatchedReg,
+        rhs: DispatchedReg,
         res: VFReg,
         opcode: O,
     ) -> MirInst {
-        use PureSourceReg::*;
+        use DispatchedReg::*;
         let inst = match (lhs, rhs) {
             (F32(lhs), F32(rhs)) => match opcode {
                 O::Fadd => BinF32R::new(MirOP::FAdd32, FPR32::from_real(res), lhs, rhs).into_mir(),
@@ -215,7 +215,7 @@ impl<'a> BinGenContext<'a> {
     }
 
     fn generate_fmuldiv(&mut self) {
-        use PureSourceReg::*;
+        use DispatchedReg::*;
         let lhs = self.lhs_mir;
         let rhs = self.make_rhs_mir();
         let res: VFReg = self.res.into();
@@ -251,7 +251,7 @@ impl<'a> BinGenContext<'a> {
         self.generate_imuldiv();
         let res = self.res;
         let lhs = self.lhs_mir;
-        let res_pure = PureSourceReg::from_reg(res);
+        let res_pure = DispatchedReg::from_reg(res);
 
         // Step 2: Generate `mul res, res, rhs`
         self.opcode = O::Mul;
@@ -276,7 +276,7 @@ impl<'a> BinGenContext<'a> {
         self.generate_fmuldiv();
         let res = self.res;
         let lhs = self.lhs_mir;
-        let res_pure = PureSourceReg::from_reg(res);
+        let res_pure = DispatchedReg::from_reg(res);
 
         // Step 2: Generate `fmul res, res, rhs`
         self.opcode = O::Fmul;
@@ -289,7 +289,7 @@ impl<'a> BinGenContext<'a> {
     }
 
     fn generate_bitwise(mut self) {
-        use PureSourceReg::*;
+        use DispatchedReg::*;
         let lhs = self.lhs_mir;
         let rhs = self.make_rhs_mir();
         let res: GPReg = self.res.into();
@@ -320,7 +320,7 @@ impl<'a> BinGenContext<'a> {
     }
 
     fn generate_shift(mut self) {
-        use PureSourceReg::*;
+        use DispatchedReg::*;
         let lhs = self.lhs_mir;
         let rhs = self.make_rhs_mir();
         let res: GPReg = self.res.into();

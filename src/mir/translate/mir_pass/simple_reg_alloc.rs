@@ -12,7 +12,7 @@ use crate::{
             imm::{ImmLoad32, ImmLoad64},
             reg::*,
         },
-        translate::mirgen::operandgen::PureSourceReg,
+        translate::mirgen::operandgen::DispatchedReg,
     },
 };
 use slab::Slab;
@@ -48,9 +48,15 @@ pub fn roughly_allocate_register(module: &mut MirModule) {
         funcs.push(f);
     }
     for func in funcs {
-        eprintln!("..Roughly allocating registers for function {}...", func.get_name());
+        eprintln!(
+            "..Roughly allocating registers for function {}...",
+            func.get_name()
+        );
         roughly_allocate_register_for_func(module, &func);
-        eprintln!("..Roughly allocated registers for function {}", func.get_name());
+        eprintln!(
+            "..Roughly allocated registers for function {}",
+            func.get_name()
+        );
     }
 }
 
@@ -149,43 +155,43 @@ fn build_load_store_for_stackpos(
     vreg: RegOperand,
     stackpos: GPR64,
 ) -> (MirInst, MirInst) {
-    match PureSourceReg::from_reg(vreg) {
-        PureSourceReg::F32(_) => {
+    match DispatchedReg::from_reg(vreg) {
+        DispatchedReg::F32(_) => {
             let mut fpr = FPR32(*curr_used_fpr, RegUseFlags::empty());
             *curr_used_fpr += 1;
             let imm0 = ImmLoad32::new(0);
-            let ldr = LoadStoreF32Base::new(MirOP::LdrF32Base, fpr, stackpos, imm0);
-            let str = LoadStoreF32Base::new(MirOP::StrF32Base, fpr, stackpos, imm0);
+            let ldr = LoadF32Base::new(MirOP::LdrF32Base, fpr, stackpos, imm0);
+            let str = StoreF32Base::new(MirOP::StrF32Base, fpr, stackpos, imm0);
             fpr.1 = vreg.get_use_flags();
             operand.set(fpr.into_mir());
             (ldr.into_mir(), str.into_mir())
         }
-        PureSourceReg::F64(_) => {
+        DispatchedReg::F64(_) => {
             let mut fpr = FPR64(*curr_used_fpr, RegUseFlags::empty());
             *curr_used_fpr += 1;
             let imm0 = ImmLoad64::new(0);
-            let ldr = LoadStoreF64Base::new(MirOP::LdrF64Base, fpr, stackpos, imm0);
-            let str = LoadStoreF64Base::new(MirOP::StrF64Base, fpr, stackpos, imm0);
+            let ldr = LoadF64Base::new(MirOP::LdrF64Base, fpr, stackpos, imm0);
+            let str = StoreF64Base::new(MirOP::StrF64Base, fpr, stackpos, imm0);
             fpr.1 = vreg.get_use_flags();
             operand.set(fpr.into_mir());
             (ldr.into_mir(), str.into_mir())
         }
-        PureSourceReg::G32(_) => {
+        DispatchedReg::G32(_) => {
             let mut gpr = GPR32(*curr_used_gpr, RegUseFlags::empty());
             *curr_used_gpr += 1;
             let imm0 = ImmLoad32::new(0);
-            let ldr = LoadStoreGr32Base::new(MirOP::LdrGr32Base, gpr, stackpos, imm0);
-            let str = LoadStoreGr32Base::new(MirOP::StrGr32Base, gpr, stackpos, imm0);
+            let ldr = LoadGr32Base::new(MirOP::LdrGr32Base, gpr, stackpos, imm0);
+            let str = StoreGr32Base::new(MirOP::StrGr32Base, gpr, stackpos, imm0);
             gpr.1 = vreg.get_use_flags();
             operand.set(gpr.into_mir());
             (ldr.into_mir(), str.into_mir())
         }
-        PureSourceReg::G64(_) => {
+        DispatchedReg::G64(_) => {
             let mut gpr = GPR64(*curr_used_gpr, RegUseFlags::empty());
             *curr_used_gpr += 1;
             let imm0 = ImmLoad64::new(0);
-            let ldr = LoadStoreGr64Base::new(MirOP::LdrGr64Base, gpr, stackpos, imm0);
-            let str = LoadStoreGr64Base::new(MirOP::StrGr64Base, gpr, stackpos, imm0);
+            let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, gpr, stackpos, imm0);
+            let str = StoreGr64Base::new(MirOP::StrGr64Base, gpr, stackpos, imm0);
             gpr.1 = vreg.get_use_flags();
             operand.set(gpr.into_mir());
             (ldr.into_mir(), str.into_mir())
@@ -238,9 +244,7 @@ impl SpillVRegsResult {
             } = &mut *inner;
             let stackpos_reg = {
                 let stack_item = stack_layout.add_spilled_virtreg_variable(vreg, vreg_alloc);
-                let pos_reg = stack_item.virtreg;
-                let pos_reg: GPReg = pos_reg.into();
-                GPR64::from_real(pos_reg)
+                stack_item.stackpos_reg
             };
             stackpos_map.push((vreg, stackpos_reg));
         }
@@ -265,14 +269,18 @@ impl SpillVRegsResult {
         operand: MirOperand,
     ) -> bool {
         let vreg = match operand {
-            MirOperand::GPReg(gpreg) if gpreg.is_virtual() => RegOperand::from(gpreg),
+            MirOperand::GPReg(gpreg) if gpreg.is_virtual() => {
+                if gpreg.get_bits_log2() == 6
+                    && inner.stack_layout.vreg_is_stackpos(GPR64::from_real(gpreg))
+                {
+                    // 如果是栈位置虚拟寄存器, 则不需要分配寄存器
+                    return false;
+                }
+                RegOperand::from(gpreg)
+            }
             MirOperand::VFReg(vfreg) if vfreg.is_virtual() => RegOperand::from(vfreg),
             _ => return false,
         };
-        if inner.stack_layout.vreg_is_stackpos(vreg) {
-            // 如果是栈位置虚拟寄存器, 则不需要分配寄存器
-            return false;
-        }
         let bits_log2 = vreg.get_bits_log2();
         let mut found_duplicate = false;
         for pos in vregs.iter_mut() {

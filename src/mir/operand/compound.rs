@@ -37,6 +37,10 @@ impl IMirSubOperand for MirSymbolOp {
         }
     }
 
+    fn try_from_real(real: Self) -> Option<Self> {
+        Some(real)
+    }
+
     fn from_real(real: Self) -> Self {
         real
     }
