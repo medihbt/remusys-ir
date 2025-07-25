@@ -177,12 +177,12 @@ pub const fn is_load_imm(imm: i64) -> bool {
         || (imm >= 0 && imm <= 32760 && imm % 8 == 0);
 }
 
-pub const fn is_load32_imm(imm: i64) -> bool {
-    return (imm >= -256 && imm <= 255) || (imm >= 0 && imm <= 16380 && imm % 4 == 0);
+pub const fn is_lsp32_imm(imm: u32) -> bool {
+    imm <= 16380 && imm % 4 == 0
 }
 
-pub const fn is_load64_imm(imm: i64) -> bool {
-    return (imm >= -256 && imm <= 255) || (imm >= 0 && imm <= 32760 && imm % 8 == 0);
+pub const fn is_lsp64_imm(imm: u64) -> bool {
+    imm <= 32760 && imm % 8 == 0
 }
 
 pub(super) const fn is_loop8_pattern32(imm: u32) -> bool {

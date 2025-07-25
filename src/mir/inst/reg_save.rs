@@ -3,7 +3,7 @@ use crate::mir::{
     inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
     operand::{
         IMirSubOperand, MirOperand,
-        imm::{ImmCalc, ImmLoad64},
+        imm::{ImmCalc, ImmLSP64},
         physreg_set::{MirPhysRegSet, RegOperandSet},
         reg::{FPR64, GPR64, GPReg, RegID, RegOperand, RegUseFlags, VFReg},
     },
@@ -164,7 +164,7 @@ impl MirSaveRegs {
         for (index, reg) in saved_regs.iter().enumerate() {
             let RegOperand(id, _, _, is_fp) = reg;
             let reg_id = RegID::from_real(id);
-            let offset = ImmLoad64::new((index as i64) * 8);
+            let offset = ImmLSP64::new((index as u64) * 8);
 
             let str_inst = if is_fp {
                 let src = FPR64::new(reg_id);

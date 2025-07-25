@@ -3,7 +3,7 @@ use crate::mir::{
     inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
     operand::{
         IMirSubOperand, MirOperand,
-        imm::{ImmCalc, ImmLoad64},
+        imm::{ImmCalc, ImmLSP64},
         physreg_set::{MirPhysRegSet, RegOperandSet},
         reg::{FPR64, GPR64, GPReg, RegID, RegOperand, RegUseFlags, VFReg},
     },
@@ -161,7 +161,7 @@ impl MirRestoreRegs {
         for (index, reg) in saved_regs.iter().enumerate() {
             let RegOperand(id, _, _, is_fp) = reg;
             let reg_id = RegID::from_real(id);
-            let offset = ImmLoad64::new((index as i64) * 8);
+            let offset = ImmLSP64::new(index as u64 * 8);
             let sp = GPR64::sp();
 
             let ldr_inst = if is_fp {
@@ -179,5 +179,59 @@ impl MirRestoreRegs {
         let sp = GPR64::sp();
         let add_sp = Bin64RC::new(MirOP::Add64I, sp, sp, ImmCalc::new(size));
         out_insts.push_back(MirInst::Bin64RC(add_sp));
+    }
+}
+
+#[derive(Clone)]
+pub struct MirRestoreHostRegs {
+    _common: MirInstCommon,
+}
+
+impl Debug for MirRestoreHostRegs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        write!(f, "MirRestoreHostRegs {} <--> {}", node_head.prev, node_head.next)
+    }
+}
+
+impl IMirSubInst for MirRestoreHostRegs {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &[]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &[]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirRestoreHostRegs)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        MirRestoreHostRegs {
+            _common: MirInstCommon::new(opcode),
+        }
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        let MirInst::MirRestoreHostRegs(inst) = mir_inst else {
+            return None;
+        };
+        Some(inst)
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirRestoreHostRegs(self)
+    }
+}
+
+impl MirRestoreHostRegs {
+    pub fn new() -> Self {
+        MirRestoreHostRegs {
+            _common: MirInstCommon::new(MirOP::MirRestoreHostRegs),
+        }
+    }
+
+    /// MIR pseudo-assembly syntax: `mir.restorehostregs`
+    pub fn fmt_asm(&self, formatter: &mut FuncFormatContext) -> std::fmt::Result {
+        write!(formatter, "mir.restorehostregs")
     }
 }

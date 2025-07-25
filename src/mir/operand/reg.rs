@@ -594,6 +594,12 @@ impl GPR32 {
     pub fn sp() -> Self {
         GPR32(32, RegUseFlags::empty())
     }
+    pub fn new(id: RegID) -> Self {
+        GPR32(id.get_real(), RegUseFlags::empty())
+    }
+    pub fn new_raw(id: u32) -> Self {
+        GPR32(id, RegUseFlags::empty())
+    }
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
@@ -727,6 +733,13 @@ impl FPR32 {
     pub fn retval() -> Self {
         FPR32(0, RegUseFlags::empty())
     }
+    pub fn new(id: RegID) -> Self {
+        FPR32(id.get_real(), RegUseFlags::empty())
+    }
+    pub fn new_raw(id: u32) -> Self {
+        FPR32(id, RegUseFlags::empty())
+    }
+
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
         RegID::from_real(id)

@@ -9,7 +9,7 @@ use crate::{
         },
         operand::{
             IMirSubOperand, MirOperand,
-            imm::{ImmLoad32, ImmLoad64},
+            imm::{ImmLSP32, ImmLSP64},
             reg::*,
         },
         translate::mirgen::operandgen::DispatchedReg,
@@ -111,7 +111,7 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
                             MirOP::StrGr64Base,
                             src,
                             stackpos,
-                            ImmLoad64::new(0),
+                            ImmLSP64::new(0),
                         );
                         stores_after.push_back(store_inst.into_mir());
                         // 删除原指令
@@ -131,7 +131,7 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
                                 MirOP::LdrGr64Base,
                                 dst,
                                 stackpos,
-                                ImmLoad64::new(0),
+                                ImmLSP64::new(0),
                             );
                             loads_before.push_back(load_inst.into_mir());
                             // 删除原指令
@@ -249,7 +249,7 @@ fn build_load_store_for_stackpos(
         DispatchedReg::F32(_) => {
             let mut fpr = FPR32(*curr_used_fpr, RegUseFlags::empty());
             *curr_used_fpr += 1;
-            let imm0 = ImmLoad32::new(0);
+            let imm0 = ImmLSP32::new(0);
             let ldr = LoadF32Base::new(MirOP::LdrF32Base, fpr, stackpos, imm0);
             let str = StoreF32Base::new(MirOP::StrF32Base, fpr, stackpos, imm0);
             fpr.1 = vreg.get_use_flags();
@@ -259,7 +259,7 @@ fn build_load_store_for_stackpos(
         DispatchedReg::F64(_) => {
             let mut fpr = FPR64(*curr_used_fpr, RegUseFlags::empty());
             *curr_used_fpr += 1;
-            let imm0 = ImmLoad64::new(0);
+            let imm0 = ImmLSP64::new(0);
             let ldr = LoadF64Base::new(MirOP::LdrF64Base, fpr, stackpos, imm0);
             let str = StoreF64Base::new(MirOP::StrF64Base, fpr, stackpos, imm0);
             fpr.1 = vreg.get_use_flags();
@@ -269,7 +269,7 @@ fn build_load_store_for_stackpos(
         DispatchedReg::G32(_) => {
             let mut gpr = GPR32(*curr_used_gpr, RegUseFlags::empty());
             *curr_used_gpr += 1;
-            let imm0 = ImmLoad32::new(0);
+            let imm0 = ImmLSP32::new(0);
             let ldr = LoadGr32Base::new(MirOP::LdrGr32Base, gpr, stackpos, imm0);
             let str = StoreGr32Base::new(MirOP::StrGr32Base, gpr, stackpos, imm0);
             gpr.1 = vreg.get_use_flags();
@@ -279,7 +279,7 @@ fn build_load_store_for_stackpos(
         DispatchedReg::G64(_) => {
             let mut gpr = GPR64(*curr_used_gpr, RegUseFlags::empty());
             *curr_used_gpr += 1;
-            let imm0 = ImmLoad64::new(0);
+            let imm0 = ImmLSP64::new(0);
             let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, gpr, stackpos, imm0);
             let str = StoreGr64Base::new(MirOP::StrGr64Base, gpr, stackpos, imm0);
             gpr.1 = vreg.get_use_flags();

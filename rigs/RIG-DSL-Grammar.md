@@ -44,7 +44,7 @@ RigOperand := Ident                                    // 模板参数 T
             | "FPR32" | "FPR64"
             | "FPR" "(" LitInt "," IdentArray ")"       // 可配置 FPR
             | "Imm32" | "Imm64" | "ImmCalc" | "ImmLogic" | "ImmSMax" | "ImmUMax"
-            | "ImmShift" | "ImmLoad64" | "ImmLoad32 | "ImmCCmp" | "ImmMov" | "ImmFMov"
+            | "ImmShift" | "ImmLSP64" | "ImmLSP32 | "ImmCCmp" | "ImmMov" | "ImmFMov"
             | "Label" | "Global" | "Symbol" | "SwitchTab" | "Any" ;
 
 // 属性列表
@@ -113,8 +113,8 @@ ExprBlock := Rust块表达式 ;
 - `ImmSMax`: 最大/最小值立即数
 - `ImmUMax`: 最大/最小值立即数
 - `ImmShift`: 移位操作立即数
-- `ImmLoad32`: 加载指令立即数, 32 位变体
-- `ImmLoad64`: 加载指令立即数, 64 位变体
+- `ImmLSP32`: 加载指令立即数, 32 位变体
+- `ImmLSP64`: 加载指令立即数, 64 位变体
 - `ImmCCmp`: 条件比较立即数
 - `ImmMov`: 移动指令立即数
 - `ImmFMov32`: 浮点移动立即数, 32 位浮点变体

@@ -51,6 +51,9 @@ template[Reg] TBZs {
 extern class MirCall;
 extern class MirReturn;
 extern class MirSwitch;
+extern class MirSaveRegs;
+extern class MirRestoreRegs;
+extern class MirRestoreHostRegs;
 
 template[Lhs, Rhs] CompareInsts {
     in: {
@@ -361,22 +364,22 @@ template[Dst, Offset] LoadRRIBaseOffset {
     in:  { rn: GPR64, rm: Offset, };
 
     impl {
-        [GPR64, ImmLoad64] => LoadGr64Base {
+        [GPR64, ImmLSP64] => LoadGr64Base {
             insts: [
                 LdrGr64Base, LdrBGr64Base, LdrHGr64Base, LdrSBGr64Base, LdrSHGr64Base,
             ],
         },
-        [GPR32, ImmLoad32] => LoadGr32Base {
+        [GPR32, ImmLSP32] => LoadGr32Base {
             insts: [
                 LdrGr32Base, LdrBGr32Base, LdrHGr32Base, LdrSBGr32Base, LdrSHGr32Base,
             ],
         },
-        [FPR64, ImmLoad64] => LoadF64Base { insts: [ LdrF64Base ] },
-        [FPR32, ImmLoad32] => LoadF32Base { insts: [ LdrF32Base ] },
+        [FPR64, ImmLSP64] => LoadF64Base { insts: [ LdrF64Base ] },
+        [FPR32, ImmLSP32] => LoadF32Base { insts: [ LdrF32Base ] },
 
-        // ImmLoadXX 操作数只能表示整数而不能表示符号偏移量, 因此这里多加四组符号偏移量的指令.
+        // ImmLSPXX 操作数只能表示整数而不能表示符号偏移量, 因此这里多加四组符号偏移量的指令.
         //
-        // #### 为什么不就地计算偏移量然后使用 ImmLoadXX 呢?
+        // #### 为什么不就地计算偏移量然后使用 ImmLSPXX 呢?
         //
         // Remusys-MIR 系统自己也有优化 pass, 难免会在 MIR 中添加或者删除指令.
         // 这样就会导致原本的偏移量计算不再正确, 因此需要使用符号偏移量来保证正确性.
@@ -407,18 +410,18 @@ template[Src, Offset] StoreRRIBaseOffset {
     in: { rd: Src, rn: GPR64, rm: Offset, };
 
     impl {
-        [GPR64, ImmLoad64] => StoreGr64Base {
+        [GPR64, ImmLSP64] => StoreGr64Base {
             insts: [
                 StrGr64Base, StrBGr64Base, StrHGr64Base,
             ],
         },
-        [GPR32, ImmLoad32] => StoreGr32Base {
+        [GPR32, ImmLSP32] => StoreGr32Base {
             insts: [
                 StrGr32Base, StrBGr32Base, StrHGr32Base,
             ],
         },
-        [FPR64, ImmLoad64] => StoreF64Base { insts: [ StrF64Base ] },
-        [FPR32, ImmLoad32] => StoreF32Base { insts: [ StrF32Base ] },
+        [FPR64, ImmLSP64] => StoreF64Base { insts: [ StrF64Base ] },
+        [FPR32, ImmLSP32] => StoreF32Base { insts: [ StrF32Base ] },
 
         // 符号偏移量的存储指令
         [GPR64, Symbol] => StoreGr64BaseS {
@@ -450,20 +453,20 @@ template[Dst, Offset] LoadRRIndexed {
     };
 
     impl {
-        [GPR64, ImmLoad64] => LoadGr64Indexed {
+        [GPR64, ImmLSP64] => LoadGr64Indexed {
             insts: [
                 LdrGr64Indexed, LdrBGr64Indexed, LdrHGr64Indexed,
                 LdrSBGr64Indexed, LdrSHGr64Indexed,
             ],
         },
-        [GPR32, ImmLoad32] => LoadGr32Indexed {
+        [GPR32, ImmLSP32] => LoadGr32Indexed {
             insts: [
                 LdrGr32Indexed, LdrBGr32Indexed, LdrHGr32Indexed,
                 LdrSBGr32Indexed, LdrSHGr32Indexed,
             ],
         },
-        [FPR64, ImmLoad64] => LoadF64Indexed { insts: [ LdrF64Indexed ] },
-        [FPR32, ImmLoad32] => LoadF32Indexed { insts: [ LdrF32Indexed ] },
+        [FPR64, ImmLSP64] => LoadF64Indexed { insts: [ LdrF64Indexed ] },
+        [FPR32, ImmLSP32] => LoadF32Indexed { insts: [ LdrF32Indexed ] },
     }
 }
 
@@ -477,18 +480,18 @@ template[Src, Offset] StoreRRIndexed {
     };
 
     impl {
-        [GPR64, ImmLoad64] => StoreGr64Indexed {
+        [GPR64, ImmLSP64] => StoreGr64Indexed {
             insts: [
                 StrGr64Indexed, StrBGr64Indexed, StrHGr64Indexed,
             ],
         },
-        [GPR32, ImmLoad32] => StoreGr32Indexed {
+        [GPR32, ImmLSP32] => StoreGr32Indexed {
             insts: [
                 StrGr32Indexed, StrBGr32Indexed, StrHGr32Indexed,
             ],
         },
-        [FPR64, ImmLoad64] => StoreF64Indexed { insts: [ StrF64Indexed ] },
-        [FPR32, ImmLoad32] => StoreF32Indexed { insts: [ StrF32Indexed ] },
+        [FPR64, ImmLSP64] => StoreF64Indexed { insts: [ StrF64Indexed ] },
+        [FPR32, ImmLSP32] => StoreF32Indexed { insts: [ StrF32Indexed ] },
     }
 }
 

@@ -466,6 +466,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::MirSwitch => "mir.switch",
         MirOP::MirSaveRegs => "mir.save_regs",
         MirOP::MirRestoreRegs => "mir.restore_regs",
+        MirOP::MirRestoreHostRegs => "mir.restore_host_regs",
 
         MirOP::LoadStackPosGr64 => "mir.load_stack_pos_gr64",
         MirOP::StoreStackPosGr64 => "mir.store_stack_pos_gr64",

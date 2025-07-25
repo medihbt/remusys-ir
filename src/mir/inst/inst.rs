@@ -123,6 +123,7 @@ pub enum MirInst {
     MirSwitch(super::mirops::MirSwitch),
     MirSaveRegs(super::mirops::MirSaveRegs),
     MirRestoreRegs(super::mirops::MirRestoreRegs),
+    MirRestoreHostRegs(super::mirops::MirRestoreHostRegs),
 }
 impl MirInst {
     pub fn get_common(&self) -> &super::MirInstCommon {
@@ -247,6 +248,7 @@ impl MirInst {
             MirInst::MirSwitch(inst) => inst.get_common(),
             MirInst::MirSaveRegs(inst) => inst.get_common(),
             MirInst::MirRestoreRegs(inst) => inst.get_common(),
+            MirInst::MirRestoreHostRegs(inst) => inst.get_common(),
         }
     }
     #[doc = "Returns the opcode of the instruction. This is useful for matching or dispatching logic."]
@@ -375,6 +377,7 @@ impl MirInst {
             MirInst::MirSwitch(inst) => inst.in_operands(),
             MirInst::MirSaveRegs(inst) => inst.in_operands(),
             MirInst::MirRestoreRegs(inst) => inst.in_operands(),
+            MirInst::MirRestoreHostRegs(inst) => inst.in_operands(),
         }
     }
     pub fn out_operands(&self) -> &[Cell<MirOperand>] {
@@ -499,6 +502,7 @@ impl MirInst {
             MirInst::MirSwitch(inst) => inst.out_operands(),
             MirInst::MirSaveRegs(inst) => inst.out_operands(),
             MirInst::MirRestoreRegs(inst) => inst.out_operands(),
+            MirInst::MirRestoreHostRegs(inst) => inst.out_operands(),
         }
     }
 }
@@ -625,6 +629,7 @@ impl std::fmt::Debug for MirInst {
             MirInst::MirSwitch(inst) => inst.fmt(f),
             MirInst::MirSaveRegs(inst) => inst.fmt(f),
             MirInst::MirRestoreRegs(inst) => inst.fmt(f),
+            MirInst::MirRestoreHostRegs(inst) => inst.fmt(f),
         }
     }
 }

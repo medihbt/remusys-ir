@@ -13,11 +13,18 @@ use crate::mir::{
         physreg_set::MirPhysRegSet,
         reg::{GPR64, RegOperand, RegUseFlags},
     },
-    translate::mirgen::operandgen::DispatchedReg,
+    translate::{mir_pass::inst_lower::InstSPAdjustments, mirgen::operandgen::DispatchedReg},
 };
-use std::{cmp::Ordering, collections::VecDeque, rc::Rc};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, VecDeque},
+    rc::Rc,
+};
 
-pub fn lower_stack_for_module(module: &mut MirModule) {
+pub fn lower_stack_for_module(
+    module: &mut MirModule,
+    mut sp_adjustments: BTreeMap<MirInstRef, InstSPAdjustments>,
+) {
     let mut all_funcs = Vec::new();
     for &globals in &module.items {
         let f = match &*globals.data_from_module(module) {
@@ -273,10 +280,10 @@ fn update_stack_instruction_refs(
                     added_insts,
                     stack_pos,
                     orig_offset,
-                    |x| imm_traits::is_load64_imm(x as i64),
+                    |x| imm_traits::is_lsp64_imm(x),
                 );
                 ls.set_rn(rn.into_real());
-                ls.set_rm(ImmLoad64(imm as i64));
+                ls.set_rm(ImmLSP64::new(imm));
             }
             if ls.get_rd().is_virtual() {
                 let stack_pos = GPR64::from_real(ls.get_rd());
@@ -302,10 +309,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::LoadF64Base(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -318,10 +325,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::LoadF32Base(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -334,10 +341,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::LoadGr64Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -350,10 +357,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::LoadGr32Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -366,10 +373,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::LoadF64Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -382,10 +389,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::LoadF32Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -398,10 +405,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::StoreGr64(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -463,10 +470,10 @@ fn update_stack_instruction_refs(
                     added_insts,
                     stack_pos,
                     orig_offset,
-                    |x| imm_traits::is_load64_imm(x as i64),
+                    |x| imm_traits::is_lsp64_imm(x),
                 );
                 ls.set_rn(rn.into_real());
-                ls.set_rm(ImmLoad64(imm as i64));
+                ls.set_rm(ImmLSP64::new(imm));
             }
             if ls.get_rd().is_virtual() {
                 let stack_pos = GPR64::from_real(ls.get_rd());
@@ -492,10 +499,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::StoreF64Base(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -508,10 +515,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::StoreF32Base(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -524,10 +531,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::StoreGr64Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -540,10 +547,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::StoreGr32Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -556,10 +563,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         MirInst::StoreF64Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -572,10 +579,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load64_imm(x as i64),
+                |x| imm_traits::is_lsp64_imm(x),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad64(imm as i64));
+            ls.set_rm(ImmLSP64::new(imm));
         }
         MirInst::StoreF32Indexed(ls) => {
             let stack_pos = GPR64::from_real(ls.get_rn());
@@ -588,10 +595,10 @@ fn update_stack_instruction_refs(
                 added_insts,
                 stack_pos,
                 orig_offset,
-                |x| imm_traits::is_load32_imm(x as i64),
+                |x| imm_traits::is_lsp32_imm(x as u32),
             );
             ls.set_rn(rn.into_real());
-            ls.set_rm(ImmLoad32(imm as i32));
+            ls.set_rm(ImmLSP32::new(imm as u32));
         }
         _ => {}
     }
@@ -840,28 +847,28 @@ fn manage_callee_reg_stack_space(stack_layout: &mut MirStackLayout) -> StackInfo
         };
         let (save_inst, restore_inst) = match reg {
             F32(rd) => {
-                let offset = ImmLoad32::new(offset as i32);
+                let offset = ImmLSP32::new(offset as u32);
                 (
                     StoreF32Base::new(StrF32Base, rd, sp, offset).into_mir(),
                     LoadF32Base::new(LdrF32Base, rd, sp, offset).into_mir(),
                 )
             }
             F64(rd) => {
-                let offset = ImmLoad64::new(offset as i64);
+                let offset = ImmLSP64::new(offset);
                 (
                     StoreF64Base::new(StrF64Base, rd, sp, offset).into_mir(),
                     LoadF64Base::new(LdrF64Base, rd, sp, offset).into_mir(),
                 )
             }
             G32(rd) => {
-                let offset = ImmLoad32::new(offset as i32);
+                let offset = ImmLSP32::new(offset as u32);
                 (
                     StoreGr32Base::new(StrGr32Base, rd, sp, offset).into_mir(),
                     LoadGr32Base::new(LdrGr32Base, rd, sp, offset).into_mir(),
                 )
             }
             G64(rd) => {
-                let offset = ImmLoad64::new(offset as i64);
+                let offset = ImmLSP64::new(offset);
                 (
                     StoreGr64Base::new(StrGr64Base, rd, sp, offset).into_mir(),
                     LoadGr64Base::new(LdrGr64Base, rd, sp, offset).into_mir(),

@@ -11,8 +11,11 @@ pub enum ImmKind {
     Calc,
     /// 逻辑相关的立即数, 规则是: 立即数应该是一个循环节的位模式.
     Logic,
-    /// `ldr r, [r, #i]` 等使用的立即数, 规则是: 一个 9 位的整数, 通过有符号扩展得到原数.
-    Load,
+    /// Load & Store 在偏移模式下的立即数模式. 规则是:
+    ///
+    /// * 32 位变体: 4 的倍数, 范围 `[0, 16380]`
+    /// * 64 位变体: 8 的倍数, 范围 `[0, 32760]`
+    LSP,
     /// 条件比较相关的立即数, 规则是: 只有 [0:5] 位有值, 无符号.
     CCmp,
     /// 移动指令相关的立即数.
@@ -35,7 +38,7 @@ impl ImmKind {
             ImmKind::Full => true,
             ImmKind::Calc => imm_traits::is_calc_imm(imm as u64),
             ImmKind::Logic => imm_traits::is_logical_imm32(imm),
-            ImmKind::Load => imm_traits::is_load32_imm(imm as i64),
+            ImmKind::LSP => imm_traits::is_lsp32_imm(imm),
             ImmKind::CCmp => imm_traits::is_condcmp_imm(imm as u64),
             ImmKind::Mov => imm_traits::is_mov_imm(imm as u64),
             ImmKind::MovZNK => ImmMovZNK::try_from_u64(imm as u64).is_some(),
@@ -51,7 +54,7 @@ impl ImmKind {
             ImmKind::Full => true,
             ImmKind::Calc => imm_traits::is_calc_imm(imm),
             ImmKind::Logic => imm_traits::is_logical_imm64(imm),
-            ImmKind::Load => imm_traits::is_load64_imm(imm as i64),
+            ImmKind::LSP => imm_traits::is_lsp64_imm(imm),
             ImmKind::CCmp => imm_traits::is_condcmp_imm(imm),
             ImmKind::Mov => imm_traits::is_mov_imm(imm),
             ImmKind::MovZNK => ImmMovZNK::try_from_u64(imm).is_some(),
@@ -145,7 +148,7 @@ impl IMirSubOperand for Imm64 {
             }
             ImmKind::Calc => ImmCalc::new(value as u32).fmt_asm(formatter),
             ImmKind::Logic => ImmLogic::new(value).fmt_asm(formatter),
-            ImmKind::Load => ImmLoad64::new(value as i64).fmt_asm(formatter),
+            ImmKind::LSP => ImmLSP64::new(value).fmt_asm(formatter),
             ImmKind::CCmp => ImmCCmp::new(value as u32).fmt_asm(formatter),
             ImmKind::Mov => ImmMov::new(value).fmt_asm(formatter),
             ImmKind::MovZNK => ImmMovZNK::from_raw(value as u32).fmt_asm(formatter),
@@ -239,7 +242,7 @@ impl IMirSubOperand for Imm32 {
             }
             ImmKind::Calc => ImmCalc::new(imm as u32).fmt_asm(formatter),
             ImmKind::Logic => ImmLogic::new(imm as u64).fmt_asm(formatter),
-            ImmKind::Load => ImmLoad32::new(imm as i32).fmt_asm(formatter),
+            ImmKind::LSP => ImmLSP32::new(imm).fmt_asm(formatter),
             ImmKind::CCmp => ImmCCmp::new(imm as u32).fmt_asm(formatter),
             ImmKind::Mov => ImmMov::new(imm as u64).fmt_asm(formatter),
             ImmKind::MovZNK => ImmMovZNK::from_raw(imm).fmt_asm(formatter),
@@ -721,18 +724,18 @@ impl IMirSubOperand for ImmShift {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImmLoad32(pub i32);
+pub struct ImmLSP32(pub u32);
 
-impl Debug for ImmLoad32 {
+impl Debug for ImmLSP32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self(value) = self;
         write!(f, "Imm:Load32({value:#x})")
     }
 }
 
-impl ImmLoad32 {
-    pub fn new(value: i32) -> Self {
-        if imm_traits::is_load32_imm(value as i64) {
+impl ImmLSP32 {
+    pub fn new(value: u32) -> Self {
+        if imm_traits::is_lsp32_imm(value) {
             Self(value)
         } else {
             panic!("Invalid immediate value: {} for Load32 kind", value);
@@ -740,8 +743,8 @@ impl ImmLoad32 {
     }
 }
 
-impl IMirSubOperand for ImmLoad32 {
-    type RealRepresents = Imm64;
+impl IMirSubOperand for ImmLSP32 {
+    type RealRepresents = Imm32;
 
     fn new_empty() -> Self {
         Self(0)
@@ -749,14 +752,20 @@ impl IMirSubOperand for ImmLoad32 {
 
     fn from_mir(mir: MirOperand) -> Self {
         let (value, flag) = match mir {
-            MirOperand::Imm64(Imm64(value, flag)) => (value as i32, flag),
-            MirOperand::Imm32(Imm32(value, flag)) => (value as i32, flag),
+            MirOperand::Imm64(Imm64(value, flag)) => {
+                if value < u32::MAX as u64 {
+                    (value as u32, flag)
+                } else {
+                    panic!("Expected Imm64 with Load kind, found value too large: {value}")
+                }
+            }
+            MirOperand::Imm32(Imm32(value, flag)) => (value as u32, flag),
             _ => panic!("Expected Imm64 or Imm32, found {mir:?}"),
         };
-        if flag != ImmKind::Load {
+        if flag != ImmKind::LSP {
             panic!("Expected Imm64 or Imm32 with Load kind, found {:?}", flag);
         }
-        if imm_traits::is_load32_imm(value as i64) {
+        if imm_traits::is_lsp32_imm(value) {
             Self(value)
         } else {
             panic!("Invalid immediate value: {} for Load kind", value);
@@ -764,59 +773,48 @@ impl IMirSubOperand for ImmLoad32 {
     }
 
     fn into_mir(self) -> MirOperand {
-        MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Load))
+        MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::LSP))
     }
 
-    fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Load {
-            Some(Self(real.get_value() as i32))
+    fn try_from_real(real: Imm32) -> Option<Self> {
+        if real.get_kind() == ImmKind::LSP {
+            Some(Self(real.get_value()))
         } else {
             None
         }
     }
 
-    fn from_real(real: Imm64) -> Self {
-        if real.get_kind() == ImmKind::Load {
-            Self(real.get_value() as i32)
+    fn from_real(real: Imm32) -> Self {
+        if real.get_kind() == ImmKind::LSP {
+            Self(real.get_value())
         } else {
             panic!("Expected Imm64 with Load kind, found {:?}", real.get_kind());
         }
     }
-
-    fn into_real(self) -> Imm64 {
-        Imm64(self.0 as u64, ImmKind::Load)
+    fn into_real(self) -> Imm32 {
+        Imm32(self.0, ImmKind::LSP)
     }
-
-    fn insert_to_real(self, real: Imm64) -> Imm64 {
-        if real.get_kind() == ImmKind::Load {
-            Imm64(self.0 as u64, ImmKind::Load)
-        } else {
-            panic!(
-                "Invalid immediate value: {} for flags: {:?}",
-                self.0,
-                real.get_kind()
-            );
-        }
+    fn insert_to_real(self, _: Imm32) -> Imm32 {
+        Imm32(self.0, ImmKind::LSP)
     }
-
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
-        write!(formatter.writer, "#{:#X}", self.0)
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
+        write!(formatter.writer, "#{:#x}", self.0)
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ImmLoad64(pub i64);
+pub struct ImmLSP64(pub u64);
 
-impl Debug for ImmLoad64 {
+impl Debug for ImmLSP64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self(value) = self;
         write!(f, "Imm:Load64({value:#x})")
     }
 }
 
-impl ImmLoad64 {
-    pub fn new(value: i64) -> Self {
-        if imm_traits::is_load64_imm(value) {
+impl ImmLSP64 {
+    pub fn new(value: u64) -> Self {
+        if imm_traits::is_lsp64_imm(value) {
             Self(value)
         } else {
             panic!("Invalid immediate value: {} for Load64 kind", value);
@@ -824,7 +822,7 @@ impl ImmLoad64 {
     }
 }
 
-impl IMirSubOperand for ImmLoad64 {
+impl IMirSubOperand for ImmLSP64 {
     type RealRepresents = Imm64;
 
     fn new_empty() -> Self {
@@ -833,14 +831,14 @@ impl IMirSubOperand for ImmLoad64 {
 
     fn from_mir(mir: MirOperand) -> Self {
         let (value, flag) = match mir {
-            MirOperand::Imm64(Imm64(value, flag)) => (value as i64, flag),
-            MirOperand::Imm32(Imm32(value, flag)) => (value as i64, flag),
+            MirOperand::Imm64(Imm64(value, flag)) => (value, flag),
+            MirOperand::Imm32(Imm32(value, flag)) => (value as u64, flag),
             _ => panic!("Expected Imm64 or Imm32, found {mir:?}"),
         };
-        if flag != ImmKind::Load {
+        if flag != ImmKind::LSP {
             panic!("Expected Imm64 or Imm32 with Load kind, found {:?}", flag);
         }
-        if imm_traits::is_load64_imm(value) {
+        if imm_traits::is_lsp64_imm(value) {
             Self(value)
         } else {
             panic!("Invalid immediate value: {} for Load kind", value);
@@ -848,32 +846,32 @@ impl IMirSubOperand for ImmLoad64 {
     }
 
     fn into_mir(self) -> MirOperand {
-        MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::Load))
+        MirOperand::Imm64(Imm64(self.0 as u64, ImmKind::LSP))
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Load {
-            Some(Self(real.get_value() as i64))
+        if real.get_kind() == ImmKind::LSP {
+            Some(Self(real.get_value()))
         } else {
             None
         }
     }
 
     fn from_real(real: Imm64) -> Self {
-        if real.get_kind() == ImmKind::Load {
-            Self(real.get_value() as i64)
+        if real.get_kind() == ImmKind::LSP {
+            Self(real.get_value())
         } else {
             panic!("Expected Imm64 with Load kind, found {:?}", real.get_kind());
         }
     }
 
     fn into_real(self) -> Imm64 {
-        Imm64(self.0 as u64, ImmKind::Load)
+        Imm64(self.0 as u64, ImmKind::LSP)
     }
 
     fn insert_to_real(self, real: Imm64) -> Imm64 {
-        if real.get_kind() == ImmKind::Load {
-            Imm64(self.0 as u64, ImmKind::Load)
+        if real.get_kind() == ImmKind::LSP {
+            Imm64(self.0 as u64, ImmKind::LSP)
         } else {
             panic!(
                 "Invalid immediate value: {} for flags: {:?}",
@@ -1147,7 +1145,10 @@ impl IMirSubOperand for ImmMovZNK {
 
     fn from_real(real: Imm64) -> Self {
         let Some(imm) = Self::try_from_real(real) else {
-            panic!("Expected Imm64 with MovZNK kind, found {:?}", real.get_kind());
+            panic!(
+                "Expected Imm64 with MovZNK kind, found {:?}",
+                real.get_kind()
+            );
         };
         imm
     }

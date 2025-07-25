@@ -11,7 +11,7 @@ use crate::{
         operand::{
             MirOperand,
             compound::MirSymbolOp,
-            imm::{ImmLoad32, ImmLoad64},
+            imm::{ImmLSP32, ImmLSP64},
             reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand},
             subop::IMirSubOperand,
         },
@@ -64,8 +64,8 @@ pub(crate) fn generate_store_inst(
         Ok(m) => panic!("Invalid dest for store: {m:?}"),
         Err(e) => panic!("Failed to find dest for store: {e:?}"),
     };
-    let zoff32 = ImmLoad32::new(0);
-    let zoff64 = ImmLoad64::new(0);
+    let zoff32 = ImmLSP32::new(0);
+    let zoff64 = ImmLSP64::new(0);
     match dst_mir {
         StrDest::G64(dst_ptr) => {
             let store_inst = match src_mir {
@@ -174,7 +174,7 @@ pub(crate) fn dispatch_load(
                 MirOP::LdrF64Base,
                 fpr64,
                 GPR64::from_real(gpreg),
-                ImmLoad64::new(0),
+                ImmLSP64::new(0),
             )
             .into_mir(),
             MirOperand::Label(label) => {
@@ -192,7 +192,7 @@ pub(crate) fn dispatch_load(
                 MirOP::LdrGr32Base,
                 gpr32,
                 GPR64::from_real(gpreg),
-                ImmLoad32::new(0),
+                ImmLSP32::new(0),
             )
             .into_mir(),
             MirOperand::Label(label) => {
@@ -210,7 +210,7 @@ pub(crate) fn dispatch_load(
                 MirOP::LdrGr64Base,
                 gpr64,
                 GPR64::from_real(gpreg),
-                ImmLoad64::new(0),
+                ImmLSP64::new(0),
             )
             .into_mir(),
             MirOperand::Label(label) => {

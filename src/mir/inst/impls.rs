@@ -9659,7 +9659,7 @@ impl IMirSubInst for LoadGr64Base {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -9677,7 +9677,7 @@ impl IMirSubInst for LoadGr64Base {
     }
 }
 impl LoadGr64Base {
-    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLoad64) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLSP64) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -9727,16 +9727,16 @@ impl LoadGr64Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
 }
@@ -9794,7 +9794,7 @@ impl IMirSubInst for LoadGr32Base {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -9812,7 +9812,7 @@ impl IMirSubInst for LoadGr32Base {
     }
 }
 impl LoadGr32Base {
-    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLoad32) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLSP32) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -9862,16 +9862,16 @@ impl LoadGr32Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
 }
@@ -9922,7 +9922,7 @@ impl IMirSubInst for LoadF64Base {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -9940,7 +9940,7 @@ impl IMirSubInst for LoadF64Base {
     }
 }
 impl LoadF64Base {
-    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLoad64) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLSP64) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -9990,16 +9990,16 @@ impl LoadF64Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
 }
@@ -10050,7 +10050,7 @@ impl IMirSubInst for LoadF32Base {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -10068,7 +10068,7 @@ impl IMirSubInst for LoadF32Base {
     }
 }
 impl LoadF32Base {
-    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLoad32) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLSP32) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -10118,16 +10118,16 @@ impl LoadF32Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
 }
@@ -10707,7 +10707,7 @@ impl IMirSubInst for StoreGr64Base {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -10725,7 +10725,7 @@ impl IMirSubInst for StoreGr64Base {
     }
 }
 impl StoreGr64Base {
-    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLoad64) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLSP64) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -10775,16 +10775,16 @@ impl StoreGr64Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
 }
@@ -10838,7 +10838,7 @@ impl IMirSubInst for StoreGr32Base {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -10856,7 +10856,7 @@ impl IMirSubInst for StoreGr32Base {
     }
 }
 impl StoreGr32Base {
-    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLoad32) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLSP32) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -10906,16 +10906,16 @@ impl StoreGr32Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
 }
@@ -10966,7 +10966,7 @@ impl IMirSubInst for StoreF64Base {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -10984,7 +10984,7 @@ impl IMirSubInst for StoreF64Base {
     }
 }
 impl StoreF64Base {
-    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLoad64) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLSP64) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -11034,16 +11034,16 @@ impl StoreF64Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
 }
@@ -11094,7 +11094,7 @@ impl IMirSubInst for StoreF32Base {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -11112,7 +11112,7 @@ impl IMirSubInst for StoreF32Base {
     }
 }
 impl StoreF32Base {
-    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLoad32) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLSP32) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -11162,16 +11162,16 @@ impl StoreF32Base {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
 }
@@ -11748,7 +11748,7 @@ impl IMirSubInst for LoadGr64Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -11770,7 +11770,7 @@ impl IMirSubInst for LoadGr64Indexed {
     }
 }
 impl LoadGr64Indexed {
-    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLoad64, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR64, rn: GPR64, rm: ImmLSP64, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -11824,16 +11824,16 @@ impl LoadGr64Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -11899,7 +11899,7 @@ impl IMirSubInst for LoadGr32Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -11921,7 +11921,7 @@ impl IMirSubInst for LoadGr32Indexed {
     }
 }
 impl LoadGr32Indexed {
-    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLoad32, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rd: GPR32, rn: GPR64, rm: ImmLSP32, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -11975,16 +11975,16 @@ impl LoadGr32Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12043,7 +12043,7 @@ impl IMirSubInst for LoadF64Indexed {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12065,7 +12065,7 @@ impl IMirSubInst for LoadF64Indexed {
     }
 }
 impl LoadF64Indexed {
-    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLoad64, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR64, rn: GPR64, rm: ImmLSP64, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12119,16 +12119,16 @@ impl LoadF64Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12187,7 +12187,7 @@ impl IMirSubInst for LoadF32Indexed {
             _operands: [
                 Cell::new(VFReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12209,7 +12209,7 @@ impl IMirSubInst for LoadF32Indexed {
     }
 }
 impl LoadF32Indexed {
-    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLoad32, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rd: FPR32, rn: GPR64, rm: ImmLSP32, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12263,16 +12263,16 @@ impl LoadF32Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rn().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12334,7 +12334,7 @@ impl IMirSubInst for StoreGr64Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12353,7 +12353,7 @@ impl IMirSubInst for StoreGr64Indexed {
     }
 }
 impl StoreGr64Indexed {
-    pub fn new(opcode: MirOP, rn: GPR64, rd: GPR64, rm: ImmLoad64, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rn: GPR64, rd: GPR64, rm: ImmLSP64, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12404,16 +12404,16 @@ impl StoreGr64Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rd().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12475,7 +12475,7 @@ impl IMirSubInst for StoreGr32Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(GPReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12494,7 +12494,7 @@ impl IMirSubInst for StoreGr32Indexed {
     }
 }
 impl StoreGr32Indexed {
-    pub fn new(opcode: MirOP, rn: GPR64, rd: GPR32, rm: ImmLoad32, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rn: GPR64, rd: GPR32, rm: ImmLSP32, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12545,16 +12545,16 @@ impl StoreGr32Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rd().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12613,7 +12613,7 @@ impl IMirSubInst for StoreF64Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(VFReg::new_empty().into_mir()),
-                Cell::new(ImmLoad64::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12632,7 +12632,7 @@ impl IMirSubInst for StoreF64Indexed {
     }
 }
 impl StoreF64Indexed {
-    pub fn new(opcode: MirOP, rn: GPR64, rd: FPR64, rm: ImmLoad64, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rn: GPR64, rd: FPR64, rm: ImmLSP64, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12683,16 +12683,16 @@ impl StoreF64Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rd().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad64"]
-    pub fn get_rm(&self) -> ImmLoad64 {
-        ImmLoad64::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP64"]
+    pub fn get_rm(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad64 (checked by ImmLoad64)"]
-    pub fn set_rm(&self, value: ImmLoad64) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_rm(&self, value: ImmLSP64) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {
@@ -12751,7 +12751,7 @@ impl IMirSubInst for StoreF32Indexed {
             _operands: [
                 Cell::new(GPReg::new_empty().into_mir()),
                 Cell::new(VFReg::new_empty().into_mir()),
-                Cell::new(ImmLoad32::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
             ],
             addr_mode: AddrMode::PostIndex,
         };
@@ -12770,7 +12770,7 @@ impl IMirSubInst for StoreF32Indexed {
     }
 }
 impl StoreF32Indexed {
-    pub fn new(opcode: MirOP, rn: GPR64, rd: FPR32, rm: ImmLoad32, addr_mode: AddrMode) -> Self {
+    pub fn new(opcode: MirOP, rn: GPR64, rd: FPR32, rm: ImmLSP32, addr_mode: AddrMode) -> Self {
         if !Self::accepts_opcode(opcode) {
             panic!(
                 "Cannot create an instance of {} with opcode {:?}",
@@ -12821,16 +12821,16 @@ impl StoreF32Indexed {
         let next_value = checked_value.insert_to_real(prev_value);
         self.rd().set(next_value.into_mir());
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
     pub fn rm(&self) -> &Cell<MirOperand> {
         &self._operands[2usize]
     }
-    #[doc = "operand rm at index 2 of type ImmLoad32"]
-    pub fn get_rm(&self) -> ImmLoad32 {
-        ImmLoad32::from_mir(self.rm().get())
+    #[doc = "operand rm at index 2 of type ImmLSP32"]
+    pub fn get_rm(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.rm().get())
     }
-    #[doc = "set the value of operand rm at 2 to a value of type ImmLoad32 (checked by ImmLoad32)"]
-    pub fn set_rm(&self, value: ImmLoad32) {
+    #[doc = "set the value of operand rm at 2 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_rm(&self, value: ImmLSP32) {
         self.rm().set(value.into_mir());
     }
     pub fn get_addr_mode(&self) -> AddrMode {

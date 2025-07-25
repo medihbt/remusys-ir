@@ -1,46 +1,37 @@
 use crate::mir::{
-    inst::{IMirSubInst, impls::*, inst::MirInst, mirops::MirReturn, opcode::MirOP},
-    module::stack::{MirStackLayout, VirtRegAlloc},
-    operand::{
-        IMirSubOperand, MirOperand,
-        compound::MirSymbolOp,
-        imm::{Imm64, ImmFMov32, ImmFMov64, ImmKind, ImmMov},
-        imm_traits,
-        reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegUseFlags, VFReg},
+    inst::{
+        IMirSubInst,
+        impls::*,
+        inst::MirInst,
+        mirops::{MirRestoreHostRegs, MirReturn},
+        opcode::MirOP,
     },
+    module::stack::VirtRegAlloc,
+    operand::{IMirSubOperand, MirOperand, compound::MirSymbolOp, imm::*, imm_traits, reg::*},
+    translate::mir_pass::inst_lower::LowerInstAction,
 };
 use std::collections::VecDeque;
 
 /// Generate MIR instructions for a return operation.
 pub fn lower_mir_ret(
     mir_ret: &MirReturn,
-    stack_layout: &MirStackLayout,
     vreg_alloc: &mut VirtRegAlloc,
-    out_insts: &mut VecDeque<MirInst>,
+    out_actions: &mut VecDeque<LowerInstAction>,
 ) {
     if let Some(retval) = mir_ret.retval() {
-        prepare_retval(vreg_alloc, out_insts, retval.get());
+        prepare_retval(vreg_alloc, out_actions, retval.get());
     }
-
-    // 恢复返回地址寄存器 ra 的值。
-    if let Some(saved_reg) = stack_layout.find_saved_preg(GPR64::from_real(GPReg::new_ra())) {
-        let restore_ra = Una64R::new(
-            MirOP::Mov64R,
-            GPR64(GPReg::RETADDR_POS, RegUseFlags::DEF),
-            GPR64::from_real(saved_reg.get_vreg().into()),
-            None,
-        );
-        out_insts.push_back(restore_ra.into_mir());
-    }
+    // 恢复所处函数保存的寄存器.
+    out_actions.push_back(LowerInstAction::NOP(MirRestoreHostRegs::new().into_mir()));
     // 在 aarch64 中有专门的 ret 指令, 但奇怪的是... 这个 ret 指令的返回地址寄存器也要自己指定.
     // 在汇编里不指定就是 x30, 但 MIR 可没有汇编那种灵活性, 数据流要显式表现出来的.
-    let ret_inst = BReg::new(MirOP::Ret, GPR64(GPReg::RETADDR_POS, RegUseFlags::KILL));
-    out_insts.push_back(ret_inst.into_mir());
+    let ret_inst = BReg::new(MirOP::Ret, GPR64::ra());
+    out_actions.push_back(LowerInstAction::NOP(ret_inst.into_mir()));
 }
 
 fn prepare_retval(
     vreg_alloc: &mut VirtRegAlloc,
-    out_insts: &mut VecDeque<MirInst>,
+    out_actions: &mut VecDeque<LowerInstAction>,
     retval: MirOperand,
 ) {
     match retval {
@@ -48,11 +39,11 @@ fn prepare_retval(
         | MirOperand::VFReg(VFReg(VFReg::RETVAL_POS, ..)) => {}
         MirOperand::GPReg(gp) => {
             let inst = make_move_to_gp_retval_inst(gp);
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         MirOperand::VFReg(vf) => {
             let inst = make_move_to_fp_retval_inst(vf);
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         MirOperand::Imm64(imm64) => {
             let value = imm64.get_value();
@@ -65,7 +56,7 @@ fn prepare_retval(
             } else {
                 LoadConst64::new(MirOP::LoadConst64, r0_dest, imm64).into_mir()
             };
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         MirOperand::Imm32(imm32) => {
             let value = imm32.get_value();
@@ -84,7 +75,7 @@ fn prepare_retval(
                 )
                 .into_mir()
             };
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         MirOperand::Label(label) => {
             let inst = LoadConst64Symbol::new(
@@ -92,7 +83,7 @@ fn prepare_retval(
                 GPR64(0, RegUseFlags::DEF),
                 MirSymbolOp::Label(label),
             );
-            out_insts.push_back(inst.into_mir());
+            out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
         }
         MirOperand::Global(global) => {
             let inst = LoadConst64Symbol::new(
@@ -100,7 +91,7 @@ fn prepare_retval(
                 GPR64(0, RegUseFlags::DEF),
                 MirSymbolOp::Global(global),
             );
-            out_insts.push_back(inst.into_mir());
+            out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
         }
         MirOperand::SwitchTab(idx) => {
             let inst = LoadConst64Symbol::new(
@@ -108,7 +99,7 @@ fn prepare_retval(
                 GPR64(0, RegUseFlags::DEF),
                 MirSymbolOp::SwitchTab(idx),
             );
-            out_insts.push_back(inst.into_mir());
+            out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
         }
         MirOperand::F32(f) => {
             let f0 = FPR32(0, RegUseFlags::DEF);
@@ -126,10 +117,10 @@ fn prepare_retval(
                     midreg64,
                     Imm64::new(fbits, ImmKind::Full),
                 );
-                out_insts.push_back(loadconst.into_mir());
+                out_actions.push_back(LowerInstAction::NOP(loadconst.into_mir()));
                 UnaFG32::new(MirOP::FMovFG32, f0, midreg32).into_mir()
             };
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         MirOperand::F64(f) => {
             let f0 = FPR64(0, RegUseFlags::DEF);
@@ -147,10 +138,10 @@ fn prepare_retval(
                     midreg64_dst,
                     Imm64::new(fbits, ImmKind::Full),
                 );
-                out_insts.push_back(loadconst.into_mir());
+                out_actions.push_back(LowerInstAction::NOP(loadconst.into_mir()));
                 UnaFG64::new(MirOP::FMovFG64, f0, midreg64_src).into_mir()
             };
-            out_insts.push_back(inst);
+            out_actions.push_back(LowerInstAction::NOP(inst));
         }
         _ => panic!("Unsupported return value type: {:?}", retval),
     }

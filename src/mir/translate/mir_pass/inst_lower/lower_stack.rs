@@ -5,7 +5,7 @@ use crate::mir::{
     module::stack::VirtRegAlloc,
     operand::{
         IMirSubOperand,
-        imm::{Imm64, ImmCalc, ImmKind, ImmLoad64},
+        imm::{Imm64, ImmCalc, ImmKind, ImmLSP64},
         imm_traits,
         physreg_set::MirPhysRegSet,
         reg::*,
@@ -66,7 +66,7 @@ impl SavedRegStackPos {
         out_insts.push_back(Bin64RC::new(MirOP::Sub64I, sp, sp, offset).into_mir());
 
         for (stack_pos, reg) in saved_regs.into_iter().enumerate() {
-            let offset_imm = ImmLoad64::new(stack_pos as i64 * 8);
+            let offset_imm = ImmLSP64::new(stack_pos as u64 * 8);
             let RegOperand(id, _, _, is_fp) = reg;
             if is_fp {
                 let rd = FPR64(id, RegUseFlags::USE);

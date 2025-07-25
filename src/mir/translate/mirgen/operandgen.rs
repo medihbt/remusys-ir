@@ -13,7 +13,7 @@ use crate::{
         operand::{
             IMirSubOperand, MirOperand,
             compound::MirSymbolOp,
-            imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind, ImmLoad32, ImmLoad64},
+            imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind, ImmLSP32, ImmLSP64},
             imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
             reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, SubRegIndex, VFReg},
         },
@@ -98,25 +98,25 @@ impl<'a> OperandMap<'a> {
                 ValTypeID::Ptr | ValTypeID::Int(64) => {
                     let virt = vreg_alloc.insert_gpr64(GPR64::new_empty());
                     let ldr_inst =
-                        LoadGr64Base::new(MirOP::LdrGr64Base, virt, stackpos, ImmLoad64(0));
+                        LoadGr64Base::new(MirOP::LdrGr64Base, virt, stackpos, ImmLSP64(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 ValTypeID::Int(32) => {
                     let virt = vreg_alloc.insert_gpr32(GPR32::new_empty());
                     let ldr_inst =
-                        LoadGr32Base::new(MirOP::LdrGr32Base, virt, stackpos, ImmLoad32(0));
+                        LoadGr32Base::new(MirOP::LdrGr32Base, virt, stackpos, ImmLSP32(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 ValTypeID::Float(FloatTypeKind::Ieee32) => {
                     let virt = vreg_alloc.insert_fpr32(FPR32::new_empty());
                     let ldr_inst =
-                        LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLoad32(0));
+                        LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLSP32(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 ValTypeID::Float(FloatTypeKind::Ieee64) => {
                     let virt = vreg_alloc.insert_fpr64(FPR64::new_empty());
                     let ldr_inst =
-                        LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLoad64(0));
+                        LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLSP64(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 _ => panic!("Unsupported argument type for spilled argument: {arg_type:?}"),
