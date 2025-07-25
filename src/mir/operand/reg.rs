@@ -235,6 +235,9 @@ impl GPReg {
     pub const RETVAL_POS: u32 = 0;
     pub const RETADDR_POS: u32 = 30;
 
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_))
+    }
     pub fn is_virtual(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
@@ -374,6 +377,9 @@ impl Debug for VFReg {
 impl VFReg {
     pub const RETVAL_POS: u32 = 0;
 
+    pub fn is_physical(self) -> bool {
+        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+    }
     pub fn is_virtual(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
@@ -672,6 +678,12 @@ impl GPR64 {
     pub fn ra() -> Self {
         GPR64(30, RegUseFlags::empty())
     }
+    pub fn new(id: RegID) -> Self {
+        GPR64(id.get_real(), RegUseFlags::empty())
+    }
+    pub fn new_raw(id: u32) -> Self {
+        GPR64(id, RegUseFlags::empty())
+    }
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
@@ -789,6 +801,12 @@ impl Debug for FPR64 {
 impl FPR64 {
     pub fn retval() -> Self {
         FPR64(0, RegUseFlags::empty())
+    }
+    pub fn new(id: RegID) -> Self {
+        FPR64(id.get_real(), RegUseFlags::empty())
+    }
+    pub fn new_raw(id: u32) -> Self {
+        FPR64(id, RegUseFlags::empty())
     }
 
     pub fn get_id(self) -> RegID {

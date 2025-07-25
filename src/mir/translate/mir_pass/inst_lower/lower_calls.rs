@@ -13,80 +13,80 @@ pub fn lower_mir_call(
     alloc_block: &Slab<MirBlock>,
     self_parent: &MirFunc,
 ) {
-    // Save registers before the call.
-    // make_save_regs_insts(call_inst.get_saved_regs(), out_insts);
-    SavedRegStackPos::build_save_regs(call_inst.get_saved_regs(), out_insts);
-    let callee_func = call_inst
-        .get_callee_func()
-        .expect("Callee function must be set");
+//     // Save registers before the call.
+//     // make_save_regs_insts(call_inst.get_saved_regs(), out_insts);
+//     SavedRegStackPos::build_save_regs(call_inst.get_saved_regs(), out_insts);
+//     let callee_func = call_inst
+//         .get_callee_func()
+//         .expect("Callee function must be set");
 
-    // Prepare the arguments for the call instruction.
-    let mut arg_gpreg_id = 0;
-    let mut arg_vfreg_id = 0;
-    let mut spilled_arg_count = 0;
-    let callee_stack_layout = callee_func.borrow_inner().stack_layout.clone();
-    let spilled_args_size = callee_stack_layout.args_size;
+//     // Prepare the arguments for the call instruction.
+//     let mut arg_gpreg_id = 0;
+//     let mut arg_vfreg_id = 0;
+//     let mut spilled_arg_count = 0;
+//     let callee_stack_layout = callee_func.borrow_inner().stack_layout.clone();
+//     let spilled_args_size = callee_stack_layout.args_size;
 
-    // 为参数预留 SP 栈空间.
-    // 这里顺便把恢复栈空间的指令也做了.
-    let mut restore_sp_insts = Vec::with_capacity(2);
-    make_reserve_and_restore_stack_space_insts(
-        &mut self_parent.borrow_inner_mut().vreg_alloc,
-        out_insts,
-        spilled_args_size,
-        &mut restore_sp_insts,
-    );
+//     // 为参数预留 SP 栈空间.
+//     // 这里顺便把恢复栈空间的指令也做了.
+//     let mut restore_sp_insts = Vec::with_capacity(2);
+//     make_reserve_and_restore_stack_space_insts(
+//         &mut self_parent.borrow_inner_mut().vreg_alloc,
+//         out_insts,
+//         spilled_args_size,
+//         &mut restore_sp_insts,
+//     );
 
-    for arg in call_inst.args() {
-        let arg = arg.get();
-        match arg {
-            MirOperand::GPReg(source_gpr) => prepare_gpreg_arg(
-                out_insts,
-                &mut arg_gpreg_id,
-                &mut spilled_arg_count,
-                &callee_stack_layout,
-                source_gpr,
-            ),
-            MirOperand::VFReg(vfreg) => prepare_fpreg_arg(
-                out_insts,
-                &mut arg_vfreg_id,
-                &mut spilled_arg_count,
-                &callee_stack_layout,
-                vfreg,
-            ),
-            MirOperand::None => panic!("Unexpected None operand in call arguments"),
-            MirOperand::PState(_) => panic!("Unexpected PState operand in call arguments"),
-            _ => todo!(
-                "MirCall converted all arguments into registers. But we encounted some errors. ({arg:?} handling)."
-            ),
-        }
-    }
+//     for arg in call_inst.args() {
+//         let arg = arg.get();
+//         match arg {
+//             MirOperand::GPReg(source_gpr) => prepare_gpreg_arg(
+//                 out_insts,
+//                 &mut arg_gpreg_id,
+//                 &mut spilled_arg_count,
+//                 &callee_stack_layout,
+//                 source_gpr,
+//             ),
+//             MirOperand::VFReg(vfreg) => prepare_fpreg_arg(
+//                 out_insts,
+//                 &mut arg_vfreg_id,
+//                 &mut spilled_arg_count,
+//                 &callee_stack_layout,
+//                 vfreg,
+//             ),
+//             MirOperand::None => panic!("Unexpected None operand in call arguments"),
+//             MirOperand::PState(_) => panic!("Unexpected PState operand in call arguments"),
+//             _ => todo!(
+//                 "MirCall converted all arguments into registers. But we encounted some errors. ({arg:?} handling)."
+//             ),
+//         }
+//     }
 
-    // Then, we need to generate the call instruction.
-    let callee_operand = MirGlobalRef::from_mir(call_inst.callee().get());
-    let callee_entry = { callee_func.blocks.get_front_ref(alloc_block) };
+//     // Then, we need to generate the call instruction.
+//     let callee_operand = MirGlobalRef::from_mir(call_inst.callee().get());
+//     let callee_entry = { callee_func.blocks.get_front_ref(alloc_block) };
 
-    let bl_inst = if let Some(callee_entry) = callee_entry {
-        BLinkLabel::new(MirOP::BLink, GPR64::ra(), callee_entry).into_mir()
-    } else {
-        // External function or a function without a body.
-        BLinkGlobal::new(MirOP::BLinkGlobal, GPR64::ra(), callee_operand).into_mir()
-    };
-    out_insts.push_back(bl_inst);
+//     let bl_inst = if let Some(callee_entry) = callee_entry {
+//         BLinkLabel::new(MirOP::BLink, GPR64::ra(), callee_entry).into_mir()
+//     } else {
+//         // External function or a function without a body.
+//         BLinkGlobal::new(MirOP::BLinkGlobal, GPR64::ra(), callee_operand).into_mir()
+//     };
+//     out_insts.push_back(bl_inst);
 
-    // restore the stack space.
-    for restore_inst in restore_sp_insts {
-        out_insts.push_back(restore_inst);
-    }
+//     // restore the stack space.
+//     for restore_inst in restore_sp_insts {
+//         out_insts.push_back(restore_inst);
+//     }
 
-    // After the call, we need to prepare the return value.
-    let mut saved_regs = call_inst.get_saved_regs();
-    if let Some(ret_val) = call_inst.get_ret_arg() {
-        saved_regs = prepare_return_value(out_insts, ret_val, saved_regs);
-    }
+//     // After the call, we need to prepare the return value.
+//     let mut saved_regs = call_inst.get_saved_regs();
+//     if let Some(ret_val) = call_inst.get_ret_arg() {
+//         saved_regs = prepare_return_value(out_insts, ret_val, saved_regs);
+//     }
 
-    // After the call, we need to restore the registers.
-    make_restore_regs_inst(saved_regs, out_insts);
+//     // After the call, we need to restore the registers.
+//     make_restore_regs_inst(saved_regs, out_insts);
 }
 
 fn prepare_return_value(

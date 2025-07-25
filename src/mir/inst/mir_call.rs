@@ -1,11 +1,12 @@
 use crate::mir::{
     fmt::FuncFormatContext,
-    inst::{IMirSubInst, MirInstCommon, inst::MirInst, opcode::MirOP},
+    inst::{IMirSubInst, MirInstCommon, inst::MirInst, mirops::MirSaveRegs, opcode::MirOP},
     module::func::MirFunc,
     operand::{IMirSubOperand, MirOperand, physreg_set::MirPhysRegSet, reg::RegOperand},
 };
 use std::{
     cell::{Cell, RefCell},
+    collections::VecDeque,
     fmt::Write,
     rc::Rc,
 };
@@ -133,6 +134,12 @@ impl MirCall {
         }
         formatter.write_str(")")?;
         Ok(())
+    }
+
+    pub fn dump_actions_template(&self, out_insts: &mut VecDeque<MirInst>) {
+        // 先保存寄存器
+        let saved_regs = self.get_saved_regs();
+        out_insts.push_back(MirSaveRegs::new(saved_regs).into_mir());
     }
 }
 

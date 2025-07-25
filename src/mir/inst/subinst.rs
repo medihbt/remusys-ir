@@ -8,6 +8,13 @@ use crate::mir::{
 pub trait IMirSubInst {
     fn get_common(&self) -> &MirInstCommon;
 
+    fn get_opcode(&self) -> MirOP {
+        self.get_common().opcode
+    }
+    fn opcode_is(&self, opcode: MirOP) -> bool {
+        self.get_common().opcode == opcode
+    }
+
     fn out_operands(&self) -> &[Cell<MirOperand>];
     fn in_operands(&self) -> &[Cell<MirOperand>];
 

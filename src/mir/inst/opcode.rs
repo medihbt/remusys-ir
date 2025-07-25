@@ -502,6 +502,10 @@ pub enum MirOP {
     MirReturn,
     #[doc = "Opcode class: MirSwitch"]
     MirSwitch,
+    #[doc = "Opcode class: MirSaveRegs"]
+    MirSaveRegs,
+    #[doc = "Opcode class: MirRestoreRegs"]
+    MirRestoreRegs,
 }
 impl MirOP {
     pub fn as_str(&self) -> &'static str {
@@ -889,6 +893,8 @@ impl MirOP {
             MirOP::MirCall => "MirCall",
             MirOP::MirReturn => "MirReturn",
             MirOP::MirSwitch => "MirSwitch",
+            MirOP::MirSaveRegs => "MirSaveRegs",
+            MirOP::MirRestoreRegs => "MirRestoreRegs",
         }
     }
 }
@@ -1284,6 +1290,8 @@ impl std::str::FromStr for MirOP {
             "MirCall" => Ok(MirOP::MirCall),
             "MirReturn" => Ok(MirOP::MirReturn),
             "MirSwitch" => Ok(MirOP::MirSwitch),
+            "MirSaveRegs" => Ok(MirOP::MirSaveRegs),
+            "MirRestoreRegs" => Ok(MirOP::MirRestoreRegs),
             _ => Err(format!("Unknown opcode: {}", s)),
         }
     }

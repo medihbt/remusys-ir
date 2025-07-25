@@ -6,6 +6,8 @@ pub mod mir_call;
 pub mod mirops;
 pub mod opcode;
 pub mod pseudo;
+pub mod reg_restore;
+pub mod reg_save;
 pub mod subinst;
 pub mod switch;
 

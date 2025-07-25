@@ -7,9 +7,10 @@ use crate::mir::{
         stack::{MirStackLayout, SavedReg, StackItemKind},
     },
     operand::{
-        IMirSubOperand,
+        IMirSubOperand, MirOperand,
         imm::*,
         imm_traits,
+        physreg_set::MirPhysRegSet,
         reg::{GPR64, RegOperand, RegUseFlags},
     },
     translate::mirgen::operandgen::DispatchedReg,
@@ -26,8 +27,40 @@ pub fn lower_stack_for_module(module: &mut MirModule) {
         all_funcs.push(f);
     }
     for func in &all_funcs {
+        rearrange_func_saved_regs(func, module);
         lower_function_stack(func, module);
     }
+}
+
+/// Remusys 生成的汇编实在是太啰嗦了... 思来想去还是觉得, 应该对函数保存的寄存器剪剪枝了.
+pub fn rearrange_func_saved_regs(func: &MirFunc, module: &mut MirModule) {
+    let aapcs_callee_saved = MirPhysRegSet::new_aapcs_callee();
+    let mut used_regs = MirPhysRegSet::new_empty();
+
+    let allocs = module.allocs.get_mut();
+    for (_, blocks) in func.blocks.view(&allocs.block) {
+        for (_, inst) in blocks.insts.view(&allocs.inst) {
+            for operand in inst.in_operands() {
+                match operand.get() {
+                    MirOperand::GPReg(gpr) if gpr.is_physical() => {
+                        used_regs.save_gpr(gpr.get_id());
+                    }
+                    MirOperand::VFReg(vfr) if vfr.is_physical() => {
+                        used_regs.save_fpr(vfr.get_id());
+                    }
+                    _ => continue,
+                }
+            }
+        }
+    }
+    used_regs &= aapcs_callee_saved;
+    println!(
+        "Rearranging saved regs for function {}: {:?} -> {:?}",
+        func.get_name(),
+        aapcs_callee_saved,
+        used_regs
+    );
+    func.reinit_saved_regs(used_regs);
 }
 
 /// Remusys-MIR 栈布局指的是局部变量、函数参数、保存的寄存器在栈上的布局方式。
@@ -41,6 +74,7 @@ pub fn lower_function_stack(func: &MirFunc, module: &MirModule) {
         // Extern functions do not have a stack layout, so we can skip them.
         return;
     }
+
     let mut stack_layout = std::mem::take(&mut func.borrow_inner_mut().stack_layout);
     stack_layout.saved_regs.sort_by(saved_reg_cmp);
 
@@ -782,9 +816,18 @@ struct StackInfo {
 fn manage_callee_reg_stack_space(stack_layout: &mut MirStackLayout) -> StackInfo {
     // 预留“保存寄存器”的栈空间
     let reserved_regs = &stack_layout.saved_regs;
-    let (saved_regs, total_size) = make_regs_offset(reserved_regs);
+    let (saved_regs, total_size) = make_offset_for_saved_regs(reserved_regs);
     let mut reg_save_template = Vec::new();
     let mut reg_restore_template = Vec::new();
+
+    if total_size.0 == 0 {
+        // 如果没有保存寄存器, 那么不需要预留栈空间.
+        return StackInfo {
+            save_insts: Vec::new(),
+            restore_insts: Vec::new(),
+            section_size: 0,
+        };
+    }
 
     // 保存模板: 添加一个 `sub sp, sp, #total_size` 指令
     let sp = GPR64::sp();
@@ -856,7 +899,7 @@ fn saved_reg_cmp(a: &SavedReg, b: &SavedReg) -> std::cmp::Ordering {
 }
 
 /// 扫描所有保存的寄存器, 确定每个寄存器在栈“保存的寄存器”一节的偏移量，以及整个节的大小。
-fn make_regs_offset(regs: &[SavedReg]) -> (Vec<(DispatchedReg, u64)>, ImmCalc) {
+fn make_offset_for_saved_regs(regs: &[SavedReg]) -> (Vec<(DispatchedReg, u64)>, ImmCalc) {
     let mut offset: u64 = 0;
     let mut result = Vec::with_capacity(regs.len());
     for reg in regs {
@@ -865,7 +908,7 @@ fn make_regs_offset(regs: &[SavedReg]) -> (Vec<(DispatchedReg, u64)>, ImmCalc) {
         result.push((DispatchedReg::from_reg(reg.preg), offset));
         offset += size;
     }
-    let total_size = offset.next_multiple_of(8);
+    let total_size = offset.next_multiple_of(16);
     (result, ImmCalc::new(total_size as u32))
 }
 
@@ -875,11 +918,11 @@ fn make_local_variable_layout(stack_layout: &mut MirStackLayout) -> StackInfo {
     // 然后计算每个变量的偏移量
     let mut offset: u64 = 0;
     for var in &mut stack_layout.vars {
-        offset = offset.next_multiple_of(var.size);
+        offset = offset.next_multiple_of(1 << var.align_log2);
         var.offset = offset as i64;
         offset += var.size;
     }
-    let section_size = offset.next_multiple_of(8);
+    let section_size = offset.next_multiple_of(16);
     stack_layout.vars_size = section_size;
     let mut reserve_insts = Vec::new();
     let mut restore_insts = Vec::new();

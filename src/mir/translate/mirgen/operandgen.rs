@@ -91,6 +91,7 @@ impl<'a> OperandMap<'a> {
             ..
         } = &mut *inner;
         for spilled_arg in stack_layout.args.iter() {
+            eprintln!("arg id {arg_id}, spilled arg: {:?}", spilled_arg.irtype);
             let arg_type = spilled_arg.irtype;
             let stackpos = spilled_arg.stackpos_reg;
             let (parg, ldr_inst) = match arg_type {

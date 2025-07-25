@@ -1,8 +1,28 @@
-use crate::mir::operand::reg::*;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use std::{
+    cell::Cell,
+    fmt::Debug,
+    ops::{BitAnd, BitAndAssign, Sub, SubAssign},
+};
+
+use crate::mir::operand::{IMirSubOperand, MirOperand, reg::*};
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct MirPhysRegSet {
     pub gpr_bitset: u32,
     pub fpr_bitset: u32,
+}
+
+impl Debug for MirPhysRegSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self {
+            gpr_bitset,
+            fpr_bitset,
+        } = self;
+        write!(
+            f,
+            "MirPhysRegSet {{ gpr: {:#032b}, fpr: {:#032b} }}",
+            gpr_bitset, fpr_bitset
+        )
+    }
 }
 
 impl MirPhysRegSet {
@@ -164,8 +184,8 @@ impl MirPhysRegSet {
         self.num_gprs() + self.num_fprs()
     }
 
-    pub const fn iter(self) -> MirCallSavedRegIter {
-        MirCallSavedRegIter {
+    pub const fn iter(self) -> MirPhysRegSetIter {
+        MirPhysRegSetIter {
             gpr_bitset: self.gpr_bitset,
             fpr_bitset: self.fpr_bitset,
             index: 0,
@@ -176,12 +196,61 @@ impl MirPhysRegSet {
     }
 }
 
+impl Sub for MirPhysRegSet {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        MirPhysRegSet {
+            gpr_bitset: self.gpr_bitset & !other.gpr_bitset,
+            fpr_bitset: self.fpr_bitset & !other.fpr_bitset,
+        }
+    }
+}
+
+impl SubAssign for MirPhysRegSet {
+    fn sub_assign(&mut self, other: Self) {
+        self.gpr_bitset &= !other.gpr_bitset;
+        self.fpr_bitset &= !other.fpr_bitset;
+    }
+}
+
+impl BitAnd for MirPhysRegSet {
+    type Output = Self;
+
+    fn bitand(self, other: Self) -> Self {
+        MirPhysRegSet {
+            gpr_bitset: self.gpr_bitset & other.gpr_bitset,
+            fpr_bitset: self.fpr_bitset & other.fpr_bitset,
+        }
+    }
+}
+
+impl BitAndAssign for MirPhysRegSet {
+    fn bitand_assign(&mut self, other: Self) {
+        self.gpr_bitset &= other.gpr_bitset;
+        self.fpr_bitset &= other.fpr_bitset;
+    }
+}
+
 impl IntoIterator for MirPhysRegSet {
     type Item = RegOperand;
-    type IntoIter = MirCallSavedRegIter;
+    type IntoIter = MirPhysRegSetIter;
 
-    fn into_iter(self) -> MirCallSavedRegIter {
-        MirCallSavedRegIter {
+    fn into_iter(self) -> MirPhysRegSetIter {
+        MirPhysRegSetIter {
+            gpr_bitset: self.gpr_bitset,
+            fpr_bitset: self.fpr_bitset,
+            index: 0,
+        }
+    }
+}
+
+impl IntoIterator for &MirPhysRegSet {
+    type Item = RegOperand;
+    type IntoIter = MirPhysRegSetIter;
+
+    fn into_iter(self) -> MirPhysRegSetIter {
+        MirPhysRegSetIter {
             gpr_bitset: self.gpr_bitset,
             fpr_bitset: self.fpr_bitset,
             index: 0,
@@ -190,13 +259,13 @@ impl IntoIterator for MirPhysRegSet {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MirCallSavedRegIter {
+pub struct MirPhysRegSetIter {
     pub gpr_bitset: u32,
     pub fpr_bitset: u32,
     pub index: u8,
 }
 
-impl Iterator for MirCallSavedRegIter {
+impl Iterator for MirPhysRegSetIter {
     type Item = RegOperand;
 
     fn next(&mut self) -> Option<RegOperand> {
@@ -215,5 +284,52 @@ impl Iterator for MirCallSavedRegIter {
             }
         }
         None // 超出寄存器范围或没有更多寄存器
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RegOperandSet {
+    _operands: Box<[Cell<MirOperand>; 64]>,
+    _noperands: Cell<usize>,
+    _physreg_set: Cell<MirPhysRegSet>,
+    _use_flags: RegUseFlags,
+}
+
+impl RegOperandSet {
+    pub fn new(use_flags: RegUseFlags) -> Self {
+        RegOperandSet {
+            _operands: Box::new([const { Cell::new(MirOperand::None) }; 64]),
+            _noperands: Cell::new(0),
+            _physreg_set: Cell::new(MirPhysRegSet::new_empty()),
+            _use_flags: use_flags,
+        }
+    }
+
+    pub fn update(&self, phys_set: MirPhysRegSet) {
+        let old = self._physreg_set.get();
+        if old == phys_set {
+            return; // 没有变化
+        }
+        self._physreg_set.set(phys_set);
+        // 更新寄存器操作数
+        for (i, reg) in phys_set.iter().enumerate() {
+            debug_assert!(i < 64, "Too many saved registers: {i}");
+            let RegOperand(id, _, _, is_fp) = reg;
+            let operand = if is_fp {
+                VFReg::new_double(RegID::from_real(id))
+                    .insert_use_flags(self._use_flags)
+                    .into_mir()
+            } else {
+                GPReg::new_long(RegID::from_real(id))
+                    .insert_use_flags(self._use_flags)
+                    .into_mir()
+            };
+            self._operands[i].set(operand);
+        }
+        self._noperands.set(phys_set.num_regs() as usize);
+    }
+
+    pub fn operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..self._noperands.get()]
     }
 }

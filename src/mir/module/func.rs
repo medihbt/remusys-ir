@@ -8,7 +8,7 @@ use crate::{
             global::{Linkage, MirGlobalCommon, Section},
             stack::{MirStackItem, MirStackLayout, VirtRegAlloc},
         },
-        operand::{IMirSubOperand, reg::*},
+        operand::{IMirSubOperand, physreg_set::MirPhysRegSet, reg::*},
     },
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
@@ -72,7 +72,9 @@ impl MirFunc {
     ) -> Self {
         let mut ret = Self::new_extern(name, func_ty, type_ctx);
         let inner_mut = ret.inner.get_mut();
-        MirStackLayout::new_aapcs_callee(&mut inner_mut.vreg_alloc);
+        inner_mut
+            .stack_layout
+            .init_saved_regs_as_aapcs_callee(&mut inner_mut.vreg_alloc);
         ret.blocks = SlabRefList::from_slab(alloc_block);
         ret.common.linkage = Linkage::Global;
         ret
@@ -204,5 +206,13 @@ impl MirFunc {
     ) -> Vec<(MirBlockRef, MirInstRef)> {
         let allocs = module.allocs.borrow();
         self.dump_insts_when(&allocs.block, &allocs.inst, condition)
+    }
+
+    pub fn reinit_saved_regs(&self, saved_regs: MirPhysRegSet) {
+        let mut inner = self.inner.borrow_mut();
+        let inner = &mut *inner;
+        inner
+            .stack_layout
+            .reinit_saved_regs(saved_regs, &mut inner.vreg_alloc);
     }
 }

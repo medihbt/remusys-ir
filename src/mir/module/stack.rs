@@ -153,16 +153,26 @@ impl MirStackLayout {
             _saved_regs_size_cache: Cell::new(0),
         }
     }
-    pub fn new_aapcs_callee(vreg_alloc: &mut VirtRegAlloc) -> Self {
-        let mut layout = Self::new();
-        let saved_regs = MirPhysRegSet::new_aapcs_callee();
-        layout.saved_regs.reserve(saved_regs.num_regs() as usize);
+    pub fn init_saved_regs_as_aapcs_callee(&mut self, vreg_alloc: &mut VirtRegAlloc) -> usize {
+        self.reinit_saved_regs(MirPhysRegSet::new_aapcs_callee(), vreg_alloc)
+    }
+    pub fn reinit_saved_regs(
+        &mut self,
+        saved_regs: MirPhysRegSet,
+        vreg_alloc: &mut VirtRegAlloc,
+    ) -> usize {
+        let prev_saved_args = std::mem::take(&mut self.saved_regs);
+        for args in prev_saved_args {
+            vreg_alloc.dealloc(args.get_vreg());
+        }
+        self.saved_regs.reserve(saved_regs.num_regs() as usize);
         for preg in saved_regs {
-            layout
-                .saved_regs
+            self.saved_regs
                 .push(SavedReg::from_vreg_alloc(vreg_alloc, preg));
         }
-        layout
+        self._saved_regs_size_cache
+            .set(self.saved_regs.len() as u64);
+        self.saved_regs.len()
     }
 
     pub fn find_saved_preg(&self, preg: GPR64) -> Option<&SavedReg> {

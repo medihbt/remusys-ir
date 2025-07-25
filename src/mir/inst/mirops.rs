@@ -87,3 +87,5 @@ impl IMirSubInst for MirReturn {
 
 pub use super::mir_call::MirCall;
 pub use super::switch::MirSwitch;
+pub use super::reg_save::MirSaveRegs;
+pub use super::reg_restore::MirRestoreRegs;

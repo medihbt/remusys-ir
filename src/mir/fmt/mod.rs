@@ -362,6 +362,8 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::MirCall(mir_call) => mir_call.fmt_asm(self),
             MirInst::MirReturn(mir_return) => mir_return.fmt_asm(self),
             MirInst::MirSwitch(mir_switch) => mir_switch.fmt_asm(self),
+            MirInst::MirSaveRegs(mir_save_regs) => mir_save_regs.fmt_asm(self),
+            MirInst::MirRestoreRegs(mir_restore_regs) => mir_restore_regs.fmt_asm(self),
         }
     }
 }
