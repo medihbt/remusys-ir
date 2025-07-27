@@ -369,8 +369,7 @@ impl<'a> MarkVisitor<'a> {
                 // mark the instruction operands
                 let inst_data = inst_node.to_slabref_unwrap(alloc_inst);
                 if let Some(c) = inst_data.get_common() {
-                    let (use_range, n_nodes) =
-                        c.operands.load_range_and_full_node_count();
+                    let (use_range, n_nodes) = c.operands.load_range_and_full_node_count();
                     if n_nodes > 0 {
                         n_use_nodes += n_nodes;
                         live_uses.push(use_range);

@@ -60,6 +60,9 @@ impl IMirSubInst for MirReturn {
     fn get_common(&self) -> &MirInstCommon {
         &self.common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self.common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &[]
     }
@@ -86,6 +89,6 @@ impl IMirSubInst for MirReturn {
 }
 
 pub use super::mir_call::MirCall;
-pub use super::switch::MirSwitch;
+pub use super::reg_restore::{MirRestoreHostRegs, MirRestoreRegs};
 pub use super::reg_save::MirSaveRegs;
-pub use super::reg_restore::{MirRestoreRegs, MirRestoreHostRegs};
+pub use super::switch::MirSwitch;

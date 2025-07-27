@@ -186,12 +186,7 @@ impl DominatorTree {
 
         for i in self.nodes.iter() {
             if i.blockref.is_vexit() {
-                writeln!(
-                    writer,
-                    "  {} [label=\"%VEXIT\" shape=box];",
-                    i.dfn,
-                )
-                .unwrap();
+                writeln!(writer, "  {} [label=\"%VEXIT\" shape=box];", i.dfn,).unwrap();
             } else {
                 writeln!(
                     writer,

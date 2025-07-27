@@ -7,9 +7,9 @@ use crate::{
     },
     mir::{
         inst::{IMirSubInst, inst::MirInst, mirops::MirCall},
-        module::stack::VirtRegAlloc,
+        module::vreg_alloc::VirtRegAlloc,
         operand::MirOperand,
-        translate::mirgen::operandgen::{OperandMap, DispatchedReg},
+        translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
     typing::id::ValTypeID,
 };
@@ -59,7 +59,12 @@ pub(crate) fn dispatch_call(
         let ret_mir = operand_map
             .find_operand_for_inst(ir_ref)
             .expect("Failed to find return operand for call instruction");
-        MirCall::with_retreg(MirOperand::Global(callee_mir), ret_mir, &args)
+        match ret_mir {
+            InstRetval::Reg(ret_reg) => {
+                MirCall::with_retreg(MirOperand::Global(callee_mir), ret_reg, &args)
+            }
+            InstRetval::Wasted => MirCall::with_return_void(MirOperand::Global(callee_mir), &args),
+        }
     } else {
         MirCall::with_return_void(MirOperand::Global(callee_mir), &args)
     };

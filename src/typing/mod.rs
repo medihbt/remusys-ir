@@ -126,11 +126,7 @@ mod testing {
         let type_ctx = TypeContext::new(PlatformPolicy::new_host());
         let strlen_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32), false);
         let foo_functype = type_ctx.make_func_type(&[], ValTypeID::Void, false);
-        let printf_functype = type_ctx.make_func_type(
-            &[ValTypeID::Ptr],
-            ValTypeID::Int(32),
-            true,
-        );
+        let printf_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32), true);
 
         assert_eq!(
             ValTypeID::Func(strlen_functype).get_display_name(&type_ctx),

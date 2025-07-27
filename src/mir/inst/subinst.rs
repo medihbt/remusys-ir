@@ -1,12 +1,13 @@
 use std::cell::Cell;
 
 use crate::mir::{
-    inst::{inst::MirInst, opcode::MirOP, MirInstCommon},
+    inst::{MirInstCommon, inst::MirInst, opcode::MirOP},
     operand::MirOperand,
 };
 
 pub trait IMirSubInst {
     fn get_common(&self) -> &MirInstCommon;
+    fn common_mut(&mut self) -> &mut MirInstCommon;
 
     fn get_opcode(&self) -> MirOP {
         self.get_common().opcode

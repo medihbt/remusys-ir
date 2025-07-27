@@ -3,7 +3,9 @@
 use slab::Slab;
 
 use super::{
-    checking::{check_operand_type_kind_match, check_operand_type_match}, usedef::{UseData, UseKind, UseRef}, InstDataCommon, InstDataUnique, InstError
+    InstDataCommon, InstDataUnique, InstError,
+    checking::{check_operand_type_kind_match, check_operand_type_match},
+    usedef::{UseData, UseKind, UseRef},
 };
 
 use crate::{

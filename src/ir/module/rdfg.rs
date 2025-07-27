@@ -3,11 +3,18 @@ use std::cell::RefCell;
 use slab::Slab;
 
 use crate::{
-    base::{slablist::{SlabListRange, SlabRefList}, slabref::SlabRef, NullableValue},
+    base::{
+        NullableValue,
+        slablist::{SlabListRange, SlabRefList},
+        slabref::SlabRef,
+    },
     ir::{
-        global::GlobalRef, inst::{
-            usedef::{UseData, UseRef}, InstRef
-        }, ValueSSA
+        ValueSSA,
+        global::GlobalRef,
+        inst::{
+            InstRef,
+            usedef::{UseData, UseRef},
+        },
     },
     typing::{context::TypeContext, types::FuncTypeRef},
 };

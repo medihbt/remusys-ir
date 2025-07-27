@@ -1,15 +1,11 @@
 use crate::{
     mir::{
-        operand::{
-            IMirSubOperand,
-            physreg_set::MirPhysRegSet,
-            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand, SubRegIndex, VFReg},
-        },
+        module::vreg_alloc::VirtRegAlloc,
+        operand::{IMirSubOperand, physreg_set::MirPhysRegSet, reg::*},
         translate::mirgen::operandgen::DispatchedReg,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
-use slab::Slab;
 use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,49 +45,23 @@ pub struct MirStackItem {
 #[derive(Debug, Clone, Copy)]
 pub struct SavedReg {
     pub preg: RegOperand,
-    pub vreg_id: u32,
 }
 
 impl SavedReg {
-    pub fn new(preg: RegOperand, vreg_id: u32) -> Self {
-        Self { preg, vreg_id }
-    }
-    pub fn from_vreg_alloc(vreg_alloc: &mut VirtRegAlloc, preg: RegOperand) -> Self {
-        assert!(preg.is_physical());
-        let RegOperand(id, si, uf, is_fp) = preg;
-        let vpos = if is_fp {
-            let vf = vreg_alloc.insert_float(VFReg(id, si, uf));
-            vf.get_id()
-        } else {
-            let gp = vreg_alloc.insert_gp(GPReg(id, si, uf));
-            gp.get_id()
-        };
-        let vpos = match vpos {
-            RegID::Virt(x) => x,
-            _ => unreachable!("Expected a virtual register ID"),
-        };
-        Self {
-            preg,
-            vreg_id: vpos,
-        }
-    }
-    pub fn get_vreg(&self) -> RegOperand {
-        self.preg.insert_id(RegID::Virt(self.vreg_id))
-    }
-    pub fn to_pair(&self) -> (RegOperand, RegOperand) {
-        (self.preg, self.get_vreg())
+    pub fn new(preg: RegOperand) -> Self {
+        Self { preg }
     }
     pub fn get_size_bytes(&self) -> u64 {
+        let bits_log2 = self.preg.get_subreg_index().get_bits_log2();
+        (1 << bits_log2) as u64 / 8
+    }
+    pub fn get_align_bytes(&self) -> u64 {
         let bits_log2 = self.preg.get_subreg_index().get_bits_log2();
         (1 << bits_log2) as u64 / 8
     }
     pub fn matches_saved_preg(&self, preg: RegOperand) -> bool {
         assert!(preg.is_physical());
         self.preg.get_id() == preg.get_id()
-    }
-    pub fn matches_stackpos(&self, vreg: GPR64) -> bool {
-        assert!(vreg.is_virtual());
-        RegID::Virt(self.vreg_id) == vreg.get_id()
     }
 }
 
@@ -153,26 +123,36 @@ impl MirStackLayout {
             _saved_regs_size_cache: Cell::new(0),
         }
     }
-    pub fn init_saved_regs_as_aapcs_callee(&mut self, vreg_alloc: &mut VirtRegAlloc) -> usize {
-        self.reinit_saved_regs(MirPhysRegSet::new_aapcs_callee(), vreg_alloc)
+    pub fn init_saved_regs_as_aapcs_callee(&mut self) -> usize {
+        self.reinit_saved_regs(MirPhysRegSet::new_aapcs_callee())
     }
-    pub fn reinit_saved_regs(
-        &mut self,
-        saved_regs: MirPhysRegSet,
-        vreg_alloc: &mut VirtRegAlloc,
-    ) -> usize {
-        let prev_saved_args = std::mem::take(&mut self.saved_regs);
-        for args in prev_saved_args {
-            vreg_alloc.dealloc(args.get_vreg());
-        }
+    pub fn reinit_saved_regs(&mut self, saved_regs: MirPhysRegSet) -> usize {
         self.saved_regs.reserve(saved_regs.num_regs() as usize);
         for preg in saved_regs {
-            self.saved_regs
-                .push(SavedReg::from_vreg_alloc(vreg_alloc, preg));
+            self.saved_regs.push(SavedReg::new(preg));
         }
-        self._saved_regs_size_cache
-            .set(self.saved_regs.len() as u64);
+        self._saved_regs_size_cache.set(0);
         self.saved_regs.len()
+    }
+    pub fn saved_regs_section_size(&self) -> u64 {
+        if self._saved_regs_size_cache.get() != 0 {
+            return self._saved_regs_size_cache.get();
+        }
+        let mut size: u64 = 0;
+        for reg in &self.saved_regs {
+            size = size.next_multiple_of(reg.get_align_bytes());
+            size += reg.get_size_bytes();
+        }
+        self._saved_regs_size_cache.set(size);
+        size
+    }
+    pub fn foreach_saved_regs(&self, mut read_reg_and_offset: impl FnMut(&SavedReg, u64)) {
+        let mut offset = 0;
+        for reg in &self.saved_regs {
+            read_reg_and_offset(reg, offset);
+            offset = offset.next_multiple_of(reg.get_align_bytes());
+            offset += reg.get_size_bytes();
+        }
     }
 
     pub fn find_saved_preg(&self, preg: GPR64) -> Option<&SavedReg> {
@@ -190,17 +170,6 @@ impl MirStackLayout {
         }
         None
     }
-    pub fn find_vreg_saved_reg_pos(&self, vreg: GPR64) -> Option<u32> {
-        if vreg.is_physical() {
-            return None;
-        }
-        for (index, pos) in self.saved_regs.iter().enumerate() {
-            if pos.matches_stackpos(vreg) {
-                return Some(index as u32);
-            }
-        }
-        None
-    }
     pub fn find_vreg_variable_pos(&self, vreg: GPR64) -> Option<u32> {
         if vreg.is_physical() {
             return None;
@@ -213,51 +182,17 @@ impl MirStackLayout {
         None
     }
 
-    pub fn find_vreg_stackpos(&self, vreg: GPR64) -> Option<(StackItemKind, u32)> {
+    pub fn find_vreg_stackpos(&self, vreg: GPR64) -> Option<(StackItemKind, usize)> {
         if let Some(x) = self.find_vreg_spilled_arg_pos(vreg) {
-            return Some((StackItemKind::SpilledArg, x));
-        }
-        if let Some(x) = self.find_vreg_saved_reg_pos(vreg) {
-            return Some((StackItemKind::SavedReg, x));
+            return Some((StackItemKind::SpilledArg, x as usize));
         }
         if let Some(x) = self.find_vreg_variable_pos(vreg) {
-            return Some((StackItemKind::Variable, x));
+            return Some((StackItemKind::Variable, x as usize));
         }
         None
     }
     pub fn vreg_is_stackpos(&self, vreg: GPR64) -> bool {
         self.find_vreg_stackpos(vreg).is_some()
-    }
-
-    pub fn save_preg_for_index(&mut self, vreg_alloc: &mut VirtRegAlloc, reg: RegOperand) -> usize {
-        assert!(reg.is_physical());
-        for (index, saved_reg) in self.saved_regs.iter_mut().enumerate() {
-            let saved_preg = saved_reg.preg;
-            if !reg.same_pos_as(saved_preg) {
-                continue;
-            }
-            let prev_index = saved_preg.get_subreg_index();
-            let curr_index = reg.get_subreg_index();
-            if prev_index.get_index() != 0 || curr_index.get_index() != 0 {
-                todo!("has not enabled vector support.");
-            }
-            let prev_bits_log2 = prev_index.get_bits_log2();
-            let curr_bits_log2 = curr_index.get_bits_log2();
-            if prev_bits_log2 < curr_bits_log2 {
-                saved_reg
-                    .preg
-                    .set_subreg_index(SubRegIndex::new(curr_bits_log2, 0));
-            }
-            return index;
-        }
-
-        let new_pos = self.saved_regs.len();
-        let vreg = vreg_alloc.insert_reg(reg);
-        self.saved_regs.push(SavedReg {
-            preg: reg,
-            vreg_id: vreg.as_virtual().unwrap(),
-        });
-        new_pos
     }
 
     /// Adds a spilled argument to the stack layout.
@@ -389,116 +324,5 @@ impl MirStackLayout {
             DispatchedReg::G64(_) => (ValTypeID::Int(64), 8, 3),
         };
         self.add_variable_item(irtype, vreg_alloc, size, align_log2)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct VirtRegAlloc {
-    pub general: Slab<GPReg>,
-    pub float: Slab<VFReg>,
-}
-
-impl VirtRegAlloc {
-    pub fn new() -> Self {
-        Self {
-            general: Slab::new(),
-            float: Slab::new(),
-        }
-    }
-
-    pub fn insert_gp_for_index(&mut self, greg: GPReg) -> u32 {
-        let index = self.general.vacant_key() as u32;
-        let vreg = greg.insert_id(RegID::Virt(index));
-        self.general.insert(vreg);
-        index
-    }
-    pub fn insert_float_for_index(&mut self, vreg: VFReg) -> u32 {
-        let index = self.float.vacant_key() as u32;
-        let vreg = vreg.insert_id(RegID::Virt(index));
-        self.float.insert(vreg);
-        index
-    }
-    pub fn insert_reg_for_index(&mut self, reg: RegOperand) -> (bool, u32) {
-        let RegOperand(_, si, uf, is_fp) = reg;
-        let index = if is_fp {
-            self.insert_float_for_index(VFReg(0, si, uf))
-        } else {
-            self.insert_gp_for_index(GPReg(0, si, uf))
-        };
-        (is_fp, index)
-    }
-    pub fn insert_gp(&mut self, vreg: GPReg) -> GPReg {
-        let index = self.insert_gp_for_index(vreg.into_real());
-        self.general[index as usize]
-    }
-    pub fn insert_gpr64(&mut self, vreg: GPR64) -> GPR64 {
-        let index = self.insert_gp_for_index(vreg.into_real());
-        GPR64::from_real(self.general[index as usize])
-    }
-    pub fn insert_gpr32(&mut self, vreg: GPR32) -> GPR32 {
-        let index = self.insert_gp_for_index(vreg.into_real());
-        GPR32::from_real(self.general[index as usize])
-    }
-    pub fn insert_float(&mut self, vreg: VFReg) -> VFReg {
-        let index = self.insert_float_for_index(vreg.into_real());
-        self.float[index as usize]
-    }
-    pub fn insert_fpr64(&mut self, vreg: FPR64) -> FPR64 {
-        let index = self.insert_float_for_index(vreg.into_real());
-        FPR64::from_real(self.float[index as usize])
-    }
-    pub fn insert_fpr32(&mut self, vreg: FPR32) -> FPR32 {
-        let index = self.insert_float_for_index(vreg.into_real());
-        FPR32::from_real(self.float[index as usize])
-    }
-    pub fn insert_reg(&mut self, reg: RegOperand) -> RegOperand {
-        let (is_fp, index) = self.insert_reg_for_index(reg);
-        if is_fp {
-            self.float[index as usize].into()
-        } else {
-            self.general[index as usize].into()
-        }
-    }
-
-    pub fn alloc_gp(&mut self) -> &mut GPReg {
-        let index = self.insert_gp_for_index(GPR64::new_empty().into_real());
-        &mut self.general[index as usize]
-    }
-    pub fn alloc_float(&mut self) -> &mut VFReg {
-        let index = self.insert_float_for_index(FPR64::new_empty().into_real());
-        &mut self.float[index as usize]
-    }
-    pub fn alloc(&mut self, is_float: bool) -> RegOperand {
-        if is_float {
-            RegOperand::from(*self.alloc_float())
-        } else {
-            RegOperand::from(*self.alloc_gp())
-        }
-    }
-
-    pub fn dealloc_gp(&mut self, vreg: GPReg) -> bool {
-        let id = match vreg.get_id() {
-            RegID::Virt(id) => id,
-            _ => panic!("Expected a virtual GP register, found {:?}", vreg.get_id()),
-        };
-        self.general.try_remove(id as usize).is_some()
-    }
-    pub fn dealloc_float(&mut self, vreg: VFReg) -> bool {
-        let id = match vreg.get_id() {
-            RegID::Virt(id) => id,
-            _ => panic!("Expected a virtual VF register, found {:?}", vreg.get_id()),
-        };
-        self.float.try_remove(id as usize).is_some()
-    }
-
-    pub fn dealloc(&mut self, vreg: RegOperand) -> bool {
-        let RegOperand(id, si, uf, is_fp) = vreg;
-        if is_fp {
-            let vfreg = VFReg(id, si, uf);
-            self.dealloc_float(vfreg)
-        } else {
-            let gpreg = GPReg(id, si, uf);
-            self.dealloc_gp(gpreg)
-        }
     }
 }

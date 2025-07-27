@@ -126,7 +126,10 @@ impl ValueSSA {
         }
     }
 
-    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<constant::expr::ConstExprData>) -> bool {
+    pub fn binary_is_zero_from_alloc(
+        &self,
+        alloc_expr: &Slab<constant::expr::ConstExprData>,
+    ) -> bool {
         match self {
             ValueSSA::ConstData(data) => data.binary_is_zero(),
             ValueSSA::ConstExpr(expr) => expr.binary_is_zero_from_alloc(alloc_expr),

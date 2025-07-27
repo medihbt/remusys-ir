@@ -287,6 +287,44 @@ impl Iterator for MirPhysRegSetIter {
     }
 }
 
+impl FromIterator<RegOperand> for MirPhysRegSet {
+    fn from_iter<I: IntoIterator<Item = RegOperand>>(iter: I) -> Self {
+        let mut set = MirPhysRegSet::new_empty();
+        for reg in iter {
+            set.save_reg(reg);
+        }
+        set
+    }
+}
+
+impl<const N: usize> From<&[RegOperand; N]> for MirPhysRegSet {
+    fn from(array: &[RegOperand; N]) -> Self {
+        let mut set = MirPhysRegSet::new_empty();
+        for &reg in array {
+            set.save_reg(reg);
+        }
+        set
+    }
+}
+impl<const N: usize> From<&[GPReg; N]> for MirPhysRegSet {
+    fn from(array: &[GPReg; N]) -> Self {
+        let mut set = MirPhysRegSet::new_empty();
+        for reg in array {
+            set.save_gpr(RegID::from_real(reg.get_id_raw()));
+        }
+        set
+    }
+}
+impl<const N: usize> From<&[VFReg; N]> for MirPhysRegSet {
+    fn from(array: &[VFReg; N]) -> Self {
+        let mut set = MirPhysRegSet::new_empty();
+        for reg in array {
+            set.save_fpr(RegID::from_real(reg.get_id_raw()));
+        }
+        set
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct RegOperandSet {
     _operands: Box<[Cell<MirOperand>; 64]>,

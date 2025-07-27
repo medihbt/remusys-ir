@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-    module::stack::VirtRegAlloc,
+    module::vreg_alloc::VirtRegAlloc,
     operand::{
         IMirSubOperand,
         imm::{Imm64, ImmCalc, ImmKind, ImmLSP64},

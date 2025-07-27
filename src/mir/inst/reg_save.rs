@@ -54,6 +54,9 @@ impl IMirSubInst for MirSaveRegs {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &[]
     }

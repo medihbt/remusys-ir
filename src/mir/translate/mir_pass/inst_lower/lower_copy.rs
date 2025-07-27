@@ -1,6 +1,6 @@
 use crate::mir::{
     inst::{IMirSubInst, impls::*, opcode::MirOP},
-    module::{MirGlobalRef, block::MirBlockRef, stack::VirtRegAlloc},
+    module::{MirGlobalRef, block::MirBlockRef, vreg_alloc::VirtRegAlloc},
     operand::{IMirSubOperand, MirOperand, compound::MirSymbolOp, imm::*, imm_traits, reg::*},
     translate::{mir_pass::inst_lower::LowerInstAction, mirgen::operandgen::DispatchedReg},
 };

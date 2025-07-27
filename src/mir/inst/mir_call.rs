@@ -14,12 +14,13 @@ use crate::mir::{
         physreg_set::MirPhysRegSet,
         reg::*,
     },
-    translate::{mir_pass::inst_lower::LowerInstAction, mirgen::operandgen::DispatchedReg},
+    translate::mirgen::operandgen::DispatchedReg,
+    util::stack_adjust::LowerInstAction,
 };
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
-    fmt::Write,
+    fmt::{Debug, Write},
     rc::Rc,
 };
 
@@ -28,12 +29,43 @@ use std::{
 /// MIR syntax:
 ///
 /// - `call <func-name>, %arg0, %arg1, ...`
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MirCall {
     pub(super) common: MirInstCommon,
     pub operands: Vec<Cell<MirOperand>>,
     callee_func: RefCell<Option<Rc<MirFunc>>>,
     saved_regs: Cell<MirPhysRegSet>,
+}
+
+impl Debug for MirCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let struct_name = {
+            let common = &self.common;
+            let head = common.node_head.get();
+            let prev = head.prev;
+            let next = head.next;
+            format!("MirCall ({prev}<-->{next})")
+        };
+        let callee_func_name = {
+            let callee = self.get_callee_func();
+            callee
+                .map(|f| f.get_name().to_string())
+                .unwrap_or("<undefined>".into())
+        };
+        let mut call = f.debug_struct(&struct_name);
+
+        call.field("op[0]=callee", &callee_func_name)
+            .field("-- ref", &self.callee().get());
+        if let Some(retval) = self.get_ret_arg() {
+            call.field("op[1]=ret_arg", &retval);
+        }
+        for (id, arg) in self.args().iter().enumerate() {
+            let arg = arg.get();
+            let field_name = format!("arg[{id}]");
+            call.field(&field_name, &arg);
+        }
+        call.finish()
+    }
 }
 
 impl MirCall {
@@ -152,6 +184,9 @@ impl MirCall {
 impl IMirSubInst for MirCall {
     fn get_common(&self) -> &MirInstCommon {
         &self.common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self.common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &[]
@@ -278,12 +313,13 @@ impl CallArgsCnt {
                 _ => panic!("Unsupported size for GPR: {}", gpr.get_bits_log2()),
             }
         } else {
+            let dst_id = self.gpreg_id;
             self.gpreg_id += 1;
-            let GPReg(id, si, uf) = gpr;
+            let GPReg(_, si, _) = gpr;
             let bits_log2 = si.get_bits_log2();
             match bits_log2 {
-                5 => CallIntArgKind::G32(GPR32(id, uf | RegUseFlags::DEF)),
-                6 => CallIntArgKind::G64(GPR64(id, uf | RegUseFlags::DEF)),
+                5 => CallIntArgKind::G32(GPR32::new_raw(dst_id as u32)),
+                6 => CallIntArgKind::G64(GPR64::new_raw(dst_id as u32)),
                 _ => panic!("Unsupported size for GPR: {bits_log2}"),
             }
         }
@@ -299,12 +335,13 @@ impl CallArgsCnt {
                 _ => panic!("Unsupported size for FPR: {}", fpr.get_bits_log2()),
             }
         } else {
+            let dst_id = self.fpreg_id;
             self.fpreg_id += 1;
-            let VFReg(id, si, uf) = fpr;
+            let VFReg(_, si, _) = fpr;
             let bits_log2 = si.get_bits_log2();
             match bits_log2 {
-                5 => CallFPArgKind::F32(FPR32(id, uf | RegUseFlags::DEF)),
-                6 => CallFPArgKind::F64(FPR64(id, uf | RegUseFlags::DEF)),
+                5 => CallFPArgKind::F32(FPR32::new_raw(dst_id as u32)),
+                6 => CallFPArgKind::F64(FPR64::new_raw(dst_id as u32)),
                 _ => panic!("Unsupported size for FPR: {bits_log2}"),
             }
         }
@@ -339,13 +376,13 @@ impl MirCall {
             let arg = arg.get();
             use MirOperand::*;
             match arg {
-                GPReg(arg) => {
-                    let arg_kind = arg_state.push_gpr(arg);
-                    Self::make_prepare_gparg_inst(&spilled_args, arg, arg_kind, out_actions);
+                GPReg(src) => {
+                    let dst = arg_state.push_gpr(src);
+                    Self::make_prepare_gparg_inst(&spilled_args, src, dst, out_actions);
                 }
-                VFReg(arg) => {
-                    let arg_kind = arg_state.push_fpr(arg);
-                    Self::make_prepare_fparg_inst(&spilled_args, arg, arg_kind, out_actions);
+                VFReg(src) => {
+                    let dst = arg_state.push_fpr(src);
+                    Self::make_prepare_fparg_inst(&spilled_args, src, dst, out_actions);
                 }
                 Imm64(_) | Imm32(_) | F32(_) | F64(_) => {
                     todo!("MirCall with immediate or float argument: {arg:?}");
@@ -363,18 +400,18 @@ impl MirCall {
     /// 为整数参数生成准备指令
     fn make_prepare_gparg_inst(
         callee_spilled_args: &[MirStackItem],
-        arg: GPReg,
-        arg_kind: CallIntArgKind,
+        src: GPReg,
+        dst: CallIntArgKind,
         out_actions: &mut VecDeque<LowerInstAction>,
     ) {
         let sp = GPR64::sp();
-        match arg_kind {
+        match dst {
             CallIntArgKind::G32(dst) => {
-                let inst = Una32R::new(MirOP::Mov32R, dst, GPR32::from_real(arg), None);
+                let inst = Una32R::new(MirOP::Mov32R, dst, GPR32::from_real(src), None);
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
             CallIntArgKind::G64(dst) => {
-                let inst = Una64R::new(MirOP::Mov64R, dst, GPR64::from_real(arg), None);
+                let inst = Una64R::new(MirOP::Mov64R, dst, GPR64::from_real(src), None);
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
             CallIntArgKind::Spilled32(dst_idx, src) => {
@@ -398,18 +435,18 @@ impl MirCall {
 
     fn make_prepare_fparg_inst(
         callee_spilled_args: &[MirStackItem],
-        arg: VFReg,
-        arg_kind: CallFPArgKind,
+        src: VFReg,
+        dst: CallFPArgKind,
         out_actions: &mut VecDeque<LowerInstAction>,
     ) {
         let sp = GPR64::sp();
-        match arg_kind {
+        match dst {
             CallFPArgKind::F32(dst) => {
-                let inst = UnaF32::new(MirOP::FMov32R, dst, FPR32::from_real(arg));
+                let inst = UnaF32::new(MirOP::FMov32R, dst, FPR32::from_real(src));
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
             CallFPArgKind::F64(dst) => {
-                let inst = UnaF64::new(MirOP::FMov64R, dst, FPR64::from_real(arg));
+                let inst = UnaF64::new(MirOP::FMov64R, dst, FPR64::from_real(src));
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
             CallFPArgKind::Spilled32(dst_id, src) => {

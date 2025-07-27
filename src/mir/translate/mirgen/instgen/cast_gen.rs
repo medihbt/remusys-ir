@@ -1,24 +1,18 @@
 use super::InstDispatchError;
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{slabref::SlabRef, NullableValue},
     ir::{
-        ValueSSA,
-        constant::data::ConstData,
-        inst::{InstData, InstRef, cmp::CmpOp, usedef::UseData},
-        module::Module,
-        opcode::Opcode,
+        constant::data::ConstData, inst::{cmp::CmpOp, usedef::UseData, InstData, InstRef}, module::Module, opcode::Opcode, ValueSSA
     },
     mir::{
-        inst::{IMirSubInst, cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP},
-        module::stack::VirtRegAlloc,
+        inst::{cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP, IMirSubInst},
+        module::vreg_alloc::VirtRegAlloc,
         operand::{
-            IMirSubOperand,
-            imm::ImmLogic,
-            reg::{GPR32, GPR64, PState},
+            imm::ImmLogic, reg::{PState, GPR32, GPR64}, IMirSubOperand
         },
         translate::mirgen::{
             instgen::ir_value_as_cmp,
-            operandgen::{OperandMap, DispatchedReg},
+            operandgen::{DispatchedReg, InstRetval, OperandMap},
         },
     },
     typing::{id::ValTypeID, types::FloatTypeKind},
@@ -56,6 +50,10 @@ pub(crate) fn dispatch_casts(
     let dst_mir = operand_map
         .find_operand_for_inst(ir_ref)
         .expect("Failed to find destination operand for cast instruction");
+    let dst_mir = match dst_mir {
+        InstRetval::Reg(reg) => reg,
+        InstRetval::Wasted => return Some(Ok(())), // If the result is wasted, no need to generate a cast
+    };
     let dst_mir = DispatchedReg::from_reg(dst_mir);
 
     if let Some(cmp) = ir_value_as_cmp(src_ir, alloc_inst) {

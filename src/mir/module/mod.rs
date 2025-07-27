@@ -21,6 +21,7 @@ pub(super) mod block;
 pub(super) mod func;
 pub(super) mod global;
 pub(super) mod stack;
+pub mod vreg_alloc;
 
 /// Represents an item in a MIR module, which can be a global variable, unnamed data, or a function.
 #[derive(Debug, Clone)]

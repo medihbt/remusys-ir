@@ -81,64 +81,19 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
             MirInst::Una64R(una64_r) if una64_r.opcode_is(MirOP::Mov64R) => {
                 let dst = una64_r.get_dst();
                 let src = una64_r.get_src();
-                let dst_virtual = dst.is_virtual();
-                let src_virtual = src.is_virtual();
-
-                let dst = GPR64::from_real(dst);
-                let src = GPR64::from_real(src);
-                match (dst_virtual, src_virtual) {
-                    (true, true) => {
-                        make_loads_stores_for_ordinary_insts(
-                            &vreg_info,
-                            &mut loads_before,
-                            &mut stores_after,
-                            inst,
-                        );
-                        false
-                    }
-                    (true, false) => {
-                        // 从物理寄存器存储到虚拟寄存器 -- 如果虚拟寄存器不是栈位置,
-                        // 则把原指令替换成 store 指令.
-                        if func.borrow_inner().stack_layout.vreg_is_stackpos(dst) {
-                            panic!(
-                                "Cannot spill physical register to virtual register that is not a stack position"
-                            );
-                        }
-                        let stackpos = vreg_info
-                            .find_stackpos(RegOperand::from(dst))
-                            .expect("Failed to find stack position for virtual register");
-                        let store_inst = StoreGr64Base::new(
-                            MirOP::StrGr64Base,
-                            src,
-                            stackpos,
-                            ImmLSP64::new(0),
-                        );
-                        stores_after.push_back(store_inst.into_mir());
-                        // 删除原指令
-                        true
-                    }
-                    (false, true) => {
-                        // 从虚拟寄存器加载到物理寄存器 -- 如果虚拟寄存器不是栈位置,
-                        // 则把原指令替换成 load 指令.
-                        if func.borrow_inner().stack_layout.vreg_is_stackpos(src) {
-                            // 如果虚拟寄存器是栈位置, 则不需要加载.
-                            false
-                        } else {
-                            let stackpos = vreg_info
-                                .find_stackpos(RegOperand::from(src))
-                                .expect("Failed to find stack position for virtual register");
-                            let load_inst = LoadGr64Base::new(
-                                MirOP::LdrGr64Base,
-                                dst,
-                                stackpos,
-                                ImmLSP64::new(0),
-                            );
-                            loads_before.push_back(load_inst.into_mir());
-                            // 删除原指令
-                            true
-                        }
-                    }
-                    (false, false) => false,
+                if !dst.same_pos_as(src) {
+                    make_loads_and_stores_for_mov(
+                        func,
+                        &vreg_info,
+                        &mut loads_before,
+                        &mut stores_after,
+                        inst,
+                        dst,
+                        src,
+                    )
+                } else {
+                    // 如果源寄存器和目标寄存器是同一个寄存器, 则删除原指令
+                    true
                 }
             }
             _ => {
@@ -174,6 +129,63 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
                 .expect("Failed to unplug original instruction");
             allocs.inst.remove(inst_ref.get_handle());
         }
+    }
+}
+
+fn make_loads_and_stores_for_mov(
+    func: &MirFunc,
+    vreg_info: &SpillVRegsResult,
+    loads_before: &mut VecDeque<MirInst>,
+    stores_after: &mut VecDeque<MirInst>,
+    inst: &MirInst,
+    dst: GPReg,
+    src: GPReg,
+) -> bool {
+    let dst_virtual = dst.is_virtual();
+    let src_virtual = src.is_virtual();
+
+    let dst = GPR64::from_real(dst);
+    let src = GPR64::from_real(src);
+    match (dst_virtual, src_virtual) {
+        (true, true) => {
+            make_loads_stores_for_ordinary_insts(vreg_info, loads_before, stores_after, inst);
+            false
+        }
+        (true, false) => {
+            // 从物理寄存器存储到虚拟寄存器 -- 如果虚拟寄存器不是栈位置,
+            // 则把原指令替换成 store 指令.
+            if func.borrow_inner().stack_layout.vreg_is_stackpos(dst) {
+                panic!(
+                    "Cannot spill physical register to virtual register that is not a stack position"
+                );
+            }
+            let stackpos = vreg_info
+                .find_stackpos(RegOperand::from(dst))
+                .expect("Failed to find stack position for virtual register");
+            let store_inst =
+                StoreGr64Base::new(MirOP::StrGr64Base, src, stackpos, ImmLSP64::new(0));
+            stores_after.push_back(store_inst.into_mir());
+            // 删除原指令
+            true
+        }
+        (false, true) => {
+            // 从虚拟寄存器加载到物理寄存器 -- 如果虚拟寄存器不是栈位置,
+            // 则把原指令替换成 load 指令.
+            if func.borrow_inner().stack_layout.vreg_is_stackpos(src) {
+                // 如果虚拟寄存器是栈位置, 则不需要加载.
+                false
+            } else {
+                let stackpos = vreg_info
+                    .find_stackpos(RegOperand::from(src))
+                    .expect("Failed to find stack position for virtual register");
+                let load_inst =
+                    LoadGr64Base::new(MirOP::LdrGr64Base, dst, stackpos, ImmLSP64::new(0));
+                loads_before.push_back(load_inst.into_mir());
+                // 删除原指令
+                true
+            }
+        }
+        (false, false) => false,
     }
 }
 

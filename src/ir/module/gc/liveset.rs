@@ -1,9 +1,12 @@
 use std::usize;
 
 use crate::{
-    base::{slabref::SlabRef, NullableValue},
+    base::{NullableValue, slabref::SlabRef},
     ir::{
-        block::jump_target::JumpTargetRef, inst::usedef::UseRef, module::{Module, ModuleError}, ValueSSA
+        ValueSSA,
+        block::jump_target::JumpTargetRef,
+        inst::usedef::UseRef,
+        module::{Module, ModuleError},
     },
 };
 
@@ -161,7 +164,10 @@ impl IRRefLiveSet {
             return Err(ModuleError::NullReference);
         }
         if new_pos >= self.uses.len() {
-            return Err(ModuleError::DfgReferenceOutOfRange(new_pos, self.uses.len()));
+            return Err(ModuleError::DfgReferenceOutOfRange(
+                new_pos,
+                self.uses.len(),
+            ));
         }
         Ok(new_pos)
     }

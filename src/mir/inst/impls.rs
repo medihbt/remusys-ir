@@ -15,6 +15,9 @@ impl IMirSubInst for UncondBr {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -103,6 +106,9 @@ impl IMirSubInst for BReg {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -149,7 +155,7 @@ impl BReg {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(target.into_mir())],
+            _operands: [Cell::new(target.clean_use_flags().into_mir())],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -193,6 +199,9 @@ pub struct BLinkLabel {
 impl IMirSubInst for BLinkLabel {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -243,7 +252,10 @@ impl BLinkLabel {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
+            _operands: [
+                Cell::new(ra.clean_use_flags().into_mir()),
+                Cell::new(target.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -301,6 +313,9 @@ impl IMirSubInst for BLinkGlobal {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -350,7 +365,10 @@ impl BLinkGlobal {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
+            _operands: [
+                Cell::new(ra.clean_use_flags().into_mir()),
+                Cell::new(target.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -408,6 +426,9 @@ impl IMirSubInst for BLinkReg {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -457,7 +478,10 @@ impl BLinkReg {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(ra.into_mir()), Cell::new(target.into_mir())],
+            _operands: [
+                Cell::new(ra.clean_use_flags().into_mir()),
+                Cell::new(target.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -518,6 +542,9 @@ impl IMirSubInst for TBZ64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -569,7 +596,7 @@ impl TBZ64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(cond.into_mir()),
+                Cell::new(cond.clean_use_flags().into_mir()),
                 Cell::new(bits.into_mir()),
                 Cell::new(target.into_mir()),
             ],
@@ -643,6 +670,9 @@ impl IMirSubInst for TBZ32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -694,7 +724,7 @@ impl TBZ32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(cond.into_mir()),
+                Cell::new(cond.clean_use_flags().into_mir()),
                 Cell::new(bits.into_mir()),
                 Cell::new(target.into_mir()),
             ],
@@ -769,6 +799,9 @@ impl IMirSubInst for ICmp64R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -822,8 +855,8 @@ impl ICmp64R {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -910,6 +943,9 @@ impl IMirSubInst for ICmp32R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -963,8 +999,8 @@ impl ICmp32R {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -1050,6 +1086,9 @@ impl IMirSubInst for ICmp64I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1102,7 +1141,7 @@ impl ICmp64I {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rhs.into_mir()),
             ],
         };
@@ -1178,6 +1217,9 @@ impl IMirSubInst for ICmp32I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1230,7 +1272,7 @@ impl ICmp32I {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rhs.into_mir()),
             ],
         };
@@ -1306,6 +1348,9 @@ impl IMirSubInst for FCmp32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1358,8 +1403,8 @@ impl FCmp32 {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -1437,6 +1482,9 @@ impl IMirSubInst for FCmp64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1489,8 +1537,8 @@ impl FCmp64 {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -1570,6 +1618,9 @@ impl IMirSubInst for ICCmp64R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1631,8 +1682,8 @@ impl ICCmp64R {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             cond,
             nzcv,
@@ -1728,6 +1779,9 @@ impl IMirSubInst for ICCmp32R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1789,8 +1843,8 @@ impl ICCmp32R {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             cond,
             nzcv,
@@ -1886,6 +1940,9 @@ impl IMirSubInst for ICCmp64I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -1947,7 +2004,7 @@ impl ICCmp64I {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rhs.into_mir()),
             ],
             cond,
@@ -2041,6 +2098,9 @@ impl IMirSubInst for ICCmp32I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2102,7 +2162,7 @@ impl ICCmp32I {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rhs.into_mir()),
             ],
             cond,
@@ -2196,6 +2256,9 @@ impl IMirSubInst for FCCmp32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2257,8 +2320,8 @@ impl FCCmp32 {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             cond,
             nzcv,
@@ -2354,6 +2417,9 @@ impl IMirSubInst for FCCmp64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2415,8 +2481,8 @@ impl FCCmp64 {
             _common: MirInstCommon::new(opcode),
             _operands: [
                 Cell::new(csr.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rhs.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rhs.clean_use_flags().into_mir()),
             ],
             cond,
             nzcv,
@@ -2511,6 +2577,9 @@ impl IMirSubInst for Bin64R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2587,9 +2656,9 @@ impl Bin64R {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -2676,6 +2745,9 @@ impl IMirSubInst for Bin32R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2750,9 +2822,9 @@ impl Bin32R {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -2838,6 +2910,9 @@ impl IMirSubInst for MulL {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -2892,9 +2967,9 @@ impl MulL {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -2972,6 +3047,9 @@ impl IMirSubInst for Bin64RC {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3023,8 +3101,8 @@ impl Bin64RC {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3100,6 +3178,9 @@ impl IMirSubInst for Bin32RC {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3151,8 +3232,8 @@ impl Bin32RC {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3228,6 +3309,9 @@ impl IMirSubInst for Bin64RSym {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3279,8 +3363,8 @@ impl Bin64RSym {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3356,6 +3440,9 @@ impl IMirSubInst for Bin64RL {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3415,8 +3502,8 @@ impl Bin64RL {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3492,6 +3579,9 @@ impl IMirSubInst for Bin32RL {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3551,8 +3641,8 @@ impl Bin32RL {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3628,6 +3718,9 @@ impl IMirSubInst for Bin64RS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3679,8 +3772,8 @@ impl Bin64RS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3756,6 +3849,9 @@ impl IMirSubInst for Bin64RU {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3807,8 +3903,8 @@ impl Bin64RU {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -3884,6 +3980,9 @@ impl IMirSubInst for Bin32RS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -3935,8 +4034,8 @@ impl Bin32RS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -4012,6 +4111,9 @@ impl IMirSubInst for Bin32RU {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4063,8 +4165,8 @@ impl Bin32RU {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -4140,6 +4242,9 @@ impl IMirSubInst for Bin64RShift {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4194,8 +4299,8 @@ impl Bin64RShift {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -4271,6 +4376,9 @@ impl IMirSubInst for Bin32RShift {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4325,8 +4433,8 @@ impl Bin32RShift {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -4402,6 +4510,9 @@ impl IMirSubInst for BinF64R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4456,9 +4567,9 @@ impl BinF64R {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -4536,6 +4647,9 @@ impl IMirSubInst for BinF32R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4590,9 +4704,9 @@ impl BinF32R {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -4670,6 +4784,9 @@ impl IMirSubInst for MirCopy64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4719,7 +4836,10 @@ impl MirCopy64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -4777,6 +4897,9 @@ impl IMirSubInst for MirCopy32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4826,7 +4949,10 @@ impl MirCopy32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -4884,6 +5010,9 @@ impl IMirSubInst for MirFCopy64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -4933,7 +5062,10 @@ impl MirFCopy64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -4991,6 +5123,9 @@ impl IMirSubInst for MirFCopy32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5040,7 +5175,10 @@ impl MirFCopy32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -5097,6 +5235,9 @@ pub struct MirPCopy {
 impl IMirSubInst for MirPCopy {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -5206,6 +5347,9 @@ impl IMirSubInst for Una64R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5269,7 +5413,10 @@ impl Una64R {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
             dst_op,
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -5339,6 +5486,9 @@ impl IMirSubInst for Una32R {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5407,7 +5557,10 @@ impl Una32R {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
             dst_op,
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -5476,6 +5629,9 @@ impl IMirSubInst for ExtR {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5528,7 +5684,10 @@ impl ExtR {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -5589,6 +5748,9 @@ impl IMirSubInst for Mov64I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5638,7 +5800,10 @@ impl Mov64I {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -5696,6 +5861,9 @@ impl IMirSubInst for MovZNK64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5745,7 +5913,10 @@ impl MovZNK64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -5803,6 +5974,9 @@ impl IMirSubInst for Mov32I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5852,7 +6026,10 @@ impl Mov32I {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -5910,6 +6087,9 @@ impl IMirSubInst for MovZNK32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -5959,7 +6139,10 @@ impl MovZNK32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6017,6 +6200,9 @@ impl IMirSubInst for Adr {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6066,7 +6252,10 @@ impl Adr {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6124,6 +6313,9 @@ impl IMirSubInst for UnaFG64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6173,7 +6365,10 @@ impl UnaFG64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6233,6 +6428,9 @@ pub struct UnaGF64 {
 impl IMirSubInst for UnaGF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -6296,7 +6494,10 @@ impl UnaGF64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6357,6 +6558,9 @@ impl IMirSubInst for UnaF64G32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6406,7 +6610,10 @@ impl UnaF64G32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6467,6 +6674,9 @@ impl IMirSubInst for UnaFG32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6516,7 +6726,10 @@ impl UnaFG32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6577,6 +6790,9 @@ impl IMirSubInst for UnaF32G64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6626,7 +6842,10 @@ impl UnaF32G64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6686,6 +6905,9 @@ pub struct UnaGF32 {
 impl IMirSubInst for UnaGF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -6749,7 +6971,10 @@ impl UnaGF32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6809,6 +7034,9 @@ pub struct UnaG64F32 {
 impl IMirSubInst for UnaG64F32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -6871,7 +7099,10 @@ impl UnaG64F32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -6932,6 +7163,9 @@ impl IMirSubInst for UnaG32F64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -6981,7 +7215,10 @@ impl UnaG32F64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7041,6 +7278,9 @@ pub struct UnaF64 {
 impl IMirSubInst for UnaF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -7110,7 +7350,10 @@ impl UnaF64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7170,6 +7413,9 @@ pub struct UnaF32 {
 impl IMirSubInst for UnaF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -7239,7 +7485,10 @@ impl UnaF32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7300,6 +7549,9 @@ impl IMirSubInst for UnaryF32F64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7349,7 +7601,10 @@ impl UnaryF32F64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7410,6 +7665,9 @@ impl IMirSubInst for UnaryF64F32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7459,7 +7717,10 @@ impl UnaryF64F32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.clean_use_flags().into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7520,6 +7781,9 @@ impl IMirSubInst for FMov64I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7569,7 +7833,10 @@ impl FMov64I {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7627,6 +7894,9 @@ impl IMirSubInst for FMov32I {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7676,7 +7946,10 @@ impl FMov32I {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(dst.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(dst.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -7734,6 +8007,9 @@ impl IMirSubInst for TenaryG64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7786,10 +8062,10 @@ impl TenaryG64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
-                Cell::new(rs.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
+                Cell::new(rs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -7883,6 +8159,9 @@ impl IMirSubInst for TenaryG64G32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -7938,10 +8217,10 @@ impl TenaryG64G32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
-                Cell::new(rs.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
+                Cell::new(rs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -8035,6 +8314,9 @@ impl IMirSubInst for TenaryG32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8087,10 +8369,10 @@ impl TenaryG32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
-                Cell::new(rs.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
+                Cell::new(rs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -8184,6 +8466,9 @@ impl IMirSubInst for TenaryF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8239,10 +8524,10 @@ impl TenaryF64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
-                Cell::new(rs.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
+                Cell::new(rs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -8336,6 +8621,9 @@ impl IMirSubInst for TenaryF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8391,10 +8679,10 @@ impl TenaryF32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
-                Cell::new(rs.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
+                Cell::new(rs.clean_use_flags().into_mir()),
             ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -8489,6 +8777,9 @@ impl IMirSubInst for LoadGr64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8548,9 +8839,9 @@ impl LoadGr64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -8637,6 +8928,9 @@ impl IMirSubInst for LoadGr32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8696,9 +8990,9 @@ impl LoadGr32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -8785,6 +9079,9 @@ impl IMirSubInst for LoadF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8837,9 +9134,9 @@ impl LoadF64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -8926,6 +9223,9 @@ impl IMirSubInst for LoadF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -8978,9 +9278,9 @@ impl LoadF32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -9067,6 +9367,9 @@ impl IMirSubInst for StoreGr64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -9119,9 +9422,9 @@ impl StoreGr64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -9208,6 +9511,9 @@ impl IMirSubInst for StoreGr32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -9260,9 +9566,9 @@ impl StoreGr32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -9349,6 +9655,9 @@ impl IMirSubInst for StoreF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -9401,9 +9710,9 @@ impl StoreF64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -9490,6 +9799,9 @@ impl IMirSubInst for StoreF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -9542,9 +9854,9 @@ impl StoreF32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
             ],
             rm_op,
         };
@@ -9630,6 +9942,9 @@ impl IMirSubInst for LoadGr64Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -9688,8 +10003,8 @@ impl LoadGr64Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -9765,6 +10080,9 @@ impl IMirSubInst for LoadGr32Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -9823,8 +10141,8 @@ impl LoadGr32Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -9900,6 +10218,9 @@ impl IMirSubInst for LoadF64Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -9951,8 +10272,8 @@ impl LoadF64Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10028,6 +10349,9 @@ impl IMirSubInst for LoadF32Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -10079,8 +10403,8 @@ impl LoadF32Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10156,6 +10480,9 @@ impl IMirSubInst for LoadGr64BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -10214,8 +10541,8 @@ impl LoadGr64BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10291,6 +10618,9 @@ impl IMirSubInst for LoadGr32BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -10349,8 +10679,8 @@ impl LoadGr32BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10426,6 +10756,9 @@ impl IMirSubInst for LoadF64BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -10477,8 +10810,8 @@ impl LoadF64BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10554,6 +10887,9 @@ impl IMirSubInst for LoadF32BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -10605,8 +10941,8 @@ impl LoadF32BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10682,6 +11018,9 @@ impl IMirSubInst for StoreGr64Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -10736,8 +11075,8 @@ impl StoreGr64Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10813,6 +11152,9 @@ impl IMirSubInst for StoreGr32Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -10867,8 +11209,8 @@ impl StoreGr32Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -10944,6 +11286,9 @@ impl IMirSubInst for StoreF64Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -10995,8 +11340,8 @@ impl StoreF64Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11072,6 +11417,9 @@ impl IMirSubInst for StoreF32Base {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -11123,8 +11471,8 @@ impl StoreF32Base {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11200,6 +11548,9 @@ impl IMirSubInst for StoreGr64BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -11254,8 +11605,8 @@ impl StoreGr64BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11331,6 +11682,9 @@ impl IMirSubInst for StoreGr32BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -11385,8 +11739,8 @@ impl StoreGr32BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11462,6 +11816,9 @@ impl IMirSubInst for StoreF64BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -11513,8 +11870,8 @@ impl StoreF64BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11590,6 +11947,9 @@ impl IMirSubInst for StoreF32BaseS {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -11641,8 +12001,8 @@ impl StoreF32BaseS {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
         };
@@ -11719,6 +12079,9 @@ impl IMirSubInst for LoadGr64Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..2usize]
     }
@@ -11781,8 +12144,8 @@ impl LoadGr64Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -11870,6 +12233,9 @@ impl IMirSubInst for LoadGr32Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..2usize]
     }
@@ -11932,8 +12298,8 @@ impl LoadGr32Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12021,6 +12387,9 @@ impl IMirSubInst for LoadF64Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..2usize]
     }
@@ -12076,8 +12445,8 @@ impl LoadF64Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12165,6 +12534,9 @@ impl IMirSubInst for LoadF32Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..2usize]
     }
@@ -12220,8 +12592,8 @@ impl LoadF32Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12309,6 +12681,9 @@ impl IMirSubInst for StoreGr64Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -12364,8 +12739,8 @@ impl StoreGr64Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rn.into_mir()),
-                Cell::new(rd.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12450,6 +12825,9 @@ impl IMirSubInst for StoreGr32Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -12505,8 +12883,8 @@ impl StoreGr32Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rn.into_mir()),
-                Cell::new(rd.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12591,6 +12969,9 @@ impl IMirSubInst for StoreF64Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -12643,8 +13024,8 @@ impl StoreF64Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rn.into_mir()),
-                Cell::new(rd.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12729,6 +13110,9 @@ impl IMirSubInst for StoreF32Indexed {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -12781,8 +13165,8 @@ impl StoreF32Indexed {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rn.into_mir()),
-                Cell::new(rd.into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
                 Cell::new(rm.into_mir()),
             ],
             addr_mode,
@@ -12866,6 +13250,9 @@ impl IMirSubInst for LoadGr64Literal {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -12922,7 +13309,10 @@ impl LoadGr64Literal {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(from.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -12980,6 +13370,9 @@ impl IMirSubInst for LoadGr32Literal {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13036,7 +13429,10 @@ impl LoadGr32Literal {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(from.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13094,6 +13490,9 @@ impl IMirSubInst for LoadF64Literal {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13143,7 +13542,10 @@ impl LoadF64Literal {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(from.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13201,6 +13603,9 @@ impl IMirSubInst for LoadF32Literal {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13250,7 +13655,10 @@ impl LoadF32Literal {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(from.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(from.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13308,6 +13716,9 @@ impl IMirSubInst for LoadConst64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13357,7 +13768,10 @@ impl LoadConst64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13415,6 +13829,9 @@ impl IMirSubInst for LoadConstF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13464,7 +13881,10 @@ impl LoadConstF64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13522,6 +13942,9 @@ impl IMirSubInst for LoadConst64Symbol {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13571,7 +13994,10 @@ impl LoadConst64Symbol {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(src.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());
@@ -13629,6 +14055,9 @@ pub struct CSel64 {
 impl IMirSubInst for CSel64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
@@ -13693,9 +14122,9 @@ impl CSel64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
                 Cell::new(csr.into_mir()),
             ],
             cond,
@@ -13799,6 +14228,9 @@ impl IMirSubInst for CSel32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -13862,9 +14294,9 @@ impl CSel32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
                 Cell::new(csr.into_mir()),
             ],
             cond,
@@ -13968,6 +14400,9 @@ impl IMirSubInst for CSelF64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -14028,9 +14463,9 @@ impl CSelF64 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
                 Cell::new(csr.into_mir()),
             ],
             cond,
@@ -14134,6 +14569,9 @@ impl IMirSubInst for CSelF32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -14194,9 +14632,9 @@ impl CSelF32 {
         let ret = Self {
             _common: MirInstCommon::new(opcode),
             _operands: [
-                Cell::new(rd.into_mir()),
-                Cell::new(rn.into_mir()),
-                Cell::new(rm.into_mir()),
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(rn.clean_use_flags().into_mir()),
+                Cell::new(rm.clean_use_flags().into_mir()),
                 Cell::new(csr.into_mir()),
             ],
             cond,
@@ -14300,6 +14738,9 @@ impl IMirSubInst for CSet64 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -14350,7 +14791,10 @@ impl CSet64 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(csr.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(csr.into_mir()),
+            ],
             cond,
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -14420,6 +14864,9 @@ impl IMirSubInst for CSet32 {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..1usize]
     }
@@ -14470,7 +14917,10 @@ impl CSet32 {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.into_mir()), Cell::new(csr.into_mir())],
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(csr.into_mir()),
+            ],
             cond,
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
@@ -14539,6 +14989,9 @@ pub struct CondBr {
 impl IMirSubInst for CondBr {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
@@ -14656,6 +15109,9 @@ impl IMirSubInst for CBZs {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &self._operands[..0usize]
     }
@@ -14705,7 +15161,10 @@ impl CBZs {
         }
         let ret = Self {
             _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(cond.into_mir()), Cell::new(target.into_mir())],
+            _operands: [
+                Cell::new(cond.clean_use_flags().into_mir()),
+                Cell::new(target.into_mir()),
+            ],
         };
         super::utils::mark_out_operands_defined(ret.out_operands());
         super::utils::mark_in_operands_used(ret.in_operands());

@@ -37,7 +37,7 @@ pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
     mir_pass::simple_reg_alloc::roughly_allocate_register(&mut mir_module);
     eprintln!("Roughly allocated registers in MIR module: {name}");
 
-    // Final pass: lower stack operations
+    // // Final pass: lower stack operations
     mir_pass::stack_lower::lower_stack_for_module(&mut mir_module, sp_adjustments);
     eprintln!("Lowered stack operations in MIR module: {name}");
 

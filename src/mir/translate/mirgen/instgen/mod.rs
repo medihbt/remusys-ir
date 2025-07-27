@@ -9,7 +9,7 @@ use crate::{
         inst::{
             IMirSubInst, MirInstRef, impls::*, inst::MirInst, mirops::MirReturn, opcode::MirOP,
         },
-        module::stack::VirtRegAlloc,
+        module::vreg_alloc::VirtRegAlloc,
         operand::{
             MirOperand,
             reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags},

@@ -1,9 +1,10 @@
 use crate::mir::{
     fmt::FuncFormatContext,
     inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
+    module::stack::MirStackLayout,
     operand::{
         IMirSubOperand, MirOperand,
-        imm::{ImmCalc, ImmLSP64},
+        imm::{Imm64, ImmCalc, ImmKind, ImmLSP32, ImmLSP64},
         physreg_set::{MirPhysRegSet, RegOperandSet},
         reg::{FPR64, GPR64, GPReg, RegID, RegOperand, RegUseFlags, VFReg},
     },
@@ -54,6 +55,9 @@ impl IMirSubInst for MirRestoreRegs {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
     }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         self.operands.update(self.get_saved_regs());
         self.operands.operands()
@@ -102,7 +106,6 @@ impl MirRestoreRegs {
     pub fn get_saved_regs(&self) -> MirPhysRegSet {
         self.saved_regs.get()
     }
-
     pub fn set_saved_regs(&self, saved_regs: MirPhysRegSet) {
         self.saved_regs.set(saved_regs);
     }
@@ -182,21 +185,55 @@ impl MirRestoreRegs {
     }
 }
 
+/// 指令占位符: 在本次函数返回前, 归还所有申请的栈空间, 恢复所有由被调用者保存的寄存器.
+///
+/// #### Remusys 约定的栈布局
+///
+/// 这里按地址从小到大的顺序简要介绍一下 `Remusys` 编译器约定的函数活动栈空间布局.
+///
+/// 这些是被调用者管理的部分:
+///
+/// * SP: 指向函数活动的底部. 由于 SysY 没有变长数组语法, 每次函数活动的栈布局都是
+///   固定的, 因此不需要 FP 做动态调整.
+/// * 局部变量段: 自 SP 位置往上一段, 存放函数活动的局部变量.
+/// * 被调用者保存的寄存器段: 紧接着局部变量段, 存放被调用者保存的寄存器.
+///
+/// 这些是函数调用者管理的部分:
+///
+/// * 本次调用的溢出参数段: 紧接着被调用者保存的寄存器段, 存放本次调用中传参寄存器
+///   (`X0~X7, D0~D7`) 放不下的参数.
+/// * 调用者保存的寄存器段: 紧接着溢出参数段, 存放调用者保存的寄存器.
+///
+/// #### 占位符会变成什么
+///
+/// `MirRestoreHostRegs` 会恢复成下面几组指令:
+///
+/// * 收回局部变量段的栈空间: 通常是 `add sp, sp, #<size>`
+/// * 恢复被调用者保存的寄存器: 编译器会检查当前函数栈布局定义中要恢复的寄存器,
+///   恢复除了返回值以外的寄存器. 然后生成 `add sp, sp, #<size>` 收回对应的栈空间.
 #[derive(Clone)]
 pub struct MirRestoreHostRegs {
     _common: MirInstCommon,
+    regs_norestore: Cell<MirPhysRegSet>,
 }
 
 impl Debug for MirRestoreHostRegs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let node_head = self._common.node_head.get();
-        write!(f, "MirRestoreHostRegs {} <--> {}", node_head.prev, node_head.next)
+        write!(
+            f,
+            "MirRestoreHostRegs {} <--> {}",
+            node_head.prev, node_head.next
+        )
     }
 }
 
 impl IMirSubInst for MirRestoreHostRegs {
     fn get_common(&self) -> &MirInstCommon {
         &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
     }
     fn out_operands(&self) -> &[Cell<MirOperand>] {
         &[]
@@ -210,6 +247,7 @@ impl IMirSubInst for MirRestoreHostRegs {
     fn new_empty(opcode: MirOP) -> Self {
         MirRestoreHostRegs {
             _common: MirInstCommon::new(opcode),
+            regs_norestore: Cell::new(MirPhysRegSet::new_empty()),
         }
     }
     fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
@@ -224,14 +262,88 @@ impl IMirSubInst for MirRestoreHostRegs {
 }
 
 impl MirRestoreHostRegs {
-    pub fn new() -> Self {
+    pub fn new(regs_norestore: MirPhysRegSet) -> Self {
         MirRestoreHostRegs {
             _common: MirInstCommon::new(MirOP::MirRestoreHostRegs),
+            regs_norestore: Cell::new(regs_norestore),
         }
     }
 
     /// MIR pseudo-assembly syntax: `mir.restorehostregs`
     pub fn fmt_asm(&self, formatter: &mut FuncFormatContext) -> std::fmt::Result {
         write!(formatter, "mir.restorehostregs")
+    }
+
+    pub fn get_regs_norestore(&self) -> MirPhysRegSet {
+        self.regs_norestore.get()
+    }
+    pub fn set_regs_norestore(&self, regs_norestore: MirPhysRegSet) {
+        self.regs_norestore.set(regs_norestore);
+    }
+    pub fn modify_regs_norestore<F>(&self, mut f: F)
+    where
+        F: FnMut(MirPhysRegSet) -> MirPhysRegSet,
+    {
+        let regs_norestore = self.regs_norestore.get();
+        self.regs_norestore.set(f(regs_norestore));
+    }
+
+    pub fn dump_template(&self, out_insts: &mut VecDeque<MirInst>, parent_stack: &MirStackLayout) {
+        let var_section_size = parent_stack.vars_size;
+        let reg_section_size = parent_stack.saved_regs_section_size();
+        let sp = GPR64::sp();
+
+        // Step 1: 收回局部变量段的栈空间
+        if var_section_size == 0 {
+        } else if let Some(delta_sp) = ImmCalc::try_new(var_section_size as u64) {
+            let add_sp = Bin64RC::new(MirOP::Add64I, sp, sp, delta_sp);
+            out_insts.push_back(add_sp.into_mir());
+        } else {
+            // 如果局部变量段太大了, 那么就需要使用临时寄存器来存储偏移量
+            let tmpreg = GPR64::new_raw(29);
+            let ldr_const = LoadConst64::new(
+                MirOP::LoadConst64,
+                tmpreg,
+                Imm64(var_section_size as u64, ImmKind::Full),
+            );
+            out_insts.push_back(ldr_const.into_mir());
+            let subsp_inst = Bin64R::new(MirOP::Add64R, sp, sp, tmpreg, None);
+            out_insts.push_back(subsp_inst.into_mir());
+        }
+
+        // Step 2: 恢复被调用者保存的寄存器
+        parent_stack.foreach_saved_regs(|saved_reg, sp_offset| {
+            let preg = saved_reg.preg;
+            if self.get_regs_norestore().has_saved_reg(preg) {
+                // 如果这个寄存器不需要恢复, 就跳过
+                return;
+            }
+            let ldr_inst = match DispatchedReg::from_reg(saved_reg.preg) {
+                DispatchedReg::F32(dst) => {
+                    let offset = ImmLSP32::new(sp_offset as u32);
+                    LoadF32Base::new(MirOP::LdrF32Base, dst, sp, offset).into_mir()
+                }
+                DispatchedReg::F64(dst) => {
+                    let offset = ImmLSP64::new(sp_offset as u64);
+                    LoadF64Base::new(MirOP::LdrF64Base, dst, sp, offset).into_mir()
+                }
+                DispatchedReg::G32(dst) => {
+                    let offset = ImmLSP32::new(sp_offset as u32);
+                    LoadGr32Base::new(MirOP::LdrGr32Base, dst, sp, offset).into_mir()
+                }
+                DispatchedReg::G64(dst) => {
+                    let offset = ImmLSP64::new(sp_offset as u64);
+                    LoadGr64Base::new(MirOP::LdrGr64Base, dst, sp, offset).into_mir()
+                }
+            };
+            out_insts.push_back(ldr_inst);
+        });
+
+        // Step 3: 收回被调用者保存的寄存器段的栈空间
+        if reg_section_size > 0 {
+            let delta_sp = ImmCalc::new(reg_section_size as u32);
+            let add_sp = Bin64RC::new(MirOP::Add64I, sp, sp, delta_sp);
+            out_insts.push_back(MirInst::Bin64RC(add_sp));
+        }
     }
 }

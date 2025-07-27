@@ -560,6 +560,14 @@ impl Module {
         }
         Some(RefMut::map(alloc_rdfg, |alloc| alloc.as_mut().unwrap()))
     }
+
+    pub fn inst_has_user(&self, inst: InstRef) -> Result<bool, ModuleError> {
+        let alloc_rdfg = self
+            .borrow_rdfg_alloc()
+            .ok_or(ModuleError::RDFGNotEnabled)?;
+        let inst_data = alloc_rdfg.get_node(ValueSSA::Inst(inst))?;
+        Ok(inst_data.has_user())
+    }
 }
 
 /// Module as control flow graph maintainer.

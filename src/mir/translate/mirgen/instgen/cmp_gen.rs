@@ -1,17 +1,17 @@
 use crate::{
-    base::{slabref::SlabRef, NullableValue},
+    base::{NullableValue, slabref::SlabRef},
     ir::{
-        inst::{usedef::UseData, InstData, InstRef},
+        inst::{InstData, InstRef, usedef::UseData},
         module::Module,
         opcode::Opcode,
     },
     mir::{
-        inst::{impls::*, inst::MirInst, opcode::MirOP, IMirSubInst, MirInstRef},
-        module::stack::VirtRegAlloc,
+        inst::{IMirSubInst, MirInstRef, impls::*, inst::MirInst, opcode::MirOP},
+        module::vreg_alloc::VirtRegAlloc,
         operand::reg::*,
         translate::mirgen::{
             instgen::InstDispatchState,
-            operandgen::{OperandMap, DispatchedReg},
+            operandgen::{DispatchedReg, OperandMap},
         },
     },
 };

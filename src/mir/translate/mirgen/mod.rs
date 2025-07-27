@@ -30,7 +30,7 @@ use crate::{
             mirgen::{
                 globalgen::{MirGlobalItems, MirGlobalMapFormatter},
                 instgen::{InstDispatchError, InstDispatchState, dispatch_inst},
-                operandgen::OperandMap,
+                operandgen::{InstRetval, OperandMap},
             },
         },
         util::builder::{MirBuilder, MirFocus},
@@ -145,7 +145,12 @@ impl MirTranslateCtx {
         // Step 1.3 dump 出所有指令, 并为函数确定参数布局和栈布局
         let allocas = self.dump_insts_and_layout(&mut block_map);
         // Step 1.4 为每个指令分配虚拟寄存器
-        let vregs = self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func);
+        let vregs = {
+            self.ir_module
+                .enable_rdfg()
+                .expect("RDFG must be enabled to allocate storage for MIR instructions");
+            self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func)
+        };
 
         // Step 1.5 翻译每个基本块的指令
         let (operand_map, inst_template) =
@@ -286,14 +291,14 @@ impl MirTranslateCtx {
         block_map: &mut [MirBlockInfo],
         allocas: &[AllocaInfo],
         func: &MirFunc,
-    ) -> Vec<(InstRef, RegOperand)> {
+    ) -> Vec<(InstRef, InstRetval)> {
         let mut vregs = Vec::new();
         let type_ctx = &self.ir_module.type_ctx;
 
         // 为所有 alloca 分配表示栈位置的虚拟寄存器.
         for alloca_info in allocas {
             let vreg = func.add_spilled_variable(alloca_info.pointee_ty, type_ctx);
-            vregs.push((alloca_info.ir, RegOperand::from(vreg)));
+            vregs.push((alloca_info.ir, InstRetval::Reg(vreg.into())));
         }
 
         // Remusys-IR 的指令本身也表示它的返回值操作数, 因此为每个有返回值的指令分配一个虚拟寄存器.
@@ -301,6 +306,13 @@ impl MirTranslateCtx {
             for InstTranslateInfo { ir, ty, kind } in insts {
                 type K = InstDataKind;
                 debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
+
+                if !self.ir_module.inst_has_user(*ir).unwrap_or(false) {
+                    // 如果指令没有用户, 则分配寄存器或存储空间, 而是把它标记为 "wasted".
+                    vregs.push((*ir, InstRetval::Wasted));
+                    continue;
+                }
+
                 match kind {
                     K::ListGuideNode | K::PhiInstEnd | K::Unreachable => {
                         // 功能结点不需要分配寄存器或存储空间
@@ -344,7 +356,7 @@ impl MirTranslateCtx {
                     }
                     _ => panic!("Unsupported type for MIR instruction: {ty:?}"),
                 };
-                vregs.push((*ir, vreg));
+                vregs.push((*ir, InstRetval::Reg(vreg.into())));
             }
         }
         vregs.sort_by_key(|(k, _)| *k);
@@ -376,27 +388,7 @@ impl MirTranslateCtx {
             ) {
                 Ok(()) => {
                     let mut inst_ref = MirInstRef::new_null();
-                    while !inst_queue.is_empty() {
-                        let inst = inst_queue
-                            .pop_front()
-                            .expect("Inst queue should not be empty");
-                        for operand in inst.in_operands() {
-                            let prev = operand.get();
-                            let next = match prev {
-                                MirOperand::GPReg(gpreg) => {
-                                    let mut uf = gpreg.get_use_flags();
-                                    uf.insert(RegUseFlags::DEF);
-                                    gpreg.insert_use_flags(uf).into_mir()
-                                }
-                                MirOperand::VFReg(vfreg) => {
-                                    let mut uf = vfreg.get_use_flags();
-                                    uf.insert(RegUseFlags::DEF);
-                                    vfreg.insert_use_flags(uf).into_mir()
-                                }
-                                _ => continue,
-                            };
-                            operand.set(next);
-                        }
+                    while let Some(inst) = inst_queue.pop_front() {
                         inst_ref = mir_builder.add_inst(inst);
                     }
                     if state.pstate_modifier_matches(ir_inst.ir) {
@@ -415,14 +407,14 @@ impl MirTranslateCtx {
             let phi_reg = operand_map
                 .find_operand_for_inst(phi_copy.phi.into())
                 .expect("Phi register not found");
+            let InstRetval::Reg(phi_reg) = phi_reg else {
+                panic!("Expected a register for phi copy, found: {phi_reg:?}");
+            };
             let from_val = operand_map
                 .find_operand_no_constdata(&phi_copy.from)
                 .expect("From value not found");
             instgen::make_copy_inst(phi_reg, from_val, &mut inst_queue);
-            while !inst_queue.is_empty() {
-                let inst = inst_queue
-                    .pop_front()
-                    .expect("Inst queue should not be empty");
+            while let Some(inst) = inst_queue.pop_front() {
                 mir_builder.add_inst(inst);
             }
         }

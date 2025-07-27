@@ -1,16 +1,28 @@
+use std::fmt::Debug;
+
 use crate::{
-    base::NullableValue,
+    base::{NullableValue, slabref::SlabRef},
     mir::{
-        module::{block::MirBlockRef, MirGlobalRef},
-        operand::{subop::SwitchTab, IMirSubOperand, MirOperand},
+        module::{MirGlobalRef, block::MirBlockRef},
+        operand::{IMirSubOperand, MirOperand, subop::SwitchTab},
     },
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MirSymbolOp {
     Label(MirBlockRef),
     Global(MirGlobalRef),
     SwitchTab(u32),
+}
+
+impl Debug for MirSymbolOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MirSymbolOp::Label(block_ref) => write!(f, "Sym:Label({})", block_ref.get_handle()),
+            MirSymbolOp::Global(global_ref) => write!(f, "Sym:Global({})", global_ref.get_handle()),
+            MirSymbolOp::SwitchTab(tab) => write!(f, "Sym:Switch({})", tab),
+        }
+    }
 }
 
 impl IMirSubOperand for MirSymbolOp {

@@ -6,44 +6,90 @@ use crate::mir::{
         mirops::{MirRestoreHostRegs, MirReturn},
         opcode::MirOP,
     },
-    module::stack::VirtRegAlloc,
-    operand::{IMirSubOperand, MirOperand, compound::MirSymbolOp, imm::*, imm_traits, reg::*},
+    module::vreg_alloc::VirtRegAlloc,
+    operand::{
+        IMirSubOperand, MirOperand, compound::MirSymbolOp, imm::*, imm_traits,
+        physreg_set::MirPhysRegSet, reg::*,
+    },
     translate::mir_pass::inst_lower::LowerInstAction,
 };
 use std::collections::VecDeque;
 
-/// Generate MIR instructions for a return operation.
+/// 为 MIR Return 伪指令生成对应的汇编指令。
+///
+/// #### 指令结构
+///
+/// * (如果有返回值) 把返回值挪动到对应的返回寄存器. (比如 X0/W0 或者 S0/D0)
+/// * 重置本次函数活动的栈空间 —— 由于待处理目标函数的栈布局定义在此后的几轮 pass
+///   中随时会发生改变, 因此这里只会放一个占位指令 `MirRestoreHostRegs`.
+/// * (上述栈空间指令之后, 调用者的栈空间、寄存器布局包括返回地址都恢复了, 所以)
+///   执行 `ret ra` 指令, 返回到调用者.
+///
+/// #### 函数栈空间恢复占位符 `MirRestoreHostRegs`
+///
+/// 这个占位符最终会被替换为对应的栈空间恢复指令. 这里按地址从小到大的顺序简要介绍一下
+///  `Remusys` 编译器约定的函数活动栈空间布局.
+///
+/// 这些是被调用者管理的部分:
+///
+/// * SP: 指向函数活动的底部. 由于 SysY 没有变长数组语法, 每次函数活动的栈布局都是
+///   固定的, 因此不需要 FP 做动态调整.
+/// * 局部变量段: 自 SP 位置往上一段, 存放函数活动的局部变量.
+/// * 被调用者保存的寄存器段: 紧接着局部变量段, 存放被调用者保存的寄存器.
+///
+/// 这些是函数调用者管理的部分:
+///
+/// * 本次调用的溢出参数段: 紧接着被调用者保存的寄存器段, 存放本次调用中传参寄存器
+///   (`X0~X7, D0~D7`) 放不下的参数.
+/// * 调用者保存的寄存器段: 紧接着溢出参数段, 存放调用者保存的寄存器.
+///
+/// 根据 Remusys 函数调用的约定, `MirRestoreHostRegs` 会恢复成下面几组指令:
+///
+/// * 收回局部变量段的栈空间: 通常是 `add sp, sp, #<size>`
+/// * 恢复被调用者保存的寄存器: 编译器会检查当前函数栈布局定义中要恢复的寄存器,
+///   恢复除了返回值以外的寄存器. 然后生成 `add sp, sp, #<size>` 收回对应的栈空间.
 pub fn lower_mir_ret(
     mir_ret: &MirReturn,
     vreg_alloc: &mut VirtRegAlloc,
     out_actions: &mut VecDeque<LowerInstAction>,
 ) {
-    if let Some(retval) = mir_ret.retval() {
-        prepare_retval(vreg_alloc, out_actions, retval.get());
-    }
+    let regs_norestore = if let Some(retval) = mir_ret.retval() {
+        prepare_retval(vreg_alloc, out_actions, retval.get())
+    } else {
+        MirPhysRegSet::new_empty()
+    };
     // 恢复所处函数保存的寄存器.
-    out_actions.push_back(LowerInstAction::NOP(MirRestoreHostRegs::new().into_mir()));
+    out_actions.push_back(LowerInstAction::NOP(
+        MirRestoreHostRegs::new(regs_norestore).into_mir(),
+    ));
     // 在 aarch64 中有专门的 ret 指令, 但奇怪的是... 这个 ret 指令的返回地址寄存器也要自己指定.
     // 在汇编里不指定就是 x30, 但 MIR 可没有汇编那种灵活性, 数据流要显式表现出来的.
     let ret_inst = BReg::new(MirOP::Ret, GPR64::ra());
     out_actions.push_back(LowerInstAction::NOP(ret_inst.into_mir()));
 }
 
+/// 生成准备返回值的指令, 然后返回有哪些寄存器不要恢复.
 fn prepare_retval(
     vreg_alloc: &mut VirtRegAlloc,
     out_actions: &mut VecDeque<LowerInstAction>,
     retval: MirOperand,
-) {
+) -> MirPhysRegSet {
     match retval {
-        MirOperand::GPReg(GPReg(GPReg::RETVAL_POS, ..))
-        | MirOperand::VFReg(VFReg(VFReg::RETVAL_POS, ..)) => {}
+        MirOperand::GPReg(GPReg(GPReg::RETVAL_POS, ..)) => {
+            MirPhysRegSet::from(&[GPReg::new_retval()])
+        }
+        MirOperand::VFReg(VFReg(VFReg::RETVAL_POS, ..)) => {
+            MirPhysRegSet::from(&[VFReg::new_double_retval()])
+        }
         MirOperand::GPReg(gp) => {
             let inst = make_move_to_gp_retval_inst(gp);
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::VFReg(vf) => {
             let inst = make_move_to_fp_retval_inst(vf);
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[VFReg::new_double_retval()])
         }
         MirOperand::Imm64(imm64) => {
             let value = imm64.get_value();
@@ -57,6 +103,7 @@ fn prepare_retval(
                 LoadConst64::new(MirOP::LoadConst64, r0_dest, imm64).into_mir()
             };
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::Imm32(imm32) => {
             let value = imm32.get_value();
@@ -76,6 +123,7 @@ fn prepare_retval(
                 .into_mir()
             };
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::Label(label) => {
             let inst = LoadConst64Symbol::new(
@@ -84,6 +132,7 @@ fn prepare_retval(
                 MirSymbolOp::Label(label),
             );
             out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::Global(global) => {
             let inst = LoadConst64Symbol::new(
@@ -92,6 +141,7 @@ fn prepare_retval(
                 MirSymbolOp::Global(global),
             );
             out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::SwitchTab(idx) => {
             let inst = LoadConst64Symbol::new(
@@ -100,6 +150,7 @@ fn prepare_retval(
                 MirSymbolOp::SwitchTab(idx),
             );
             out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            MirPhysRegSet::from(&[GPReg::new_retval()])
         }
         MirOperand::F32(f) => {
             let f0 = FPR32(0, RegUseFlags::DEF);
@@ -121,6 +172,7 @@ fn prepare_retval(
                 UnaFG32::new(MirOP::FMovFG32, f0, midreg32).into_mir()
             };
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[VFReg::new_single_retval()])
         }
         MirOperand::F64(f) => {
             let f0 = FPR64(0, RegUseFlags::DEF);
@@ -142,6 +194,7 @@ fn prepare_retval(
                 UnaFG64::new(MirOP::FMovFG64, f0, midreg64_src).into_mir()
             };
             out_actions.push_back(LowerInstAction::NOP(inst));
+            MirPhysRegSet::from(&[VFReg::new_double_retval()])
         }
         _ => panic!("Unsupported return value type: {:?}", retval),
     }

@@ -8,7 +8,7 @@ use crate::{
             MirGlobalRef,
             block::MirBlockRef,
             func::{MirFunc, MirFuncInner},
-            stack::VirtRegAlloc,
+            vreg_alloc::VirtRegAlloc,
         },
         operand::{
             IMirSubOperand, MirOperand,
@@ -22,11 +22,17 @@ use crate::{
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstRetval {
+    Reg(RegOperand),
+    Wasted,
+}
+
 pub struct OperandMap<'a> {
     pub args: Vec<(u32, RegOperand)>,
     pub func: Rc<MirFunc>,
     pub globals: &'a MirGlobalItems,
-    pub insts: Vec<(InstRef, RegOperand)>,
+    pub insts: Vec<(InstRef, InstRetval)>,
     pub blocks: Vec<MirBlockInfo>,
 }
 
@@ -37,13 +43,14 @@ pub enum OperandMapError {
     IsNone,
     IsUnsupported(ValueSSA),
     IsNotFound(ValueSSA),
+    ResultWasted(InstRef),
 }
 
 impl<'a> OperandMap<'a> {
     pub fn build_from_func(
         func: Rc<MirFunc>,
         globals: &'a MirGlobalItems,
-        insts: Vec<(InstRef, RegOperand)>,
+        insts: Vec<(InstRef, InstRetval)>,
         blocks: Vec<MirBlockInfo>,
     ) -> (Self, Vec<MirInst>) {
         debug_assert!(insts.is_sorted_by_key(|(inst, _)| *inst));
@@ -109,14 +116,12 @@ impl<'a> OperandMap<'a> {
                 }
                 ValTypeID::Float(FloatTypeKind::Ieee32) => {
                     let virt = vreg_alloc.insert_fpr32(FPR32::new_empty());
-                    let ldr_inst =
-                        LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLSP32(0));
+                    let ldr_inst = LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLSP32(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 ValTypeID::Float(FloatTypeKind::Ieee64) => {
                     let virt = vreg_alloc.insert_fpr64(FPR64::new_empty());
-                    let ldr_inst =
-                        LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLSP64(0));
+                    let ldr_inst = LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLSP64(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
                 _ => panic!("Unsupported argument type for spilled argument: {arg_type:?}"),
@@ -137,7 +142,7 @@ impl<'a> OperandMap<'a> {
         (ret, args_builder_template)
     }
 
-    pub fn find_operand_for_inst(&self, inst: InstRef) -> Option<RegOperand> {
+    pub fn find_operand_for_inst(&self, inst: InstRef) -> Option<InstRetval> {
         self.insts
             .binary_search_by_key(&inst, |(i, _)| *i)
             .ok()
@@ -175,10 +180,14 @@ impl<'a> OperandMap<'a> {
                 .find_operand_for_block(*b)
                 .map(MirOperand::Label)
                 .ok_or(OperandMapError::IsNotFound(operand.clone())),
-            ValueSSA::Inst(i) => self
-                .find_operand_for_inst(*i)
-                .map(RegOperand::into)
-                .ok_or(OperandMapError::IsNotFound(operand.clone())),
+            ValueSSA::Inst(i) => {
+                let retval = self.find_operand_for_inst(*i);
+                match retval {
+                    Some(InstRetval::Reg(reg)) => Ok(reg.into()),
+                    Some(InstRetval::Wasted) => Err(OperandMapError::ResultWasted(*i)),
+                    None => Err(OperandMapError::IsNotFound(operand.clone())),
+                }
+            }
             ValueSSA::Global(g) => self
                 .find_operand_for_global(*g)
                 .map(MirOperand::Global)

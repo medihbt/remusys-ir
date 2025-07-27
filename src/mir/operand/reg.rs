@@ -90,7 +90,7 @@ bitflags! {
         /// This register is used in this instruction
         const USE  = 0b0000_0000_0000_1000;
         /// This register is defined implicitly in this instruction
-        const IMPLICIT_DEF = 0b0000_0000_0000_1000;
+        const IMPLICIT_DEF = 0b0000_0000_0001_0000;
     }
 }
 
@@ -105,6 +105,9 @@ impl std::fmt::Display for RegUseFlags {
         }
         if self.contains(RegUseFlags::KILL) {
             flags.push_str("kill ");
+        }
+        if self.contains(RegUseFlags::USE) {
+            flags.push_str("use ");
         }
         if self.contains(RegUseFlags::IMPLICIT_DEF) {
             flags.push_str("implicit-def ");
@@ -234,6 +237,8 @@ impl Debug for GPReg {
 impl GPReg {
     pub const RETVAL_POS: u32 = 0;
     pub const RETADDR_POS: u32 = 30;
+    pub const RETVAL_ID: RegID = RegID::Phys(0);
+    pub const RA_ID: RegID = RegID::Phys(30);
 
     pub fn is_physical(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Phys(_))
@@ -300,6 +305,10 @@ impl GPReg {
     pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
         *self = self.insert_use_flags(use_flags)
     }
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, si, _) = self;
+        Self(id, si, RegUseFlags::empty())
+    }
 
     pub fn new_long(id: RegID) -> Self {
         GPReg(id.get_real(), SubRegIndex::new(6, 0), RegUseFlags::empty())
@@ -309,6 +318,9 @@ impl GPReg {
     }
     pub fn new_ra() -> Self {
         GPReg(30, SubRegIndex::new(6, 0), RegUseFlags::empty())
+    }
+    pub const fn new_retval() -> Self {
+        GPReg(0, SubRegIndex::new(6, 0), RegUseFlags::empty())
     }
 }
 
@@ -442,12 +454,22 @@ impl VFReg {
     pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
         *self = self.insert_use_flags(use_flags)
     }
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, si, _) = self;
+        Self(id, si, RegUseFlags::empty())
+    }
 
     pub fn new_double(id: RegID) -> Self {
         VFReg(id.get_real(), SubRegIndex::new(6, 0), RegUseFlags::empty())
     }
     pub fn new_single(id: RegID) -> Self {
         VFReg(id.get_real(), SubRegIndex::new(5, 0), RegUseFlags::empty())
+    }
+    pub const fn new_double_retval() -> Self {
+        VFReg(0, SubRegIndex::new(6, 0), RegUseFlags::empty())
+    }
+    pub const fn new_single_retval() -> Self {
+        VFReg(0, SubRegIndex::new(5, 0), RegUseFlags::empty())
     }
 }
 
@@ -498,12 +520,19 @@ impl IMirSubOperand for VFReg {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct PState(pub RegUseFlags);
 
 impl PState {
     pub fn in_cmp() -> Self {
         PState(RegUseFlags::DEF | RegUseFlags::IMPLICIT_DEF)
+    }
+}
+
+impl Debug for PState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Self(uf) = self;
+        write!(f, "PState({uf})")
     }
 }
 
@@ -613,6 +642,11 @@ impl GPR32 {
         *self = self.insert_id(id);
     }
 
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, _) = self;
+        Self(id, RegUseFlags::empty())
+    }
+
     pub fn is_virtual(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
@@ -649,7 +683,8 @@ impl IMirSubOperand for GPR64 {
         Self::from_real(GPReg::from_mir(mir))
     }
     fn into_mir(self) -> MirOperand {
-        MirOperand::GPReg(self.into_real())
+        let Self(id, uf) = self;
+        MirOperand::GPReg(GPReg(id, SubRegIndex::new(6, 0), uf))
     }
     fn try_from_real(real: GPReg) -> Option<Self> {
         if real.get_bits_log2() == 6 {
@@ -659,7 +694,8 @@ impl IMirSubOperand for GPR64 {
         }
     }
     fn into_real(self) -> GPReg {
-        GPReg(self.0, SubRegIndex::new(6, 0), self.1)
+        let Self(id, uf) = self;
+        GPReg(id, SubRegIndex::new(6, 0), uf)
     }
     fn insert_to_real(self, real: GPReg) -> GPReg {
         let Self(id, _) = self;
@@ -717,6 +753,11 @@ impl GPR64 {
         let other = RegOperand::from(other);
         !other.is_fp() && other.get_id() == self.get_id()
     }
+
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, _) = self;
+        Self(id, RegUseFlags::empty())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -766,6 +807,11 @@ impl FPR32 {
     {
         let other = RegOperand::from(other);
         other.is_fp() && self.get_id() == other.get_id()
+    }
+
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, _) = self;
+        Self(id, RegUseFlags::empty())
     }
 }
 
@@ -848,6 +894,11 @@ impl FPR64 {
     {
         let other = RegOperand::from(other);
         other.is_fp() && self.get_id() == other.get_id()
+    }
+
+    pub fn clean_use_flags(self) -> Self {
+        let Self(id, _) = self;
+        Self(id, RegUseFlags::empty())
     }
 }
 
@@ -952,6 +1003,10 @@ impl RegOperand {
     }
     pub fn set_use_flags(&mut self, use_flags: RegUseFlags) {
         *self = self.insert_use_flags(use_flags)
+    }
+    pub fn clean_use_flags(&self) -> Self {
+        let Self(id, si, _, is_fp) = self;
+        Self(*id, *si, RegUseFlags::empty(), *is_fp)
     }
 
     pub fn as_physical(&self) -> Option<u32> {

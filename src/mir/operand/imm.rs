@@ -272,6 +272,14 @@ impl ImmCalc {
             panic!("Invalid immediate value: {} for Calc kind", value);
         }
     }
+    pub fn try_new(value: impl Into<u64>) -> Option<Self> {
+        let value = value.into();
+        if imm_traits::is_calc_imm(value) {
+            Some(Self(value as u32))
+        } else {
+            None
+        }
+    }
 }
 
 impl IMirSubOperand for ImmCalc {
@@ -741,6 +749,13 @@ impl ImmLSP32 {
             panic!("Invalid immediate value: {} for Load32 kind", value);
         }
     }
+    pub fn try_new(value: u32) -> Option<Self> {
+        if imm_traits::is_lsp32_imm(value) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
 }
 
 impl IMirSubOperand for ImmLSP32 {
@@ -818,6 +833,13 @@ impl ImmLSP64 {
             Self(value)
         } else {
             panic!("Invalid immediate value: {} for Load64 kind", value);
+        }
+    }
+    pub fn try_new(value: u64) -> Option<Self> {
+        if imm_traits::is_lsp64_imm(value) {
+            Some(Self(value))
+        } else {
+            None
         }
     }
 }

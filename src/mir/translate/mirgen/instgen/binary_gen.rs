@@ -9,12 +9,13 @@ use crate::{
     },
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-        module::stack::VirtRegAlloc,
+        module::vreg_alloc::VirtRegAlloc,
         operand::{IMirSubOperand, imm::ImmCalc, imm_traits, reg::*},
-        translate::mirgen::operandgen::{OperandMap, DispatchedReg},
+        translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
     typing::{context::TypeContext, id::ValTypeID},
 };
+use log::debug;
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
@@ -39,6 +40,13 @@ pub(crate) fn dispatch_binaries(
     let res = operand_map
         .find_operand_for_inst(ir_ref)
         .expect("Failed to find MIR operand for binary instruction");
+    let res = match res {
+        InstRetval::Reg(res) => res,
+        InstRetval::Wasted => {
+            debug!("Binary operation {ir_ref:?} is wasted, skipping generation.");
+            return;
+        }
+    };
 
     let lhs_mir = BinLHS::from_valuessa(
         operand_map,

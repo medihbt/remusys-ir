@@ -168,7 +168,12 @@ impl TypeContext {
             }
         }
     }
-    pub fn make_func_type(&self, argtys: &[ValTypeID], ret_ty: ValTypeID, is_vararg: bool) -> FuncTypeRef {
+    pub fn make_func_type(
+        &self,
+        argtys: &[ValTypeID],
+        ret_ty: ValTypeID,
+        is_vararg: bool,
+    ) -> FuncTypeRef {
         self.get_func_type(FuncTypeData {
             args: Box::from(argtys),
             ret_ty,

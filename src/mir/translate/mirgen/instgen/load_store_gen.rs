@@ -7,7 +7,7 @@ use crate::{
     },
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-        module::{MirGlobalRef, stack::VirtRegAlloc},
+        module::{MirGlobalRef, vreg_alloc::VirtRegAlloc},
         operand::{
             MirOperand,
             compound::MirSymbolOp,
@@ -15,9 +15,10 @@ use crate::{
             reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegID, RegOperand},
             subop::IMirSubOperand,
         },
-        translate::mirgen::operandgen::{OperandMap, OperandMapError},
+        translate::mirgen::operandgen::{InstRetval, OperandMap, OperandMapError},
     },
 };
+use log::debug;
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
@@ -148,6 +149,13 @@ pub(crate) fn dispatch_load(
         .find_operand_no_constdata(&src_ir)
         .expect("Failed to find source operand for load");
     let dst_mir = operand_map.find_operand_for_inst(ir_ref).unwrap();
+    let dst_mir = match dst_mir {
+        InstRetval::Reg(reg) => reg,
+        InstRetval::Wasted => {
+            debug!("Load instruction {ir_ref:?} is wasted, skipping load generation");
+            return;
+        }
+    };
     let dst_kind = LdrDest::from_reg_operand(dst_mir);
     let ldr_inst = match dst_kind {
         LdrDest::F32(fpr32) => match src_mir {
