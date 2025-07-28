@@ -503,18 +503,45 @@ template[Dst] LoadLiteral {
             insts: [
                 LdrGr64Literal, LdrBGr64Literal, LdrHGr64Literal,
                 LdrSBGr64Literal, LdrSHGr64Literal,
-                /* Stores has no literal */
             ]
         },
         [GPR32] => LoadGr32Literal {
             insts: [
                 LdrGr32Literal, LdrBGr32Literal, LdrHGr32Literal,
                 LdrSBGr32Literal, LdrSHGr32Literal,
-                /* Stores has no literal */
             ]
         },
         [FPR64] => LoadF64Literal { insts: [ LdrF64Literal ] },
         [FPR32] => LoadF32Literal { insts: [ LdrF32Literal ] },
+    }
+}
+
+template[Dst] MirLoadLiteral {
+    out: {
+        dst: Dst, 
+        // Temporary address register for loading the literal.
+        tmp_addr: GPR64,
+    },
+    in: { src: Symbol, };
+
+    impl {
+        [GPR64] => MirLdrLitG64 { insts: [ MirLdrLitG64 ], },
+        [GPR32] => MirLdrLitG32 { insts: [ MirLdrLitG32 ], },
+        [FPR64] => MirLdrLitF64 { insts: [ MirLdrLitF64 ], },
+        [FPR32] => MirLdrLitF32 { insts: [ MirLdrLitF32 ], },
+    }
+}
+
+// AArch64 没有与 Load Literal 相近的 Store Literal 模式.
+// 这里的 Store Literal 是一个 MIR 伪指令, 用于将一个常量存储到指定的符号地址.
+template[Src] MirStoreLiteral {
+    out: { tmp_addr: GPR64, },
+    in: { rd: Src, to: Symbol, };
+    impl {
+        [GPR64] => MirStrLitG64 { insts: [ MirStrLitG64 ], },
+        [GPR32] => MirStrLitG32 { insts: [ MirStrLitG32 ], },
+        [FPR64] => MirStrLitF64 { insts: [ MirStrLitF64 ], },
+        [FPR32] => MirStrLitF32 { insts: [ MirStrLitF32 ], },
     }
 }
 
