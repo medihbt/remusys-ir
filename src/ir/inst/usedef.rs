@@ -177,10 +177,7 @@ pub enum UseKind {
     StoreSource,
     StoreTarget,
     PhiIncomingBlock(UseRef),
-    PhiIncomingValue {
-        from_bb: BlockRef,
-        from_bb_use: UseRef,
-    },
+    PhiIncomingValue { from_bb: BlockRef, from_bb_use: UseRef },
     SelectCond,
     SelectTrueVal,
     SelectFalseVal,

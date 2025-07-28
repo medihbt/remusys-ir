@@ -33,11 +33,7 @@ impl CfgDfsSeq {
         self.nodes.len()
     }
     pub fn n_real_nodes(&self) -> usize {
-        if self.root_is_virtual() {
-            self.nodes.len() - 1
-        } else {
-            self.nodes.len()
-        }
+        if self.root_is_virtual() { self.nodes.len() - 1 } else { self.nodes.len() }
     }
     pub fn get_root_dfn(&self) -> usize {
         match self.order {
@@ -99,11 +95,7 @@ impl CfgDfsSeq {
 
 impl CfgDfsSeq {
     pub fn new_empty(order: DfsOrder) -> Self {
-        CfgDfsSeq {
-            nodes: Vec::new(),
-            dfn: BTreeMap::new(),
-            order,
-        }
+        CfgDfsSeq { nodes: Vec::new(), dfn: BTreeMap::new(), order }
     }
 
     pub fn new_from_func(
@@ -181,12 +173,7 @@ impl CfgDfsSeq {
         };
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode {
-            block,
-            parent,
-            dfn,
-            parent_dfn,
-        });
+        node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn });
 
         for succ in terminator.collect_jump_blocks_from_module(module) {
             Self::build_pre_order(module, succ, block, dfn, node_seq, dfn_map);
@@ -220,12 +207,7 @@ impl CfgDfsSeq {
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode {
-            block,
-            parent,
-            dfn,
-            parent_dfn: usize::MAX,
-        });
+        node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn: usize::MAX });
 
         for succ_dfn in succ_dfns {
             node_seq[succ_dfn].parent_dfn = dfn;
@@ -288,12 +270,7 @@ impl CfgDfsSeq {
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode {
-            block,
-            parent,
-            dfn,
-            parent_dfn,
-        });
+        node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn });
 
         let succ = match get_succ(snapshot, block) {
             Some(node) => node,
@@ -343,12 +320,7 @@ impl CfgDfsSeq {
         }
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
-        node_seq.push(CfgDfsNode {
-            block,
-            parent,
-            dfn,
-            parent_dfn: usize::MAX,
-        });
+        node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn: usize::MAX });
         for succ_dfn in succ_dfns {
             node_seq[succ_dfn].parent_dfn = dfn;
         }
@@ -425,14 +397,7 @@ impl CfgDfsSeq {
         if order.should_reverse() {
             Self::reverse_dfs_order(&mut nodes, &mut dfn_map);
         }
-        (
-            Self {
-                nodes,
-                dfn: dfn_map,
-                order,
-            },
-            real_exits,
-        )
+        (Self { nodes, dfn: dfn_map, order }, real_exits)
     }
 
     /// NOTE: Since the CFG snapshot nodes are already sorted by `BlockRef` order,

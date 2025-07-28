@@ -1,14 +1,20 @@
 use super::InstDispatchError;
 use crate::{
-    base::{slabref::SlabRef, NullableValue},
+    base::{NullableValue, slabref::SlabRef},
     ir::{
-        constant::data::ConstData, inst::{cmp::CmpOp, usedef::UseData, InstData, InstRef}, module::Module, opcode::Opcode, ValueSSA
+        ValueSSA,
+        constant::data::ConstData,
+        inst::{InstData, InstRef, cmp::CmpOp, usedef::UseData},
+        module::Module,
+        opcode::Opcode,
     },
     mir::{
-        inst::{cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP, IMirSubInst},
+        inst::{IMirSubInst, cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP},
         module::vreg_alloc::VirtRegAlloc,
         operand::{
-            imm::ImmLogic, reg::{PState, GPR32, GPR64}, IMirSubOperand
+            IMirSubOperand,
+            imm::ImmLogic,
+            reg::{GPR32, GPR64, PState},
         },
         translate::mirgen::{
             instgen::ir_value_as_cmp,

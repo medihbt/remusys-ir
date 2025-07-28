@@ -109,22 +109,13 @@ impl CfgSnapshotNode {
         next_set: Box<[(usize, BlockRef)]>,
         next_seq: Box<[(usize, BlockRef)]>,
     ) -> Self {
-        Self {
-            block,
-            prev_set,
-            next_set,
-            next_seq,
-        }
+        Self { block, prev_set, next_set, next_seq }
     }
 }
 
 impl CfgSnapshot {
     pub fn new_empty(func: GlobalRef, entry: BlockRef) -> Self {
-        Self {
-            nodes: Box::new([]),
-            func,
-            entry,
-        }
+        Self { nodes: Box::new([]), func, entry }
     }
 
     pub fn new_from_func(module: &Module, func: GlobalRef) -> Self {
@@ -214,10 +205,6 @@ impl CfgSnapshot {
             }
         }
 
-        Self {
-            nodes: nodes.into_boxed_slice(),
-            func,
-            entry,
-        }
+        Self { nodes: nodes.into_boxed_slice(), func, entry }
     }
 }

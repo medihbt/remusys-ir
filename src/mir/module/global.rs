@@ -260,11 +260,7 @@ impl MirGlobalData {
     }
     pub fn as_asciz_string(&self) -> Option<String> {
         let mut buffer = Vec::with_capacity(self.data.len() + 2);
-        if self.write_as_asciz(&mut buffer).ok()? {
-            String::from_utf8(buffer).ok()
-        } else {
-            None
-        }
+        if self.write_as_asciz(&mut buffer).ok()? { String::from_utf8(buffer).ok() } else { None }
     }
 }
 

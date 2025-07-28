@@ -472,6 +472,22 @@ pub enum MirOP {
     LdrF64Literal,
     #[doc = "Opcode class: LoadF32Literal"]
     LdrF32Literal,
+    #[doc = "Opcode class: MirLdrLitG64"]
+    MirLdrLitG64,
+    #[doc = "Opcode class: MirLdrLitG32"]
+    MirLdrLitG32,
+    #[doc = "Opcode class: MirLdrLitF64"]
+    MirLdrLitF64,
+    #[doc = "Opcode class: MirLdrLitF32"]
+    MirLdrLitF32,
+    #[doc = "Opcode class: MirStrLitG64"]
+    MirStrLitG64,
+    #[doc = "Opcode class: MirStrLitG32"]
+    MirStrLitG32,
+    #[doc = "Opcode class: MirStrLitF64"]
+    MirStrLitF64,
+    #[doc = "Opcode class: MirStrLitF32"]
+    MirStrLitF32,
     #[doc = "Opcode class: LoadConst64"]
     LoadConst64,
     #[doc = "Opcode class: LoadConstF64"]
@@ -877,6 +893,14 @@ impl MirOP {
             MirOP::LdrSHGr32Literal => "LdrSHGr32Literal",
             MirOP::LdrF64Literal => "LdrF64Literal",
             MirOP::LdrF32Literal => "LdrF32Literal",
+            MirOP::MirLdrLitG64 => "MirLdrLitG64",
+            MirOP::MirLdrLitG32 => "MirLdrLitG32",
+            MirOP::MirLdrLitF64 => "MirLdrLitF64",
+            MirOP::MirLdrLitF32 => "MirLdrLitF32",
+            MirOP::MirStrLitG64 => "MirStrLitG64",
+            MirOP::MirStrLitG32 => "MirStrLitG32",
+            MirOP::MirStrLitF64 => "MirStrLitF64",
+            MirOP::MirStrLitF32 => "MirStrLitF32",
             MirOP::LoadConst64 => "LoadConst64",
             MirOP::LoadConstF64 => "LoadConstF64",
             MirOP::LoadConst64Symbol => "LoadConst64Symbol",
@@ -1275,6 +1299,14 @@ impl std::str::FromStr for MirOP {
             "LdrSHGr32Literal" => Ok(MirOP::LdrSHGr32Literal),
             "LdrF64Literal" => Ok(MirOP::LdrF64Literal),
             "LdrF32Literal" => Ok(MirOP::LdrF32Literal),
+            "MirLdrLitG64" => Ok(MirOP::MirLdrLitG64),
+            "MirLdrLitG32" => Ok(MirOP::MirLdrLitG32),
+            "MirLdrLitF64" => Ok(MirOP::MirLdrLitF64),
+            "MirLdrLitF32" => Ok(MirOP::MirLdrLitF32),
+            "MirStrLitG64" => Ok(MirOP::MirStrLitG64),
+            "MirStrLitG32" => Ok(MirOP::MirStrLitG32),
+            "MirStrLitF64" => Ok(MirOP::MirStrLitF64),
+            "MirStrLitF32" => Ok(MirOP::MirStrLitF32),
             "LoadConst64" => Ok(MirOP::LoadConst64),
             "LoadConstF64" => Ok(MirOP::LoadConstF64),
             "LoadConst64Symbol" => Ok(MirOP::LoadConst64Symbol),

@@ -31,18 +31,10 @@ impl MirReturn {
     }
 
     pub fn retval(&self) -> Option<&Cell<MirOperand>> {
-        if self.has_retval() {
-            Some(&self.operands_storage[0])
-        } else {
-            None
-        }
+        if self.has_retval() { Some(&self.operands_storage[0]) } else { None }
     }
     pub fn operands(&self) -> &[Cell<MirOperand>] {
-        if self.has_retval() {
-            &self.operands_storage[..1]
-        } else {
-            &[]
-        }
+        if self.has_retval() { &self.operands_storage[..1] } else { &[] }
     }
 
     pub fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {

@@ -203,11 +203,7 @@ impl BlockData {
             Some(inst) => inst,
             None => return None,
         };
-        if back_inst.to_slabref_unwrap(alloc_inst).is_terminator() {
-            Some(back_inst)
-        } else {
-            None
-        }
+        if back_inst.to_slabref_unwrap(alloc_inst).is_terminator() { Some(back_inst) } else { None }
     }
     pub fn get_terminator_subref_from_alloc(
         &self,

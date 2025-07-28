@@ -194,10 +194,7 @@ impl IndexPtrOp {
                 Ok(ty) => ty,
                 Err(_) => continue, // Skip invalid indices.
             };
-            ret.push(IndexChainNode {
-                index: idx_value,
-                unpacked_ty: layer_n_ty,
-            });
+            ret.push(IndexChainNode { index: idx_value, unpacked_ty: layer_n_ty });
         }
         ret
     }

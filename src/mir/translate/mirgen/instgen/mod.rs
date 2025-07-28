@@ -44,9 +44,7 @@ impl InstDispatchState {
     }
 
     pub fn new() -> Self {
-        Self {
-            last_pstate_modifier: None,
-        }
+        Self { last_pstate_modifier: None }
     }
 }
 
@@ -98,7 +96,14 @@ pub fn dispatch_inst(
             // Alloca instructions are not translated to MIR directly,
         }
         InstDataKind::Load => {
-            load_store_gen::dispatch_load(operand_map, ir_ref, alloc_inst, alloc_use, out_insts);
+            load_store_gen::dispatch_load(
+                operand_map,
+                ir_ref,
+                vreg_alloc,
+                alloc_inst,
+                alloc_use,
+                out_insts,
+            );
         }
         InstDataKind::Store => {
             if let Some(value) = load_store_gen::generate_store_inst(

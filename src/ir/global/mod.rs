@@ -148,11 +148,7 @@ impl GlobalData {
                 content_ty,
                 self_ref: Cell::new(GlobalRef::new_null()),
             },
-            inner: Cell::new(VarInner {
-                readonly: is_const,
-                align_log2: 3,
-                init,
-            }),
+            inner: Cell::new(VarInner { readonly: is_const, align_log2: 3, init }),
         })
     }
     pub fn new_alias(name: String, content_ty: ValTypeID, target: GlobalRef) -> Self {

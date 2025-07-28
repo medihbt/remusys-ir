@@ -9,10 +9,7 @@ pub struct VirtRegAlloc {
 
 impl VirtRegAlloc {
     pub fn new() -> Self {
-        Self {
-            general: Slab::new(),
-            float: Slab::new(),
-        }
+        Self { general: Slab::new(), float: Slab::new() }
     }
 
     pub fn insert_gp_for_index(&mut self, greg: GPReg) -> u32 {
@@ -62,11 +59,7 @@ impl VirtRegAlloc {
     }
     pub fn insert_reg(&mut self, reg: RegOperand) -> RegOperand {
         let (is_fp, index) = self.insert_reg_for_index(reg);
-        if is_fp {
-            self.float[index as usize].into()
-        } else {
-            self.general[index as usize].into()
-        }
+        if is_fp { self.float[index as usize].into() } else { self.general[index as usize].into() }
     }
 
     pub fn alloc_gp(&mut self) -> &mut GPReg {

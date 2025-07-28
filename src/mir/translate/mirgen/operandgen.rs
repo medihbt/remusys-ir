@@ -92,11 +92,7 @@ impl<'a> OperandMap<'a> {
         }
 
         let mut inner = func.borrow_inner_mut();
-        let MirFuncInner {
-            stack_layout,
-            vreg_alloc,
-            ..
-        } = &mut *inner;
+        let MirFuncInner { stack_layout, vreg_alloc, .. } = &mut *inner;
         for spilled_arg in stack_layout.args.iter() {
             eprintln!("arg id {arg_id}, spilled arg: {:?}", spilled_arg.irtype);
             let arg_type = spilled_arg.irtype;
@@ -132,13 +128,7 @@ impl<'a> OperandMap<'a> {
         }
         drop(inner);
 
-        let ret = Self {
-            args,
-            func,
-            globals,
-            insts,
-            blocks,
-        };
+        let ret = Self { args, func, globals, insts, blocks };
         (ret, args_builder_template)
     }
 

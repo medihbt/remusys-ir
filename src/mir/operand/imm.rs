@@ -274,11 +274,7 @@ impl ImmCalc {
     }
     pub fn try_new(value: impl Into<u64>) -> Option<Self> {
         let value = value.into();
-        if imm_traits::is_calc_imm(value) {
-            Some(Self(value as u32))
-        } else {
-            None
-        }
+        if imm_traits::is_calc_imm(value) { Some(Self(value as u32)) } else { None }
     }
 }
 
@@ -318,11 +314,7 @@ impl IMirSubOperand for ImmCalc {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Calc {
-            Some(Self(real.get_value() as u32))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::Calc { Some(Self(real.get_value() as u32)) } else { None }
     }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Calc {
@@ -415,11 +407,7 @@ impl IMirSubOperand for ImmLogic {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Logic {
-            Some(Self(real.get_value()))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::Logic { Some(Self(real.get_value())) } else { None }
     }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::Logic {
@@ -509,11 +497,7 @@ impl IMirSubOperand for ImmSMax {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::SMax {
-            Some(Self(real.get_value() as i64))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::SMax { Some(Self(real.get_value() as i64)) } else { None }
     }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::SMax {
@@ -601,11 +585,7 @@ impl IMirSubOperand for ImmUMax {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::UMax {
-            Some(Self(real.get_value()))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::UMax { Some(Self(real.get_value())) } else { None }
     }
     fn from_real(real: Imm64) -> Self {
         if real.get_kind() == ImmKind::UMax {
@@ -692,11 +672,7 @@ impl IMirSubOperand for ImmShift {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Shift {
-            Some(Self(real.get_value()))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::Shift { Some(Self(real.get_value())) } else { None }
     }
 
     fn from_real(real: Imm64) -> Self {
@@ -750,11 +726,7 @@ impl ImmLSP32 {
         }
     }
     pub fn try_new(value: u32) -> Option<Self> {
-        if imm_traits::is_lsp32_imm(value) {
-            Some(Self(value))
-        } else {
-            None
-        }
+        if imm_traits::is_lsp32_imm(value) { Some(Self(value)) } else { None }
     }
 }
 
@@ -792,11 +764,7 @@ impl IMirSubOperand for ImmLSP32 {
     }
 
     fn try_from_real(real: Imm32) -> Option<Self> {
-        if real.get_kind() == ImmKind::LSP {
-            Some(Self(real.get_value()))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::LSP { Some(Self(real.get_value())) } else { None }
     }
 
     fn from_real(real: Imm32) -> Self {
@@ -836,11 +804,7 @@ impl ImmLSP64 {
         }
     }
     pub fn try_new(value: u64) -> Option<Self> {
-        if imm_traits::is_lsp64_imm(value) {
-            Some(Self(value))
-        } else {
-            None
-        }
+        if imm_traits::is_lsp64_imm(value) { Some(Self(value)) } else { None }
     }
 }
 
@@ -872,11 +836,7 @@ impl IMirSubOperand for ImmLSP64 {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::LSP {
-            Some(Self(real.get_value()))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::LSP { Some(Self(real.get_value())) } else { None }
     }
 
     fn from_real(real: Imm64) -> Self {
@@ -956,11 +916,7 @@ impl IMirSubOperand for ImmCCmp {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::CCmp {
-            Some(Self(real.get_value() as u32))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::CCmp { Some(Self(real.get_value() as u32)) } else { None }
     }
 
     fn from_real(real: Imm64) -> Self {
@@ -1040,11 +996,7 @@ impl IMirSubOperand for ImmMov {
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::Mov {
-            Some(Self(real.get_value() as u16))
-        } else {
-            None
-        }
+        if real.get_kind() == ImmKind::Mov { Some(Self(real.get_value() as u16)) } else { None }
     }
 
     fn from_real(real: Imm64) -> Self {

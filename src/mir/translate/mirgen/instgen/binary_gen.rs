@@ -382,11 +382,7 @@ impl<'a> BinGenContext<'a> {
             ConstData::PtrNull(_) => Some(ImmCalc(0)),
             ConstData::Int(bits, value) if *bits <= 64 => {
                 let value = ConstData::iconst_value_get_real_signed(*bits, *value) as u64;
-                if imm_traits::is_calc_imm(value) {
-                    Some(ImmCalc(value as u32))
-                } else {
-                    None
-                }
+                if imm_traits::is_calc_imm(value) { Some(ImmCalc(value as u32)) } else { None }
             }
             _ => None,
         }

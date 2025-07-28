@@ -415,10 +415,7 @@ impl<'a> Redirector<'a> {
                 UseKind::PhiIncomingBlock(rela_value_use) => {
                     self._redirect_use_ref(rela_value_use)?;
                 }
-                UseKind::PhiIncomingValue {
-                    from_bb,
-                    from_bb_use,
-                } => {
+                UseKind::PhiIncomingValue { from_bb, from_bb_use } => {
                     self._redirect_block_ref(from_bb, false)?;
                     self._redirect_use_ref(from_bb_use)?;
                 }

@@ -432,22 +432,32 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrF64Indexed | MirOP::LdrF32Indexed => "ldr",
         MirOP::StrF64Indexed | MirOP::StrF32Indexed => "str",
 
-        // 64位加载/存储指令（字面量寻址）
+        // 64位加载指令（字面量寻址）
         MirOP::LdrGr64Literal => "ldr",
         MirOP::LdrBGr64Literal => "ldrb",
         MirOP::LdrHGr64Literal => "ldrh",
         MirOP::LdrSBGr64Literal => "ldrsb",
         MirOP::LdrSHGr64Literal => "ldrsh",
 
-        // 32位加载/存储指令（字面量寻址）
+        // 32位加载指令（字面量寻址）
         MirOP::LdrGr32Literal => "ldr",
         MirOP::LdrBGr32Literal => "ldrb",
         MirOP::LdrHGr32Literal => "ldrh",
         MirOP::LdrSBGr32Literal => "ldrsb",
         MirOP::LdrSHGr32Literal => "ldrsh",
 
-        // 浮点加载/存储指令（字面量寻址）
+        // 浮点加载指令（字面量寻址）
         MirOP::LdrF64Literal | MirOP::LdrF32Literal => "ldr",
+
+        // MIR 字面量寻址-加载伪指令
+        MirOP::MirLdrLitG64 => "mir.ldrlit.g64",
+        MirOP::MirLdrLitG32 => "mir.ldrlit.g32",
+        MirOP::MirLdrLitF64 => "mir.ldrlit.f64",
+        MirOP::MirLdrLitF32 => "mir.ldrlit.f32",
+        MirOP::MirStrLitG64 => "mir.strlit.g64",
+        MirOP::MirStrLitG32 => "mir.strlit.g32",
+        MirOP::MirStrLitF64 => "mir.strlit.f64",
+        MirOP::MirStrLitF32 => "mir.strlit.f32",
 
         // 常量加载指令
         MirOP::LoadConst64 | MirOP::LoadConstF64 | MirOP::LoadConst64Symbol => "ldr",

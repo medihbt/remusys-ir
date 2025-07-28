@@ -1,0 +1,15 @@
+# Rustfmt configuration for remusys-ir project
+
+# 设置较小的函数调用宽度，促进参数换行
+fn_call_width = 60
+
+# 总行宽
+max_width = 100
+
+use_small_heuristics = "Max"
+
+# 控制链式调用的格式
+chain_width = 60
+
+# 控制结构体字面量的格式
+struct_lit_width = 60

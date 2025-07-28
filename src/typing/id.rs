@@ -76,11 +76,7 @@ impl ValTypeID {
             ValTypeID::Ptr => Some(type_ctx.platform_policy.ptr_nbits / 8),
             ValTypeID::Int(binbits) => {
                 let bytes = binary_bits_to_bytes(*binbits as usize);
-                Some(if bytes.is_power_of_two() {
-                    bytes
-                } else {
-                    bytes.next_power_of_two()
-                })
+                Some(if bytes.is_power_of_two() { bytes } else { bytes.next_power_of_two() })
             }
             ValTypeID::Float(fp) => match fp {
                 FloatTypeKind::Ieee32 => Some(4),

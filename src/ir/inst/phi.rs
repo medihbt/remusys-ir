@@ -160,10 +160,7 @@ impl PhiOp {
             ValueSSA::None,
         ));
         let value_useref = module.insert_use(UseData::new(
-            UseKind::PhiIncomingValue {
-                from_bb,
-                from_bb_use: block_useref,
-            },
+            UseKind::PhiIncomingValue { from_bb, from_bb_use: block_useref },
             InstRef::new_null(),
             ValueSSA::None,
         ));
@@ -227,9 +224,7 @@ impl PhiOp {
     pub fn new(ret_type: ValTypeID, module: &Module) -> (InstDataCommon, Self) {
         (
             InstDataCommon::new(Opcode::Phi, ret_type, &mut module.borrow_use_alloc_mut()),
-            Self {
-                from: RefCell::new(Vec::new()),
-            },
+            Self { from: RefCell::new(Vec::new()) },
         )
     }
 }

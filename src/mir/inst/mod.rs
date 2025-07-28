@@ -35,10 +35,7 @@ pub struct MirInstCommon {
 
 impl MirInstCommon {
     pub fn new(opcode: MirOP) -> Self {
-        MirInstCommon {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
-            opcode,
-        }
+        MirInstCommon { node_head: Cell::new(SlabRefListNodeHead::new()), opcode }
     }
 
     pub fn new_guide() -> Self {

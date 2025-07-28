@@ -296,11 +296,7 @@ enum CallFPArgKind {
 
 impl CallArgsCnt {
     fn new() -> Self {
-        Self {
-            gpreg_id: 0,
-            fpreg_id: 0,
-            spilled_cnt: 0,
-        }
+        Self { gpreg_id: 0, fpreg_id: 0, spilled_cnt: 0 }
     }
 
     fn push_gpr(&mut self, gpr: GPReg) -> CallIntArgKind {

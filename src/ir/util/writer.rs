@@ -172,11 +172,8 @@ impl<'a> ModuleValueWriter<'a> {
         let ret_type = self_type.get_return_type(type_ctx);
         let args_type = self_type.get_args(type_ctx);
 
-        let (leading, is_funcdef) = if func.is_extern() {
-            ("declare", false)
-        } else {
-            ("define dso_local", true)
-        };
+        let (leading, is_funcdef) =
+            if func.is_extern() { ("declare", false) } else { ("define dso_local", true) };
 
         self.write_fmt(format_args!(
             "{} {} @{}({})",
@@ -188,11 +185,7 @@ impl<'a> ModuleValueWriter<'a> {
                 .enumerate()
                 .map(|(i, t)| {
                     let arg_type = t.get_display_name(type_ctx);
-                    if is_funcdef {
-                        format!("{} %{}", arg_type, i)
-                    } else {
-                        arg_type
-                    }
+                    if is_funcdef { format!("{} %{}", arg_type, i) } else { arg_type }
                 })
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -217,10 +210,7 @@ impl<'a> ModuleValueWriter<'a> {
     {
         let prev_indent = self.current_indent.get();
         self.current_indent.set(prev_indent + 1);
-        ModuleWriterIndentGuard {
-            module: self,
-            prev_indent,
-        }
+        ModuleWriterIndentGuard { module: self, prev_indent }
     }
 
     fn add_def_if_live_func(&self, func: GlobalRef, func_data: &FuncData) -> bool {
@@ -400,11 +390,7 @@ impl IConstExprVisitor for ModuleValueWriter<'_> {
 impl IGlobalObjectVisitor for ModuleValueWriter<'_> {
     /// Syntax: `@<name> = external|dso_local global <type> [initializer], align <align>`
     fn read_global_variable(&self, _: GlobalRef, gvar: &global::Var) {
-        let gvar_kind = if gvar.is_readonly() {
-            "constant"
-        } else {
-            "global"
-        };
+        let gvar_kind = if gvar.is_readonly() { "constant" } else { "global" };
         if gvar.is_extern() {
             self.write_fmt(format_args!(
                 "@{} = external {} {}, align {}\n",

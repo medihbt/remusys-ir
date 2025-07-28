@@ -43,10 +43,7 @@ impl Alloca {
         pointee_ty: ValTypeID,
         align_log2: u8,
     ) -> (Self, InstDataCommon) {
-        let mut inst = Self {
-            pointee_ty,
-            align_log2,
-        };
+        let mut inst = Self { pointee_ty, align_log2 };
         let mut common = InstDataCommon::new(Opcode::Alloca, ValTypeID::Ptr, alloc_use);
         inst.build_operands(&mut common, alloc_use);
         (inst, common)

@@ -97,9 +97,7 @@ impl TypeContext {
         }
     }
     pub fn make_struct_type(&self, elems: &[ValTypeID]) -> StructTypeRef {
-        self.get_struct_type(StructTypeData {
-            elemty: Box::from(elems),
-        })
+        self.get_struct_type(StructTypeData { elemty: Box::from(elems) })
     }
 
     pub fn read_struct_aliases(&self, mut reader: impl FnMut(&str, StructTypeRef)) {
@@ -140,10 +138,7 @@ impl TypeContext {
             ._inner
             .borrow_mut()
             ._alloc_struct_alias
-            .insert(StructAliasData {
-                name: name.to_string(),
-                aliasee,
-            });
+            .insert(StructAliasData { name: name.to_string(), aliasee });
         let ret = StructAliasRef::from_handle(handle);
         self._struct_alias_map
             .borrow_mut()
@@ -174,11 +169,7 @@ impl TypeContext {
         ret_ty: ValTypeID,
         is_vararg: bool,
     ) -> FuncTypeRef {
-        self.get_func_type(FuncTypeData {
-            args: Box::from(argtys),
-            ret_ty,
-            is_vararg,
-        })
+        self.get_func_type(FuncTypeData { args: Box::from(argtys), ret_ty, is_vararg })
     }
 }
 

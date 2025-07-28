@@ -22,8 +22,8 @@ use crate::{
             func::MirFunc,
         },
         operand::{
-            IMirSubOperand, MirOperand,
-            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags},
+            IMirSubOperand,
+            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand},
         },
         translate::{
             ir_pass::phi_node_ellimination::CopyMap,
@@ -180,11 +180,7 @@ impl MirTranslateCtx {
                 &mut self.mir_module.borrow_alloc_inst_mut(),
             );
             let mir_bb_ref = MirBlockRef::from_module(&self.mir_module, mir_bb);
-            block_map.push(MirBlockInfo {
-                ir: bb,
-                mir: mir_bb_ref,
-                insts: Vec::new(),
-            });
+            block_map.push(MirBlockInfo { ir: bb, mir: mir_bb_ref, insts: Vec::new() });
             let mut mir_builder = MirBuilder::new(&mut self.mir_module);
             mir_builder.set_focus(MirFocus::Func(Rc::clone(&func)));
             mir_builder.add_block(mir_bb_ref, false);

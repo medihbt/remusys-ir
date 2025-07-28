@@ -29,10 +29,7 @@ pub struct RdfgPerValue {
 
 impl RdfgPerValue {
     pub fn new(valueref: ValueSSA) -> Self {
-        Self {
-            valueref,
-            uses: RefCell::new(Vec::new()),
-        }
+        Self { valueref, uses: RefCell::new(Vec::new()) }
     }
 
     pub fn is_null(&self) -> bool {
@@ -84,16 +81,10 @@ impl FuncArgRdfg {
         for i in 0..nargs {
             arg_rdfg.push(RdfgPerValue::new(ValueSSA::FuncArg(func_ref, i)));
         }
-        Self {
-            func_ref,
-            arg_rdfg: Some(arg_rdfg.into_boxed_slice()),
-        }
+        Self { func_ref, arg_rdfg: Some(arg_rdfg.into_boxed_slice()) }
     }
     pub fn new_null() -> Self {
-        Self {
-            func_ref: GlobalRef::new_null(),
-            arg_rdfg: None,
-        }
+        Self { func_ref: GlobalRef::new_null(), arg_rdfg: None }
     }
     pub fn is_null(&self) -> bool {
         self.func_ref.is_null()

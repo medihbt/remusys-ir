@@ -39,10 +39,7 @@ impl<'a> FuncFormatContext<'a> {
     ) -> Self {
         Self {
             writer,
-            operand_context: OperandContext {
-                is_fp: false,
-                current_func: curr_func,
-            },
+            operand_context: OperandContext { is_fp: false, current_func: curr_func },
             mir_module,
         }
     }
@@ -339,6 +336,30 @@ impl<'a> FuncFormatContext<'a> {
             }
             MirInst::LoadF32Literal(load_f32_literal) => {
                 format_inst::fmt_load_f32_literal(self, inst.get_opcode(), load_f32_literal)
+            }
+            MirInst::MirLdrLitG64(ldrlit) => {
+                format_inst::fmt_mir_ldrlit_g64(self, inst.get_opcode(), ldrlit)
+            }
+            MirInst::MirLdrLitG32(ldrlit) => {
+                format_inst::fmt_mir_ldrlit_g32(self, inst.get_opcode(), ldrlit)
+            }
+            MirInst::MirLdrLitF64(ldrlit) => {
+                format_inst::fmt_mir_ldrlit_f64(self, inst.get_opcode(), ldrlit)
+            }
+            MirInst::MirLdrLitF32(ldrlit) => {
+                format_inst::fmt_mir_ldrlit_f32(self, inst.get_opcode(), ldrlit)
+            }
+            MirInst::MirStrLitG64(strlit) => {
+                format_inst::fmt_mir_strlit_g64(self, inst.get_opcode(), strlit)
+            }
+            MirInst::MirStrLitG32(strlit) => {
+                format_inst::fmt_mir_strlit_g32(self, inst.get_opcode(), strlit)
+            }
+            MirInst::MirStrLitF64(strlit) => {
+                format_inst::fmt_mir_strlit_f64(self, inst.get_opcode(), strlit)
+            }
+            MirInst::MirStrLitF32(strlit) => {
+                format_inst::fmt_mir_strlit_f32(self, inst.get_opcode(), strlit)
             }
             MirInst::LoadConst64(load_const64) => {
                 format_inst::fmt_load_const64(self, inst.get_opcode(), load_const64)

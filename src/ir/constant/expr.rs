@@ -144,10 +144,6 @@ impl ConstExprData {
     }
 
     fn binary_is_zero_aggregate(values: &[ValueSSA], module: &Module) -> bool {
-        if values.is_empty() {
-            true
-        } else {
-            values.iter().all(|v| v.binary_is_zero(module))
-        }
+        if values.is_empty() { true } else { values.iter().all(|v| v.binary_is_zero(module)) }
     }
 }

@@ -29,11 +29,7 @@ pub fn preasm_pass_for_module(module: &mut MirModule) {
             )
         });
         let allocs = module.allocs.get_mut();
-        let MirAllocs {
-            block: alloc_block,
-            inst: alloc_inst,
-            ..
-        } = &mut *allocs;
+        let MirAllocs { block: alloc_block, inst: alloc_inst, .. } = &mut *allocs;
         preasm_pass(&insts_to_process, alloc_block, alloc_inst);
     }
 }

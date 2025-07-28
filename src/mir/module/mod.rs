@@ -169,4 +169,20 @@ impl MirModule {
     pub fn borrow_alloc_item_mut(&self) -> RefMut<Slab<MirGlobal>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.item)
     }
+
+    pub fn dump_all_funcdefs(&self) -> Vec<Rc<MirFunc>> {
+        let mut funcs = Vec::new();
+        for items in &self.items {
+            match &*items.data_from_module(self) {
+                MirGlobal::Function(f) => {
+                    if f.is_extern() {
+                        continue;
+                    }
+                    funcs.push(Rc::clone(f));
+                }
+                _ => continue,
+            }
+        }
+        funcs
+    }
 }

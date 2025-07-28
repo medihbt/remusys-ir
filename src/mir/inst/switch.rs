@@ -140,11 +140,7 @@ impl VecSwitchTab {
     }
 
     pub fn get_case_by_index(&self, index: u64) -> Option<MirBlockRef> {
-        if index < self.ncases() {
-            Some(self.cases[index as usize].get())
-        } else {
-            None
-        }
+        if index < self.ncases() { Some(self.cases[index as usize].get()) } else { None }
     }
     pub fn get_case_by_value<T: Into<i128>>(&self, value: T) -> Option<MirBlockRef> {
         let value = value.into();

@@ -88,10 +88,7 @@ impl BinOp {
 
         let mut common =
             InstDataCommon::new(opcode, ret_ty, &mut mut_module.borrow_use_alloc_mut());
-        let mut ret = Self {
-            lhs: UseRef::new_null(),
-            rhs: UseRef::new_null(),
-        };
+        let mut ret = Self { lhs: UseRef::new_null(), rhs: UseRef::new_null() };
         ret.build_operands(&mut common, &mut mut_module.borrow_use_alloc_mut());
         Ok((common, ret))
     }

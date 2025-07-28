@@ -13,10 +13,7 @@ pub struct MirPhysRegSet {
 
 impl Debug for MirPhysRegSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let &Self {
-            gpr_bitset,
-            fpr_bitset,
-        } = self;
+        let &Self { gpr_bitset, fpr_bitset } = self;
         write!(
             f,
             "MirPhysRegSet {{ gpr: {:#032b}, fpr: {:#032b} }}",
@@ -27,10 +24,7 @@ impl Debug for MirPhysRegSet {
 
 impl MirPhysRegSet {
     pub fn new_empty() -> Self {
-        MirPhysRegSet {
-            gpr_bitset: 0,
-            fpr_bitset: 0,
-        }
+        MirPhysRegSet { gpr_bitset: 0, fpr_bitset: 0 }
     }
 
     /// 根据 AAPCS64 ABI, 调用者需要保存的寄存器包括:
@@ -101,11 +95,7 @@ impl MirPhysRegSet {
 
     pub const fn save_reg(&mut self, reg_operand: RegOperand) -> bool {
         let RegOperand(id, _, _, is_fp) = reg_operand;
-        if is_fp {
-            self.save_fpr(RegID::Phys(id))
-        } else {
-            self.save_gpr(RegID::Phys(id))
-        }
+        if is_fp { self.save_fpr(RegID::Phys(id)) } else { self.save_gpr(RegID::Phys(id)) }
     }
 
     pub const fn unsave_gpr(&mut self, pos: RegID) -> bool {

@@ -34,22 +34,14 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
         slab: &'a mut Slab<Self::RefObject>,
         modify: impl FnOnce(&mut Self::RefObject) -> R,
     ) -> Option<R> {
-        if let Some(v) = slab.get_mut(self.get_handle()) {
-            Some(modify(v))
-        } else {
-            None
-        }
+        if let Some(v) = slab.get_mut(self.get_handle()) { Some(modify(v)) } else { None }
     }
     fn read_slabref<'a, R>(
         &self,
         slab: &'a Slab<Self::RefObject>,
         read: impl FnOnce(&Self::RefObject) -> R,
     ) -> Option<R> {
-        if let Some(v) = slab.get(self.get_handle()) {
-            Some(read(v))
-        } else {
-            None
-        }
+        if let Some(v) = slab.get(self.get_handle()) { Some(read(v)) } else { None }
     }
 }
 

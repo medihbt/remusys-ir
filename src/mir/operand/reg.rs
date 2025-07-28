@@ -594,11 +594,7 @@ impl IMirSubOperand for GPR32 {
     }
 
     fn try_from_real(real: GPReg) -> Option<Self> {
-        if real.get_bits_log2() == 5 {
-            Some(Self(real.0, real.2))
-        } else {
-            None
-        }
+        if real.get_bits_log2() == 5 { Some(Self(real.0, real.2)) } else { None }
     }
     fn into_real(self) -> GPReg {
         GPReg(self.0, SubRegIndex::new(5, 0), self.1)
@@ -687,11 +683,7 @@ impl IMirSubOperand for GPR64 {
         MirOperand::GPReg(GPReg(id, SubRegIndex::new(6, 0), uf))
     }
     fn try_from_real(real: GPReg) -> Option<Self> {
-        if real.get_bits_log2() == 6 {
-            Some(Self(real.0, real.2))
-        } else {
-            None
-        }
+        if real.get_bits_log2() == 6 { Some(Self(real.0, real.2)) } else { None }
     }
     fn into_real(self) -> GPReg {
         let Self(id, uf) = self;
@@ -828,11 +820,7 @@ impl IMirSubOperand for FPR32 {
         MirOperand::VFReg(self.into_real())
     }
     fn try_from_real(real: VFReg) -> Option<Self> {
-        if real.get_bits_log2() == 5 {
-            Some(Self(real.0, real.2))
-        } else {
-            None
-        }
+        if real.get_bits_log2() == 5 { Some(Self(real.0, real.2)) } else { None }
     }
     fn into_real(self) -> VFReg {
         VFReg(self.0, SubRegIndex::new(5, 0), self.1)
@@ -915,11 +903,7 @@ impl IMirSubOperand for FPR64 {
         MirOperand::VFReg(self.into_real())
     }
     fn try_from_real(real: VFReg) -> Option<Self> {
-        if real.get_bits_log2() == 6 {
-            Some(Self(real.0, real.2))
-        } else {
-            None
-        }
+        if real.get_bits_log2() == 6 { Some(Self(real.0, real.2)) } else { None }
     }
     fn into_real(self) -> VFReg {
         VFReg(self.0, SubRegIndex::new(6, 0), self.1)

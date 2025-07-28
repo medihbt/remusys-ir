@@ -24,11 +24,7 @@ pub enum MirCondFlag {
 
 impl MirCondFlag {
     pub fn from_cmp_cond(cond: CmpCond) -> Self {
-        let signed = if cond.is_float() {
-            true
-        } else {
-            cond.is_signed_ordered()
-        };
+        let signed = if cond.is_float() { true } else { cond.is_signed_ordered() };
         #[rustfmt::skip]
         return match cond.get_basic_cond() {
             CmpCond::LT => if signed { Self::LT } else { Self::CC },

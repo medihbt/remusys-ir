@@ -23,10 +23,7 @@ pub struct RcfgPerBlock {
 
 impl RcfgPerBlock {
     pub fn new(block: BlockRef) -> Self {
-        Self {
-            block,
-            preds: RefCell::new(Vec::new()),
-        }
+        Self { block, preds: RefCell::new(Vec::new()) }
     }
     pub fn new_null() -> Self {
         Self::new(BlockRef::new_null())
@@ -71,9 +68,7 @@ pub struct RcfgAlloc {
 
 impl RcfgAlloc {
     pub fn new_with_capacity(block: usize) -> Self {
-        Self {
-            per_bb: vec![RcfgPerBlock::new(BlockRef::new_null()); block],
-        }
+        Self { per_bb: vec![RcfgPerBlock::new(BlockRef::new_null()); block] }
     }
     pub fn alloc_node(&mut self, block: BlockRef) {
         let per_bb = &mut self.per_bb;

@@ -145,17 +145,10 @@ impl TerminatorInst for Br {
     fn collect_jump_blocks_dedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
         let if_true = self.if_true.get_block(alloc_jt);
         let if_false = self.if_false.get_block(alloc_jt);
-        if if_true == if_false {
-            vec![if_true]
-        } else {
-            vec![if_true, if_false]
-        }
+        if if_true == if_false { vec![if_true] } else { vec![if_true, if_false] }
     }
     fn collect_jump_blocks_nodedup(&self, alloc_jt: &Slab<JumpTargetData>) -> Vec<BlockRef> {
-        vec![
-            self.if_true.get_block(alloc_jt),
-            self.if_false.get_block(alloc_jt),
-        ]
+        vec![self.if_true.get_block(alloc_jt), self.if_false.get_block(alloc_jt)]
     }
 }
 impl TerminatorInst for Switch {
@@ -248,9 +241,7 @@ impl Ret {
     pub fn new_raw(module: &Module, ret_ty: ValTypeID) -> (InstDataCommon, Self) {
         let mut common =
             InstDataCommon::new(Opcode::Ret, ret_ty, &mut module.borrow_use_alloc_mut());
-        let mut ret = Self {
-            retval: UseRef::new_null(),
-        };
+        let mut ret = Self { retval: UseRef::new_null() };
         ret.build_operands(&mut common, &mut module.borrow_use_alloc_mut());
         (common, ret)
     }

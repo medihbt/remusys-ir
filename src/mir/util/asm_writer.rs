@@ -26,10 +26,7 @@ struct GlobalWriteStatus {
 
 impl<'a> AsmWriter<'a> {
     pub fn new(std_writer: &'a mut dyn std::io::Write) -> Self {
-        Self {
-            std_writer,
-            ident_level: 0,
-        }
+        Self { std_writer, ident_level: 0 }
     }
     pub fn write(&mut self, content: &str) -> std::io::Result<()> {
         for _ in 0..self.ident_level {
@@ -66,10 +63,8 @@ impl<'a> Write for AsmWriter<'a> {
 
 impl<'a> AsmWriter<'a> {
     pub fn write_module(&mut self, module: &MirModule) {
-        let mut global_status = GlobalWriteStatus {
-            last_section: Section::None,
-            last_align_log2: 0,
-        };
+        let mut global_status =
+            GlobalWriteStatus { last_section: Section::None, last_align_log2: 0 };
 
         let mut has_main: bool = false;
         let mut extern_globals = Vec::new();

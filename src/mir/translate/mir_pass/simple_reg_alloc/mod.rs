@@ -18,6 +18,10 @@ use crate::{
 use slab::Slab;
 use std::{cell::Cell, collections::VecDeque, rc::Rc};
 
+mod regalloc_lower_mir_ldrlit;
+mod regalloc_lower_movs;
+mod regalloc_lower_inst;
+
 /// 极其简单的寄存器分配算法 -- 每个虚拟寄存器都对应一个栈空间位置,
 /// 所有带虚拟寄存器操作的指令都要配套一些 load and store 指令来实现。
 ///
@@ -77,35 +81,12 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
     let mut stores_after = VecDeque::new();
     for &(block_ref, inst_ref) in &vreg_info.relative_insts {
         let inst = inst_ref.to_slabref_unwrap(&allocs.inst);
-        let deletes_orig = match inst {
-            MirInst::Una64R(una64_r) if una64_r.opcode_is(MirOP::Mov64R) => {
-                let dst = una64_r.get_dst();
-                let src = una64_r.get_src();
-                if !dst.same_pos_as(src) {
-                    make_loads_and_stores_for_mov(
-                        func,
-                        &vreg_info,
-                        &mut loads_before,
-                        &mut stores_after,
-                        inst,
-                        dst,
-                        src,
-                    )
-                } else {
-                    // 如果源寄存器和目标寄存器是同一个寄存器, 则删除原指令
-                    true
-                }
-            }
-            _ => {
-                make_loads_stores_for_ordinary_insts(
-                    &vreg_info,
-                    &mut loads_before,
-                    &mut stores_after,
-                    inst,
-                );
-                false
-            }
-        };
+        let deletes_orig = regalloc_lower_inst::regalloc_lower_a_mir_inst(
+            &vreg_info,
+            &mut loads_before,
+            &mut stores_after,
+            inst,
+        );
         // 在原指令前添加 load 指令, 在原指令后添加 store 指令.
         while let Some(ldr) = loads_before.pop_front() {
             let new_inst = MirInstRef::from_alloc(&mut allocs.inst, ldr);
@@ -132,95 +113,6 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
     }
 }
 
-fn make_loads_and_stores_for_mov(
-    func: &MirFunc,
-    vreg_info: &SpillVRegsResult,
-    loads_before: &mut VecDeque<MirInst>,
-    stores_after: &mut VecDeque<MirInst>,
-    inst: &MirInst,
-    dst: GPReg,
-    src: GPReg,
-) -> bool {
-    let dst_virtual = dst.is_virtual();
-    let src_virtual = src.is_virtual();
-
-    let dst = GPR64::from_real(dst);
-    let src = GPR64::from_real(src);
-    match (dst_virtual, src_virtual) {
-        (true, true) => {
-            make_loads_stores_for_ordinary_insts(vreg_info, loads_before, stores_after, inst);
-            false
-        }
-        (true, false) => {
-            // 从物理寄存器存储到虚拟寄存器 -- 如果虚拟寄存器不是栈位置,
-            // 则把原指令替换成 store 指令.
-            if func.borrow_inner().stack_layout.vreg_is_stackpos(dst) {
-                panic!(
-                    "Cannot spill physical register to virtual register that is not a stack position"
-                );
-            }
-            let stackpos = vreg_info
-                .find_stackpos(RegOperand::from(dst))
-                .expect("Failed to find stack position for virtual register");
-            let store_inst =
-                StoreGr64Base::new(MirOP::StrGr64Base, src, stackpos, ImmLSP64::new(0));
-            stores_after.push_back(store_inst.into_mir());
-            // 删除原指令
-            true
-        }
-        (false, true) => {
-            // 从虚拟寄存器加载到物理寄存器 -- 如果虚拟寄存器不是栈位置,
-            // 则把原指令替换成 load 指令.
-            if func.borrow_inner().stack_layout.vreg_is_stackpos(src) {
-                // 如果虚拟寄存器是栈位置, 则不需要加载.
-                false
-            } else {
-                let stackpos = vreg_info
-                    .find_stackpos(RegOperand::from(src))
-                    .expect("Failed to find stack position for virtual register");
-                let load_inst =
-                    LoadGr64Base::new(MirOP::LdrGr64Base, dst, stackpos, ImmLSP64::new(0));
-                loads_before.push_back(load_inst.into_mir());
-                // 删除原指令
-                true
-            }
-        }
-        (false, false) => false,
-    }
-}
-
-fn make_loads_stores_for_ordinary_insts(
-    vreg_info: &SpillVRegsResult,
-    loads_before: &mut VecDeque<MirInst>,
-    stores_after: &mut VecDeque<MirInst>,
-    inst: &MirInst,
-) {
-    // 下面的寄存器作为操作数使用的临时寄存器, 需要在指令前后添加 load/store 指令.
-    // * `X8-X15`, `D8-D15`: 按照操作数分布分配
-    let mut curr_used_gpr = 8;
-    let mut curr_used_fpr = 8;
-    for operand in inst.in_operands() {
-        let (ldr_inst, str_inst) =
-            fetch_load_store_pair(vreg_info, &mut curr_used_gpr, &mut curr_used_fpr, operand);
-        if let Some(ldr) = ldr_inst {
-            loads_before.push_back(ldr);
-        }
-        if let Some(str) = str_inst {
-            stores_after.push_back(str);
-        }
-    }
-    for operand in inst.out_operands() {
-        let (ldr_inst, str_inst) =
-            fetch_load_store_pair(vreg_info, &mut curr_used_gpr, &mut curr_used_fpr, operand);
-        if let Some(ldr) = ldr_inst {
-            loads_before.push_back(ldr);
-        }
-        if let Some(str) = str_inst {
-            stores_after.push_back(str);
-        }
-    }
-}
-
 fn fetch_load_store_pair(
     vreg_info: &SpillVRegsResult,
     curr_used_gpr: &mut u32,
@@ -237,16 +129,10 @@ fn fetch_load_store_pair(
     };
     let (ldr_inst, str_inst) =
         build_load_store_for_stackpos(curr_used_gpr, curr_used_fpr, operand, vreg, stackpos);
-    let ldr_inst = if vreg.get_use_flags().contains(RegUseFlags::USE) {
-        Some(ldr_inst)
-    } else {
-        None
-    };
-    let str_inst = if vreg.get_use_flags().contains(RegUseFlags::DEF) {
-        Some(str_inst)
-    } else {
-        None
-    };
+    let ldr_inst =
+        if vreg.get_use_flags().contains(RegUseFlags::USE) { Some(ldr_inst) } else { None };
+    let str_inst =
+        if vreg.get_use_flags().contains(RegUseFlags::DEF) { Some(str_inst) } else { None };
     (ldr_inst, str_inst)
 }
 
@@ -301,13 +187,13 @@ fn build_load_store_for_stackpos(
     }
 }
 
-struct SpillVRegsResult {
+pub struct SpillVRegsResult {
     stackpos_map: Vec<(RegOperand, GPR64)>,
     relative_insts: Vec<(MirBlockRef, MirInstRef)>,
 }
 
 impl SpillVRegsResult {
-    fn new(func: &MirFunc, alloc_block: &Slab<MirBlock>, alloc_inst: &Slab<MirInst>) -> Self {
+    pub fn new(func: &MirFunc, alloc_block: &Slab<MirBlock>, alloc_inst: &Slab<MirInst>) -> Self {
         let mut inner = func.borrow_inner_mut();
         // 大概需要映射这么多虚拟寄存器.
         // 实际上, 有一部分类型为 GPR64 的虚拟寄存器表示的是局部变量在栈帧上的位置,
@@ -339,26 +225,22 @@ impl SpillVRegsResult {
         });
         let mut stackpos_map = Vec::with_capacity(vregs.len());
         for vreg in vregs {
-            let MirFuncInner {
-                stack_layout,
-                vreg_alloc,
-                ..
-            } = &mut *inner;
+            let MirFuncInner { stack_layout, vreg_alloc, .. } = &mut *inner;
             let stackpos_reg = {
                 let stack_item = stack_layout.add_spilled_virtreg_variable(vreg, vreg_alloc);
                 stack_item.stackpos_reg
             };
             stackpos_map.push((vreg, stackpos_reg));
         }
-        Self {
-            stackpos_map,
-            relative_insts,
-        }
+        Self { stackpos_map, relative_insts }
     }
 
-    fn find_stackpos(&self, vreg: RegOperand) -> Option<GPR64> {
+    fn find_stackpos<T: Clone>(&self, vreg: T) -> Option<GPR64>
+    where
+        RegOperand: From<T>,
+    {
         for &(key, stackpos) in self.stackpos_map.iter() {
-            if key.same_pos_as(vreg) {
+            if key.same_pos_as(vreg.clone()) {
                 return Some(stackpos);
             }
         }
@@ -399,5 +281,31 @@ impl SpillVRegsResult {
             vregs.push(vreg);
         }
         true
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SRATmpRegAlloc(u8, u8);
+
+impl SRATmpRegAlloc {
+    pub fn new() -> Self {
+        Self(8, 8) // 从 X9 + D9 开始分配临时寄存器
+    }
+
+    pub fn alloc_gpr64(&mut self) -> GPR64 {
+        self.0 += 1;
+        GPR64::new(RegID::Phys(self.0 as u32))
+    }
+    pub fn alloc_gpr32(&mut self) -> GPR32 {
+        self.0 += 1;
+        GPR32::new(RegID::Phys(self.0 as u32))
+    }
+    pub fn alloc_fpr64(&mut self) -> FPR64 {
+        self.1 += 1;
+        FPR64::new(RegID::Phys(self.0 as u32))
+    }
+    pub fn alloc_fpr32(&mut self) -> FPR32 {
+        self.1 += 1;
+        FPR32::new(RegID::Phys(self.0 as u32))
     }
 }

@@ -186,11 +186,7 @@ impl MirGlobalItems {
             let global = ir_module.get_global(gref);
             let name = global.get_name().to_string();
             let ty = global.get_stored_pointee_type();
-            let section = if global.is_readonly() {
-                Section::RoData
-            } else {
-                Section::Data
-            };
+            let section = if global.is_readonly() { Section::RoData } else { Section::Data };
             debug!("Translating extern variable: {gref:?} name {name} section {section:?}");
             let (mir_ref, _) = mir_builder.extern_variable(name, section, ty, &ir_module.type_ctx);
             all_globals.push((gref, mir_ref));
@@ -232,11 +228,7 @@ impl MirGlobalItems {
                 &mut mir_builder.mir_module.borrow_alloc_block_mut(),
             );
             let (mir_ref, rc) = mir_builder.push_func(mir_func, false);
-            funcs.push(MirFuncInfo {
-                key: gref,
-                mir: mir_ref.clone(),
-                rc,
-            });
+            funcs.push(MirFuncInfo { key: gref, mir: mir_ref.clone(), rc });
             all_globals.push((gref, mir_ref));
         }
         for &gref in statistics.global_consts() {

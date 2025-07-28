@@ -1588,6 +1588,120 @@ pub fn fmt_load_f32_literal(
     load_f32_literal.get_from().fmt_asm(formatter)
 }
 
+// ===== MIR Load & Store literal instructions =====
+
+pub fn fmt_mir_ldrlit_g64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_ldrlit_g64: &MirLdrLitG64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_ldrlit_g64.get_dst().fmt_asm(formatter)?;
+    write!(formatter, " from ")?;
+    mir_ldrlit_g64.get_src().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_ldrlit_g64.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_ldrlit_g32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_ldrlit_g32: &MirLdrLitG32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_ldrlit_g32.get_dst().fmt_asm(formatter)?;
+    write!(formatter, " from ")?;
+    mir_ldrlit_g32.get_src().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_ldrlit_g32.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_ldrlit_f64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_ldrlit_f64: &MirLdrLitF64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_ldrlit_f64.get_dst().fmt_asm(formatter)?;
+    write!(formatter, " from ")?;
+    mir_ldrlit_f64.get_src().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_ldrlit_f64.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_ldrlit_f32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_ldrlit_f32: &MirLdrLitF32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_ldrlit_f32.get_dst().fmt_asm(formatter)?;
+    write!(formatter, " from ")?;
+    mir_ldrlit_f32.get_src().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_ldrlit_f32.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_strlit_g64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_strlit_g64: &MirStrLitG64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_strlit_g64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    mir_strlit_g64.get_to().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_strlit_g64.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_strlit_g32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_strlit_g32: &MirStrLitG32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_strlit_g32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    mir_strlit_g32.get_to().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_strlit_g32.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_strlit_f64(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_strlit_f64: &MirStrLitF64,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_strlit_f64.get_rd().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    mir_strlit_f64.get_to().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_strlit_f64.get_tmp_addr().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_strlit_f32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    mir_strlit_f32: &MirStrLitF32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    mir_strlit_f32.get_rd().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    mir_strlit_f32.get_to().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    mir_strlit_f32.get_tmp_addr().fmt_asm(formatter)
+}
+
 // ===== Load Constant instructions =====
 pub fn fmt_load_const64(
     formatter: &mut FuncFormatContext,

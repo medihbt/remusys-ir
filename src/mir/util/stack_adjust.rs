@@ -27,17 +27,9 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub enum MirSpAdjust {
     /// 减少栈指针, 需要指定减少的字节数
-    SubSP {
-        delta: u32,
-        sub_sp: MirInstRef,
-        add_sp: MirInstRef,
-    },
+    SubSP { delta: u32, sub_sp: MirInstRef, add_sp: MirInstRef },
     /// 保存寄存器, 不到最后不知道要预留多少空间
-    SaveRegs {
-        regset: MirPhysRegSet,
-        save_reg: MirInstRef,
-        restore_reg: MirInstRef,
-    },
+    SaveRegs { regset: MirPhysRegSet, save_reg: MirInstRef, restore_reg: MirInstRef },
     /// 什么都不做, 仅仅是为了占位
     NOP,
 }
@@ -57,17 +49,10 @@ impl MirSpAdjust {
     pub fn get_inst_range(&self) -> Option<SlabListRange<MirInstRef>> {
         let (head, tail) = match self {
             MirSpAdjust::SubSP { sub_sp, add_sp, .. } => (*sub_sp, *add_sp),
-            MirSpAdjust::SaveRegs {
-                save_reg,
-                restore_reg,
-                ..
-            } => (*save_reg, *restore_reg),
+            MirSpAdjust::SaveRegs { save_reg, restore_reg, .. } => (*save_reg, *restore_reg),
             MirSpAdjust::NOP => return None, // 什么都不做, 没有指令范围
         };
-        Some(SlabListRange {
-            node_head: head,
-            node_tail: tail,
-        })
+        Some(SlabListRange { node_head: head, node_tail: tail })
     }
 }
 
@@ -104,12 +89,7 @@ impl MirSpAdjustNode {
     }
 
     fn do_replace_saved_regs(&self, saved_regs: MirPhysRegSet, alloc_inst: &Slab<MirInst>) {
-        let MirSpAdjust::SaveRegs {
-            regset,
-            save_reg,
-            restore_reg,
-        } = self.adjust.get()
-        else {
+        let MirSpAdjust::SaveRegs { regset, save_reg, restore_reg } = self.adjust.get() else {
             return;
         };
         if regset == saved_regs {
@@ -117,11 +97,8 @@ impl MirSpAdjustNode {
             return;
         }
 
-        self.adjust.set(MirSpAdjust::SaveRegs {
-            regset: saved_regs,
-            save_reg,
-            restore_reg,
-        });
+        self.adjust
+            .set(MirSpAdjust::SaveRegs { regset: saved_regs, save_reg, restore_reg });
 
         let MirInst::MirSaveRegs(save_reg) = save_reg.to_slabref_unwrap(alloc_inst) else {
             panic!("Expected MirSaveRegs, found {:?}", save_reg);
@@ -275,12 +252,7 @@ impl MirSpAdjustTree {
         let mut last_regsave = None;
         for index in 0..nodes.len() {
             let node = &nodes[index];
-            let MirSpAdjust::SaveRegs {
-                save_reg,
-                restore_reg,
-                regset,
-            } = node.adjust.get()
-            else {
+            let MirSpAdjust::SaveRegs { save_reg, restore_reg, regset } = node.adjust.get() else {
                 continue; // 不是保存寄存器的调整, 跳过
             };
 
@@ -318,19 +290,10 @@ impl MirSpAdjustTree {
     ) {
         let (bb, regset, save, mut restore, mut new_children) = {
             let node0 = std::mem::take(&mut interval[0]);
-            let MirSpAdjust::SaveRegs {
-                regset,
-                save_reg,
-                restore_reg,
-            } = node0.adjust.get()
-            else {
+            let MirSpAdjust::SaveRegs { regset, save_reg, restore_reg } = node0.adjust.get() else {
                 panic!("Expected SaveRegs adjustment, found {:?}", node0.adjust);
             };
-            let MirSpAdjustNode {
-                block,
-                mut children,
-                ..
-            } = node0;
+            let MirSpAdjustNode { block, mut children, .. } = node0;
             children.reserve(
                 interval
                     .iter()
@@ -342,12 +305,7 @@ impl MirSpAdjustTree {
         };
 
         for node in &mut interval[1..] {
-            let MirSpAdjust::SaveRegs {
-                save_reg,
-                restore_reg,
-                ..
-            } = node.adjust.get()
-            else {
+            let MirSpAdjust::SaveRegs { save_reg, restore_reg, .. } = node.adjust.get() else {
                 panic!("Expected SaveRegs adjustment, found {:?}", node.adjust);
             };
             let MirSpAdjustNode { children, .. } = std::mem::take(node);
@@ -549,11 +507,7 @@ impl AdjTreeBuilder {
             let block = node.block.get();
             let adjust = node.adjust.get();
             let children = Self::build_one_block_of_nodes(node.children.take());
-            result.push(MirSpAdjustNode {
-                block,
-                adjust: Cell::new(adjust),
-                children,
-            });
+            result.push(MirSpAdjustNode { block, adjust: Cell::new(adjust), children });
         }
         result
     }

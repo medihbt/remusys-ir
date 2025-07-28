@@ -125,11 +125,7 @@ impl IRBuilder {
     }
 
     pub fn get_focus(&self) -> Option<IRBuilderFocus> {
-        let IRBuilderExpandedFocus {
-            function,
-            block,
-            inst,
-        } = self.focus.clone();
+        let IRBuilderExpandedFocus { function, block, inst } = self.focus.clone();
 
         if function.is_null() {
             None

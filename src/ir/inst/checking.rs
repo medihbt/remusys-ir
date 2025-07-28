@@ -10,11 +10,7 @@ pub(super) fn check_type_match(
     required: ValTypeID,
     current: ValTypeID,
 ) -> Result<(), TypeMismatchError> {
-    if required != current {
-        Err(TypeMismatchError::IDNotEqual(required, current))
-    } else {
-        Ok(())
-    }
+    if required != current { Err(TypeMismatchError::IDNotEqual(required, current)) } else { Ok(()) }
 }
 
 pub(super) fn check_type_kind_match(

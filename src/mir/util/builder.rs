@@ -42,18 +42,11 @@ impl MirFocus {
     }
     pub fn to_data(self) -> MirFocusData {
         match self {
-            MirFocus::Global => MirFocusData {
-                func: None,
-                block: MirBlockRef::new_null(),
-            },
-            MirFocus::Func(func) => MirFocusData {
-                func: Some(func),
-                block: MirBlockRef::new_null(),
-            },
-            MirFocus::Block(func, block) => MirFocusData {
-                func: Some(func),
-                block: block,
-            },
+            MirFocus::Global => MirFocusData { func: None, block: MirBlockRef::new_null() },
+            MirFocus::Func(func) => {
+                MirFocusData { func: Some(func), block: MirBlockRef::new_null() }
+            }
+            MirFocus::Block(func, block) => MirFocusData { func: Some(func), block: block },
         }
     }
 }
@@ -66,10 +59,7 @@ pub struct MirBuilder<'a> {
 
 impl<'a> MirBuilder<'a> {
     pub fn new(mir_module: &'a mut MirModule) -> Self {
-        MirBuilder {
-            mir_module,
-            focus: MirFocus::Global.to_data(),
-        }
+        MirBuilder { mir_module, focus: MirFocus::Global.to_data() }
     }
 
     pub fn get_focus(&self) -> MirFocus {

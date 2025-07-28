@@ -129,12 +129,8 @@ impl CriticalEdges {
                 self.info.last_mut().unwrap().edge_right += 1;
             } else {
                 // Otherwise, create a new edge info
-                self.info.push(EdgeCriticalInfo {
-                    from,
-                    to,
-                    edge_left,
-                    edge_right: edge_left + 1,
-                });
+                self.info
+                    .push(EdgeCriticalInfo { from, to, edge_left, edge_right: edge_left + 1 });
                 self.edges.push(jt);
                 edge_left += 1;
             }
@@ -142,10 +138,7 @@ impl CriticalEdges {
     }
 
     fn iter(&self) -> CriticalEdgeIter {
-        CriticalEdgeIter {
-            edges: self,
-            index: -1,
-        }
+        CriticalEdgeIter { edges: self, index: -1 }
     }
 
     fn break_one(ir_module: &Module, edge: CriticalEdgeGroup, func: GlobalRef) -> BlockRef {
@@ -221,11 +214,7 @@ impl<'a> Iterator for CriticalEdgeIter<'a> {
         }
         let edge_info = &self.edges.info[self.index as usize];
         let edges = &self.edges.edges[edge_info.edge_left as usize..edge_info.edge_right as usize];
-        Some(CriticalEdgeGroup {
-            from: edge_info.from,
-            to: edge_info.to,
-            edges,
-        })
+        Some(CriticalEdgeGroup { from: edge_info.from, to: edge_info.to, edges })
     }
 }
 

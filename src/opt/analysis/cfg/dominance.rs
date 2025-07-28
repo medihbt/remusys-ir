@@ -249,12 +249,7 @@ impl DominatorTree {
         }
 
         let root = dfs_seq.get_root();
-        Self {
-            dfs_seq,
-            nodes: nodes,
-            root,
-            is_postdom,
-        }
+        Self { dfs_seq, nodes: nodes, root, is_postdom }
     }
 
     fn _build_semidom_from_snapshot<'a>(
@@ -286,11 +281,7 @@ impl DominatorTree {
                     }
                 });
 
-                res = if v < u {
-                    res.min(v)
-                } else {
-                    res.min(semidom[best_candidate[v]])
-                };
+                res = if v < u { res.min(v) } else { res.min(semidom[best_candidate[v]]) };
             }
             semidom[u] = res;
             let parent = self.dfs_seq.dfn_get_parent_dfn(u).unwrap();

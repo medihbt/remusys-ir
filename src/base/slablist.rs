@@ -17,31 +17,17 @@ pub struct SlabRefListNodeHead {
 
 impl SlabRefListNodeHead {
     pub fn insert_prev(self, prev: Option<usize>) -> Self {
-        Self {
-            prev: prev.unwrap_or(usize::MAX),
-            next: self.next,
-        }
+        Self { prev: prev.unwrap_or(usize::MAX), next: self.next }
     }
     pub fn insert_next(self, next: Option<usize>) -> Self {
-        Self {
-            prev: self.prev,
-            next: next.unwrap_or(usize::MAX),
-        }
+        Self { prev: self.prev, next: next.unwrap_or(usize::MAX) }
     }
 
     pub fn get_prev(&self) -> Option<usize> {
-        if self.prev == usize::MAX {
-            None
-        } else {
-            Some(self.prev)
-        }
+        if self.prev == usize::MAX { None } else { Some(self.prev) }
     }
     pub fn get_next(&self) -> Option<usize> {
-        if self.next == usize::MAX {
-            None
-        } else {
-            Some(self.next)
-        }
+        if self.next == usize::MAX { None } else { Some(self.next) }
     }
 }
 
@@ -171,10 +157,7 @@ pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
 
 impl SlabRefListNodeHead {
     pub fn new() -> Self {
-        Self {
-            prev: usize::MAX,
-            next: usize::MAX,
-        }
+        Self { prev: usize::MAX, next: usize::MAX }
     }
 }
 
@@ -404,10 +387,7 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
     }
 
     pub fn load_range(&self) -> SlabListRange<T> {
-        SlabListRange {
-            node_head: self._head.clone(),
-            node_tail: self._tail.clone(),
-        }
+        SlabListRange { node_head: self._head.clone(), node_tail: self._tail.clone() }
     }
     pub fn load_range_and_length(&self) -> (SlabListRange<T>, usize) {
         (self.load_range(), self._size.get())
@@ -434,10 +414,7 @@ pub struct SlabListRange<T: SlabRefListNodeRef> {
 
 impl<T: SlabRefListNodeRef> SlabListRange<T> {
     pub fn view<'a>(&'a self, slab: &'a Slab<T::RefObject>) -> SlabRefListView<'a, T> {
-        SlabRefListView {
-            _list_range: self.clone(),
-            _slab_alloc: slab,
-        }
+        SlabRefListView { _list_range: self.clone(), _slab_alloc: slab }
     }
 
     pub fn calc_length(&self, slab: &Slab<T::RefObject>) -> usize {
@@ -487,10 +464,7 @@ where
             .get_next_ref(self._slab_alloc)
             .expect("Head node should have a next node")
             .get_handle();
-        SlabRefListIterator {
-            _current: Some(current),
-            _slab: &self._slab_alloc,
-        }
+        SlabRefListIterator { _current: Some(current), _slab: &self._slab_alloc }
     }
 }
 
@@ -526,10 +500,7 @@ mod testing {
 
     impl SlabRefListNode for TestNode {
         fn new_guide() -> Self {
-            Self {
-                node_head: Cell::new(SlabRefListNodeHead::new()),
-                number: 0,
-            }
+            Self { node_head: Cell::new(SlabRefListNodeHead::new()), number: 0 }
         }
         fn load_node_head(&self) -> SlabRefListNodeHead {
             self.node_head.get()
@@ -541,10 +512,7 @@ mod testing {
 
     impl TestNode {
         fn new(number: usize) -> Self {
-            Self {
-                node_head: Cell::new(SlabRefListNodeHead::new()),
-                number,
-            }
+            Self { node_head: Cell::new(SlabRefListNodeHead::new()), number }
         }
     }
 

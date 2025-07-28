@@ -1,6 +1,7 @@
 mod lower_calls;
 mod lower_copy;
 mod lower_ldr_const;
+mod lower_mir_ldst_addr;
 mod lower_returns;
 
 use crate::{
@@ -18,7 +19,7 @@ pub use lower_copy::*;
 pub use lower_ldr_const::*;
 pub use lower_returns::lower_mir_ret;
 
-fn lower_an_inst(
+fn pre_lower_an_inst(
     inst: &MirInst,
     parent_func: &MirFunc,
     out_actions: &mut VecDeque<LowerInstAction>,
@@ -49,7 +50,11 @@ fn lower_an_inst(
     }
 }
 
-pub fn lower_a_function(module: &MirModule, func: &MirFunc, adj_tree_builder: &mut AdjTreeBuilder) {
+pub fn pre_lower_a_function(
+    module: &MirModule,
+    func: &MirFunc,
+    adj_tree_builder: &mut AdjTreeBuilder,
+) {
     let mut allocs = module.allocs.borrow_mut();
     let mut insts_to_process = Vec::new();
 
@@ -75,7 +80,7 @@ pub fn lower_a_function(module: &MirModule, func: &MirFunc, adj_tree_builder: &m
     let mut out_actions = VecDeque::new();
     for (iref, inst, parent_bb) in insts_to_process {
         adj_tree_builder.focus_to_block(parent_bb);
-        lower_an_inst(&inst, func, &mut out_actions);
+        pre_lower_an_inst(&inst, func, &mut out_actions);
         while let Some(action) = out_actions.pop_front() {
             let new_inst = adj_tree_builder.exec(action, &mut allocs.inst);
             parent_bb
@@ -91,7 +96,7 @@ pub fn lower_a_function(module: &MirModule, func: &MirFunc, adj_tree_builder: &m
     }
 }
 
-pub fn lower_a_module(module: &MirModule) -> MirSpAdjustTree {
+pub fn pre_lower_a_module(module: &MirModule) -> MirSpAdjustTree {
     let mut funcs = Vec::new();
     for items in &module.items {
         match &*items.data_from_module(module) {
@@ -106,7 +111,13 @@ pub fn lower_a_module(module: &MirModule) -> MirSpAdjustTree {
     }
     let mut adj_tree_builder = AdjTreeBuilder::new();
     for func in funcs {
-        lower_a_function(module, &func, &mut adj_tree_builder);
+        pre_lower_a_function(module, &func, &mut adj_tree_builder);
     }
     adj_tree_builder.build()
+}
+
+pub fn post_lower_a_module(module: &mut MirModule) {
+    for func in module.dump_all_funcdefs() {
+        lower_mir_ldst_addr::post_lower_a_function(&func, module);
+    }
 }

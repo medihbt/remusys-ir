@@ -113,12 +113,7 @@ impl CopyMap {
                     InstData::Phi(_, phi) => phi,
                     _ => break,
                 };
-                for PhiOperand {
-                    from_bb,
-                    from_bb_use: _,
-                    from_value_use,
-                } in &*phi.get_from_all()
-                {
+                for PhiOperand { from_bb, from_bb_use: _, from_value_use } in &*phi.get_from_all() {
                     let from_value = from_value_use.get_operand(&alloc_use);
                     self.insts.push(CopyInstNode {
                         bb_to: bb,

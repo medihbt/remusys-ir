@@ -31,11 +31,14 @@ pub fn translate_ir_to_mir(ir_module: &Rc<Module>) -> MirModule {
     eprintln!("Generated MIR module: {name}");
 
     // Perform additional MIR passes
-    let sp_adjustments = mir_pass::inst_lower::lower_a_module(&mir_module);
+    let sp_adjustments = mir_pass::inst_lower::pre_lower_a_module(&mir_module);
     eprintln!("Lowered MIR module: {name}");
 
     mir_pass::simple_reg_alloc::roughly_allocate_register(&mut mir_module);
     eprintln!("Roughly allocated registers in MIR module: {name}");
+
+    mir_pass::inst_lower::post_lower_a_module(&mut mir_module);
+    eprintln!("Post-lowered MIR module: {name}");
 
     // // Final pass: lower stack operations
     mir_pass::stack_lower::lower_stack_for_module(&mut mir_module, sp_adjustments);
