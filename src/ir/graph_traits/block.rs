@@ -25,10 +25,10 @@ impl IRGraphEdge for JumpTargetRef {
         module.borrow_jt_alloc()
     }
     fn graph_get_user_from_alloc(&self, alloc: &Slab<JumpTargetData>) -> TerminatorInstRef {
-        TerminatorInstRef(self.to_slabref_unwrap(alloc)._terminator.get())
+        TerminatorInstRef(self.to_data(alloc)._terminator.get())
     }
     fn graph_get_operand_from_alloc(&self, alloc: &Slab<JumpTargetData>) -> BlockRef {
-        self.to_slabref_unwrap(alloc).get_block()
+        self.to_data(alloc).get_block()
     }
 }
 
@@ -65,7 +65,7 @@ impl IRGraphNode for BlockRef {
         alloc_block: &Slab<BlockData>,
         alloc_inst: &Slab<InstData>,
     ) -> TerminatorInstRef {
-        self.to_slabref_unwrap(alloc_block)
+        self.to_data(alloc_block)
             .get_terminator_subref_from_alloc(alloc_inst)
             .unwrap()
     }

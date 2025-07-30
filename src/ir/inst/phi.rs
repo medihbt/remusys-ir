@@ -40,7 +40,7 @@ impl PhiOp {
 
     pub fn get_from_value(&self, from_bb: BlockRef, alloc_use: &Slab<UseData>) -> Option<ValueSSA> {
         self.get_from_use(from_bb)
-            .map(|u| u.to_slabref_unwrap(alloc_use).get_operand())
+            .map(|u| u.to_data(alloc_use).get_operand())
     }
 
     pub fn get_from_all(&self) -> Ref<[PhiOperand]> {

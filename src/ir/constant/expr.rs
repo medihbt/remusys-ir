@@ -53,7 +53,7 @@ impl ConstExprRef {
         module.get_expr(self.clone()).binary_is_zero(module)
     }
     pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<ConstExprData>) -> bool {
-        self.to_slabref_unwrap(alloc_expr)
+        self.to_data(alloc_expr)
             .binary_is_zero_from_alloc(alloc_expr)
     }
 }
@@ -115,7 +115,7 @@ pub trait IConstExprVisitor {
     fn read_struct(&self, struct_ref: ConstExprRef, struct_data: &Struct);
 
     fn expr_visitor_dispatch(&self, expr_ref: ConstExprRef, alloc_expr: &Slab<ConstExprData>) {
-        let expr_data = expr_ref.to_slabref_unwrap(alloc_expr);
+        let expr_data = expr_ref.to_data(alloc_expr);
         match expr_data {
             ConstExprData::Array(array) => self.read_array(expr_ref, array),
             ConstExprData::Struct(struct_data) => self.read_struct(expr_ref, struct_data),

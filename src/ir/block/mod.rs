@@ -6,8 +6,8 @@ use crate::{
     base::{
         NullableValue,
         slablist::{
-            SlabListRange, SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead,
-            SlabRefListNodeRef,
+            SlabListRange, SlabRefList, SlabListError, SlabListNode, SlabListNodeHead,
+            SlabListNodeRef,
         },
         slabref::SlabRef,
     },
@@ -45,25 +45,25 @@ impl BlockRef {
     }
 
     pub fn get_parent_func(self, alloc: &Slab<BlockData>) -> GlobalRef {
-        self.to_slabref_unwrap(alloc).get_parent_func()
+        self.to_data(alloc).get_parent_func()
     }
     pub fn module_get_parent_func(self, module: &Module) -> GlobalRef {
         self.get_parent_func(&module.borrow_value_alloc().alloc_block)
     }
 
     pub fn get_terminator(self, module: &Module) -> Option<InstRef> {
-        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().alloc_block)
             .get_termiantor(module)
     }
     pub fn get_terminator_subref(self, module: &Module) -> Option<TerminatorInstRef> {
-        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().alloc_block)
             .get_terminator_subref(module)
     }
     pub fn get_jump_targets<'a>(
         self,
         module: &'a Module,
     ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
-        self.to_slabref_unwrap(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().alloc_block)
             .get_jump_targets(module)
     }
     pub fn load_jump_targets(self, module: &Module) -> Option<SlabListRange<JumpTargetRef>> {
@@ -74,21 +74,21 @@ impl BlockRef {
         let alloc_value = module.borrow_value_alloc();
         let alloc_inst = &alloc_value.alloc_inst;
         let alloc_block = &alloc_value.alloc_block;
-        self.to_slabref_unwrap(alloc_block).has_phi(alloc_inst)
+        self.to_data(alloc_block).has_phi(alloc_inst)
     }
 }
 
-impl SlabRefListNodeRef for BlockRef {
+impl SlabListNodeRef for BlockRef {
     fn on_node_push_next(
         curr: Self,
         next: Self,
         alloc: &Slab<BlockData>,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         if curr == next {
-            return Err(SlabRefListError::RepeatedNode(next.get_handle()));
+            return Err(SlabListError::RepeatedNode(next.get_handle()));
         }
-        let self_parent = curr.to_slabref_unwrap(alloc).get_parent_func();
-        next.to_slabref_unwrap(alloc).set_parent_func(self_parent);
+        let self_parent = curr.to_data(alloc).get_parent_func();
+        next.to_data(alloc).set_parent_func(self_parent);
         Ok(())
     }
 
@@ -96,20 +96,20 @@ impl SlabRefListNodeRef for BlockRef {
         curr: Self,
         prev: Self,
         alloc: &Slab<BlockData>,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         if curr == prev {
-            Err(SlabRefListError::RepeatedNode(prev.get_handle()))
+            Err(SlabListError::RepeatedNode(prev.get_handle()))
         } else {
-            let self_parent = curr.to_slabref_unwrap(alloc).get_parent_func();
-            prev.to_slabref_unwrap(alloc).set_parent_func(self_parent);
+            let self_parent = curr.to_data(alloc).get_parent_func();
+            prev.to_data(alloc).set_parent_func(self_parent);
             Ok(())
         }
     }
 
-    fn on_node_unplug(curr: Self, alloc: &Slab<BlockData>) -> Result<(), SlabRefListError> {
-        let self_data = curr.to_slabref_unwrap(alloc);
+    fn on_node_unplug(curr: Self, alloc: &Slab<BlockData>) -> Result<(), SlabListError> {
+        let self_data = curr.to_data(alloc);
         if self_data.get_parent_func().is_null() {
-            Err(SlabRefListError::UnpluggedItemAttached(curr.get_handle()))
+            Err(SlabListError::UnpluggedItemAttached(curr.get_handle()))
         } else {
             self_data.set_parent_func(GlobalRef::new_null());
             Ok(())
@@ -126,14 +126,14 @@ pub struct BlockData {
 
 #[derive(Debug, Clone, Copy)]
 pub struct BlockDataInner {
-    pub(super) _node_head: SlabRefListNodeHead,
+    pub(super) _node_head: SlabListNodeHead,
     pub(super) _self_ref: BlockRef,
     pub(super) _parent_func: GlobalRef,
     pub(super) _id: usize,
 }
 
 impl BlockDataInner {
-    fn insert_node_head(mut self, node_head: SlabRefListNodeHead) -> Self {
+    fn insert_node_head(mut self, node_head: SlabListNodeHead) -> Self {
         self._node_head = node_head;
         self
     }
@@ -154,13 +154,13 @@ impl BlockDataInner {
     }
 }
 
-impl SlabRefListNode for BlockData {
+impl SlabListNode for BlockData {
     fn new_guide() -> Self {
         Self {
             instructions: SlabRefList::new_guide(),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
-                _node_head: SlabRefListNodeHead::new(),
+                _node_head: SlabListNodeHead::new(),
                 _self_ref: BlockRef::new_null(),
                 _parent_func: GlobalRef::new_null(),
                 _id: 0,
@@ -168,11 +168,11 @@ impl SlabRefListNode for BlockData {
         }
     }
 
-    fn load_node_head(&self) -> SlabRefListNodeHead {
+    fn load_node_head(&self) -> SlabListNodeHead {
         self._inner.get()._node_head
     }
 
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
         self._inner
             .get()
             .insert_node_head(node_head)
@@ -203,7 +203,7 @@ impl BlockData {
             Some(inst) => inst,
             None => return None,
         };
-        if back_inst.to_slabref_unwrap(alloc_inst).is_terminator() { Some(back_inst) } else { None }
+        if back_inst.to_data(alloc_inst).is_terminator() { Some(back_inst) } else { None }
     }
     pub fn get_terminator_subref_from_alloc(
         &self,
@@ -292,7 +292,7 @@ impl BlockData {
             .assign_to(&self._inner);
         let mut noderef = self.instructions._head;
         while noderef.is_nonnull() {
-            let inst = noderef.to_slabref_unwrap(alloc_inst);
+            let inst = noderef.to_data(alloc_inst);
             match inst {
                 InstData::ListGuideNode(_, bb) => bb.set(self_ref),
                 _ => {
@@ -352,7 +352,7 @@ impl BlockData {
         {
             let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
             while noderef != phi_node_end {
-                let inst = noderef.to_slabref_unwrap(alloc_inst);
+                let inst = noderef.to_data(alloc_inst);
                 if !inst.is_attached() {
                     panic!("`Phi` node is not attached to the block.");
                 }
@@ -372,7 +372,7 @@ impl BlockData {
         {
             let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
             while noderef.is_nonnull() {
-                let inst = noderef.to_slabref_unwrap(alloc_inst);
+                let inst = noderef.to_data(alloc_inst);
                 if inst.get_parent_bb() != Some(self_ref) {
                     panic!("Instruction is not attached to the block.");
                 }
@@ -389,7 +389,7 @@ impl BlockData {
             instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut().alloc_inst),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
-                _node_head: SlabRefListNodeHead::new(),
+                _node_head: SlabListNodeHead::new(),
                 _self_ref: BlockRef::new_null(),
                 _parent_func: GlobalRef::new_null(),
                 _id: 0,
@@ -404,7 +404,7 @@ impl BlockData {
         ret
     }
 
-    pub fn new_unreachable(module: &Module) -> Result<Self, SlabRefListError> {
+    pub fn new_unreachable(module: &Module) -> Result<Self, SlabListError> {
         let ret = Self::new_empty(module);
         let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
         let unreachable_inst = module.insert_inst(unreachable_inst);
@@ -415,7 +415,7 @@ impl BlockData {
         Ok(ret)
     }
 
-    pub fn new_return_zero(module: &Module, valtype: ValTypeID) -> Result<Self, SlabRefListError> {
+    pub fn new_return_zero(module: &Module, valtype: ValTypeID) -> Result<Self, SlabListError> {
         let ret_bb = Self::new_empty(module);
 
         let (ret_common, ret_inst) =

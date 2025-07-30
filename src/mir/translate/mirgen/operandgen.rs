@@ -15,7 +15,7 @@ use crate::{
             compound::MirSymbolOp,
             imm::{Imm32, Imm64, ImmFMov32, ImmFMov64, ImmKind, ImmLSP32, ImmLSP64},
             imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
-            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, SubRegIndex, VFReg},
+            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags, SubRegIndex},
         },
         translate::mirgen::{MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst},
     },
@@ -330,8 +330,8 @@ impl DispatchedReg {
     ) -> Result<Self, OperandMapError> {
         match operand_map.find_operand_no_constdata(value) {
             Ok(value) => match value {
-                MirOperand::GPReg(GPReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, false)),
-                MirOperand::VFReg(VFReg(id, si, uf)) => Ok(Self::from_reg_full(id, si, uf, true)),
+                MirOperand::GPReg(reg) => Ok(Self::from_reg(RegOperand::from(reg))),
+                MirOperand::VFReg(reg) => Ok(Self::from_reg(RegOperand::from(reg))),
                 MirOperand::Label(bb) => Ok(DispatchedReg::G64(Self::make_ldr_for_symbol(
                     MirSymbolOp::Label(bb),
                     vreg_alloc,

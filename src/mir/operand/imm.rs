@@ -80,6 +80,15 @@ impl Imm64 {
     pub fn new(value: u64, flags: ImmKind) -> Self {
         Self(value, flags)
     }
+    pub fn full(value: u64) -> Self {
+        Self(value, ImmKind::Full)
+    }
+    pub fn from_fp_bits(value: f64) -> Self {
+        Self(value.to_bits(), ImmKind::Full)
+    }
+    pub fn to_fp_bits(self) -> f64 {
+        f64::from_bits(self.0)
+    }
 
     pub fn get_value(&self) -> u64 {
         self.0
@@ -173,6 +182,22 @@ impl Debug for Imm32 {
 impl Imm32 {
     pub fn new(value: u32, flags: ImmKind) -> Self {
         Self(value, flags)
+    }
+    pub fn full(value: u32) -> Self {
+        Self(value, ImmKind::Full)
+    }
+    pub fn from_fp_bits(value: f32) -> Self {
+        Self(value.to_bits(), ImmKind::Full)
+    }
+    pub fn to_fp_bits(self) -> f32 {
+        f32::from_bits(self.0)
+    }
+
+    pub fn zext_to_imm64(self) -> Imm64 {
+        Imm64(self.0 as u64, ImmKind::Full)
+    }
+    pub fn sext_to_imm64(self) -> Imm64 {
+        Imm64(self.0 as i32 as u64, ImmKind::Full)
     }
 
     pub fn get_value(&self) -> u32 {
@@ -1106,11 +1131,11 @@ impl IMirSubOperand for ImmMovZNK {
         let (v, s) = if imm_traits::is_mov_imm(value) {
             (value as u16, 0)
         } else if imm_traits::is_mov_imm(value >> 16) {
-            (value as u16, 16)
+            ((value >> 16) as u16, 16)
         } else if imm_traits::is_mov_imm(value >> 32) {
-            (value as u16, 32)
+            ((value >> 32) as u16, 32)
         } else if imm_traits::is_mov_imm(value >> 48) {
-            (value as u16, 48)
+            ((value >> 48) as u16, 48)
         } else {
             return None;
         };
@@ -1148,6 +1173,18 @@ impl IMirSubOperand for ImmMovZNK {
 
 #[derive(Clone, Copy)]
 pub struct ImmFMov32(pub f32);
+
+impl TryFrom<f32> for ImmFMov32 {
+    type Error = &'static str;
+
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        if imm_traits::try_cast_f32_to_aarch8(value).is_some() {
+            Ok(Self(value))
+        } else {
+            Err("Invalid immediate value for FMov32 kind")
+        }
+    }
+}
 
 impl Debug for ImmFMov32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1242,6 +1279,18 @@ impl IMirSubOperand for ImmFMov32 {
 
 #[derive(Clone, Copy)]
 pub struct ImmFMov64(pub f64);
+
+impl TryFrom<f64> for ImmFMov64 {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if imm_traits::try_cast_f64_to_aarch8(value).is_some() {
+            Ok(Self(value))
+        } else {
+            Err("Invalid immediate value for FMov64 kind")
+        }
+    }
+}
 
 impl Debug for ImmFMov64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

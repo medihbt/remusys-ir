@@ -1,16 +1,18 @@
 use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
+    module::stack::MirStackLayout,
     operand::{
         IMirSubOperand,
         imm::{ImmLSP32, ImmLSP64},
         reg::*,
     },
-    translate::mir_pass::simple_reg_alloc::{SRATmpRegAlloc, SpillVRegsResult},
+    translate::mir_pass::simple_reg_alloc::{SRATmpRegAlloc, SpillVRegsError, SpillVRegsResult},
 };
 use std::collections::VecDeque;
 
 pub(super) fn lower_mov64r(
     vreg_info: &SpillVRegsResult,
+    stack: &MirStackLayout,
     loads_before: &mut VecDeque<MirInst>,
     stores_after: &mut VecDeque<MirInst>,
     mov_inst: &Una64R,
@@ -22,19 +24,33 @@ pub(super) fn lower_mov64r(
         // 如果源寄存器和目标寄存器是同一个寄存器, 则不需要做任何操作.
         return true;
     }
-    let dst_virtual = dst.is_virtual();
-    let src_virtual = src.is_virtual();
+    let mut dst_spilled = dst.is_virtual();
+    let mut src_spilled = src.is_virtual();
 
     let dst = GPR64::from_real(dst);
     let src = GPR64::from_real(src);
 
     let mut tmp_regalloc = SRATmpRegAlloc::new();
     let z64 = ImmLSP64(0);
-    match (dst_virtual, src_virtual) {
+
+    if dst_spilled && src_spilled {
+        dst_spilled = match vreg_info.find_stackpos_full(stack, dst) {
+            Ok(_) => true,
+            Err(SpillVRegsError::IsStackPos) => false,
+            Err(e) => panic!("Failed to find stack position for source register {dst:?}: {e:?}"),
+        };
+        src_spilled = match vreg_info.find_stackpos_full(stack, src) {
+            Ok(_) => true,
+            Err(SpillVRegsError::IsStackPos) => false,
+            Err(e) => panic!("Failed to find stack position for source register {src:?}: {e:?}"),
+        };
+    }
+
+    match (dst_spilled, src_spilled) {
         (true, true) => {
             let imr = tmp_regalloc.alloc_gpr64();
-            let src = vreg_info.find_stackpos(src).unwrap();
-            let dst = vreg_info.find_stackpos(dst).unwrap();
+            let src = vreg_info.findpos_full_unwrap(stack, src);
+            let dst = vreg_info.findpos_full_unwrap(stack, dst);
             let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, imr, src, z64);
             let str = StoreGr64Base::new(MirOP::StrGr64Base, imr, dst, z64);
             loads_before.push_back(ldr.into_mir());
@@ -42,13 +58,13 @@ pub(super) fn lower_mov64r(
             true
         }
         (true, false) => {
-            let dst = vreg_info.find_stackpos(dst).unwrap();
+            let dst = vreg_info.findpos_full_unwrap(stack, dst);
             let str = StoreGr64Base::new(MirOP::StrGr64Base, src, dst, z64);
             stores_after.push_back(str.into_mir());
             true
         }
         (false, true) => {
-            let src = vreg_info.find_stackpos(src).unwrap();
+            let src = vreg_info.findpos_full_unwrap(stack, src);
             let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, dst, src, z64);
             loads_before.push_back(ldr.into_mir());
             true

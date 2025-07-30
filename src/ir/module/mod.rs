@@ -70,6 +70,9 @@ impl Module {
         }
     }
 
+    pub fn get_value_alloc_mut(&mut self) -> &mut ModuleAllocatorInner {
+        self._alloc_value.get_mut()
+    }
     pub fn borrow_value_alloc<'a>(&'a self) -> Ref<'a, ModuleAllocatorInner> {
         self._alloc_value.borrow()
     }
@@ -77,6 +80,9 @@ impl Module {
         self._alloc_value.borrow_mut()
     }
 
+    pub fn get_use_alloc_mut(&mut self) -> &mut Slab<UseData> {
+        self._alloc_use.get_mut()
+    }
     pub fn borrow_use_alloc<'a>(&'a self) -> Ref<'a, Slab<UseData>> {
         self._alloc_use.borrow()
     }
@@ -84,6 +90,9 @@ impl Module {
         self._alloc_use.borrow_mut()
     }
 
+    pub fn get_jt_alloc_mut(&mut self) -> &mut Slab<JumpTargetData> {
+        self._alloc_jt.get_mut()
+    }
     pub fn borrow_jt_alloc<'a>(&'a self) -> Ref<'a, Slab<JumpTargetData>> {
         self._alloc_jt.borrow()
     }
@@ -117,7 +126,7 @@ impl Module {
             let id = inner.alloc_global.insert(data);
             let ret = GlobalRef::from_handle(id);
 
-            let ret_data = ret.to_slabref_unwrap(&inner.alloc_global);
+            let ret_data = ret.to_data(&inner.alloc_global);
             ret_data.get_common().self_ref.set(ret);
 
             // If this is a function, set its storage to the reference of this function.
@@ -138,7 +147,7 @@ impl Module {
             let alloc_block = &inner.alloc_block;
             let alloc_global = &inner.alloc_global;
 
-            ret.to_slabref_unwrap(alloc_global)
+            ret.to_data(alloc_global)
                 ._init_set_self_reference(alloc_block, ret);
         }
 
@@ -215,12 +224,12 @@ impl Module {
             let ret = InstRef::from_handle(id);
 
             // Modify the slab reference to point to this,
-            ret.to_slabref_unwrap_mut(&mut inner.alloc_inst)
+            ret.to_data_mut(&mut inner.alloc_inst)
                 ._inst_init_self_reference(ret, &self.borrow_use_alloc());
 
             // Modify the jump targets if this instruction is a terminator.
             let mut alloc_jt = self.borrow_jt_alloc_mut();
-            match ret.to_slabref_unwrap(&inner.alloc_inst) {
+            match ret.to_data(&inner.alloc_inst) {
                 InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut alloc_jt),
                 InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut alloc_jt),
                 InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut alloc_jt),
@@ -278,7 +287,7 @@ impl Module {
         // Modify the slab reference of its instructions to point to this.
         // Now the `parent_bb` of the instructions will not be `null` anymore.
         let inner = self.borrow_value_alloc();
-        ret.to_slabref_unwrap(&inner.alloc_block)
+        ret.to_data(&inner.alloc_block)
             .init_set_self_reference(ret, &inner.alloc_inst);
 
         /* Try add this handle as operand. */
@@ -291,11 +300,11 @@ impl Module {
 
     pub fn get_use(&self, use_ref: UseRef) -> Ref<UseData> {
         let inner = self.borrow_use_alloc();
-        Ref::map(inner, |inner| use_ref.to_slabref_unwrap(inner))
+        Ref::map(inner, |inner| use_ref.to_data(inner))
     }
     pub fn mut_use(&self, use_ref: UseRef) -> RefMut<UseData> {
         let inner = self.borrow_use_alloc_mut();
-        RefMut::map(inner, |inner| use_ref.to_slabref_unwrap_mut(inner))
+        RefMut::map(inner, |inner| use_ref.to_data_mut(inner))
     }
     pub fn insert_use(&self, data: UseData) -> UseRef {
         let mut inner = self.borrow_use_alloc_mut();
@@ -305,11 +314,11 @@ impl Module {
 
     pub fn get_jt(&self, use_ref: JumpTargetRef) -> Ref<JumpTargetData> {
         let inner = self.borrow_jt_alloc();
-        Ref::map(inner, |inner| use_ref.to_slabref_unwrap(inner))
+        Ref::map(inner, |inner| use_ref.to_data(inner))
     }
     pub fn mut_jt(&self, use_ref: JumpTargetRef) -> RefMut<JumpTargetData> {
         let inner = self.borrow_jt_alloc_mut();
-        RefMut::map(inner, |inner| use_ref.to_slabref_unwrap_mut(inner))
+        RefMut::map(inner, |inner| use_ref.to_data_mut(inner))
     }
     pub fn insert_jt(&self, data: JumpTargetData) -> JumpTargetRef {
         let mut inner = self.borrow_jt_alloc_mut();
@@ -607,7 +616,7 @@ impl Module {
         let alloc_inst = &alloc_value.alloc_inst;
         let mut live_funcbody = Vec::with_capacity(alloc_global.len());
         for (_, global) in self.global_defs.borrow().iter() {
-            match global.to_slabref_unwrap(alloc_global) {
+            match global.to_data(alloc_global) {
                 GlobalData::Func(func) => {
                     if let Some(body) = func.get_blocks() {
                         let (body_range, nnodes) = body.load_range_and_full_node_count();
@@ -638,7 +647,7 @@ impl Module {
         // Step 3: Insert jump relationship for all live basic blocks.
         let alloc_jt = self.borrow_jt_alloc();
         for (block, inst) in &live_bb {
-            let inst_data = inst.to_slabref_unwrap(alloc_inst);
+            let inst_data = inst.to_data(alloc_inst);
             if !inst_data.is_terminator() {
                 panic!("Block {:?} does not contain a terminator", block);
             }

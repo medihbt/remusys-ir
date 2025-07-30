@@ -82,8 +82,9 @@ impl<'a> AsmWriter<'a> {
                 self.wrap_indent();
                 write!(self, ".section {}", section.asm_name()).expect("Failed to write section");
                 global_status.last_section = section;
-            }
-            if align_log2 != global_status.last_align_log2 {
+                self.wrap_indent();
+                write!(self, ".align {}", align_log2).expect("Failed to write alignment");
+            } else if align_log2 != global_status.last_align_log2 {
                 self.wrap_indent();
                 write!(self, ".align {}", align_log2).expect("Failed to write alignment");
                 global_status.last_align_log2 = align_log2;
@@ -150,11 +151,14 @@ impl<'a> AsmWriter<'a> {
     }
 
     fn write_variable(&mut self, gvar: &MirGlobalVariable) {
+        self.wrap_indent();
+        self.wrap_indent();
+        let gvar_name = gvar.get_name();
+        write!(self, ".global {gvar_name}").expect("Failed to write global variable");
+        self.wrap_indent();
+        write!(self, ".type {gvar_name}, @object").expect("Failed to write variable type");
         self.dec_indent();
         self.wrap_indent();
-        self.wrap_indent();
-        // self.write_str(gvar.get_name()).write_str(":");
-        let gvar_name = gvar.get_name();
         write!(self, "{gvar_name}:").unwrap();
         self.inc_indent();
         let mut size = 0;
@@ -187,7 +191,7 @@ impl<'a> AsmWriter<'a> {
         self.inc_indent();
         let alloc_block = istat.mir_module.borrow_alloc_block();
         for label in switch_tab.cases.iter() {
-            let label = label.get().to_slabref_unwrap(&alloc_block);
+            let label = label.get().to_data(&alloc_block);
             let name = label.name.as_str();
             self.wrap_indent();
             write!(self, ".dword {name}").unwrap();

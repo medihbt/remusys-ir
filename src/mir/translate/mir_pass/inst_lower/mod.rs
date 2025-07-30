@@ -1,8 +1,8 @@
 mod lower_calls;
 mod lower_copy;
 mod lower_ldr_const;
-mod lower_mir_ldst_addr;
 mod lower_returns;
+mod post_lower;
 
 use crate::{
     base::slabref::SlabRef,
@@ -118,6 +118,6 @@ pub fn pre_lower_a_module(module: &MirModule) -> MirSpAdjustTree {
 
 pub fn post_lower_a_module(module: &mut MirModule) {
     for func in module.dump_all_funcdefs() {
-        lower_mir_ldst_addr::post_lower_a_function(&func, module);
+        post_lower::post_lower_a_function(&func, module);
     }
 }

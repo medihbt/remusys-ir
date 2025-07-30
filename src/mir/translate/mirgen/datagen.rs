@@ -215,7 +215,7 @@ impl DataGen {
         tctx: &TypeContext,
         alloc_expr: &Slab<ConstExprData>,
     ) {
-        let expr_data = expr.to_slabref_unwrap(alloc_expr);
+        let expr_data = expr.to_data(alloc_expr);
         match expr_data {
             ConstExprData::Array(a) => self.add_aggr(&a.elems, tctx, alloc_expr),
             ConstExprData::Struct(s) => self.add_aggr(&s.elems, tctx, alloc_expr),

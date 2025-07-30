@@ -53,7 +53,7 @@ impl RcfgPerBlock {
         let mut blocks = Vec::new();
         for jt in self.preds.borrow().iter() {
             let jt = jt.get_terminator(alloc_jt);
-            let jt_data = jt.to_slabref_unwrap(alloc_inst);
+            let jt_data = jt.to_data(alloc_inst);
             blocks.push(jt_data.get_parent_bb().unwrap());
         }
         blocks.sort_unstable();

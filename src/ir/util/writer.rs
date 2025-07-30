@@ -143,7 +143,7 @@ impl<'a> ModuleValueWriter<'a> {
             if self.prints_slabref {
                 self.write_fmt(format_args!("; {:?}\n", func));
             }
-            let func = match func.to_slabref_unwrap(&self.alloc_value.alloc_global) {
+            let func = match func.to_data(&self.alloc_value.alloc_global) {
                 GlobalData::Func(f) => f,
                 _ => panic!("Invalid global data kind: Not Function"),
             };
@@ -861,7 +861,7 @@ mod basic_value_formatting {
     impl IGlobalObjectVisitor for BasicValueFormatter<'_> {
         fn global_object_visitor_dispatch(&self, globl: GlobalRef, alloc: &Slab<GlobalData>) {
             self.write_str("@");
-            self.write_str(globl.to_slabref_unwrap(alloc).get_common().name.as_str());
+            self.write_str(globl.to_data(alloc).get_common().name.as_str());
         }
         fn read_global_variable(&self, _: GlobalRef, _: &crate::ir::global::Var) {}
         fn read_global_alias(&self, _: GlobalRef, _: &crate::ir::global::Alias) {}
@@ -1055,11 +1055,11 @@ mod testing {
             let alloc_block = &alloc_value.alloc_block;
 
             let terminator = entry_block
-                .to_slabref_unwrap(alloc_block)
+                .to_data(alloc_block)
                 .get_termiantor(&module)
                 .unwrap();
 
-            match terminator.to_slabref_unwrap(alloc_inst) {
+            match terminator.to_data(alloc_inst) {
                 InstData::Ret(_, r) => {
                     r.retval.set_operand(&module, ValueSSA::Inst(cast));
                 }

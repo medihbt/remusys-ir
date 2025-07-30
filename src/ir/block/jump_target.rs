@@ -8,7 +8,7 @@ use crate::{
     base::{
         NullableValue,
         slablist::{
-            SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef,
+            SlabRefList, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
         },
         slabref::SlabRef,
     },
@@ -32,22 +32,22 @@ pub enum JumpTargetKind {
 }
 
 pub struct JumpTargetData {
-    pub(crate) _node_head: Cell<SlabRefListNodeHead>,
+    pub(crate) _node_head: Cell<SlabListNodeHead>,
     pub(crate) _terminator: Cell<InstRef>,
     pub(crate) _block: Cell<BlockRef>,
     pub(crate) _kind: JumpTargetKind,
 }
 
-impl SlabRefListNode for JumpTargetData {
+impl SlabListNode for JumpTargetData {
     fn new_guide() -> Self {
         Self::new_with_kind(JumpTargetKind::None)
     }
 
-    fn load_node_head(&self) -> SlabRefListNodeHead {
+    fn load_node_head(&self) -> SlabListNodeHead {
         self._node_head.get()
     }
 
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
         self._node_head.set(node_head);
     }
 }
@@ -55,7 +55,7 @@ impl SlabRefListNode for JumpTargetData {
 impl JumpTargetData {
     pub fn new_with_kind(kind: JumpTargetKind) -> Self {
         Self {
-            _node_head: Cell::new(SlabRefListNodeHead::new()),
+            _node_head: Cell::new(SlabListNodeHead::new()),
             _terminator: Cell::new(InstRef::new_null()),
             _block: Cell::new(BlockRef::new_null()),
             _kind: kind,
@@ -89,14 +89,14 @@ impl JumpTargetData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JumpTargetRef(usize);
 impl_slabref!(JumpTargetRef, JumpTargetData);
-impl SlabRefListNodeRef for JumpTargetRef {
+impl SlabListNodeRef for JumpTargetRef {
     fn on_node_push_next(
         curr: Self,
         next: Self,
         alloc: &Slab<JumpTargetData>,
-    ) -> Result<(), SlabRefListError> {
-        let terminator = curr.to_slabref_unwrap(alloc)._terminator.get();
-        next.to_slabref_unwrap(alloc)._terminator.set(terminator);
+    ) -> Result<(), SlabListError> {
+        let terminator = curr.to_data(alloc)._terminator.get();
+        next.to_data(alloc)._terminator.set(terminator);
         Ok(())
     }
 
@@ -104,14 +104,14 @@ impl SlabRefListNodeRef for JumpTargetRef {
         curr: Self,
         prev: Self,
         alloc: &Slab<JumpTargetData>,
-    ) -> Result<(), SlabRefListError> {
-        let terminator = curr.to_slabref_unwrap(alloc)._terminator.get();
-        prev.to_slabref_unwrap(alloc)._terminator.set(terminator);
+    ) -> Result<(), SlabListError> {
+        let terminator = curr.to_data(alloc)._terminator.get();
+        prev.to_data(alloc)._terminator.set(terminator);
         Ok(())
     }
 
-    fn on_node_unplug(curr: Self, alloc: &Slab<JumpTargetData>) -> Result<(), SlabRefListError> {
-        curr.to_slabref_unwrap(alloc)
+    fn on_node_unplug(curr: Self, alloc: &Slab<JumpTargetData>) -> Result<(), SlabListError> {
+        curr.to_data(alloc)
             ._terminator
             .set(InstRef::new_null());
         Ok(())
@@ -120,10 +120,10 @@ impl SlabRefListNodeRef for JumpTargetRef {
 
 impl JumpTargetRef {
     pub fn get_block(&self, alloc_jt: &Slab<JumpTargetData>) -> BlockRef {
-        self.to_slabref_unwrap(alloc_jt)._block.get()
+        self.to_data(alloc_jt)._block.get()
     }
     pub fn set_block_norcfg(&self, alloc_jt: &Slab<JumpTargetData>, block: BlockRef) {
-        self.to_slabref_unwrap(alloc_jt)._block.set(block);
+        self.to_data(alloc_jt)._block.set(block);
     }
     pub fn set_block(&self, module: &Module, block: BlockRef) {
         let alloc_jt = module.borrow_jt_alloc();
@@ -134,12 +134,12 @@ impl JumpTargetRef {
                 return;
             }
         };
-        self.to_slabref_unwrap(&alloc_jt)
+        self.to_data(&alloc_jt)
             .set_block_with_rcfg(self.clone(), &rcfg, block);
     }
 
     pub fn get_terminator(&self, alloc_jt: &Slab<JumpTargetData>) -> InstRef {
-        self.to_slabref_unwrap(alloc_jt)._terminator.get()
+        self.to_data(alloc_jt)._terminator.get()
     }
 }
 
@@ -148,8 +148,8 @@ impl SlabRefList<JumpTargetRef> {
         &self,
         alloc: &mut Slab<JumpTargetData>,
         jt_data: JumpTargetData,
-    ) -> Result<JumpTargetRef, SlabRefListError> {
-        let terminator = self._head.to_slabref_unwrap(alloc)._terminator.get();
+    ) -> Result<JumpTargetRef, SlabListError> {
+        let terminator = self._head.to_data(alloc)._terminator.get();
         jt_data._terminator.set(terminator);
         let jt_ref = JumpTargetRef::from_handle(alloc.insert(jt_data));
         self.push_back_ref(alloc, jt_ref).map(|_| jt_ref)

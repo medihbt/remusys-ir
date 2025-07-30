@@ -180,7 +180,7 @@ impl CriticalEdges {
         let alloc_global = &alloc_value.alloc_global;
         let parent_func = func;
         assert!(parent_func.is_nonnull());
-        let parent_func = match parent_func.to_slabref_unwrap(alloc_global) {
+        let parent_func = match parent_func.to_data(alloc_global) {
             GlobalData::Func(func_data) => func_data,
             _ => panic!("Parent function of block must be a function"),
         };

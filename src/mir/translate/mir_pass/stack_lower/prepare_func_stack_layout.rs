@@ -28,6 +28,12 @@ pub(crate) fn recalculate_func_saved_regs(
                 // 如果是寄存器保存 / 恢复指令, 那么就不需要再处理了
                 continue;
             }
+            if let MirInst::BReg(breg) = inst {
+                if breg.opcode_is(MirOP::Ret) && breg.get_target().get_id() == RegID::Phys(30) {
+                    // 目前为了省事儿, X30 是当作如果是函数返回指令, 那么也不需要再处理了
+                    continue;
+                }
+            }
             for operand in inst.in_operands() {
                 match operand.get() {
                     MirOperand::GPReg(gpr) if gpr.is_physical() => {
@@ -58,17 +64,27 @@ pub(crate) fn recalculate_func_saved_regs(
             }
         }
     }
-    let func_saved = defined_regs & aapcs_callee_saved;
-    let call_inst_saved = used_regs & aapcs_caller_saved;
-    println!(
-        "Rearranging saved regs for function {}: {:?} -> {:?}",
-        func.get_name(),
-        aapcs_callee_saved,
+    let func_saved = {
+        let mut func_saved = defined_regs & aapcs_callee_saved;
+        // X30 是函数返回地址寄存器, 需要被保存
+        if func.has_call.get() {
+            func_saved.save_gpr(RegID::Phys(30));
+        }
+        if func.get_name() == "main" {
+            // main 函数需要保存 X29, 也就是帧指针寄存器
+            func_saved.save_gpr(RegID::Phys(29));
+        }
+
         func_saved
+    };
+    println!(
+        "Rearranging saved regs for function {}: {aapcs_callee_saved:?} -> {func_saved:?}",
+        func.get_name(),
     );
-    func.reinit_saved_regs(used_regs);
+    func.reinit_saved_regs(func_saved);
 
     for (blockref, _) in func.blocks.view(&allocs.block) {
+        let call_inst_saved = used_regs & aapcs_caller_saved;
         adj_tree.block_set_adjusted_regs(blockref.clone(), call_inst_saved, &allocs.inst);
     }
 }
@@ -93,6 +109,13 @@ pub(crate) fn make_adjust_callee_sp_template(
     let var_section_size = stack.vars_size;
     let reg_section_size = stack.saved_regs_section_size();
     let sp = GPR64::sp();
+
+    if reg_section_size % 16 != 0 {
+        panic!("Saved registers section size must be a multiple of 16, found: {reg_section_size}");
+    }
+    if var_section_size % 16 != 0 {
+        panic!("Variable section size must be a multiple of 16, found: {var_section_size}");
+    }
 
     // Step 1: 保存被调用者保存的寄存器段
     if reg_section_size > 0 {
@@ -184,7 +207,7 @@ pub(crate) fn lower_stack_adjustment_insts(
         )
     });
     for (block_ref, inst_ref) in to_lower {
-        match inst_ref.to_slabref_unwrap(&allocs.inst) {
+        match inst_ref.to_data(&allocs.inst) {
             MirInst::MirSaveRegs(inst) => inst.dump_actions_template(insts_queue),
             MirInst::MirRestoreRegs(inst) => inst.dump_actions_template(insts_queue),
             MirInst::MirRestoreHostRegs(inst) => {

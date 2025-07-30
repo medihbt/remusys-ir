@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefListNodeRef, slabref::SlabRef},
+    base::{NullableValue, slablist::SlabListNodeRef, slabref::SlabRef},
     ir::{
         ValueSSA,
         block::jump_target::JumpTargetRef,
@@ -300,7 +300,7 @@ impl<'a> MarkVisitor<'a> {
 
         let global_map = self.module.global_defs.borrow();
         for (_, global_ref) in global_map.iter() {
-            let global = global_ref.to_slabref_unwrap(alloc_global);
+            let global = global_ref.to_data(alloc_global);
             match global {
                 GlobalData::Func(f) => {
                     if !f.is_extern() {
@@ -329,7 +329,7 @@ impl<'a> MarkVisitor<'a> {
 
         let alloc_use = self.module.borrow_use_alloc();
         let alloc_jt = self.module.borrow_jt_alloc();
-        let func = match func.to_slabref_unwrap(alloc_global) {
+        let func = match func.to_data(alloc_global) {
             GlobalData::Func(f) => f,
             _ => panic!("MarkVisitor::mark_func: not a function"),
         };
@@ -345,7 +345,7 @@ impl<'a> MarkVisitor<'a> {
         let mut live_blocks = Vec::with_capacity(body.len());
         let mut block_node = body._head;
         while block_node.is_nonnull() {
-            let block = block_node.to_slabref_unwrap(alloc_block);
+            let block = block_node.to_data(alloc_block);
             self.mark_value(ValueSSA::Block(block_node))?;
             let (inst_range, node_cnt) = block.instructions.load_range_and_full_node_count();
             n_inst_nodes += node_cnt;
@@ -367,7 +367,7 @@ impl<'a> MarkVisitor<'a> {
                 self.mark_value(ValueSSA::Inst(inst_node))?;
 
                 // mark the instruction operands
-                let inst_data = inst_node.to_slabref_unwrap(alloc_inst);
+                let inst_data = inst_node.to_data(alloc_inst);
                 if let Some(c) = inst_data.get_common() {
                     let (use_range, n_nodes) = c.operands.load_range_and_full_node_count();
                     if n_nodes > 0 {
@@ -397,7 +397,7 @@ impl<'a> MarkVisitor<'a> {
             while use_node.is_nonnull() {
                 // mark the use reference
                 self.mark_use(use_node)?;
-                let operand = use_node.to_slabref_unwrap(&alloc_use).get_operand();
+                let operand = use_node.to_data(&alloc_use).get_operand();
 
                 match operand {
                     ValueSSA::None | ValueSSA::FuncArg(..) | ValueSSA::ConstData(..) => {}

@@ -117,9 +117,16 @@ pub enum MirInst {
     MirStrLitG32(super::impls::MirStrLitG32),
     MirStrLitF64(super::impls::MirStrLitF64),
     MirStrLitF32(super::impls::MirStrLitF32),
+    MirStImm64(super::impls::MirStImm64),
+    MirStSym64(super::impls::MirStSym64),
+    MirStImm32(super::impls::MirStImm32),
+    MirStImm64Sym(super::impls::MirStImm64Sym),
+    MirStImm32Sym(super::impls::MirStImm32Sym),
+    MirStSym64Sym(super::impls::MirStSym64Sym),
     LoadConst64(super::impls::LoadConst64),
-    LoadConstF64(super::impls::LoadConstF64),
     LoadConst64Symbol(super::impls::LoadConst64Symbol),
+    MirLdImmF64(super::impls::MirLdImmF64),
+    MirLdImmF32(super::impls::MirLdImmF32),
     CSel64(super::impls::CSel64),
     CSel32(super::impls::CSel32),
     CSelF64(super::impls::CSelF64),
@@ -132,6 +139,9 @@ pub enum MirInst {
     MirSaveRegs(super::mirops::MirSaveRegs),
     MirRestoreRegs(super::mirops::MirRestoreRegs),
     MirRestoreHostRegs(super::mirops::MirRestoreHostRegs),
+    MirGEP(super::mirops::MirGEP),
+    MirComment(super::mirops::MirComment),
+    MirCommentedInst(super::mirops::MirCommentedInst),
 }
 impl MirInst {
     pub fn get_common(&self) -> &super::MirInstCommon {
@@ -250,9 +260,16 @@ impl MirInst {
             MirInst::MirStrLitG32(inst) => inst.get_common(),
             MirInst::MirStrLitF64(inst) => inst.get_common(),
             MirInst::MirStrLitF32(inst) => inst.get_common(),
+            MirInst::MirStImm64(inst) => inst.get_common(),
+            MirInst::MirStSym64(inst) => inst.get_common(),
+            MirInst::MirStImm32(inst) => inst.get_common(),
+            MirInst::MirStImm64Sym(inst) => inst.get_common(),
+            MirInst::MirStImm32Sym(inst) => inst.get_common(),
+            MirInst::MirStSym64Sym(inst) => inst.get_common(),
             MirInst::LoadConst64(inst) => inst.get_common(),
-            MirInst::LoadConstF64(inst) => inst.get_common(),
             MirInst::LoadConst64Symbol(inst) => inst.get_common(),
+            MirInst::MirLdImmF64(inst) => inst.get_common(),
+            MirInst::MirLdImmF32(inst) => inst.get_common(),
             MirInst::CSel64(inst) => inst.get_common(),
             MirInst::CSel32(inst) => inst.get_common(),
             MirInst::CSelF64(inst) => inst.get_common(),
@@ -265,6 +282,9 @@ impl MirInst {
             MirInst::MirSaveRegs(inst) => inst.get_common(),
             MirInst::MirRestoreRegs(inst) => inst.get_common(),
             MirInst::MirRestoreHostRegs(inst) => inst.get_common(),
+            MirInst::MirGEP(inst) => inst.get_common(),
+            MirInst::MirComment(inst) => inst.get_common(),
+            MirInst::MirCommentedInst(inst) => inst.get_common(),
         }
     }
     pub fn common_mut(&mut self) -> &mut super::MirInstCommon {
@@ -383,9 +403,16 @@ impl MirInst {
             MirInst::MirStrLitG32(inst) => inst.common_mut(),
             MirInst::MirStrLitF64(inst) => inst.common_mut(),
             MirInst::MirStrLitF32(inst) => inst.common_mut(),
+            MirInst::MirStImm64(inst) => inst.common_mut(),
+            MirInst::MirStSym64(inst) => inst.common_mut(),
+            MirInst::MirStImm32(inst) => inst.common_mut(),
+            MirInst::MirStImm64Sym(inst) => inst.common_mut(),
+            MirInst::MirStImm32Sym(inst) => inst.common_mut(),
+            MirInst::MirStSym64Sym(inst) => inst.common_mut(),
             MirInst::LoadConst64(inst) => inst.common_mut(),
-            MirInst::LoadConstF64(inst) => inst.common_mut(),
             MirInst::LoadConst64Symbol(inst) => inst.common_mut(),
+            MirInst::MirLdImmF64(inst) => inst.common_mut(),
+            MirInst::MirLdImmF32(inst) => inst.common_mut(),
             MirInst::CSel64(inst) => inst.common_mut(),
             MirInst::CSel32(inst) => inst.common_mut(),
             MirInst::CSelF64(inst) => inst.common_mut(),
@@ -398,6 +425,9 @@ impl MirInst {
             MirInst::MirSaveRegs(inst) => inst.common_mut(),
             MirInst::MirRestoreRegs(inst) => inst.common_mut(),
             MirInst::MirRestoreHostRegs(inst) => inst.common_mut(),
+            MirInst::MirGEP(inst) => inst.common_mut(),
+            MirInst::MirComment(inst) => inst.common_mut(),
+            MirInst::MirCommentedInst(inst) => inst.common_mut(),
         }
     }
     #[doc = "Returns the opcode of the instruction. This is useful for matching or dispatching logic."]
@@ -520,9 +550,16 @@ impl MirInst {
             MirInst::MirStrLitG32(inst) => inst.in_operands(),
             MirInst::MirStrLitF64(inst) => inst.in_operands(),
             MirInst::MirStrLitF32(inst) => inst.in_operands(),
+            MirInst::MirStImm64(inst) => inst.in_operands(),
+            MirInst::MirStSym64(inst) => inst.in_operands(),
+            MirInst::MirStImm32(inst) => inst.in_operands(),
+            MirInst::MirStImm64Sym(inst) => inst.in_operands(),
+            MirInst::MirStImm32Sym(inst) => inst.in_operands(),
+            MirInst::MirStSym64Sym(inst) => inst.in_operands(),
             MirInst::LoadConst64(inst) => inst.in_operands(),
-            MirInst::LoadConstF64(inst) => inst.in_operands(),
             MirInst::LoadConst64Symbol(inst) => inst.in_operands(),
+            MirInst::MirLdImmF64(inst) => inst.in_operands(),
+            MirInst::MirLdImmF32(inst) => inst.in_operands(),
             MirInst::CSel64(inst) => inst.in_operands(),
             MirInst::CSel32(inst) => inst.in_operands(),
             MirInst::CSelF64(inst) => inst.in_operands(),
@@ -535,6 +572,9 @@ impl MirInst {
             MirInst::MirSaveRegs(inst) => inst.in_operands(),
             MirInst::MirRestoreRegs(inst) => inst.in_operands(),
             MirInst::MirRestoreHostRegs(inst) => inst.in_operands(),
+            MirInst::MirGEP(inst) => inst.in_operands(),
+            MirInst::MirComment(inst) => inst.in_operands(),
+            MirInst::MirCommentedInst(inst) => inst.in_operands(),
         }
     }
     pub fn out_operands(&self) -> &[Cell<MirOperand>] {
@@ -653,9 +693,16 @@ impl MirInst {
             MirInst::MirStrLitG32(inst) => inst.out_operands(),
             MirInst::MirStrLitF64(inst) => inst.out_operands(),
             MirInst::MirStrLitF32(inst) => inst.out_operands(),
+            MirInst::MirStImm64(inst) => inst.out_operands(),
+            MirInst::MirStSym64(inst) => inst.out_operands(),
+            MirInst::MirStImm32(inst) => inst.out_operands(),
+            MirInst::MirStImm64Sym(inst) => inst.out_operands(),
+            MirInst::MirStImm32Sym(inst) => inst.out_operands(),
+            MirInst::MirStSym64Sym(inst) => inst.out_operands(),
             MirInst::LoadConst64(inst) => inst.out_operands(),
-            MirInst::LoadConstF64(inst) => inst.out_operands(),
             MirInst::LoadConst64Symbol(inst) => inst.out_operands(),
+            MirInst::MirLdImmF64(inst) => inst.out_operands(),
+            MirInst::MirLdImmF32(inst) => inst.out_operands(),
             MirInst::CSel64(inst) => inst.out_operands(),
             MirInst::CSel32(inst) => inst.out_operands(),
             MirInst::CSelF64(inst) => inst.out_operands(),
@@ -668,6 +715,9 @@ impl MirInst {
             MirInst::MirSaveRegs(inst) => inst.out_operands(),
             MirInst::MirRestoreRegs(inst) => inst.out_operands(),
             MirInst::MirRestoreHostRegs(inst) => inst.out_operands(),
+            MirInst::MirGEP(inst) => inst.out_operands(),
+            MirInst::MirComment(inst) => inst.out_operands(),
+            MirInst::MirCommentedInst(inst) => inst.out_operands(),
         }
     }
 }
@@ -788,9 +838,16 @@ impl std::fmt::Debug for MirInst {
             MirInst::MirStrLitG32(inst) => inst.fmt(f),
             MirInst::MirStrLitF64(inst) => inst.fmt(f),
             MirInst::MirStrLitF32(inst) => inst.fmt(f),
+            MirInst::MirStImm64(inst) => inst.fmt(f),
+            MirInst::MirStSym64(inst) => inst.fmt(f),
+            MirInst::MirStImm32(inst) => inst.fmt(f),
+            MirInst::MirStImm64Sym(inst) => inst.fmt(f),
+            MirInst::MirStImm32Sym(inst) => inst.fmt(f),
+            MirInst::MirStSym64Sym(inst) => inst.fmt(f),
             MirInst::LoadConst64(inst) => inst.fmt(f),
-            MirInst::LoadConstF64(inst) => inst.fmt(f),
             MirInst::LoadConst64Symbol(inst) => inst.fmt(f),
+            MirInst::MirLdImmF64(inst) => inst.fmt(f),
+            MirInst::MirLdImmF32(inst) => inst.fmt(f),
             MirInst::CSel64(inst) => inst.fmt(f),
             MirInst::CSel32(inst) => inst.fmt(f),
             MirInst::CSelF64(inst) => inst.fmt(f),
@@ -803,17 +860,20 @@ impl std::fmt::Debug for MirInst {
             MirInst::MirSaveRegs(inst) => inst.fmt(f),
             MirInst::MirRestoreRegs(inst) => inst.fmt(f),
             MirInst::MirRestoreHostRegs(inst) => inst.fmt(f),
+            MirInst::MirGEP(inst) => inst.fmt(f),
+            MirInst::MirComment(inst) => inst.fmt(f),
+            MirInst::MirCommentedInst(inst) => inst.fmt(f),
         }
     }
 }
-impl crate::base::slablist::SlabRefListNode for MirInst {
+impl crate::base::slablist::SlabListNode for MirInst {
     fn new_guide() -> Self {
         MirInst::GuideNode(super::MirInstCommon::new_guide())
     }
-    fn load_node_head(&self) -> crate::base::slablist::SlabRefListNodeHead {
+    fn load_node_head(&self) -> crate::base::slablist::SlabListNodeHead {
         self.get_common().node_head.get()
     }
-    fn store_node_head(&self, head: crate::base::slablist::SlabRefListNodeHead) {
+    fn store_node_head(&self, head: crate::base::slablist::SlabListNodeHead) {
         self.get_common().node_head.set(head);
     }
 }

@@ -8,20 +8,20 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
     fn from_handle(handle: usize) -> Self;
     fn get_handle(&self) -> usize;
 
-    fn to_slabref<'a>(&self, slab: &'a Slab<Self::RefObject>) -> Option<&'a Self::RefObject> {
+    fn as_data<'a>(&self, slab: &'a Slab<Self::RefObject>) -> Option<&'a Self::RefObject> {
         slab.get(self.get_handle())
     }
-    fn to_slabref_mut<'a>(
+    fn as_data_mut<'a>(
         &self,
         slab: &'a mut Slab<Self::RefObject>,
     ) -> Option<&'a mut Self::RefObject> {
         slab.get_mut(self.get_handle())
     }
-    fn to_slabref_unwrap<'a>(&self, slab: &'a Slab<Self::RefObject>) -> &'a Self::RefObject {
+    fn to_data<'a>(&self, slab: &'a Slab<Self::RefObject>) -> &'a Self::RefObject {
         slab.get(self.get_handle())
             .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }
-    fn to_slabref_unwrap_mut<'a>(
+    fn to_data_mut<'a>(
         &self,
         slab: &'a mut Slab<Self::RefObject>,
     ) -> &'a mut Self::RefObject {

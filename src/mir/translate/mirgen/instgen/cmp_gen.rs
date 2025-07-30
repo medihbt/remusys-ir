@@ -18,7 +18,7 @@ use crate::{
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
-pub(crate) fn dispatch_cmp(
+pub(super) fn dispatch_cmp(
     ir_module: &Module,
     operand_map: &OperandMap<'_>,
     state: &mut InstDispatchState,
@@ -28,7 +28,7 @@ pub(crate) fn dispatch_cmp(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (opcode, inst) = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let (opcode, inst) = match ir_ref.to_data(alloc_inst) {
         InstData::Cmp(c, b) => (c.opcode, b),
         _ => panic!("Expected Cmp instruction"),
     };

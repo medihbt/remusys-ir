@@ -4,7 +4,7 @@
 use crate::mir::{
     inst::{addr::*, cond::*, *},
     module::{block::*, func::*, global::*, *},
-    operand::{MirOperand, compound::*, imm::*, reg::*, subop::*},
+    operand::{compound::*, imm::*, reg::*, subop::*, MirOperand},
 };
 #[derive(Clone)]
 pub struct UncondBr {
@@ -14705,6 +14705,906 @@ impl std::fmt::Debug for MirStrLitF32 {
     }
 }
 #[derive(Clone)]
+pub struct MirStImm64 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStImm64 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..1usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[1usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStImm64)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm64::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStImm64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStImm64(self)
+    }
+}
+impl MirStImm64 {
+    pub fn new(opcode: MirOP, tmpreg: GPR64, imm: Imm64, base: GPR64, offset: ImmLSP64) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(tmpreg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(base.clean_use_flags().into_mir()),
+                Cell::new(offset.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn tmpreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn get_tmpreg(&self) -> GPReg {
+        GPReg::from_mir(self.tmpreg().get())
+    }
+    #[doc = "set the value of operand tmpreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_tmpreg(&self, value: GPReg) {
+        let prev_value = self.get_tmpreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.tmpreg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 1 of type Imm64"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand imm at index 1 of type Imm64"]
+    pub fn get_imm(&self) -> Imm64 {
+        Imm64::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 1 to a value of type Imm64 (checked by Imm64)"]
+    pub fn set_imm(&self, value: Imm64) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn base(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn get_base(&self) -> GPReg {
+        GPReg::from_mir(self.base().get())
+    }
+    #[doc = "set the value of operand base at 2 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_base(&self, value: GPReg) {
+        let prev_value = self.get_base();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.base().set(next_value.into_mir());
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP64"]
+    pub fn offset(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP64"]
+    pub fn get_offset(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.offset().get())
+    }
+    #[doc = "set the value of operand offset at 3 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_offset(&self, value: ImmLSP64) {
+        self.offset().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStImm64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStImm64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("tmpreg=op[0]", &self.get_tmpreg())
+            .field("imm=op[1]", &self.get_imm())
+            .field("base=op[2]", &self.get_base())
+            .field("offset=op[3]", &self.get_offset())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirStSym64 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStSym64 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..1usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[1usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStSym64)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStSym64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(MirSymbolOp::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(ImmLSP64::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStSym64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStSym64(self)
+    }
+}
+impl MirStSym64 {
+    pub fn new(
+        opcode: MirOP,
+        tmpreg: GPR64,
+        imm: MirSymbolOp,
+        base: GPR64,
+        offset: ImmLSP64,
+    ) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStSym64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(tmpreg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(base.clean_use_flags().into_mir()),
+                Cell::new(offset.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn tmpreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn get_tmpreg(&self) -> GPReg {
+        GPReg::from_mir(self.tmpreg().get())
+    }
+    #[doc = "set the value of operand tmpreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_tmpreg(&self, value: GPReg) {
+        let prev_value = self.get_tmpreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.tmpreg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 1 of type MirSymbolOp"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand imm at index 1 of type MirSymbolOp"]
+    pub fn get_imm(&self) -> MirSymbolOp {
+        MirSymbolOp::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 1 to a value of type MirSymbolOp (checked by MirSymbolOp)"]
+    pub fn set_imm(&self, value: MirSymbolOp) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn base(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn get_base(&self) -> GPReg {
+        GPReg::from_mir(self.base().get())
+    }
+    #[doc = "set the value of operand base at 2 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_base(&self, value: GPReg) {
+        let prev_value = self.get_base();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.base().set(next_value.into_mir());
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP64"]
+    pub fn offset(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP64"]
+    pub fn get_offset(&self) -> ImmLSP64 {
+        ImmLSP64::from_mir(self.offset().get())
+    }
+    #[doc = "set the value of operand offset at 3 to a value of type ImmLSP64 (checked by ImmLSP64)"]
+    pub fn set_offset(&self, value: ImmLSP64) {
+        self.offset().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStSym64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStSym64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("tmpreg=op[0]", &self.get_tmpreg())
+            .field("imm=op[1]", &self.get_imm())
+            .field("base=op[2]", &self.get_base())
+            .field("offset=op[3]", &self.get_offset())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirStImm32 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStImm32 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..1usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[1usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStImm32)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm32),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm32::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(ImmLSP32::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStImm32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStImm32(self)
+    }
+}
+impl MirStImm32 {
+    pub fn new(opcode: MirOP, tmpreg: GPR64, imm: Imm32, base: GPR64, offset: ImmLSP32) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm32),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(tmpreg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(base.clean_use_flags().into_mir()),
+                Cell::new(offset.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn tmpreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand tmpreg at index 0 of type GPReg"]
+    pub fn get_tmpreg(&self) -> GPReg {
+        GPReg::from_mir(self.tmpreg().get())
+    }
+    #[doc = "set the value of operand tmpreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_tmpreg(&self, value: GPReg) {
+        let prev_value = self.get_tmpreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.tmpreg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 1 of type Imm32"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand imm at index 1 of type Imm32"]
+    pub fn get_imm(&self) -> Imm32 {
+        Imm32::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 1 to a value of type Imm32 (checked by Imm32)"]
+    pub fn set_imm(&self, value: Imm32) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn base(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand base at index 2 of type GPReg"]
+    pub fn get_base(&self) -> GPReg {
+        GPReg::from_mir(self.base().get())
+    }
+    #[doc = "set the value of operand base at 2 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_base(&self, value: GPReg) {
+        let prev_value = self.get_base();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.base().set(next_value.into_mir());
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP32"]
+    pub fn offset(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand offset at index 3 of type ImmLSP32"]
+    pub fn get_offset(&self) -> ImmLSP32 {
+        ImmLSP32::from_mir(self.offset().get())
+    }
+    #[doc = "set the value of operand offset at 3 to a value of type ImmLSP32 (checked by ImmLSP32)"]
+    pub fn set_offset(&self, value: ImmLSP32) {
+        self.offset().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStImm32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStImm32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("tmpreg=op[0]", &self.get_tmpreg())
+            .field("imm=op[1]", &self.get_imm())
+            .field("base=op[2]", &self.get_base())
+            .field("offset=op[3]", &self.get_offset())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirStImm64Sym {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStImm64Sym {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..2usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[2usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStImm64Sym)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm64Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm64::new_empty().into_mir()),
+                Cell::new(MirGlobalRef::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStImm64Sym(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStImm64Sym(self)
+    }
+}
+impl MirStImm64Sym {
+    pub fn new(
+        opcode: MirOP,
+        immreg: GPR64,
+        addr_reg: GPR64,
+        imm: Imm64,
+        target: MirGlobalRef,
+    ) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm64Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(immreg.clean_use_flags().into_mir()),
+                Cell::new(addr_reg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(target.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn immreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn get_immreg(&self) -> GPReg {
+        GPReg::from_mir(self.immreg().get())
+    }
+    #[doc = "set the value of operand immreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_immreg(&self, value: GPReg) {
+        let prev_value = self.get_immreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.immreg().set(next_value.into_mir());
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn addr_reg(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn get_addr_reg(&self) -> GPReg {
+        GPReg::from_mir(self.addr_reg().get())
+    }
+    #[doc = "set the value of operand addr_reg at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_addr_reg(&self, value: GPReg) {
+        let prev_value = self.get_addr_reg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.addr_reg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 2 of type Imm64"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand imm at index 2 of type Imm64"]
+    pub fn get_imm(&self) -> Imm64 {
+        Imm64::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 2 to a value of type Imm64 (checked by Imm64)"]
+    pub fn set_imm(&self, value: Imm64) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn get_target(&self) -> MirGlobalRef {
+        MirGlobalRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 3 to a value of type MirGlobalRef (checked by MirGlobalRef)"]
+    pub fn set_target(&self, value: MirGlobalRef) {
+        self.target().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStImm64Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStImm64Sym))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("immreg=op[0]", &self.get_immreg())
+            .field("addr_reg=op[1]", &self.get_addr_reg())
+            .field("imm=op[2]", &self.get_imm())
+            .field("target=op[3]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirStImm32Sym {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStImm32Sym {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..2usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[2usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStImm32Sym)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm32Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm32::new_empty().into_mir()),
+                Cell::new(MirGlobalRef::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStImm32Sym(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStImm32Sym(self)
+    }
+}
+impl MirStImm32Sym {
+    pub fn new(
+        opcode: MirOP,
+        immreg: GPR64,
+        addr_reg: GPR64,
+        imm: Imm32,
+        target: MirGlobalRef,
+    ) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStImm32Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(immreg.clean_use_flags().into_mir()),
+                Cell::new(addr_reg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(target.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn immreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn get_immreg(&self) -> GPReg {
+        GPReg::from_mir(self.immreg().get())
+    }
+    #[doc = "set the value of operand immreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_immreg(&self, value: GPReg) {
+        let prev_value = self.get_immreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.immreg().set(next_value.into_mir());
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn addr_reg(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn get_addr_reg(&self) -> GPReg {
+        GPReg::from_mir(self.addr_reg().get())
+    }
+    #[doc = "set the value of operand addr_reg at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_addr_reg(&self, value: GPReg) {
+        let prev_value = self.get_addr_reg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.addr_reg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 2 of type Imm32"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand imm at index 2 of type Imm32"]
+    pub fn get_imm(&self) -> Imm32 {
+        Imm32::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 2 to a value of type Imm32 (checked by Imm32)"]
+    pub fn set_imm(&self, value: Imm32) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn get_target(&self) -> MirGlobalRef {
+        MirGlobalRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 3 to a value of type MirGlobalRef (checked by MirGlobalRef)"]
+    pub fn set_target(&self, value: MirGlobalRef) {
+        self.target().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStImm32Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStImm32Sym))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("immreg=op[0]", &self.get_immreg())
+            .field("addr_reg=op[1]", &self.get_addr_reg())
+            .field("imm=op[2]", &self.get_imm())
+            .field("target=op[3]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirStSym64Sym {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 4usize],
+}
+impl IMirSubInst for MirStSym64Sym {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..2usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[2usize..4usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirStSymSym)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStSym64Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(MirSymbolOp::new_empty().into_mir()),
+                Cell::new(MirGlobalRef::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirStSym64Sym(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirStSym64Sym(self)
+    }
+}
+impl MirStSym64Sym {
+    pub fn new(
+        opcode: MirOP,
+        immreg: GPR64,
+        addr_reg: GPR64,
+        imm: MirSymbolOp,
+        target: MirGlobalRef,
+    ) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirStSym64Sym),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(immreg.clean_use_flags().into_mir()),
+                Cell::new(addr_reg.clean_use_flags().into_mir()),
+                Cell::new(imm.into_mir()),
+                Cell::new(target.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn immreg(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand immreg at index 0 of type GPReg"]
+    pub fn get_immreg(&self) -> GPReg {
+        GPReg::from_mir(self.immreg().get())
+    }
+    #[doc = "set the value of operand immreg at 0 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_immreg(&self, value: GPReg) {
+        let prev_value = self.get_immreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.immreg().set(next_value.into_mir());
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn addr_reg(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand addr_reg at index 1 of type GPReg"]
+    pub fn get_addr_reg(&self) -> GPReg {
+        GPReg::from_mir(self.addr_reg().get())
+    }
+    #[doc = "set the value of operand addr_reg at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_addr_reg(&self, value: GPReg) {
+        let prev_value = self.get_addr_reg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.addr_reg().set(next_value.into_mir());
+    }
+    #[doc = "operand imm at index 2 of type MirSymbolOp"]
+    pub fn imm(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand imm at index 2 of type MirSymbolOp"]
+    pub fn get_imm(&self) -> MirSymbolOp {
+        MirSymbolOp::from_mir(self.imm().get())
+    }
+    #[doc = "set the value of operand imm at 2 to a value of type MirSymbolOp (checked by MirSymbolOp)"]
+    pub fn set_imm(&self, value: MirSymbolOp) {
+        self.imm().set(value.into_mir());
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn target(&self) -> &Cell<MirOperand> {
+        &self._operands[3usize]
+    }
+    #[doc = "operand target at index 3 of type MirGlobalRef"]
+    pub fn get_target(&self) -> MirGlobalRef {
+        MirGlobalRef::from_mir(self.target().get())
+    }
+    #[doc = "set the value of operand target at 3 to a value of type MirGlobalRef (checked by MirGlobalRef)"]
+    pub fn set_target(&self, value: MirGlobalRef) {
+        self.target().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirStSym64Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirStSym64Sym))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("immreg=op[0]", &self.get_immreg())
+            .field("addr_reg=op[1]", &self.get_addr_reg())
+            .field("imm=op[2]", &self.get_imm())
+            .field("target=op[3]", &self.get_target())
+            .finish()
+    }
+}
+#[derive(Clone)]
 pub struct LoadConst64 {
     _common: MirInstCommon,
     _operands: [Cell<MirOperand>; 2usize],
@@ -14806,116 +15706,6 @@ impl std::fmt::Debug for LoadConst64 {
         let next = node_head.next;
         let opcode = self._common.opcode;
         f.debug_struct(stringify!(LoadConst64))
-            .field("opcode", &opcode)
-            .field("prev", &prev)
-            .field("next", &next)
-            .field("rd=op[0]", &self.get_rd())
-            .field("src=op[1]", &self.get_src())
-            .finish()
-    }
-}
-#[derive(Clone)]
-pub struct LoadConstF64 {
-    _common: MirInstCommon,
-    _operands: [Cell<MirOperand>; 2usize],
-}
-impl IMirSubInst for LoadConstF64 {
-    fn get_common(&self) -> &MirInstCommon {
-        &self._common
-    }
-    fn common_mut(&mut self) -> &mut MirInstCommon {
-        &mut self._common
-    }
-    fn out_operands(&self) -> &[Cell<MirOperand>] {
-        &self._operands[..1usize]
-    }
-    fn in_operands(&self) -> &[Cell<MirOperand>] {
-        &self._operands[1usize..2usize]
-    }
-    fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::LoadConstF64)
-    }
-    fn new_empty(opcode: MirOP) -> Self {
-        if !Self::accepts_opcode(opcode) {
-            panic!(
-                "Cannot create an instance of {} with opcode {:?}",
-                stringify!(LoadConstF64),
-                opcode
-            );
-        }
-        let ret = Self {
-            _common: MirInstCommon::new(opcode),
-            _operands: [
-                Cell::new(VFReg::new_empty().into_mir()),
-                Cell::new(Imm64::new_empty().into_mir()),
-            ],
-        };
-        super::utils::mark_out_operands_defined(ret.out_operands());
-        super::utils::mark_in_operands_used(ret.in_operands());
-        ret
-    }
-    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
-        match mir_inst {
-            MirInst::LoadConstF64(inst) => Some(inst),
-            _ => None,
-        }
-    }
-    fn into_mir(self) -> MirInst {
-        MirInst::LoadConstF64(self)
-    }
-}
-impl LoadConstF64 {
-    pub fn new(opcode: MirOP, rd: FPR64, src: Imm64) -> Self {
-        if !Self::accepts_opcode(opcode) {
-            panic!(
-                "Cannot create an instance of {} with opcode {:?}",
-                stringify!(LoadConstF64),
-                opcode
-            );
-        }
-        let ret = Self {
-            _common: MirInstCommon::new(opcode),
-            _operands: [Cell::new(rd.clean_use_flags().into_mir()), Cell::new(src.into_mir())],
-        };
-        super::utils::mark_out_operands_defined(ret.out_operands());
-        super::utils::mark_in_operands_used(ret.in_operands());
-        ret
-    }
-    #[doc = "operand rd at index 0 of type VFReg"]
-    pub fn rd(&self) -> &Cell<MirOperand> {
-        &self._operands[0usize]
-    }
-    #[doc = "operand rd at index 0 of type VFReg"]
-    pub fn get_rd(&self) -> VFReg {
-        VFReg::from_mir(self.rd().get())
-    }
-    #[doc = "set the value of operand rd at 0 to a value of type VFReg (checked by FPR64)"]
-    pub fn set_rd(&self, value: VFReg) {
-        let prev_value = self.get_rd();
-        let checked_value = FPR64::from_real(value);
-        let next_value = checked_value.insert_to_real(prev_value);
-        self.rd().set(next_value.into_mir());
-    }
-    #[doc = "operand src at index 1 of type Imm64"]
-    pub fn src(&self) -> &Cell<MirOperand> {
-        &self._operands[1usize]
-    }
-    #[doc = "operand src at index 1 of type Imm64"]
-    pub fn get_src(&self) -> Imm64 {
-        Imm64::from_mir(self.src().get())
-    }
-    #[doc = "set the value of operand src at 1 to a value of type Imm64 (checked by Imm64)"]
-    pub fn set_src(&self, value: Imm64) {
-        self.src().set(value.into_mir());
-    }
-}
-impl std::fmt::Debug for LoadConstF64 {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let node_head = self._common.node_head.get();
-        let prev = node_head.prev;
-        let next = node_head.next;
-        let opcode = self._common.opcode;
-        f.debug_struct(stringify!(LoadConstF64))
             .field("opcode", &opcode)
             .field("prev", &prev)
             .field("next", &next)
@@ -15031,6 +15821,268 @@ impl std::fmt::Debug for LoadConst64Symbol {
             .field("next", &next)
             .field("rd=op[0]", &self.get_rd())
             .field("src=op[1]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirLdImmF64 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3usize],
+}
+impl IMirSubInst for MirLdImmF64 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..2usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[2usize..3usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirLdImmF64)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirLdImmF64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(VFReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm64::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirLdImmF64(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirLdImmF64(self)
+    }
+}
+impl MirLdImmF64 {
+    pub fn new(opcode: MirOP, rd: FPR64, tmpreg: GPR64, src: Imm64) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirLdImmF64),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(tmpreg.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand rd at index 0 of type VFReg"]
+    pub fn rd(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand rd at index 0 of type VFReg"]
+    pub fn get_rd(&self) -> VFReg {
+        VFReg::from_mir(self.rd().get())
+    }
+    #[doc = "set the value of operand rd at 0 to a value of type VFReg (checked by FPR64)"]
+    pub fn set_rd(&self, value: VFReg) {
+        let prev_value = self.get_rd();
+        let checked_value = FPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.rd().set(next_value.into_mir());
+    }
+    #[doc = "operand tmpreg at index 1 of type GPReg"]
+    pub fn tmpreg(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand tmpreg at index 1 of type GPReg"]
+    pub fn get_tmpreg(&self) -> GPReg {
+        GPReg::from_mir(self.tmpreg().get())
+    }
+    #[doc = "set the value of operand tmpreg at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_tmpreg(&self, value: GPReg) {
+        let prev_value = self.get_tmpreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.tmpreg().set(next_value.into_mir());
+    }
+    #[doc = "operand src at index 2 of type Imm64"]
+    pub fn src(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand src at index 2 of type Imm64"]
+    pub fn get_src(&self) -> Imm64 {
+        Imm64::from_mir(self.src().get())
+    }
+    #[doc = "set the value of operand src at 2 to a value of type Imm64 (checked by Imm64)"]
+    pub fn set_src(&self, value: Imm64) {
+        self.src().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirLdImmF64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirLdImmF64))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("tmpreg=op[1]", &self.get_tmpreg())
+            .field("src=op[2]", &self.get_src())
+            .finish()
+    }
+}
+#[derive(Clone)]
+pub struct MirLdImmF32 {
+    _common: MirInstCommon,
+    _operands: [Cell<MirOperand>; 3usize],
+}
+impl IMirSubInst for MirLdImmF32 {
+    fn get_common(&self) -> &MirInstCommon {
+        &self._common
+    }
+    fn common_mut(&mut self) -> &mut MirInstCommon {
+        &mut self._common
+    }
+    fn out_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[..2usize]
+    }
+    fn in_operands(&self) -> &[Cell<MirOperand>] {
+        &self._operands[2usize..3usize]
+    }
+    fn accepts_opcode(opcode: MirOP) -> bool {
+        matches!(opcode, MirOP::MirLdImmF32)
+    }
+    fn new_empty(opcode: MirOP) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirLdImmF32),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(VFReg::new_empty().into_mir()),
+                Cell::new(GPReg::new_empty().into_mir()),
+                Cell::new(Imm32::new_empty().into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    fn from_mir(mir_inst: &MirInst) -> Option<&Self> {
+        match mir_inst {
+            MirInst::MirLdImmF32(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_mir(self) -> MirInst {
+        MirInst::MirLdImmF32(self)
+    }
+}
+impl MirLdImmF32 {
+    pub fn new(opcode: MirOP, rd: FPR32, tmpreg: GPR64, src: Imm32) -> Self {
+        if !Self::accepts_opcode(opcode) {
+            panic!(
+                "Cannot create an instance of {} with opcode {:?}",
+                stringify!(MirLdImmF32),
+                opcode
+            );
+        }
+        let ret = Self {
+            _common: MirInstCommon::new(opcode),
+            _operands: [
+                Cell::new(rd.clean_use_flags().into_mir()),
+                Cell::new(tmpreg.clean_use_flags().into_mir()),
+                Cell::new(src.into_mir()),
+            ],
+        };
+        super::utils::mark_out_operands_defined(ret.out_operands());
+        super::utils::mark_in_operands_used(ret.in_operands());
+        ret
+    }
+    #[doc = "operand rd at index 0 of type VFReg"]
+    pub fn rd(&self) -> &Cell<MirOperand> {
+        &self._operands[0usize]
+    }
+    #[doc = "operand rd at index 0 of type VFReg"]
+    pub fn get_rd(&self) -> VFReg {
+        VFReg::from_mir(self.rd().get())
+    }
+    #[doc = "set the value of operand rd at 0 to a value of type VFReg (checked by FPR32)"]
+    pub fn set_rd(&self, value: VFReg) {
+        let prev_value = self.get_rd();
+        let checked_value = FPR32::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.rd().set(next_value.into_mir());
+    }
+    #[doc = "operand tmpreg at index 1 of type GPReg"]
+    pub fn tmpreg(&self) -> &Cell<MirOperand> {
+        &self._operands[1usize]
+    }
+    #[doc = "operand tmpreg at index 1 of type GPReg"]
+    pub fn get_tmpreg(&self) -> GPReg {
+        GPReg::from_mir(self.tmpreg().get())
+    }
+    #[doc = "set the value of operand tmpreg at 1 to a value of type GPReg (checked by GPR64)"]
+    pub fn set_tmpreg(&self, value: GPReg) {
+        let prev_value = self.get_tmpreg();
+        let checked_value = GPR64::from_real(value);
+        let next_value = checked_value.insert_to_real(prev_value);
+        self.tmpreg().set(next_value.into_mir());
+    }
+    #[doc = "operand src at index 2 of type Imm32"]
+    pub fn src(&self) -> &Cell<MirOperand> {
+        &self._operands[2usize]
+    }
+    #[doc = "operand src at index 2 of type Imm32"]
+    pub fn get_src(&self) -> Imm32 {
+        Imm32::from_mir(self.src().get())
+    }
+    #[doc = "set the value of operand src at 2 to a value of type Imm32 (checked by Imm32)"]
+    pub fn set_src(&self, value: Imm32) {
+        self.src().set(value.into_mir());
+    }
+}
+impl std::fmt::Debug for MirLdImmF32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node_head = self._common.node_head.get();
+        let prev = node_head.prev;
+        let next = node_head.next;
+        let opcode = self._common.opcode;
+        f.debug_struct(stringify!(MirLdImmF32))
+            .field("opcode", &opcode)
+            .field("prev", &prev)
+            .field("next", &next)
+            .field("rd=op[0]", &self.get_rd())
+            .field("tmpreg=op[1]", &self.get_tmpreg())
+            .field("src=op[2]", &self.get_src())
             .finish()
     }
 }

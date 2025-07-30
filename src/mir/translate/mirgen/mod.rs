@@ -201,7 +201,7 @@ impl MirTranslateCtx {
             .block_get_node(ir_bb)
             .expect("Block node not found in CFG");
         let mut mir_bb_alloc = self.mir_module.borrow_alloc_block_mut();
-        let mir_bb_data = mir_bb.to_slabref_unwrap_mut(&mut mir_bb_alloc);
+        let mir_bb_data = mir_bb.to_data_mut(&mut mir_bb_alloc);
 
         // 设置 MIR 基本块的后继
         for &(_, succ) in node.next_set.iter() {
@@ -391,10 +391,15 @@ impl MirTranslateCtx {
                         // 如果当前指令修改了 PState, 则更新状态
                         state.last_pstate_modifier = Some((ir_inst.ir, inst_ref));
                     }
+                    if state.has_call {
+                        // 如果当前指令包含调用, 则设置函数的 has_call 标志
+                        operand_map.func.has_call.set(true);
+                    }
                 }
                 Err(InstDispatchError::ShouldNotTranslate(..)) => {}
-                Err(e) => panic!("Instruction dispatchong error {e:?}"),
+                Err(e) => panic!("Instruction dispatching error {e:?}"),
             }
+            state.inst_level_reset();
         }
 
         // Step .2: 为每个 Phi 添加拷贝函数.

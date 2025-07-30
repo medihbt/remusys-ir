@@ -6,7 +6,11 @@ use crate::mir::{
         impls::*,
         opcode::MirOP,
     },
-    operand::{IMirSubOperand, reg::RegID},
+    operand::{
+        IMirSubOperand,
+        imm::{Imm32, Imm64},
+        reg::RegID,
+    },
 };
 use std::fmt::Write;
 
@@ -1702,6 +1706,82 @@ pub fn fmt_mir_strlit_f32(
     mir_strlit_f32.get_tmp_addr().fmt_asm(formatter)
 }
 
+// ===== Store Imm to mem instructions =====
+pub fn fmt_mir_stimm64(formatter: &mut FuncFormatContext, inst: &MirStImm64) -> std::fmt::Result {
+    write!(formatter, "mir.stimm64 #")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to [")?;
+    inst.get_base().fmt_asm(formatter)?;
+    write!(formatter, " + ")?;
+    inst.get_offset().fmt_asm(formatter)?;
+    write!(formatter, "], tmp-value ")?;
+    inst.get_tmpreg().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_stimm32(formatter: &mut FuncFormatContext, inst: &MirStImm32) -> std::fmt::Result {
+    write!(formatter, "mir.stimm32 ")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to [")?;
+    inst.get_base().fmt_asm(formatter)?;
+    write!(formatter, " + ")?;
+    inst.get_offset().fmt_asm(formatter)?;
+    write!(formatter, "], tmp-value ")?;
+    inst.get_tmpreg().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_stsym64(formatter: &mut FuncFormatContext, inst: &MirStSym64) -> std::fmt::Result {
+    write!(formatter, "mir.stsym64 ")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to [")?;
+    inst.get_base().fmt_asm(formatter)?;
+    write!(formatter, " + ")?;
+    inst.get_offset().fmt_asm(formatter)?;
+    write!(formatter, "], tmp-value ")?;
+    inst.get_tmpreg().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_stimm32_sym(
+    formatter: &mut FuncFormatContext,
+    inst: &MirStImm32Sym,
+) -> std::fmt::Result {
+    write!(formatter, "mir.stimm32_sym ")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    inst.get_target().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-data ")?;
+    inst.get_immreg().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    inst.get_addr_reg().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_stimm64_sym(
+    formatter: &mut FuncFormatContext,
+    inst: &MirStImm64Sym,
+) -> std::fmt::Result {
+    write!(formatter, "mir.stimm64_sym ")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    inst.get_target().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-data ")?;
+    inst.get_immreg().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    inst.get_addr_reg().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_stsym_sym(
+    formatter: &mut FuncFormatContext,
+    inst: &MirStSym64Sym,
+) -> std::fmt::Result {
+    write!(formatter, "mir.stsym_sym ")?;
+    inst.get_imm().fmt_asm(formatter)?;
+    write!(formatter, " to ")?;
+    inst.get_target().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-data ")?;
+    inst.get_immreg().fmt_asm(formatter)?;
+    write!(formatter, ", tmp-addr ")?;
+    inst.get_addr_reg().fmt_asm(formatter)
+}
+
 // ===== Load Constant instructions =====
 pub fn fmt_load_const64(
     formatter: &mut FuncFormatContext,
@@ -1715,18 +1795,6 @@ pub fn fmt_load_const64(
     load_const64.get_src().fmt_asm(formatter)
 }
 
-pub fn fmt_load_const_f64(
-    formatter: &mut FuncFormatContext,
-    opcode: MirOP,
-    load_const_f64: &LoadConstF64,
-) -> std::fmt::Result {
-    let name = opcode_get_name_str(opcode);
-    write!(formatter, "{name} ")?;
-    load_const_f64.get_rd().fmt_asm(formatter)?;
-    write!(formatter, ", =")?;
-    load_const_f64.get_src().fmt_asm(formatter)
-}
-
 pub fn fmt_load_const64_symbol(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
@@ -1737,6 +1805,24 @@ pub fn fmt_load_const64_symbol(
     load_const64_symbol.get_rd().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
     load_const64_symbol.get_src().fmt_asm(formatter)
+}
+
+pub fn fmt_mir_ldimm_f64(fmt: &mut FuncFormatContext, inst: &MirLdImmF64) -> std::fmt::Result {
+    let Imm64(src, _) = inst.get_src();
+    write!(fmt, "mir.ldimm.f64 #{src:#x} to ")?;
+    inst.get_rd().fmt_asm(fmt)?;
+    write!(fmt, ", through ")?;
+    inst.get_tmpreg().fmt_asm(fmt)?;
+    write!(fmt, " ; src FP64 {:e}", f64::from_bits(src))
+}
+
+pub fn fmt_mir_ldimm_f32(fmt: &mut FuncFormatContext, inst: &MirLdImmF32) -> std::fmt::Result {
+    let Imm32(src, _) = inst.get_src();
+    write!(fmt, "mir.ldimm.f32 #{src:#x} to ")?;
+    inst.get_rd().fmt_asm(fmt)?;
+    write!(fmt, ", through ")?;
+    inst.get_tmpreg().fmt_asm(fmt)?;
+    write!(fmt, " ; src FP32 {:e}", f32::from_bits(src))
 }
 
 pub fn fmt_csel64(

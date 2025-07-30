@@ -8,8 +8,8 @@ use crate::{
     base::{
         NullableValue,
         slablist::{
-            SlabListRange, SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead,
-            SlabRefListNodeRef,
+            SlabListRange, SlabRefList, SlabListError, SlabListNode, SlabListNodeHead,
+            SlabListNodeRef,
         },
         slabref::SlabRef,
     },
@@ -41,14 +41,24 @@ mod checking;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstRef(usize);
+
+impl InstRef {
+    pub fn get_valtype(&self, alloc: &Slab<InstData>) -> ValTypeID {
+        self.to_data(alloc).get_value_type()
+    }
+    pub fn get_valtype_from_module(&self, module: &Module) -> ValTypeID {
+        self.get_valtype(&module.borrow_value_alloc().alloc_inst)
+    }
+}
+
 impl_slabref!(InstRef, InstData);
-impl SlabRefListNodeRef for InstRef {
+impl SlabListNodeRef for InstRef {
     fn on_node_push_next(
         curr: Self,
         next: Self,
         alloc: &Slab<InstData>,
-    ) -> Result<(), SlabRefListError> {
-        let curr_data = curr.to_slabref_unwrap(alloc);
+    ) -> Result<(), SlabListError> {
+        let curr_data = curr.to_data(alloc);
         curr._node_attach_modify_parent(curr_data, next, alloc)
     }
 
@@ -56,13 +66,13 @@ impl SlabRefListNodeRef for InstRef {
         curr: Self,
         prev: Self,
         alloc: &Slab<Self::RefObject>,
-    ) -> Result<(), SlabRefListError> {
-        let curr_data = curr.to_slabref_unwrap(alloc);
+    ) -> Result<(), SlabListError> {
+        let curr_data = curr.to_data(alloc);
         curr._node_attach_modify_parent(curr_data, prev, alloc)
     }
 
-    fn on_node_unplug(curr: Self, alloc: &Slab<Self::RefObject>) -> Result<(), SlabRefListError> {
-        let curr_data = curr.to_slabref_unwrap(alloc);
+    fn on_node_unplug(curr: Self, alloc: &Slab<Self::RefObject>) -> Result<(), SlabListError> {
+        let curr_data = curr.to_data(alloc);
         curr._node_detach_clean_parent(curr_data)
     }
 }
@@ -102,7 +112,7 @@ pub enum InstData {
     /// Instruction list guide node containing a simple header and parent block.
     /// The guide node will be always attached to a block, so its parent block
     /// will be initialized when the block is allocated on `module.inner._alloc_block`.
-    ListGuideNode(Cell<SlabRefListNodeHead>, Cell<BlockRef>),
+    ListGuideNode(Cell<SlabListNodeHead>, Cell<BlockRef>),
     PhiInstEnd(InstDataCommon),
 
     // Terminator instructions. These instructions are put at the end of a block and
@@ -168,7 +178,7 @@ pub struct InstDataCommon {
 
 #[derive(Debug, Clone, Copy)]
 pub struct InstDataInner {
-    pub(super) _node_head: SlabRefListNodeHead,
+    pub(super) _node_head: SlabListNodeHead,
 
     /// ## Parent Basic Block
     ///
@@ -204,7 +214,7 @@ pub enum InstError {
 
     SelfNotAttached(InstRef),
     SelfAlreadyAttached(InstRef, BlockRef),
-    ListError(SlabRefListError),
+    ListError(SlabListError),
     ReplicatedTerminator(InstRef, InstRef),
 }
 
@@ -215,7 +225,7 @@ trait InstDataUnique: Sized {
 }
 
 impl InstDataInner {
-    fn insert_node_head(mut self, node_head: SlabRefListNodeHead) -> Self {
+    fn insert_node_head(mut self, node_head: SlabListNodeHead) -> Self {
         self._node_head = node_head;
         self
     }
@@ -228,22 +238,22 @@ impl InstDataInner {
     }
 }
 
-impl SlabRefListNode for InstData {
+impl SlabListNode for InstData {
     fn new_guide() -> Self {
         Self::ListGuideNode(
-            Cell::new(SlabRefListNodeHead::new()),
+            Cell::new(SlabListNodeHead::new()),
             Cell::new(BlockRef::new_null()),
         )
     }
 
-    fn load_node_head(&self) -> SlabRefListNodeHead {
+    fn load_node_head(&self) -> SlabListNodeHead {
         match self {
             Self::ListGuideNode(cell, _) => cell.get(),
             _ => self.get_common_unwrap().inner.get()._node_head,
         }
     }
 
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
         match self {
             Self::ListGuideNode(cell, _) => cell.set(node_head),
             _ => self
@@ -267,7 +277,7 @@ impl InstData {
     pub fn new_phi_end() -> Self {
         let common = InstDataCommon {
             inner: Cell::new(InstDataInner {
-                _node_head: SlabRefListNodeHead::new(),
+                _node_head: SlabListNodeHead::new(),
                 _parent_bb: None,
             }),
             opcode: Opcode::None,
@@ -410,7 +420,7 @@ impl InstData {
         common.self_ref = self_ref;
         let mut opref = common.operands._head;
         while opref.is_nonnull() {
-            opref.to_slabref_unwrap(alloc_use)._user.set(self_ref);
+            opref.to_data(alloc_use)._user.set(self_ref);
             opref = match opref.get_next_ref(alloc_use) {
                 Some(next) => next,
                 None => break,
@@ -518,7 +528,7 @@ impl InstDataCommon {
     pub fn new(opcode: Opcode, ret_type: ValTypeID, alloc_use: &mut Slab<UseData>) -> Self {
         Self {
             inner: Cell::new(InstDataInner {
-                _node_head: SlabRefListNodeHead::new(),
+                _node_head: SlabListNodeHead::new(),
                 _parent_bb: None,
             }),
             opcode,
@@ -555,30 +565,30 @@ impl InstRef {
         self_data: &InstData,
         next: InstRef,
         alloc_inst: &Slab<InstData>,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         let curr_parent = match self_data.get_parent_bb() {
             Some(p) => p,
-            None => return Err(SlabRefListError::SelfNotInList(self.get_handle())),
+            None => return Err(SlabListError::SelfNotInList(self.get_handle())),
         };
-        let next_data = next.to_slabref_unwrap(alloc_inst);
+        let next_data = next.to_data(alloc_inst);
         if let Some(_) = next_data.get_parent_bb() {
-            return Err(SlabRefListError::PluggedItemAttached(next.get_handle()));
+            return Err(SlabListError::PluggedItemAttached(next.get_handle()));
         }
         next_data.set_parent_bb(Some(curr_parent));
         Ok(())
     }
-    fn _node_detach_clean_parent(self, self_data: &InstData) -> Result<(), SlabRefListError> {
+    fn _node_detach_clean_parent(self, self_data: &InstData) -> Result<(), SlabListError> {
         match self_data.get_parent_bb() {
             Some(_) => {
                 self_data.set_parent_bb(None);
                 Ok(())
             }
-            None => Err(SlabRefListError::UnpluggedItemAttached(self.get_handle())),
+            None => Err(SlabListError::UnpluggedItemAttached(self.get_handle())),
         }
     }
 
     pub fn get_parent_from_alloc(self, alloc_inst: &Slab<InstData>) -> Option<BlockRef> {
-        self.to_slabref_unwrap(alloc_inst).get_parent_bb()
+        self.to_data(alloc_inst).get_parent_bb()
     }
     pub fn get_parent(self, module: &Module) -> Option<BlockRef> {
         module.get_inst(self).get_parent_bb()
@@ -589,7 +599,7 @@ impl InstRef {
         let parent = match self_data.get_parent_bb() {
             Some(p) => p,
             None => {
-                return Err(InstError::ListError(SlabRefListError::SelfNotInList(
+                return Err(InstError::ListError(SlabListError::SelfNotInList(
                     self.get_handle(),
                 )));
             }
@@ -605,7 +615,7 @@ impl InstRef {
         let parent = match self_data.get_parent_bb() {
             Some(p) => p,
             None => {
-                return Err(InstError::ListError(SlabRefListError::SelfNotInList(
+                return Err(InstError::ListError(SlabListError::SelfNotInList(
                     self.get_handle(),
                 )));
             }
@@ -621,7 +631,7 @@ impl InstRef {
         let parent = match self_data.get_parent_bb() {
             Some(p) => p,
             None => {
-                return Err(InstError::ListError(SlabRefListError::SelfNotInList(
+                return Err(InstError::ListError(SlabListError::SelfNotInList(
                     self.get_handle(),
                 )));
             }
@@ -637,7 +647,7 @@ impl InstRef {
     pub fn finalize_with_module(&self, module: &Module) {
         let alloc_value = module.borrow_value_alloc();
         let use_alloc = module.borrow_use_alloc();
-        let self_data = self.to_slabref_unwrap(&alloc_value.alloc_inst);
+        let self_data = self.to_data(&alloc_value.alloc_inst);
 
         // Clean up jump targets of the terminators.
         let (operands_range, len) = match self_data {

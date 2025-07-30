@@ -459,8 +459,20 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::MirStrLitF64 => "mir.strlit.f64",
         MirOP::MirStrLitF32 => "mir.strlit.f32",
 
+        // MIR 加载立即数到内存伪指令
+        MirOP::MirStImm64 => "mir.stimm.64",
+        MirOP::MirStSym64 => "mir.stsym.64",
+        MirOP::MirStImm32 => "mir.stimm.32",
+        MirOP::MirStImm32Sym => "mir.stimm.32.sym",
+        MirOP::MirStImm64Sym => "mir.stimm.64.sym",
+        MirOP::MirStSymSym   => "mir.stimm.sym.sym",
+
+        // MIR 加载立即数到浮点寄存器伪指令
+        MirOP::MirLdImmF64 => "mir.ldimm.f64",
+        MirOP::MirLdImmF32 => "mir.ldimm.f32",
+
         // 常量加载指令
-        MirOP::LoadConst64 | MirOP::LoadConstF64 | MirOP::LoadConst64Symbol => "ldr",
+        MirOP::LoadConst64 | MirOP::LoadConst64Symbol => "ldr",
 
         // 条件选择指令
         MirOP::CSel64 | MirOP::CSel32 => "csel",
@@ -477,6 +489,10 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::MirSaveRegs => "mir.save_regs",
         MirOP::MirRestoreRegs => "mir.restore_regs",
         MirOP::MirRestoreHostRegs => "mir.restore_host_regs",
+
+        MirOP::MirGEP => "mir.gep",
+        MirOP::MirComment => ";",
+        MirOP::MirCommentedInst => ";",
 
         MirOP::LoadStackPosGr64 => "mir.load_stack_pos_gr64",
         MirOP::StoreStackPosGr64 => "mir.store_stack_pos_gr64",

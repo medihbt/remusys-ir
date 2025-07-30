@@ -1,7 +1,7 @@
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefList, SlabRefListNode, SlabRefListNodeHead},
+        slablist::{SlabRefList, SlabListNode, SlabListNodeHead},
         slabref::SlabRef,
     },
     ir::{
@@ -258,7 +258,7 @@ impl<'a> Redirector<'a> {
 
     fn redirect_inst_node_header(
         &self,
-        header: &mut SlabRefListNodeHead,
+        header: &mut SlabListNodeHead,
     ) -> Result<(), ModuleError> {
         let old_prev = InstRef::from_handle(header.prev);
         let old_next = InstRef::from_handle(header.next);
@@ -314,7 +314,7 @@ impl<'a> Redirector<'a> {
     }
     fn _redirect_block_node_header(
         &self,
-        header: &mut SlabRefListNodeHead,
+        header: &mut SlabListNodeHead,
     ) -> Result<(), ModuleError> {
         let old_prev = BlockRef::from_handle(header.prev);
         let old_next = BlockRef::from_handle(header.next);
@@ -440,7 +440,7 @@ impl<'a> Redirector<'a> {
         Ok(())
     }
 
-    fn _redirect_use_node_head(&self, header: &mut SlabRefListNodeHead) -> Result<(), ModuleError> {
+    fn _redirect_use_node_head(&self, header: &mut SlabListNodeHead) -> Result<(), ModuleError> {
         let old_prev = UseRef::from_handle(header.prev);
         let old_next = UseRef::from_handle(header.next);
 
@@ -452,7 +452,7 @@ impl<'a> Redirector<'a> {
         }
         Ok(())
     }
-    fn _redirect_jt_node_head(&self, header: &mut SlabRefListNodeHead) -> Result<(), ModuleError> {
+    fn _redirect_jt_node_head(&self, header: &mut SlabListNodeHead) -> Result<(), ModuleError> {
         let old_prev = JumpTargetRef::from_handle(header.prev);
         let old_next = JumpTargetRef::from_handle(header.next);
 

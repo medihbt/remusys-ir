@@ -15,7 +15,7 @@ use crate::{
 };
 use slab::Slab;
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{Cell, Ref, RefCell, RefMut},
     rc::Rc,
 };
 
@@ -29,6 +29,7 @@ pub struct MirFunc {
     pub arg_regs: Vec<RegOperand>,
     pub blocks: SlabRefList<MirBlockRef>,
 
+    pub has_call: Cell<bool>,
     inner: RefCell<MirFuncInner>,
 }
 
@@ -58,6 +59,7 @@ impl MirFunc {
             ret_ir_type,
             arg_regs,
             blocks: SlabRefList::new_guide(),
+            has_call: Cell::new(false),
             inner: RefCell::new(MirFuncInner {
                 stack_layout,
                 vreg_alloc,
@@ -208,8 +210,9 @@ impl MirFunc {
     }
 
     pub fn reinit_saved_regs(&self, saved_regs: MirPhysRegSet) {
-        let mut inner = self.inner.borrow_mut();
-        let inner = &mut *inner;
-        inner.stack_layout.reinit_saved_regs(saved_regs);
+        self.inner
+            .borrow_mut()
+            .stack_layout
+            .reinit_saved_regs(saved_regs);
     }
 }

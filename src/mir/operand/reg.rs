@@ -3,7 +3,10 @@ use crate::mir::{
     operand::{IMirSubOperand, MirOperand},
 };
 use bitflags::bitflags;
-use std::fmt::{Debug, Write};
+use std::{
+    fmt::{Debug, Write},
+    u32,
+};
 
 /// Represents a sub-register index with a specific bit width and index.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -193,12 +196,12 @@ impl std::str::FromStr for RegOP {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RegID {
-    Virt(u32), // Virtual register ID (ID >= 33)
-    SP,        // Stack Pointer, ID = 32
-    ZR,        // Zero Register, ID = 31
     Phys(u32), // Physical register ID (ID < 31)
+    ZR,        // Zero Register, ID = 31
+    SP,        // Stack Pointer, ID = 32
+    Virt(u32), // Virtual register ID (ID >= 33)
 }
 
 impl RegID {
@@ -643,6 +646,11 @@ impl GPR32 {
         Self(id, RegUseFlags::empty())
     }
 
+    pub fn to_gpr64(self) -> GPR64 {
+        let Self(id, uf) = self;
+        GPR64(id, uf)
+    }
+
     pub fn is_virtual(self) -> bool {
         matches!(RegID::from_real(self.0), RegID::Virt(_))
     }
@@ -665,7 +673,11 @@ pub struct GPR64(pub u32, pub RegUseFlags);
 impl Debug for GPR64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, uf) = self;
-        write!(f, "GPR64(id: {:?}, {uf:?})", RegID::from_real(id),)
+        if id == u32::MAX {
+            write!(f, "GPR64:Undefined({uf:?})")
+        } else {
+            write!(f, "GPR64(id: {:?}, {uf:?})", RegID::from_real(id))
+        }
     }
 }
 
@@ -673,7 +685,7 @@ impl IMirSubOperand for GPR64 {
     type RealRepresents = GPReg;
 
     fn new_empty() -> Self {
-        Self(0, RegUseFlags::empty())
+        Self(u32::MAX, RegUseFlags::empty())
     }
     fn from_mir(mir: MirOperand) -> Self {
         Self::from_real(GPReg::from_mir(mir))
@@ -749,6 +761,11 @@ impl GPR64 {
     pub fn clean_use_flags(self) -> Self {
         let Self(id, _) = self;
         Self(id, RegUseFlags::empty())
+    }
+
+    pub fn trunc_to_gpr32(self) -> GPR32 {
+        let Self(id, uf) = self;
+        GPR32(id, uf)
     }
 }
 
@@ -1020,6 +1037,38 @@ impl RegOperand {
         let other = Self::from(other);
         self.get_id() == other.get_id() && self.is_fp() == other.is_fp()
     }
+
+    pub fn into_mir(self) -> MirOperand {
+        let Self(id, si, uf, is_fp) = self;
+        if is_fp {
+            MirOperand::VFReg(VFReg(id, si, uf))
+        } else {
+            MirOperand::GPReg(GPReg(id, si, uf))
+        }
+    }
+    pub fn from_mir(mir: MirOperand) -> Self {
+        match mir {
+            MirOperand::GPReg(reg) => RegOperand::from(reg),
+            MirOperand::VFReg(reg) => RegOperand::from(reg),
+            _ => panic!(
+                "Expected MirOperand::GPReg or MirOperand::VFReg, found {:?}",
+                mir
+            ),
+        }
+    }
+
+    pub fn as_g64(&self) -> Option<GPR64> {
+        if !self.is_fp() && self.get_bits_log2() == 6 { Some(GPR64(self.0, self.2)) } else { None }
+    }
+    pub fn as_g32(&self) -> Option<GPR32> {
+        if !self.is_fp() && self.get_bits_log2() == 5 { Some(GPR32(self.0, self.2)) } else { None }
+    }
+    pub fn as_f64(&self) -> Option<FPR64> {
+        if self.is_fp() && self.get_bits_log2() == 6 { Some(FPR64(self.0, self.2)) } else { None }
+    }
+    pub fn as_f32(&self) -> Option<FPR32> {
+        if self.is_fp() && self.get_bits_log2() == 5 { Some(FPR32(self.0, self.2)) } else { None }
+    }
 }
 
 impl From<GPReg> for RegOperand {
@@ -1063,16 +1112,6 @@ impl From<FPR64> for RegOperand {
         RegOperand(id, SubRegIndex::new(6, 0), uf, true)
     }
 }
-
-// impl Into<GPReg> for RegOperand {
-//     fn into(self) -> GPReg {
-//         let RegOperand(id, si, uf, is_fp) = self;
-//         if is_fp {
-//             panic!("Cannot convert RegOperand to GPReg, it is a VFReg");
-//         }
-//         GPReg(id, si, uf)
-//     }
-// }
 
 impl From<RegOperand> for GPReg {
     fn from(op: RegOperand) -> Self {

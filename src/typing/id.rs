@@ -60,18 +60,20 @@ impl ValTypeID {
             ValTypeID::Int(binbits) => Some(binary_bits_to_bytes(*binbits as usize)),
             ValTypeID::Float(fp) => fp.get_instance_size(type_ctx),
             ValTypeID::Array(arr) => arr.load_data(type_ctx).get_instance_size(type_ctx),
-            ValTypeID::Struct(st) => st
-                .to_slabref_unwrap(&inner_ref._alloc_struct)
-                .get_instance_size(type_ctx),
+            ValTypeID::Struct(st) => Some(st.get_instance_size(type_ctx)),
             ValTypeID::StructAlias(sa) => sa
-                .to_slabref_unwrap(&inner_ref._alloc_struct_alias)
+                .to_data(&inner_ref._alloc_struct_alias)
                 .get_instance_size(type_ctx),
             ValTypeID::Func(_) => None,
         }
     }
 
+    pub fn get_instance_size_unwrap(&self, type_ctx: &TypeContext) -> usize {
+        self.get_instance_size(type_ctx)
+            .expect("ValTypeID must have a valid instance size")
+    }
+
     pub fn get_instance_align(&self, type_ctx: &TypeContext) -> Option<usize> {
-        let inner_ref = type_ctx._inner.borrow();
         match self {
             ValTypeID::Ptr => Some(type_ctx.platform_policy.ptr_nbits / 8),
             ValTypeID::Int(binbits) => {
@@ -83,12 +85,7 @@ impl ValTypeID {
                 FloatTypeKind::Ieee64 => Some(8),
             },
             ValTypeID::Array(arr) => arr.get_element_type(type_ctx).get_instance_align(type_ctx),
-            ValTypeID::Struct(st) => st
-                .to_slabref_unwrap(&inner_ref._alloc_struct)
-                .elemty
-                .iter()
-                .map(|vty| vty.get_instance_align(type_ctx).unwrap())
-                .max(),
+            ValTypeID::Struct(st) => Some(st.get_instance_align(type_ctx)),
             ValTypeID::StructAlias(sa) => {
                 let sty = sa.get_aliasee(type_ctx);
                 ValTypeID::Struct(sty).get_instance_align(type_ctx)
@@ -109,16 +106,16 @@ impl ValTypeID {
             ValTypeID::Int(binbits) => format!("i{}", binbits),
             ValTypeID::Float(fp) => fp.get_display_name(type_ctx),
             ValTypeID::Array(arr) => arr
-                .to_slabref_unwrap(&inner_ref._alloc_array)
+                .to_data(&inner_ref._alloc_array)
                 .get_display_name(type_ctx),
             ValTypeID::Struct(st) => st
-                .to_slabref_unwrap(&inner_ref._alloc_struct)
+                .to_data(&inner_ref._alloc_struct)
                 .get_display_name(type_ctx),
             ValTypeID::StructAlias(sa) => sa
-                .to_slabref_unwrap(&inner_ref._alloc_struct_alias)
+                .to_data(&inner_ref._alloc_struct_alias)
                 .get_display_name(type_ctx),
             ValTypeID::Func(func) => func
-                .to_slabref_unwrap(&inner_ref._alloc_func)
+                .to_data(&inner_ref._alloc_func)
                 .get_display_name(type_ctx),
         }
     }

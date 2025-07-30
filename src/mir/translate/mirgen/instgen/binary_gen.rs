@@ -21,7 +21,7 @@ use std::{cell::Ref, collections::VecDeque};
 
 type BinLHS = crate::mir::translate::mirgen::operandgen::DispatchedReg;
 
-pub(crate) fn dispatch_binaries(
+pub(super) fn dispatch_binaries(
     operand_map: &OperandMap,
     ir_module: &Module,
     vreg_alloc: &mut VirtRegAlloc,
@@ -30,7 +30,7 @@ pub(crate) fn dispatch_binaries(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (opcode, inst) = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let (opcode, inst) = match ir_ref.to_data(alloc_inst) {
         InstData::BinOp(c, b) => (c.opcode, b),
         _ => panic!("Expected BinOp instruction"),
     };

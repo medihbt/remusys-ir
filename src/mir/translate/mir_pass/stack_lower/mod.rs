@@ -1,12 +1,13 @@
 use crate::mir::{
     inst::MirInstRef,
     module::{MirGlobal, MirModule, func::MirFunc, stack::SavedReg},
-    operand::reg::*,
+    operand::{IMirSubOperand, MirOperand, reg::*},
     util::stack_adjust::MirSpAdjustTree,
 };
 use std::{
+    cell::Cell,
     cmp::Ordering,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     rc::Rc,
 };
 
@@ -55,8 +56,23 @@ fn lower_function_stack(
         return;
     }
 
+    let used_stackpos = {
+        let mut used_stackpos = BTreeSet::new();
+        let allocs = module.allocs.get_mut();
+        let alloc_bb = &allocs.block;
+        let alloc_inst = &allocs.inst;
+        for (_, block) in func.blocks.view(alloc_bb) {
+            for (_, inst) in block.insts.view(alloc_inst) {
+                add_maybe_stackpos_operands(&mut used_stackpos, inst.in_operands());
+                add_maybe_stackpos_operands(&mut used_stackpos, inst.out_operands());
+            }
+        }
+        used_stackpos
+    };
+
     let mut stack_layout = std::mem::take(&mut func.borrow_inner_mut().stack_layout);
     stack_layout.saved_regs.sort_by(saved_reg_cmp);
+    stack_layout.rearrange_var_section(&used_stackpos);
 
     let mut insts_queue = VecDeque::new();
 
@@ -82,9 +98,11 @@ fn lower_function_stack(
         func,
         module,
         sp_offset_map,
-        stack_layout,
+        &stack_layout,
         stackpos_calc_queue,
     );
+
+    func.borrow_inner_mut().stack_layout = stack_layout;
 
     fn saved_reg_cmp(a: &SavedReg, b: &SavedReg) -> std::cmp::Ordering {
         let a_size = a.get_size_bytes();
@@ -99,6 +117,21 @@ fn lower_function_stack(
             (true, false) => Ordering::Less,
             (false, true) => Ordering::Greater,
             _ => a_id.cmp(&b_id),
+        }
+    }
+}
+
+fn add_maybe_stackpos_operands(stack_used: &mut BTreeSet<RegID>, operands: &[Cell<MirOperand>]) {
+    for operand in operands {
+        let operand = operand.get();
+        let MirOperand::GPReg(gpr) = operand else {
+            continue;
+        };
+        let Some(gpr64) = GPR64::try_from_real(gpr) else {
+            continue;
+        };
+        if gpr64.is_virtual() {
+            stack_used.insert(gpr64.get_id());
         }
     }
 }

@@ -10,7 +10,7 @@ use slab::Slab;
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabListRange, SlabRefListNodeRef},
+        slablist::{SlabListRange, SlabListNodeRef},
         slabref::SlabRef,
     },
     mir::{
@@ -38,9 +38,14 @@ impl MirSpAdjust {
     /// 获取栈指针的变化量
     pub fn get_sp_delta(&self) -> u32 {
         match self {
-            MirSpAdjust::SubSP { delta, .. } => *delta,
+            MirSpAdjust::SubSP { delta, .. } => {
+                if delta % 16 != 0 {
+                    panic!("SubSP delta must be a multiple of 16, found: {delta}");
+                }
+                *delta
+            }
             // 每个寄存器占用 8 字节
-            MirSpAdjust::SaveRegs { regset, .. } => regset.num_regs() * 8,
+            MirSpAdjust::SaveRegs { regset, .. } => (regset.num_regs() * 8).next_multiple_of(16),
             MirSpAdjust::NOP => 0, // 什么都不做, 变化量为 0
         }
     }
@@ -100,10 +105,10 @@ impl MirSpAdjustNode {
         self.adjust
             .set(MirSpAdjust::SaveRegs { regset: saved_regs, save_reg, restore_reg });
 
-        let MirInst::MirSaveRegs(save_reg) = save_reg.to_slabref_unwrap(alloc_inst) else {
+        let MirInst::MirSaveRegs(save_reg) = save_reg.to_data(alloc_inst) else {
             panic!("Expected MirSaveRegs, found {:?}", save_reg);
         };
-        let MirInst::MirRestoreRegs(restore_reg) = restore_reg.to_slabref_unwrap(alloc_inst) else {
+        let MirInst::MirRestoreRegs(restore_reg) = restore_reg.to_data(alloc_inst) else {
             panic!("Expected MirRestoreRegs, found {:?}", restore_reg);
         };
         save_reg.set_saved_regs(saved_regs);
@@ -112,6 +117,7 @@ impl MirSpAdjustNode {
 
     fn make_offset_map(
         &self,
+        level: u32,
         parent_offset: u32,
         alloc_inst: &Slab<MirInst>,
         out_map: &mut BTreeMap<MirInstRef, u32>,
@@ -125,13 +131,14 @@ impl MirSpAdjustNode {
             return; // 没有指令范围, 跳过
         };
         for node in self.children.iter() {
-            node.make_offset_map(this_node_offset, alloc_inst, out_map);
+            node.make_offset_map(level + 1, this_node_offset, alloc_inst, out_map);
         }
         for (iref, _) in range.view(alloc_inst) {
             if out_map.contains_key(&iref) {
                 // 这个指令引用已经在上面处理子结点的过程中被处理过了, 跳过
                 continue;
             }
+            eprintln!("{}Adding offset for instruction {iref:?}: {this_node_offset}", "..".repeat(level as usize));
             out_map.insert(iref, this_node_offset);
         }
     }
@@ -176,7 +183,7 @@ impl MirSpAdjustTree {
     pub fn make_offset_map(&self, alloc_inst: &Slab<MirInst>) -> BTreeMap<MirInstRef, u32> {
         let mut offset_map = BTreeMap::new();
         for root in &self.roots {
-            root.make_offset_map(0, alloc_inst, &mut offset_map);
+            root.make_offset_map(0, 0, alloc_inst, &mut offset_map);
         }
         offset_map
     }

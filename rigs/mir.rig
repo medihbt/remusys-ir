@@ -54,6 +54,10 @@ extern class MirSwitch;
 extern class MirSaveRegs;
 extern class MirRestoreRegs;
 extern class MirRestoreHostRegs;
+extern class MirGEP;
+// 啊对, MIR 的注释也是指令 -- 只不过大多数时候什么都不做.
+extern class MirComment;
+extern class MirCommentedInst;
 
 template[Lhs, Rhs] CompareInsts {
     in: {
@@ -545,14 +549,40 @@ template[Src] MirStoreLiteral {
     }
 }
 
+template[Src, Offset] MirStoreImm {
+    in: {
+        imm: Src,
+        base: GPR64,
+        offset: Offset,
+    },
+    out: { tmpreg: GPR64, };
+    impl {
+        [Imm64,  ImmLSP64] => MirStImm64 { insts: [ MirStImm64 ], },
+        [Symbol, ImmLSP64] => MirStSym64 { insts: [ MirStSym64 ], },
+        [Imm32,  ImmLSP32] => MirStImm32 { insts: [ MirStImm32 ], },
+    }
+}
+
 template[Dst, Src] MirLoadConst {
     out: { rd: Dst, },
     in: { src: Src, };
 
     impl {
         [GPR64, Imm64] => LoadConst64 { insts: [ LoadConst64 ], },
-        [FPR64, Imm64] => LoadConstF64 { insts: [ LoadConstF64 ], },
         [GPR64, Symbol] => LoadConst64Symbol { insts: [ LoadConst64Symbol ], },
+    }
+}
+
+template[Dst, Src] MirLoadFImm {
+    out: {
+        rd: Dst,
+        tmpreg: GPR64,
+    },
+    in: { src: Src, };
+
+    impl {
+        [FPR64, Imm64] => MirLdImmF64 { insts: [ MirLdImmF64 ], },
+        [FPR32, Imm32] => MirLdImmF32 { insts: [ MirLdImmF32 ], },
     }
 }
 

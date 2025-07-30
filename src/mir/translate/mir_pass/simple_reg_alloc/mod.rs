@@ -6,6 +6,7 @@ use crate::{
             MirGlobal, MirModule,
             block::{MirBlock, MirBlockRef},
             func::{MirFunc, MirFuncInner},
+            stack::MirStackLayout,
         },
         operand::{
             IMirSubOperand, MirOperand,
@@ -16,11 +17,13 @@ use crate::{
     },
 };
 use slab::Slab;
-use std::{cell::Cell, collections::VecDeque, rc::Rc};
+use std::{cell::Cell, collections::VecDeque, fmt::Debug, rc::Rc};
 
+mod regalloc_lower_inst;
+mod regalloc_lower_mir_constop;
+mod regalloc_lower_mir_gep;
 mod regalloc_lower_mir_ldrlit;
 mod regalloc_lower_movs;
-mod regalloc_lower_inst;
 
 /// 极其简单的寄存器分配算法 -- 每个虚拟寄存器都对应一个栈空间位置,
 /// 所有带虚拟寄存器操作的指令都要配套一些 load and store 指令来实现。
@@ -80,9 +83,10 @@ pub fn roughly_allocate_register_for_func(module: &mut MirModule, func: &MirFunc
     let mut loads_before = VecDeque::new();
     let mut stores_after = VecDeque::new();
     for &(block_ref, inst_ref) in &vreg_info.relative_insts {
-        let inst = inst_ref.to_slabref_unwrap(&allocs.inst);
+        let inst = inst_ref.to_data(&allocs.inst);
         let deletes_orig = regalloc_lower_inst::regalloc_lower_a_mir_inst(
             &vreg_info,
+            &func.borrow_inner().stack_layout,
             &mut loads_before,
             &mut stores_after,
             inst,
@@ -192,6 +196,12 @@ pub struct SpillVRegsResult {
     relative_insts: Vec<(MirBlockRef, MirInstRef)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpillVRegsError {
+    NotFound,
+    IsStackPos,
+}
+
 impl SpillVRegsResult {
     pub fn new(func: &MirFunc, alloc_block: &Slab<MirBlock>, alloc_inst: &Slab<MirInst>) -> Self {
         let mut inner = func.borrow_inner_mut();
@@ -246,6 +256,146 @@ impl SpillVRegsResult {
         }
         None
     }
+    fn find_stackpos_full<T: Clone>(
+        &self,
+        stack: &MirStackLayout,
+        vreg: T,
+    ) -> Result<GPR64, SpillVRegsError>
+    where
+        RegOperand: From<T>,
+    {
+        for &(key, stackpos) in self.stackpos_map.iter() {
+            if key.same_pos_as(vreg.clone()) {
+                return Ok(stackpos);
+            }
+        }
+        let vreg = RegOperand::from(vreg);
+        let Some(vreg) = vreg.as_g64() else {
+            return Err(SpillVRegsError::NotFound);
+        };
+        if stack.vreg_is_stackpos(vreg) {
+            return Err(SpillVRegsError::IsStackPos);
+        }
+        Err(SpillVRegsError::NotFound)
+    }
+    fn findpos_full_unwrap<T: Clone>(&self, stack: &MirStackLayout, vreg: T) -> GPR64
+    where
+        RegOperand: From<T>,
+    {
+        let vregop = RegOperand::from(vreg.clone());
+        self.find_stackpos_full(stack, vreg).unwrap_or_else(|e| {
+            panic!("Virtual register {vregop:?} not found in stack layout: {e:?}")
+        })
+    }
+
+    fn lower_gpr64(
+        &self,
+        stack: &MirStackLayout,
+        reg: GPR64,
+        loads_before: &mut VecDeque<MirInst>,
+        tmpr_alloc: &mut SRATmpRegAlloc,
+    ) -> GPR64 {
+        if !reg.is_virtual() {
+            return reg;
+        }
+        match self.find_stackpos_full(stack, reg) {
+            Ok(stackpos) => {
+                // 直接把基地址塞到返回的临时寄存器中, 接下来加减啥的方便.
+                let tmpr = tmpr_alloc.alloc_gpr64();
+                let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, tmpr, stackpos, ImmLSP64(0));
+                loads_before.push_back(ldr.into_mir());
+                tmpr
+            }
+            Err(SpillVRegsError::IsStackPos) => reg,
+            Err(SpillVRegsError::NotFound) => {
+                panic!("Virtual register {reg:?} not found in stack layout");
+            }
+        }
+    }
+
+    fn lower_nonaddr_regs<T: Clone + Debug>(
+        &self,
+        stack: &MirStackLayout,
+        reg: T,
+        loads_before: &mut VecDeque<MirInst>,
+        alloc_reg: impl FnOnce() -> T,
+        make_inst: impl FnOnce(T, GPR64) -> MirInst,
+    ) -> T
+    where
+        RegOperand: From<T>,
+    {
+        let oreg = RegOperand::from(reg.clone());
+        if !oreg.is_virtual() {
+            return reg;
+        }
+        match self.find_stackpos_full(stack, reg.clone()) {
+            Ok(stackpos) => {
+                // 直接把基地址塞到返回的临时寄存器中, 接下来加减啥的方便.
+                let tmpr = alloc_reg();
+                let ldr = make_inst(tmpr.clone(), stackpos);
+                loads_before.push_back(ldr);
+                tmpr
+            }
+            Err(SpillVRegsError::IsStackPos) => {
+                panic!("Cannot lower a stack position register: {reg:?}");
+            }
+            Err(SpillVRegsError::NotFound) => {
+                panic!("Virtual register {reg:?} not found in stack layout");
+            }
+        }
+    }
+
+    fn lower_gpr32(
+        &self,
+        stack: &MirStackLayout,
+        reg: GPR32,
+        loads_before: &mut VecDeque<MirInst>,
+        tmpr_alloc: &mut SRATmpRegAlloc,
+    ) -> GPR32 {
+        self.lower_nonaddr_regs(
+            stack,
+            reg,
+            loads_before,
+            || tmpr_alloc.alloc_gpr32(),
+            |tmpr, stackpos| {
+                LoadGr32Base::new(MirOP::LdrGr32Base, tmpr, stackpos, ImmLSP32(0)).into_mir()
+            },
+        )
+    }
+    fn lower_fpr64(
+        &self,
+        stack: &MirStackLayout,
+        reg: FPR64,
+        loads_before: &mut VecDeque<MirInst>,
+        tmpr_alloc: &mut SRATmpRegAlloc,
+    ) -> FPR64 {
+        self.lower_nonaddr_regs(
+            stack,
+            reg,
+            loads_before,
+            || tmpr_alloc.alloc_fpr64(),
+            |tmpr, stackpos| {
+                LoadF64Base::new(MirOP::LdrF64Base, tmpr, stackpos, ImmLSP64(0)).into_mir()
+            },
+        )
+    }
+    fn lower_fpr32(
+        &self,
+        stack: &MirStackLayout,
+        reg: FPR32,
+        loads_before: &mut VecDeque<MirInst>,
+        tmpr_alloc: &mut SRATmpRegAlloc,
+    ) -> FPR32 {
+        self.lower_nonaddr_regs(
+            stack,
+            reg,
+            loads_before,
+            || tmpr_alloc.alloc_fpr32(),
+            |tmpr, stackpos| {
+                LoadF32Base::new(MirOP::LdrF32Base, tmpr, stackpos, ImmLSP32(0)).into_mir()
+            },
+        )
+    }
 
     fn try_add_vreg_operand(
         inner: &MirFuncInner,
@@ -253,13 +403,7 @@ impl SpillVRegsResult {
         operand: MirOperand,
     ) -> bool {
         let vreg = match operand {
-            MirOperand::GPReg(gpreg) if gpreg.is_virtual() => {
-                if gpreg.get_bits_log2() == 6
-                    && inner.stack_layout.vreg_is_stackpos(GPR64::from_real(gpreg))
-                {
-                    // 如果是栈位置虚拟寄存器, 则不需要分配寄存器
-                    return false;
-                }
+            MirOperand::GPReg(gpreg) if Self::gpreg_can_alloc(gpreg, inner) => {
                 RegOperand::from(gpreg)
             }
             MirOperand::VFReg(vfreg) if vfreg.is_virtual() => RegOperand::from(vfreg),
@@ -281,6 +425,29 @@ impl SpillVRegsResult {
             vregs.push(vreg);
         }
         true
+    }
+
+    /// 检查通用寄存器是否可以分配. 条件是:
+    ///
+    /// * 寄存器是虚拟寄存器
+    /// * 寄存器不是栈空间位置寄存器
+    fn gpreg_can_alloc(gpreg: GPReg, inner: &MirFuncInner) -> bool {
+        if !gpreg.is_virtual() {
+            return false;
+        }
+        let Some(gpreg) = GPR64::try_from_real(gpreg) else {
+            // 只有 GPR64 才能作为栈空间位置寄存器.
+            // 剩下的就是变量了, 可以分配到寄存器.
+            return true;
+        };
+        if !inner.stack_layout.vreg_is_stackpos(gpreg) {
+            return true;
+        }
+        let GPR64(_, uf) = gpreg;
+        if uf.contains(RegUseFlags::DEF) {
+            panic!("Cannot write to a stack position register: {gpreg:?}");
+        }
+        false
     }
 }
 

@@ -26,7 +26,7 @@ use crate::{
 use slab::Slab;
 use std::{cell::Ref, collections::VecDeque};
 
-pub(crate) fn dispatch_casts(
+pub(super) fn dispatch_casts(
     ir_module: &Module,
     operand_map: &OperandMap,
     vreg_alloc: &mut VirtRegAlloc,
@@ -44,7 +44,7 @@ pub(crate) fn dispatch_casts(
             _ => panic!("Invalid types for integer cast: {src_ty:?} to {dst_ty:?}"),
         }
     }
-    let (opcode, dst_ty, inst) = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let (opcode, dst_ty, inst) = match ir_ref.to_data(alloc_inst) {
         InstData::Cast(c, i) => (c.opcode, c.ret_type, i),
         _ => panic!("Expected Cast instruction"),
     };

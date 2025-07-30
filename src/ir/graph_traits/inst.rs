@@ -24,10 +24,10 @@ impl IRGraphEdge for UseRef {
         module.borrow_use_alloc()
     }
     fn graph_get_user_from_alloc(&self, alloc: &Slab<UseData>) -> InstRef {
-        self.to_slabref_unwrap(alloc).get_user()
+        self.to_data(alloc).get_user()
     }
     fn graph_get_operand_from_alloc(&self, alloc: &Slab<UseData>) -> ValueSSA {
-        self.to_slabref_unwrap(alloc).get_operand()
+        self.to_data(alloc).get_operand()
     }
 }
 

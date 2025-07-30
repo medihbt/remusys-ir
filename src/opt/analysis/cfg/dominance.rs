@@ -9,7 +9,7 @@ use std::{
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, dsu::DSU, slablist::SlabRefListNodeRef},
+    base::{NullableValue, dsu::DSU, slablist::SlabListNodeRef},
     ir::{
         block::BlockRef,
         inst::{InstData, InstRef},

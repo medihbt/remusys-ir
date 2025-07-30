@@ -97,7 +97,10 @@ impl TypeContext {
         }
     }
     pub fn make_struct_type(&self, elems: &[ValTypeID]) -> StructTypeRef {
-        self.get_struct_type(StructTypeData { elemty: Box::from(elems) })
+        self.get_struct_type(StructTypeData::new(elems, false))
+    }
+    pub fn make_packed_struct_type(&self, elems: &[ValTypeID]) -> StructTypeRef {
+        self.get_struct_type(StructTypeData::new(elems, true))
     }
 
     pub fn read_struct_aliases(&self, mut reader: impl FnMut(&str, StructTypeRef)) {
@@ -124,7 +127,7 @@ impl TypeContext {
     pub fn make_struct_alias_force(&self, name: &str, aliasee: StructTypeRef) -> StructAliasRef {
         if let Some(alias) = self.get_struct_alias_by_name(name) {
             if alias
-                .to_slabref_unwrap(&self._inner.borrow()._alloc_struct_alias)
+                .to_data(&self._inner.borrow()._alloc_struct_alias)
                 .aliasee
                 .eq(&aliasee)
             {

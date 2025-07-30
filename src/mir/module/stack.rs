@@ -6,7 +6,7 @@ use crate::{
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
-use std::cell::Cell;
+use std::{cell::Cell, collections::BTreeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackItemKind {
@@ -127,6 +127,8 @@ impl MirStackLayout {
         self.reinit_saved_regs(MirPhysRegSet::new_aapcs_callee())
     }
     pub fn reinit_saved_regs(&mut self, saved_regs: MirPhysRegSet) -> usize {
+        self.saved_regs.clear();
+        self._saved_regs_size_cache.set(0);
         self.saved_regs.reserve(saved_regs.num_regs() as usize);
         for preg in saved_regs {
             self.saved_regs.push(SavedReg::new(preg));
@@ -136,13 +138,18 @@ impl MirStackLayout {
     }
     pub fn saved_regs_section_size(&self) -> u64 {
         if self._saved_regs_size_cache.get() != 0 {
-            return self._saved_regs_size_cache.get();
+            let size = self._saved_regs_size_cache.get();
+            if size % 16 != 0 {
+                panic!("Saved registers section size must be a multiple of 16, found: {size}");
+            }
+            return size;
         }
         let mut size: u64 = 0;
         for reg in &self.saved_regs {
             size = size.next_multiple_of(reg.get_align_bytes());
             size += reg.get_size_bytes();
         }
+        size = size.next_multiple_of(16); // Ensure 16-byte alignment
         self._saved_regs_size_cache.set(size);
         size
     }
@@ -196,7 +203,7 @@ impl MirStackLayout {
     }
 
     /// Adds a spilled argument to the stack layout.
-    pub fn add_spilled_arg(
+    pub(super) fn add_spilled_arg(
         &mut self,
         irtype: ValTypeID,
         vreg_alloc: &mut VirtRegAlloc,
@@ -231,7 +238,7 @@ impl MirStackLayout {
         self.args.last_mut().unwrap()
     }
 
-    pub fn finish_arg_building(&mut self) {
+    pub(super) fn finish_arg_building(&mut self) {
         if self.finished_arg_build {
             return;
         }
@@ -324,5 +331,34 @@ impl MirStackLayout {
             DispatchedReg::G64(_) => (ValTypeID::Int(64), 8, 3),
         };
         self.add_variable_item(irtype, vreg_alloc, size, align_log2)
+    }
+
+    /// 重排变量区域的内存, 使其紧凑一些.
+    pub fn rearrange_var_section(&mut self, valid_stackpos: &BTreeSet<RegID>) {
+        if self.vars.is_empty() {
+            return;
+        }
+        self.vars.retain(|item| {
+            if item.stackpos_reg.is_virtual() {
+                valid_stackpos.contains(&item.stackpos_reg.get_id())
+            } else {
+                panic!("Expected a virtual register, found item {item:#?}");
+            }
+        });
+        self.vars.sort_by(|a, b| {
+            a.align_log2
+                .cmp(&b.align_log2)
+                .then(a.size.cmp(&b.size))
+                .then(a.offset.cmp(&b.offset))
+        });
+        let mut offset: u64 = 0;
+        for (index, item) in self.vars.iter_mut().enumerate() {
+            offset = offset.next_multiple_of(1u64 << item.align_log2);
+            item.offset = offset as i64;
+            item.size_with_padding = item.size;
+            item.index = index;
+            offset += item.size;
+        }
+        self.vars_size = offset.next_multiple_of(16);
     }
 }

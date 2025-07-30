@@ -58,7 +58,6 @@ impl<'a> FuncFormatContext<'a> {
             | MirInst::MirFCopy32(_)
             | MirInst::FMov64I(_)
             | MirInst::FMov32I(_)
-            | MirInst::LoadConstF64(_)
             | MirInst::LoadConst64Symbol(_) => self.set_fp(true),
             _ => self.set_fp(false),
         };
@@ -361,15 +360,26 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::MirStrLitF32(strlit) => {
                 format_inst::fmt_mir_strlit_f32(self, inst.get_opcode(), strlit)
             }
+            MirInst::MirStImm64(stimm) => format_inst::fmt_mir_stimm64(self, stimm),
+            MirInst::MirStImm32(stimm) => format_inst::fmt_mir_stimm32(self, stimm),
+            MirInst::MirStSym64(stsym) => format_inst::fmt_mir_stsym64(self, stsym),
+            MirInst::MirStImm32Sym(stimm_sym) => {
+                format_inst::fmt_mir_stimm32_sym(self, stimm_sym)
+            }
+            MirInst::MirStImm64Sym(stimm_sym) => {
+                format_inst::fmt_mir_stimm64_sym(self, stimm_sym)
+            }
+            MirInst::MirStSym64Sym(stsym_sym) => {
+                format_inst::fmt_mir_stsym_sym(self, stsym_sym)
+            }
             MirInst::LoadConst64(load_const64) => {
                 format_inst::fmt_load_const64(self, inst.get_opcode(), load_const64)
-            }
-            MirInst::LoadConstF64(load_const_f64) => {
-                format_inst::fmt_load_const_f64(self, inst.get_opcode(), load_const_f64)
             }
             MirInst::LoadConst64Symbol(load_const64_symbol) => {
                 format_inst::fmt_load_const64_symbol(self, inst.get_opcode(), load_const64_symbol)
             }
+            MirInst::MirLdImmF64(ld_fimm) => format_inst::fmt_mir_ldimm_f64(self, ld_fimm),
+            MirInst::MirLdImmF32(ld_fimm) => format_inst::fmt_mir_ldimm_f32(self, ld_fimm),
             MirInst::CSel64(c_sel64) => format_inst::fmt_csel64(self, inst.get_opcode(), c_sel64),
             MirInst::CSel32(c_sel32) => format_inst::fmt_csel32(self, inst.get_opcode(), c_sel32),
             MirInst::CSelF64(c_sel_f64) => {
@@ -388,6 +398,9 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::MirRestoreHostRegs(mir_restore_host_regs) => {
                 mir_restore_host_regs.fmt_asm(self)
             }
+            MirInst::MirGEP(gep) => gep.fmt_asm(self),
+            MirInst::MirComment(comment) => comment.fmt_asm(self),
+            MirInst::MirCommentedInst(commented_inst) => commented_inst.fmt_asm(self),
         }
     }
 }

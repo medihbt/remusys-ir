@@ -1,5 +1,6 @@
 use crate::mir::{
     inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
+    module::stack::MirStackLayout,
     operand::{
         IMirSubOperand,
         imm::{ImmLSP32, ImmLSP64},
@@ -110,5 +111,82 @@ pub(super) fn lower_mldrlit_f32(
         let str = StoreF32Base::new(MirOP::StrF32Base, tmppos, stackpos, z32);
         stores_after.push_back(str.into_mir());
     }
+    false
+}
+
+pub(super) fn lower_mstrlit_g64(
+    vreg_info: &SpillVRegsResult,
+    stack: &MirStackLayout,
+    loads_before: &mut VecDeque<MirInst>,
+    strlit: &MirStrLitG64,
+) -> bool {
+    let mut tmpr_alloc = SRATmpRegAlloc::new();
+    let src = vreg_info.lower_gpr64(
+        stack,
+        GPR64::from_real(strlit.get_rd()),
+        loads_before,
+        &mut tmpr_alloc,
+    );
+    strlit.set_rd(src.into_real());
+
+    let tmpreg = tmpr_alloc.alloc_gpr64();
+    strlit.set_tmp_addr(tmpreg.into_real());
+    false
+}
+
+pub(super) fn lower_mstrlit_g32(
+    vreg_info: &SpillVRegsResult,
+    loads_before: &mut VecDeque<MirInst>,
+    strlit: &MirStrLitG32,
+) -> bool {
+    let mut tmpr_alloc = SRATmpRegAlloc::new();
+    let src = vreg_info.lower_gpr32(
+        &MirStackLayout::default(),
+        GPR32::from_real(strlit.get_rd()),
+        loads_before,
+        &mut tmpr_alloc,
+    );
+    strlit.set_rd(src.into_real());
+
+    let tmpreg = tmpr_alloc.alloc_gpr64();
+    strlit.set_tmp_addr(tmpreg.into_real());
+    false
+}
+
+pub(super) fn lower_mstrlit_f64(
+    vreg_info: &SpillVRegsResult,
+    loads_before: &mut VecDeque<MirInst>,
+    strlit: &MirStrLitF64,
+) -> bool {
+    let mut tmpr_alloc = SRATmpRegAlloc::new();
+    let src = vreg_info.lower_fpr64(
+        &MirStackLayout::default(),
+        FPR64::from_real(strlit.get_rd()),
+        loads_before,
+        &mut tmpr_alloc,
+    );
+    strlit.set_rd(src.into_real());
+
+    let tmpreg = tmpr_alloc.alloc_gpr64();
+    strlit.set_tmp_addr(tmpreg.into_real());
+    false
+}
+
+pub(super) fn lower_mstrlit_f32(
+    vreg_info: &SpillVRegsResult,
+    loads_before: &mut VecDeque<MirInst>,
+    strlit: &MirStrLitF32,
+) -> bool {
+    let mut tmpr_alloc = SRATmpRegAlloc::new();
+    let src = vreg_info.lower_fpr32(
+        &MirStackLayout::default(),
+        FPR32::from_real(strlit.get_rd()),
+        loads_before,
+        &mut tmpr_alloc,
+    );
+    strlit.set_rd(src.into_real());
+
+    let tmpreg = tmpr_alloc.alloc_gpr64();
+    strlit.set_tmp_addr(tmpreg.into_real());
     false
 }

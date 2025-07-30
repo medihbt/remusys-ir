@@ -8,7 +8,7 @@ use slab::Slab;
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefList, SlabRefListNodeRef},
+        slablist::{SlabRefList, SlabListNodeRef},
         slabref::SlabRef,
     },
     ir::{
@@ -53,7 +53,7 @@ pub trait TerminatorInst {
             let mut curr_node = targets._head;
             while curr_node.is_nonnull() {
                 curr_node
-                    .to_slabref_unwrap(alloc_jt)
+                    .to_data(alloc_jt)
                     ._terminator
                     .set(self_ref);
                 curr_node = match curr_node.get_next_ref(alloc_jt) {
@@ -487,7 +487,7 @@ pub struct TerminatorInstRef(pub InstRef);
 
 impl TerminatorInstRef {
     pub fn from_inst(inst: InstRef, alloc_inst: &Slab<InstData>) -> Self {
-        let inst_data = inst.to_slabref_unwrap(alloc_inst);
+        let inst_data = inst.to_data(alloc_inst);
         match inst_data.get_opcode() {
             Opcode::Ret | Opcode::Jmp | Opcode::Br | Opcode::Switch | Opcode::Unreachable => {
                 Self(inst)
@@ -504,7 +504,7 @@ impl TerminatorInstRef {
     }
 
     pub fn get_n_jump_targets(self, alloc_inst: &Slab<InstData>) -> usize {
-        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        let inst_data = self.0.to_data(alloc_inst);
         match inst_data {
             InstData::Jump(..) => 1,
             InstData::Br(..) => 2,
@@ -521,7 +521,7 @@ impl TerminatorInstRef {
         &self,
         alloc_inst: &'a Slab<InstData>,
     ) -> Option<&'a SlabRefList<JumpTargetRef>> {
-        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        let inst_data = self.0.to_data(alloc_inst);
         match inst_data {
             InstData::Ret(_, r) => r.get_jump_targets(),
             InstData::Jump(_, j) => j.get_jump_targets(),
@@ -564,7 +564,7 @@ impl TerminatorInstRef {
         alloc_inst: &Slab<InstData>,
         alloc_jt: &Slab<JumpTargetData>,
     ) -> Vec<BlockRef> {
-        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        let inst_data = self.0.to_data(alloc_inst);
         match inst_data {
             InstData::Ret(_, r) => r.collect_jump_blocks_dedup(alloc_jt),
             InstData::Jump(_, j) => j.collect_jump_blocks_dedup(alloc_jt),
@@ -588,7 +588,7 @@ impl TerminatorInstRef {
         alloc_inst: &Slab<InstData>,
         alloc_jt: &Slab<JumpTargetData>,
     ) -> Vec<BlockRef> {
-        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        let inst_data = self.0.to_data(alloc_inst);
         match inst_data {
             InstData::Ret(_, r) => r.collect_jump_blocks_nodedup(alloc_jt),
             InstData::Jump(_, j) => j.collect_jump_blocks_nodedup(alloc_jt),
@@ -608,7 +608,7 @@ impl TerminatorInstRef {
         self.collect_jump_blocks_nodedup(alloc_inst, alloc_jt)
     }
     pub fn terminates_function(&self, alloc_inst: &Slab<InstData>) -> bool {
-        let inst_data = self.0.to_slabref_unwrap(alloc_inst);
+        let inst_data = self.0.to_data(alloc_inst);
         match inst_data {
             InstData::Ret(_, r) => r.terminates_function(),
             InstData::Jump(_, j) => j.terminates_function(),

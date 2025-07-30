@@ -168,21 +168,34 @@ pub(crate) fn lower_stackpos_for_str64base(
     extra_delta_sp: u64,
     sp: GPR64,
 ) -> LowerPosAction {
-    let rs = GPR64::from_real(inst.get_rd());
     let mut tmp_reg_alloc = TmpRegAlloc::new();
-
     let mut action = LowerPosAction::Keep;
 
     // 如果 `rs` 是一个虚拟寄存器, 那么需要先把它转化为实际的栈位置寄存器.
-    if rs.is_virtual() {
+    // 这个 if 分支以后 `rd` 操作数可能会被修改, 因此后面得重新获取.
+    if inst.get_rd().is_virtual() {
+        let rs = GPR64::from_real(inst.get_rd());
         if let Some(used_reg) =
             lower_stackpos_reg_for_operand(rs, &mut tmp_reg_alloc, stack, extra_delta_sp, insts)
         {
+            assert!(
+                !used_reg.is_virtual(),
+                "Lowered stackpos reg {rs:?} to physical reg {used_reg:?}"
+            );
             inst.set_rd(used_reg.into_real());
             action = LowerPosAction::InsertFront;
+            assert!(
+                !inst.get_rd().is_virtual(),
+                "StoreGr64Base rd should not be virtual after lowering: {inst:#?}"
+            );
+        } else {
+            // 都到 lower_stackpos 了，虚拟寄存器还不是栈位置, 那就说明遇到错误了.
+            panic!("Failed to lower stack position for StoreGr64Base: {inst:#?}");
         }
     }
 
+    // 现在 rd 已经是一个实际的栈位置寄存器了, 下面处理 `base_ptr`.
+    let rs = GPR64::from_real(inst.get_rd());
     let base_ptr = GPR64::from_real(inst.get_rn());
     // 如果 `base_ptr` 也是一个虚拟寄存器, 那么需要先把它转化为实际的栈位置寄存器.
     if base_ptr.is_virtual() {

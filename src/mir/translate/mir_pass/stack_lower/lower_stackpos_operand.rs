@@ -18,7 +18,7 @@ pub fn lower_stackpos_operands_for_func(
     func: &MirFunc,
     module: &mut MirModule,
     sp_offset_map: &BTreeMap<MirInstRef, u32>,
-    stack_layout: MirStackLayout,
+    stack_layout: &MirStackLayout,
     stackpos_calc_queue: &mut VecDeque<MirInst>,
 ) {
     let tmpptr_reg = GPR64::new(RegID::Phys(29));
@@ -41,15 +41,14 @@ pub fn lower_stackpos_operands_for_func(
     for (bref, iref) in insts_with_stackpos {
         let extra_delta_sp = sp_offset_map.get(&iref).copied().unwrap_or(0) as u64;
         let action = lower_stackpos_operands_for_inst(
-            &stack_layout,
+            stack_layout,
             stackpos_calc_queue,
             tmpptr_reg,
             extra_delta_sp,
-            iref.to_slabref_unwrap(&allocs.inst),
+            iref.to_data(&allocs.inst),
         );
         match action {
-            LowerPosAction::Keep => stackpos_calc_queue.clear(),
-            LowerPosAction::InsertFront => {
+            LowerPosAction::Keep | LowerPosAction::InsertFront => {
                 while let Some(inst) = stackpos_calc_queue.pop_front() {
                     let new_inst = MirInstRef::from_alloc(&mut allocs.inst, inst);
                     bref.get_insts(&allocs.block)
@@ -76,9 +75,7 @@ pub fn lower_stackpos_operands_for_func(
                         .node_add_prev(&allocs.inst, iref, new_inst)
                         .expect("Failed to add new inst");
                 }
-                iref.to_slabref_unwrap_mut(&mut allocs.inst)
-                    .common_mut()
-                    .opcode = mir_op;
+                iref.to_data_mut(&mut allocs.inst).common_mut().opcode = mir_op;
             }
         }
     }
@@ -113,6 +110,7 @@ fn lower_stackpos_operands_for_inst(
     let sp = GPR64::sp();
     match inst {
         MirInst::Una64R(inst) if inst.opcode_is(MirOP::Mov64R) => {
+            let dst = GPR64::from_real(inst.get_dst());
             let src = inst.get_src();
             let Some(vpos) = GPR64::try_from_real(src) else {
                 return LowerPosAction::Keep;
@@ -122,13 +120,13 @@ fn lower_stackpos_operands_for_inst(
                 inst.set_src(GPR64::sp().into_real());
                 return LowerPosAction::Keep;
             } else if let Some(sp_offset) = ImmCalc::try_new(sp_offset) {
-                let add_inst = Bin64RC::new(MirOP::Sub64I, tmpreg, GPR64::sp(), sp_offset);
+                let add_inst = Bin64RC::new(MirOP::Add64I, dst, GPR64::sp(), sp_offset);
                 insts.push_back(add_inst.into_mir());
             } else {
                 let ldr_const64 =
-                    LoadConst64::new(MirOP::LoadConst64, tmpreg, Imm64(sp_offset, ImmKind::Full));
+                    LoadConst64::new(MirOP::LoadConst64, dst, Imm64(sp_offset, ImmKind::Full));
                 insts.push_back(ldr_const64.into_mir());
-                let add_inst = Bin64R::new(MirOP::Sub64R, tmpreg, GPR64::sp(), tmpreg, None);
+                let add_inst = Bin64R::new(MirOP::Add64R, dst, GPR64::sp(), dst, None);
                 insts.push_back(add_inst.into_mir());
             }
             LowerPosAction::Replace
@@ -220,7 +218,7 @@ pub(super) fn lower_stackpos_reg_for_operand(
         GPR64::sp()
     } else if let Some(sp_offset) = ImmCalc::try_new(sp_offset) {
         let tmpreg = tmpreg_alloc.alloc();
-        let add_inst = Bin64RC::new(MirOP::Sub64I, tmpreg, GPR64::sp(), sp_offset);
+        let add_inst = Bin64RC::new(MirOP::Add64I, tmpreg, GPR64::sp(), sp_offset);
         insts.push_back(add_inst.into_mir());
         tmpreg
     } else {
@@ -228,11 +226,12 @@ pub(super) fn lower_stackpos_reg_for_operand(
         let ldr_const64 =
             LoadConst64::new(MirOP::LoadConst64, tmpreg, Imm64(sp_offset, ImmKind::Full));
         insts.push_back(ldr_const64.into_mir());
-        let add_inst = Bin64R::new(MirOP::Sub64R, tmpreg, GPR64::sp(), tmpreg, None);
+        let add_inst = Bin64R::new(MirOP::Add64R, tmpreg, GPR64::sp(), tmpreg, None);
         insts.push_back(add_inst.into_mir());
         tmpreg
     };
-    Some(GPR64(id, vreg.1))
+    let ret = GPR64(id, vreg.1);
+    Some(ret)
 }
 
 fn lower_stackpos_operands_for_ordinary_inst(

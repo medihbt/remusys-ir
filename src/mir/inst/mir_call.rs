@@ -7,10 +7,11 @@ use crate::mir::{
         mirops::{MirRestoreRegs, MirSaveRegs},
         opcode::MirOP,
     },
-    module::{func::MirFunc, stack::MirStackItem},
+    module::{MirGlobalRef, func::MirFunc, stack::MirStackItem},
     operand::{
         IMirSubOperand, MirOperand,
-        imm::{ImmCalc, ImmLSP32, ImmLSP64},
+        compound::MirSymbolOp,
+        imm::{Imm32, Imm64, ImmCalc, ImmFMov32, ImmFMov64, ImmLSP32, ImmLSP64},
         physreg_set::MirPhysRegSet,
         reg::*,
     },
@@ -278,20 +279,30 @@ struct CallArgsCnt {
     spilled_cnt: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
 enum CallIntArgKind {
     G32(GPR32),
     G64(GPR64),
     // dest index; source reg
     Spilled32(usize, GPR32),
     Spilled64(usize, GPR64),
+    // dest index; source immediate
+    SpilledImm32(usize, Imm32),
+    SpilledImm64(usize, Imm64),
+    // dest index; source symbol
+    SpilledSymbol(usize, MirGlobalRef),
 }
 
+#[derive(Debug, Clone, Copy)]
 enum CallFPArgKind {
     F32(FPR32),
     F64(FPR64),
     // dest index; source reg
     Spilled32(usize, FPR32),
     Spilled64(usize, FPR64),
+    // dest index; source immediate
+    SpilledImm32(usize, Imm32),
+    SpilledImm64(usize, Imm64),
 }
 
 impl CallArgsCnt {
@@ -321,6 +332,42 @@ impl CallArgsCnt {
         }
     }
 
+    fn push_imm64(&mut self, imm: Imm64) -> CallIntArgKind {
+        if self.gpreg_id >= 8 {
+            let spilled_id = self.spilled_cnt;
+            self.spilled_cnt += 1;
+            CallIntArgKind::SpilledImm64(spilled_id, imm)
+        } else {
+            let dst_id = self.gpreg_id;
+            self.gpreg_id += 1;
+            CallIntArgKind::G64(GPR64::new_raw(dst_id as u32))
+        }
+    }
+
+    fn push_imm32(&mut self, imm: Imm32) -> CallIntArgKind {
+        if self.gpreg_id >= 8 {
+            let spilled_id = self.spilled_cnt;
+            self.spilled_cnt += 1;
+            CallIntArgKind::SpilledImm32(spilled_id, imm)
+        } else {
+            let dst_id = self.gpreg_id;
+            self.gpreg_id += 1;
+            CallIntArgKind::G32(GPR32::new_raw(dst_id as u32))
+        }
+    }
+
+    fn push_global(&mut self, global: MirGlobalRef) -> CallIntArgKind {
+        if self.gpreg_id >= 8 {
+            let spilled_id = self.spilled_cnt;
+            self.spilled_cnt += 1;
+            CallIntArgKind::SpilledSymbol(spilled_id, global)
+        } else {
+            let dst_id = self.gpreg_id;
+            self.gpreg_id += 1;
+            CallIntArgKind::G64(GPR64::new_raw(dst_id as u32))
+        }
+    }
+
     fn push_fpr(&mut self, fpr: VFReg) -> CallFPArgKind {
         if self.fpreg_id >= 8 {
             let spilled_id = self.spilled_cnt;
@@ -340,6 +387,30 @@ impl CallArgsCnt {
                 6 => CallFPArgKind::F64(FPR64::new_raw(dst_id as u32)),
                 _ => panic!("Unsupported size for FPR: {bits_log2}"),
             }
+        }
+    }
+
+    fn push_f64(&mut self, imm: f64) -> CallFPArgKind {
+        if self.fpreg_id >= 8 {
+            let spilled_id = self.spilled_cnt;
+            self.spilled_cnt += 1;
+            CallFPArgKind::SpilledImm64(spilled_id, Imm64::from_fp_bits(imm))
+        } else {
+            let dst_id = self.fpreg_id;
+            self.fpreg_id += 1;
+            CallFPArgKind::F64(FPR64::new_raw(dst_id as u32))
+        }
+    }
+
+    fn push_f32(&mut self, imm: f32) -> CallFPArgKind {
+        if self.fpreg_id >= 8 {
+            let spilled_id = self.spilled_cnt;
+            self.spilled_cnt += 1;
+            CallFPArgKind::SpilledImm32(spilled_id, Imm32::from_fp_bits(imm))
+        } else {
+            let dst_id = self.fpreg_id;
+            self.fpreg_id += 1;
+            CallFPArgKind::F32(FPR32::new_raw(dst_id as u32))
         }
     }
 }
@@ -368,23 +439,40 @@ impl MirCall {
             out_actions.push_back(LowerInstAction::BeginSubSP(sp_offset, reserve_sp));
         }
 
-        for arg in self.args() {
-            let arg = arg.get();
-            use MirOperand::*;
-            match arg {
-                GPReg(src) => {
+        for src in self.args() {
+            let src = src.get();
+            match src {
+                MirOperand::GPReg(src) => {
                     let dst = arg_state.push_gpr(src);
                     Self::make_prepare_gparg_inst(&spilled_args, src, dst, out_actions);
                 }
-                VFReg(src) => {
+                MirOperand::VFReg(src) => {
                     let dst = arg_state.push_fpr(src);
                     Self::make_prepare_fparg_inst(&spilled_args, src, dst, out_actions);
                 }
-                Imm64(_) | Imm32(_) | F32(_) | F64(_) => {
-                    todo!("MirCall with immediate or float argument: {arg:?}");
+                MirOperand::Imm64(src) => {
+                    let dst = arg_state.push_imm64(src);
+                    Self::make_prepare_i64arg_inst(&spilled_args, src, dst, out_actions);
+                }
+                MirOperand::Imm32(src) => {
+                    let dst = arg_state.push_imm32(src);
+                    Self::make_prepare_i32arg_inst(&spilled_args, src, dst, out_actions);
+                }
+                MirOperand::F32(src) => {
+                    let dst = arg_state.push_f32(src);
+                    Self::make_prepare_f32arg_inst(&spilled_args, src, dst, out_actions);
+                }
+                MirOperand::F64(src) => {
+                    let dst = arg_state.push_f64(src);
+                    Self::make_prepare_f64arg_inst(&spilled_args, src, dst, out_actions);
+                }
+                MirOperand::Global(gref) => {
+                    // 如果是全局变量，则将其地址加载到寄存器中
+                    let dst = arg_state.push_global(gref);
+                    Self::make_prepare_symarg_inst(&spilled_args, gref, dst, out_actions);
                 }
                 _ => {
-                    panic!("Unsupported argument type for call: {arg:?}");
+                    panic!("Unsupported argument type for call: {src:?}");
                 }
             }
         }
@@ -426,6 +514,7 @@ impl MirCall {
                 let inst = StoreGr64Base::new(MirOP::StrGr64Base, src, sp, arg_offset);
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
+            _ => unreachable!("Unsupported CallIntArgKind: {dst:?}"),
         }
     }
 
@@ -457,6 +546,142 @@ impl MirCall {
                 let inst = StoreF64Base::new(MirOP::StrF64Base, src, sp, arg_offset);
                 out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
             }
+            _ => unreachable!("Unsupported CallFPArgKind: {dst:?}"),
+        }
+    }
+
+    fn make_prepare_i64arg_inst(
+        callee_spilled_args: &[MirStackItem],
+        src: Imm64,
+        dst: CallIntArgKind,
+        out_actions: &mut VecDeque<LowerInstAction>,
+    ) {
+        let wasted = GPR64::new_empty();
+        let sp = GPR64::sp();
+        match dst {
+            CallIntArgKind::G64(dst) => {
+                let ldr_const = LoadConst64::new(MirOP::LoadConst64, dst, src);
+                out_actions.push_back(LowerInstAction::NOP(ldr_const.into_mir()));
+            }
+            CallIntArgKind::SpilledImm64(dst_id, src) => {
+                let offset = callee_spilled_args[dst_id].offset;
+                let offset = ImmLSP64::new(offset as u64);
+                let inst = MirStImm64::new(MirOP::MirStImm64, wasted, src, sp, offset);
+                out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            }
+            _ => panic!("Unsupported CallIntArgKind for Imm64: {dst:?}"),
+        }
+    }
+
+    fn make_prepare_i32arg_inst(
+        callee_spilled_args: &[MirStackItem],
+        src: Imm32,
+        dst: CallIntArgKind,
+        out_actions: &mut VecDeque<LowerInstAction>,
+    ) {
+        let wasted = GPR64::new_empty();
+        let sp = GPR64::sp();
+        match dst {
+            CallIntArgKind::G32(dst) => {
+                let ldr_const =
+                    LoadConst64::new(MirOP::LoadConst64, dst.to_gpr64(), src.zext_to_imm64());
+                out_actions.push_back(LowerInstAction::NOP(ldr_const.into_mir()));
+            }
+            CallIntArgKind::SpilledImm32(dst_id, src) => {
+                let offset = callee_spilled_args[dst_id].offset;
+                let offset = ImmLSP32::new(offset as u32);
+                let inst = MirStImm32::new(MirOP::MirStImm32, wasted, src, sp, offset);
+                out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            }
+            _ => panic!("Unsupported CallIntArgKind for Imm32: {dst:?}"),
+        }
+    }
+
+    fn make_prepare_f32arg_inst(
+        callee_spilled_args: &[MirStackItem],
+        src: f32,
+        dst: CallFPArgKind,
+        out_actions: &mut VecDeque<LowerInstAction>,
+    ) {
+        let wasted = GPR64::new_empty();
+        match dst {
+            CallFPArgKind::F32(dst) => {
+                let inst = if let Ok(src) = ImmFMov32::try_from(src) {
+                    FMov32I::new(MirOP::FMov32I, dst, src).into_mir()
+                } else {
+                    MirLdImmF32::new(MirOP::MirLdImmF32, dst, wasted, Imm32::from_fp_bits(src))
+                        .into_mir()
+                };
+                out_actions.push_back(LowerInstAction::NOP(inst));
+            }
+            CallFPArgKind::SpilledImm32(dst_id, src) => {
+                // 这里的部分就跟浮点一点关系都没有了
+                let offset = callee_spilled_args[dst_id].offset;
+                let offset = ImmLSP32::new(offset as u32);
+                let inst = MirStImm32::new(MirOP::MirStImm32, wasted, src, GPR64::sp(), offset);
+                out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            }
+            _ => panic!("Unsupported CallFPArgKind for F32: {dst:?}"),
+        }
+    }
+
+    fn make_prepare_f64arg_inst(
+        callee_spilled_args: &[MirStackItem],
+        src: f64,
+        dst: CallFPArgKind,
+        out_actions: &mut VecDeque<LowerInstAction>,
+    ) {
+        let wasted = GPR64::new_empty();
+        match dst {
+            CallFPArgKind::F64(dst) => {
+                let inst = if let Ok(src) = ImmFMov64::try_from(src) {
+                    FMov64I::new(MirOP::FMov64I, dst, src).into_mir()
+                } else {
+                    MirLdImmF64::new(MirOP::MirLdImmF64, dst, wasted, Imm64::from_fp_bits(src))
+                        .into_mir()
+                };
+                out_actions.push_back(LowerInstAction::NOP(inst));
+            }
+            CallFPArgKind::SpilledImm64(dst_id, src) => {
+                // 这里的部分就跟浮点一点关系都没有了
+                let offset = callee_spilled_args[dst_id].offset;
+                let offset = ImmLSP64::new(offset as u64);
+                let inst = MirStImm64::new(MirOP::MirStImm64, wasted, src, GPR64::sp(), offset);
+                out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            }
+            _ => panic!("Unsupported CallFPArgKind for F64: {dst:?}"),
+        }
+    }
+
+    fn make_prepare_symarg_inst(
+        spilled_args: &[MirStackItem],
+        gref: MirGlobalRef,
+        dst: CallIntArgKind,
+        out_actions: &mut VecDeque<LowerInstAction>,
+    ) {
+        match dst {
+            CallIntArgKind::G64(dst) => {
+                let ldr_sym = LoadConst64Symbol::new(
+                    MirOP::LoadConst64Symbol,
+                    dst,
+                    MirSymbolOp::Global(gref),
+                );
+                out_actions.push_back(LowerInstAction::NOP(ldr_sym.into_mir()));
+            }
+            CallIntArgKind::SpilledSymbol(dst_id, global) => {
+                let offset = spilled_args[dst_id].offset;
+                let offset = ImmLSP64::new(offset as u64);
+                let wasted = GPR64::new_empty();
+                let inst = MirStSym64::new(
+                    MirOP::MirStSym64,
+                    wasted,
+                    MirSymbolOp::Global(global),
+                    GPR64::sp(),
+                    offset,
+                );
+                out_actions.push_back(LowerInstAction::NOP(inst.into_mir()));
+            }
+            _ => panic!("Unsupported global argument type for call: {dst:?}"),
         }
     }
 }

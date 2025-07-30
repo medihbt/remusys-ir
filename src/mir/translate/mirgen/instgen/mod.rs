@@ -1,20 +1,17 @@
 use crate::{
     base::slabref::SlabRef,
     ir::{
-        ValueSSA,
-        inst::{InstData, InstDataKind, InstRef, cmp::CmpOp, usedef::UseData},
-        module::Module,
+        inst::{cmp::CmpOp, usedef::UseData, InstData, InstDataKind, InstRef}, module::Module, ValueSSA
     },
     mir::{
         inst::{
-            IMirSubInst, MirInstRef, impls::*, inst::MirInst, mirops::MirReturn, opcode::MirOP,
+            impls::*, inst::MirInst, mirops::{MirComment, MirReturn}, opcode::MirOP, IMirSubInst, MirInstRef
         },
         module::vreg_alloc::VirtRegAlloc,
         operand::{
-            MirOperand,
-            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags},
+            reg::{RegOperand, RegUseFlags, FPR32, FPR64, GPR32, GPR64}, MirOperand
         },
-        translate::mirgen::{InstTranslateInfo, operandgen::OperandMap},
+        translate::mirgen::{operandgen::OperandMap, InstTranslateInfo},
     },
     typing::id::ValTypeID,
 };
@@ -32,6 +29,7 @@ mod load_store_gen;
 
 pub struct InstDispatchState {
     pub last_pstate_modifier: Option<(InstRef, MirInstRef)>,
+    pub has_call: bool,
 }
 
 impl InstDispatchState {
@@ -44,7 +42,11 @@ impl InstDispatchState {
     }
 
     pub fn new() -> Self {
-        Self { last_pstate_modifier: None }
+        Self { last_pstate_modifier: None, has_call: false }
+    }
+
+    pub fn inst_level_reset(&mut self) {
+        self.has_call = false;
     }
 }
 
@@ -107,7 +109,6 @@ pub fn dispatch_inst(
         }
         InstDataKind::Store => {
             if let Some(value) = load_store_gen::generate_store_inst(
-                ir_module,
                 operand_map,
                 vreg_alloc,
                 out_insts,
@@ -159,21 +160,19 @@ pub fn dispatch_inst(
             out_insts,
             ir_ref,
             alloc_inst,
-            alloc_use,
+            &alloc_use,
         ),
-        InstDataKind::Call => call_gen::dispatch_call(
-            ir_module,
-            operand_map,
-            vreg_alloc,
-            out_insts,
-            ir_ref,
-            alloc_inst,
-            alloc_use,
-        ),
+        InstDataKind::Call => {
+            state.has_call = true;
+            call_gen::dispatch_call(ir_ref, operand_map, out_insts, alloc_inst, &alloc_use)
+        }
         InstDataKind::Intrin => {
             todo!("Intrinsics not implemented in IR. Do this until IR supports intrinsics")
         }
     };
+
+    let comment = MirComment::new(format!(" -- Ended IR inst {ir_ref:?} kind {kind:?}\n"));
+    out_insts.push_back(comment.into_mir());
 
     Ok(())
 }
@@ -210,13 +209,13 @@ pub fn make_copy_inst(to: RegOperand, from: MirOperand, out_insts: &mut VecDeque
 }
 
 fn ir_inst_is_cmp(inst: InstRef, alloc_inst: &Slab<InstData>) -> bool {
-    match inst.to_slabref_unwrap(alloc_inst) {
+    match inst.to_data(alloc_inst) {
         InstData::Cmp(..) => true,
         _ => false,
     }
 }
 fn ir_inst_as_cmp<'a>(inst: InstRef, alloc_inst: &'a Slab<InstData>) -> Option<&'a CmpOp> {
-    match inst.to_slabref_unwrap(alloc_inst) {
+    match inst.to_data(alloc_inst) {
         InstData::Cmp(_, cmp_op) => Some(cmp_op),
         _ => None,
     }
@@ -241,7 +240,7 @@ fn dispatch_mir_return(
     alloc_inst: &Slab<InstData>,
     alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (ir_return, has_retval) = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let (ir_return, has_retval) = match ir_ref.to_data(alloc_inst) {
         InstData::Ret(c, r) => (r, !matches!(c.ret_type, ValTypeID::Void)),
         _ => panic!("Expected Ret instruction"),
     };

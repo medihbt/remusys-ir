@@ -3,7 +3,7 @@ use std::{cell::Ref, ops::Deref};
 use slab::Slab;
 
 use crate::base::{
-    slablist::{SlabListRange, SlabRefList, SlabRefListNodeRef},
+    slablist::{SlabListRange, SlabRefList, SlabListNodeRef},
     slabref::SlabRef,
 };
 
@@ -12,7 +12,7 @@ use super::module::Module;
 pub mod block;
 pub mod inst;
 
-pub trait IRGraphEdge: SlabRefListNodeRef {
+pub trait IRGraphEdge: SlabListNodeRef {
     type UserT: SlabRef;
     type OperandT;
 
@@ -32,7 +32,7 @@ pub trait IRGraphEdge: SlabRefListNodeRef {
 }
 
 pub trait IRGraphEdgeHolder: SlabRef {
-    type EdgeT: SlabRefListNodeRef;
+    type EdgeT: SlabListNodeRef;
 
     fn module_borrow_edge_holder_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<Self::RefObject>>;
 
@@ -42,7 +42,7 @@ pub trait IRGraphEdgeHolder: SlabRef {
         &self,
         alloc: &'a Slab<Self::RefObject>,
     ) -> Option<&'a SlabRefList<Self::EdgeT>> {
-        Self::graph_edges_from_data(self.to_slabref_unwrap(alloc))
+        Self::graph_edges_from_data(self.to_data(alloc))
     }
     fn graph_edges_from_module<'a>(
         &self,
@@ -80,7 +80,7 @@ pub trait IRGraphEdgeHolder: SlabRef {
     }
 }
 
-pub trait IRGraphNode: SlabRefListNodeRef {
+pub trait IRGraphNode: SlabListNodeRef {
     type OperandT;
     type ReverseGraphNodeT;
     type EdgeHolderT: IRGraphEdgeHolder<EdgeT = Self::EdgeT>;

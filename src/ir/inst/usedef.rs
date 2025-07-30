@@ -5,7 +5,7 @@ use slab::Slab;
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef},
+        slablist::{SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef},
         slabref::SlabRef,
     },
     impl_slabref,
@@ -19,27 +19,27 @@ use crate::{
 use super::InstRef;
 
 pub struct UseData {
-    pub(crate) _node_head: Cell<SlabRefListNodeHead>,
+    pub(crate) _node_head: Cell<SlabListNodeHead>,
     pub(crate) _operand: Cell<ValueSSA>,
     pub(crate) _user: Cell<InstRef>,
     pub kind: Cell<UseKind>,
 }
 
-impl SlabRefListNode for UseData {
+impl SlabListNode for UseData {
     fn new_guide() -> Self {
         Self {
-            _node_head: Cell::new(SlabRefListNodeHead::new()),
+            _node_head: Cell::new(SlabListNodeHead::new()),
             _user: Cell::new(InstRef::new_null()),
             _operand: Cell::new(ValueSSA::None),
             kind: Cell::new(UseKind::GuideNode),
         }
     }
 
-    fn load_node_head(&self) -> SlabRefListNodeHead {
+    fn load_node_head(&self) -> SlabListNodeHead {
         self._node_head.get()
     }
 
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
         self._node_head.set(node_head);
     }
 }
@@ -47,7 +47,7 @@ impl SlabRefListNode for UseData {
 impl UseData {
     pub fn new(kind: UseKind, parent: InstRef, operand: ValueSSA) -> Self {
         Self {
-            _node_head: Cell::new(SlabRefListNodeHead::new()),
+            _node_head: Cell::new(SlabListNodeHead::new()),
             _user: Cell::new(parent),
             _operand: Cell::new(operand),
             kind: Cell::new(kind),
@@ -92,41 +92,41 @@ impl UseData {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UseRef(usize);
 impl_slabref!(UseRef, UseData);
-impl SlabRefListNodeRef for UseRef {
-    fn on_node_push_next(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
+impl SlabListNodeRef for UseRef {
+    fn on_node_push_next(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
         Ok(())
     }
 
-    fn on_node_push_prev(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
+    fn on_node_push_prev(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
         Ok(())
     }
 
-    fn on_node_unplug(_: Self, _: &Slab<UseData>) -> Result<(), SlabRefListError> {
+    fn on_node_unplug(_: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
         Ok(())
     }
 }
 
 impl UseRef {
     pub fn get_user(&self, alloc: &Slab<UseData>) -> InstRef {
-        self.to_slabref_unwrap(alloc).get_user()
+        self.to_data(alloc).get_user()
     }
 
     /// Get the operand of this use reference.
     pub fn get_operand(&self, alloc: &Slab<UseData>) -> ValueSSA {
-        self.to_slabref_unwrap(alloc).get_operand()
+        self.to_data(alloc).get_operand()
     }
 
     /// Set the operand of this use reference regardless of the def-use graph.
     /// This method does not update the def-use graph.
     pub fn set_operand_nordfg(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
-        self.to_slabref_unwrap(alloc).set_operand_nordfg(operand);
+        self.to_data(alloc).set_operand_nordfg(operand);
     }
 
     /// Set the operand of this use reference and update the def-use graph.
     pub fn set_operand(&self, module: &Module, operand: ValueSSA) {
         // Update the operand of this use reference.
         let use_alloc = module.borrow_use_alloc();
-        let self_data = self.to_slabref_unwrap(&*use_alloc);
+        let self_data = self.to_data(&*use_alloc);
         let old_value = self_data.get_operand();
         if old_value == operand {
             return;
@@ -143,11 +143,11 @@ impl UseRef {
     }
 
     pub fn kind<'a>(self, alloc: &'a Slab<UseData>) -> &'a Cell<UseKind> {
-        &self.to_slabref_unwrap(alloc).kind
+        &self.to_data(alloc).kind
     }
     pub fn kind_by_module<'a>(self, module: &'a Module) -> Ref<'a, Cell<UseKind>> {
         let use_alloc = module.borrow_use_alloc();
-        Ref::map(use_alloc, |alloc| &self.to_slabref_unwrap(alloc).kind)
+        Ref::map(use_alloc, |alloc| &self.to_data(alloc).kind)
     }
 
     fn _handle_setop_err(res: Result<(), ModuleError>) {

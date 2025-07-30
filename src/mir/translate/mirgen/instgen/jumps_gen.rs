@@ -26,14 +26,14 @@ use std::{cell::Ref, collections::VecDeque};
 
 use super::{InstDispatchState, ir_value_as_cmp};
 
-pub(crate) fn dispatch_jump(
+pub(super) fn dispatch_jump(
     operand_map: &OperandMap<'_>,
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
     alloc_jt: Ref<'_, Slab<crate::ir::block::jump_target::JumpTargetData>>,
 ) {
-    let jump = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let jump = match ir_ref.to_data(alloc_inst) {
         InstData::Jump(_, j) => j,
         _ => panic!("Expected Jump instruction"),
     };
@@ -54,7 +54,7 @@ pub(crate) fn dispatch_br(
     alloc_use: Ref<Slab<UseData>>,
     alloc_jt: Ref<Slab<JumpTargetData>>,
 ) {
-    let br_inst = match ir_ref.to_slabref_unwrap(alloc_inst) {
+    let br_inst = match ir_ref.to_data(alloc_inst) {
         InstData::Br(_, b) => b,
         _ => panic!("Expected Br instruction"),
     };

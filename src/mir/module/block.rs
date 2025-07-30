@@ -8,7 +8,7 @@ use slab::Slab;
 use crate::{
     base::{
         slablist::{
-            SlabRefList, SlabRefListError, SlabRefListNode, SlabRefListNodeHead, SlabRefListNodeRef,
+            SlabRefList, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
         },
         slabref::SlabRef,
     },
@@ -22,7 +22,7 @@ use crate::{
 /// MIR Blocks: labels and instruction collections.
 #[derive(Debug)]
 pub struct MirBlock {
-    pub node_head: Cell<SlabRefListNodeHead>,
+    pub node_head: Cell<SlabListNodeHead>,
     pub name: String,
     pub insts: SlabRefList<MirInstRef>,
     pub livein_regs: HashSet<RegOperand>,
@@ -43,10 +43,10 @@ impl SlabRef for MirBlockRef {
     }
 }
 
-impl SlabRefListNode for MirBlock {
+impl SlabListNode for MirBlock {
     fn new_guide() -> Self {
         Self {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
+            node_head: Cell::new(SlabListNodeHead::new()),
             name: String::new(),
             insts: SlabRefList::new_guide(),
             livein_regs: HashSet::new(),
@@ -54,22 +54,22 @@ impl SlabRefListNode for MirBlock {
             predecessors: BTreeSet::new(),
         }
     }
-    fn load_node_head(&self) -> SlabRefListNodeHead {
+    fn load_node_head(&self) -> SlabListNodeHead {
         self.node_head.get()
     }
-    fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
         self.node_head.set(node_head);
     }
 }
 
-impl SlabRefListNodeRef for MirBlockRef {
-    fn on_node_push_next(_: Self, _: Self, _: &Slab<MirBlock>) -> Result<(), SlabRefListError> {
+impl SlabListNodeRef for MirBlockRef {
+    fn on_node_push_next(_: Self, _: Self, _: &Slab<MirBlock>) -> Result<(), SlabListError> {
         Ok(())
     }
-    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MirBlock>) -> Result<(), SlabRefListError> {
+    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MirBlock>) -> Result<(), SlabListError> {
         Ok(())
     }
-    fn on_node_unplug(_: Self, _: &Slab<MirBlock>) -> Result<(), SlabRefListError> {
+    fn on_node_unplug(_: Self, _: &Slab<MirBlock>) -> Result<(), SlabListError> {
         Ok(())
     }
 }
@@ -77,7 +77,7 @@ impl SlabRefListNodeRef for MirBlockRef {
 impl MirBlock {
     pub fn new(name: String, alloc_inst: &mut Slab<MirInst>) -> Self {
         Self {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
+            node_head: Cell::new(SlabListNodeHead::new()),
             name,
             insts: SlabRefList::from_slab(alloc_inst),
             livein_regs: HashSet::new(),
@@ -122,11 +122,11 @@ impl MirBlockRef {
 
     pub fn data_from_module(self, module: &MirModule) -> Ref<MirBlock> {
         let alloc = module.borrow_alloc_block();
-        Ref::map(alloc, |a| self.to_slabref(a).expect("Invalid MirBlockRef"))
+        Ref::map(alloc, |a| self.as_data(a).expect("Invalid MirBlockRef"))
     }
 
     pub fn get_name(self, alloc: &Slab<MirBlock>) -> &str {
-        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        let block = self.as_data(alloc).expect("Invalid MirBlockRef");
         &block.name
     }
     pub fn get_name_from_module(self, module: &MirModule) -> String {
@@ -134,7 +134,7 @@ impl MirBlockRef {
         self.get_name(&*alloc).to_string()
     }
     pub fn get_insts(self, alloc: &Slab<MirBlock>) -> &SlabRefList<MirInstRef> {
-        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        let block = self.as_data(alloc).expect("Invalid MirBlockRef");
         &block.insts
     }
     pub fn get_insts_from_module(self, module: &MirModule) -> Ref<SlabRefList<MirInstRef>> {
@@ -143,11 +143,11 @@ impl MirBlockRef {
     }
 
     pub fn get_predecessors(self, alloc: &Slab<MirBlock>) -> &BTreeSet<MirBlockRef> {
-        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        let block = self.as_data(alloc).expect("Invalid MirBlockRef");
         &block.predecessors
     }
     pub fn has_predecessors(self, alloc: &Slab<MirBlock>) -> bool {
-        let block = self.to_slabref(alloc).expect("Invalid MirBlockRef");
+        let block = self.as_data(alloc).expect("Invalid MirBlockRef");
         !block.predecessors.is_empty()
     }
 }

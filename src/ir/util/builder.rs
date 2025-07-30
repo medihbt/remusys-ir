@@ -3,7 +3,7 @@ use std::{cell::Ref, rc::Rc};
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefListError, SlabRefListNodeRef},
+        slablist::{SlabListError, SlabListNodeRef},
         slabref::SlabRef,
     },
     ir::{
@@ -86,7 +86,7 @@ pub enum IRBuilderError {
     GlobalDefExists(String, GlobalRef),
     GlobalDefNotFound(String),
 
-    ListError(SlabRefListError),
+    ListError(SlabListError),
     InstError(InstError),
     NullFocus,
     SplitFocusIsPhi(InstRef),
@@ -215,7 +215,7 @@ impl IRBuilder {
         let alloc_value = self.module.borrow_value_alloc();
         let alloc_block = &alloc_value.alloc_block;
 
-        let block = self.focus.block.to_slabref_unwrap(alloc_block);
+        let block = self.focus.block.to_data(alloc_block);
         self.focus.inst = block
             .get_termiantor(&self.module)
             .ok_or(IRBuilderError::BlockHasNoTerminator(self.focus.block))?;
@@ -253,7 +253,7 @@ impl IRBuilder {
                 .get_front_ref(alloc_block)
                 .unwrap();
             let inst = entry
-                .to_slabref_unwrap(alloc_block)
+                .to_data(alloc_block)
                 .get_termiantor(&self.module)
                 .unwrap();
             (entry, inst)
@@ -507,7 +507,7 @@ impl IRBuilder {
         let alloc_block = &alloc_value.alloc_block;
         let alloc_inst = &alloc_value.alloc_inst;
         for block in target_bbs {
-            let bb_data = block.to_slabref_unwrap(alloc_block);
+            let bb_data = block.to_data(alloc_block);
             for (_, idata) in bb_data.instructions.view(alloc_inst) {
                 let mut phi_ops = match idata {
                     InstData::Phi(_, phi) => phi.get_from_all_mut(),
@@ -962,7 +962,7 @@ impl IRBuilder {
         let (old_termi, switch_inst) = self.focus_set_empty_switch(cond, default_block)?;
 
         let value_alloc = self.module.borrow_value_alloc();
-        match switch_inst.to_slabref_unwrap(&value_alloc.alloc_inst) {
+        match switch_inst.to_data(&value_alloc.alloc_inst) {
             InstData::Switch(_, s) => {
                 for (case, block) in cases {
                     s.set_case(&self.module, case, block);

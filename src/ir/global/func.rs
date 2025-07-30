@@ -6,7 +6,7 @@ use std::{
 use crate::{
     base::{
         NullableValue,
-        slablist::{SlabRefList, SlabRefListError},
+        slablist::{SlabRefList, SlabListError},
     },
     ir::{
         PtrStorage, PtrUser,
@@ -97,7 +97,7 @@ impl FuncData {
         module: &Module,
         functy: FuncTypeRef,
         name: String,
-    ) -> Result<Self, SlabRefListError> {
+    ) -> Result<Self, SlabListError> {
         let unreachable_bb = BlockData::new_unreachable(module)?;
         let unreachable_bb_ref = module.insert_block(unreachable_bb);
 
@@ -131,7 +131,7 @@ impl FuncData {
         &self,
         mut_module: &Module,
         block_data: BlockData,
-    ) -> Result<BlockRef, SlabRefListError> {
+    ) -> Result<BlockRef, SlabListError> {
         let block_ref = mut_module.insert_block(block_data);
         self.add_block_ref(mut_module, block_ref)?;
         Ok(block_ref)
@@ -140,7 +140,7 @@ impl FuncData {
         &self,
         module: &Module,
         block_ref: BlockRef,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         self._body
             .borrow_mut()
             .as_mut()

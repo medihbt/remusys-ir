@@ -7,7 +7,7 @@ use func::FuncData;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabRefListNode, slabref::SlabRef},
+    base::{NullableValue, slablist::SlabListNode, slabref::SlabRef},
     impl_slabref,
     typing::id::ValTypeID,
 };
@@ -174,7 +174,7 @@ impl GlobalData {
         if let Some(body) = func._body.borrow().as_ref() {
             let mut curr_node = body.body._head;
             while curr_node.is_nonnull() {
-                let bb = curr_node.to_slabref_unwrap(alloc_bb);
+                let bb = curr_node.to_data(alloc_bb);
                 bb._inner
                     .get()
                     .insert_parent_func(self_ref)
@@ -191,14 +191,14 @@ impl_slabref!(GlobalRef, GlobalData);
 
 impl GlobalRef {
     pub fn get_name_with_alloc<'a>(self, slab: &'a Slab<GlobalData>) -> &'a str {
-        self.to_slabref_unwrap(slab).get_name()
+        self.to_data(slab).get_name()
     }
     pub fn get_name_with_module<'a>(self, module: &'a Module) -> Ref<'a, str> {
         Ref::map(module.get_global(self), |g| g.get_name())
     }
 
     pub fn is_extern(self, alloc_global: &Slab<GlobalData>) -> bool {
-        match self.to_slabref_unwrap(alloc_global) {
+        match self.to_data(alloc_global) {
             GlobalData::Alias(_) => false,
             GlobalData::Var(gvar) => gvar.is_extern(),
             GlobalData::Func(f) => f.is_extern(),
@@ -221,7 +221,7 @@ pub trait IGlobalObjectVisitor {
         global_ref: GlobalRef,
         alloc_global: &Slab<GlobalData>,
     ) {
-        let global_data = global_ref.to_slabref_unwrap(alloc_global);
+        let global_data = global_ref.to_data(alloc_global);
         match global_data {
             GlobalData::Alias(galias) => self.read_global_alias(global_ref, galias),
             GlobalData::Var(gvar) => self.read_global_variable(global_ref, gvar),

@@ -6,7 +6,10 @@ use slab::Slab;
 
 use crate::{
     base::NullableValue,
-    ir::{PtrStorage, PtrUser, ValueSSA, module::Module, opcode::Opcode},
+    ir::{
+        PtrStorage, PtrUser, ValueSSA, constant::data::ConstData, global::GlobalRef, inst::InstRef,
+        module::Module, opcode::Opcode,
+    },
     typing::{TypeMismatchError, context::TypeContext, id::ValTypeID, types::StructTypeRef},
 };
 
@@ -257,5 +260,178 @@ impl IndexPtrOp {
         }
 
         Ok((common, ret))
+    }
+}
+
+/// GEP 操作的偏移量类型.
+#[derive(Debug, Clone)]
+pub enum IrGEPOffset {
+    /// 一个常量偏移量, 以字节为单位.
+    Imm(i64),
+    /// 函数参数 * 单位长度
+    Arg(GlobalRef, u32, u64),
+    /// 指令返回值 * 单位长度
+    Inst(InstRef, u64),
+}
+
+/// GEP 偏移量迭代器.
+pub struct IrGEPOffsetIter<'a> {
+    pub indices: &'a [UseRef],
+    pub index: isize,
+    pub module: &'a Module,
+    pub before_unpack: ValTypeID,
+    pub after_unpack: ValTypeID,
+    pub curr_offset: Option<IrGEPOffset>,
+}
+
+impl<'a> IrGEPOffsetIter<'a> {
+    pub fn from_module(inst: &'a IndexPtrOp, module: &'a Module) -> Self {
+        Self {
+            indices: &inst.indices,
+            index: -1,
+            module,
+            before_unpack: ValTypeID::Void,
+            after_unpack: inst.base_pointee_ty,
+            curr_offset: None,
+        }
+    }
+
+    pub fn get_offset(&self) -> Option<IrGEPOffset> {
+        self.curr_offset.clone()
+    }
+
+    pub fn to_vec(&mut self) -> Vec<IrGEPOffset> {
+        self.collect()
+    }
+
+    /// 从当前索引值和类型中获取下一个偏移量, 并更新解包后的类型. 返回偏移量和解包后的类型.
+    ///
+    /// #### 基本规则
+    ///
+    /// - 如果索引值是函数参数或指令结果，必须是整数类型。
+    /// - 如果索引值是常量数据，必须是整数类型。
+    /// - 如果索引值是数组类型，返回数组元素类型。
+    /// - 如果索引值是结构体类型，返回结构体元素类型。
+    /// - 如果不符合上述规则，抛出 panic。
+    fn head_to_next_gep_offset(
+        &mut self,
+        idx_value: ValueSSA,
+        to_unpack: ValTypeID,
+    ) -> (IrGEPOffset, ValTypeID) {
+        type V = ValueSSA;
+        type T = ValTypeID;
+        let vallocs = self.module.borrow_value_alloc();
+        let type_ctx = &self.module.type_ctx;
+        match (idx_value, to_unpack) {
+            (V::FuncArg(f, idx), T::Array(aty)) => {
+                if !matches!(idx_value.get_value_type(&self.module), T::Int(_)) {
+                    panic!("Expected an Int type for GEP index");
+                }
+                let weight = aty.get_elem_aligned_size(type_ctx) as u64;
+                (
+                    IrGEPOffset::Arg(f, idx, weight),
+                    aty.get_element_type(type_ctx),
+                )
+            }
+            (V::Inst(inst), T::Array(aty)) => {
+                if !matches!(inst.get_valtype(&vallocs.alloc_inst), T::Int(_)) {
+                    panic!(
+                        "Expected an Int type for GEP index, found: {:?}",
+                        inst.get_valtype(&vallocs.alloc_inst)
+                    );
+                }
+                let weight = aty.get_elem_aligned_size(type_ctx) as u64;
+                (
+                    IrGEPOffset::Inst(inst, weight),
+                    aty.get_element_type(type_ctx),
+                )
+            }
+            (V::ConstData(data), T::Array(aty)) => {
+                let index = Self::const_data_get_sint(&data);
+                let weight = aty.get_elem_aligned_size(type_ctx);
+                (
+                    IrGEPOffset::Imm(index * weight as i64),
+                    aty.get_element_type(type_ctx),
+                )
+            }
+            (V::ConstData(data), T::Struct(sty)) => {
+                let index = Self::const_data_get_sint(&data);
+                let index = if index < 0 {
+                    panic!("GEP index cannot be negative: {index}");
+                } else {
+                    index as usize
+                };
+                let offset = sty.offset_unwrap(type_ctx, index);
+                (
+                    IrGEPOffset::Imm(offset as i64),
+                    sty.get_element_type(type_ctx, index).unwrap(),
+                )
+            }
+            _ => panic!("Unsupported GEP index type: {idx_value:?} for {to_unpack:?}"),
+        }
+    }
+
+    /// 解包层级 0 的索引值, 并返回偏移量和解包后的类型.
+    fn unpack_level0(&mut self, idx_value: ValueSSA, unpacked: ValTypeID) -> IrGEPOffset {
+        let weight = {
+            let type_ctx = &self.module.type_ctx;
+            let size = unpacked.get_instance_size_unwrap(type_ctx);
+            let align = unpacked.get_instance_align(type_ctx).unwrap();
+            size.next_multiple_of(align) as u64
+        };
+        match idx_value {
+            ValueSSA::ConstData(data) => {
+                let simm = Self::const_data_get_sint(&data);
+                IrGEPOffset::Imm(simm * weight as i64)
+            }
+            ValueSSA::FuncArg(f, arg_id) => IrGEPOffset::Arg(f, arg_id, weight),
+            ValueSSA::Inst(inst) => IrGEPOffset::Inst(inst, weight),
+            _ => panic!("Expected a valid GEP index value"),
+        }
+    }
+
+    fn const_data_get_sint(data: &ConstData) -> i64 {
+        match data {
+            ConstData::Int(64, value) => *value as i64,
+            ConstData::Int(32, value) => *value as i32 as i64,
+            ConstData::Zero(_) | ConstData::PtrNull(_) => 0,
+            _ => panic!("Expected an integer constant data"),
+        }
+    }
+}
+
+impl<'a> Iterator for IrGEPOffsetIter<'a> {
+    type Item = IrGEPOffset;
+
+    fn next(&mut self) -> Option<IrGEPOffset> {
+        if self.index >= self.indices.len() as isize {
+            return None;
+        }
+        self.index += 1;
+        if self.index as usize >= self.indices.len() {
+            self.curr_offset = None;
+            return None;
+        }
+
+        let idx_use = &self.indices[self.index as usize];
+        let idx_value = idx_use.get_operand(&self.module.borrow_use_alloc());
+
+        if self.index == 0 {
+            let unpacked = self.after_unpack;
+            let offset = self.unpack_level0(idx_value, unpacked);
+            Some(offset)
+        } else {
+            let to_unpack = self.after_unpack;
+            let (offset, unpacked) = self.head_to_next_gep_offset(idx_value, to_unpack);
+            self.before_unpack = self.after_unpack;
+            self.after_unpack = unpacked;
+            self.curr_offset = Some(offset.clone());
+            Some(offset)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.indices.len() - self.index as usize;
+        (remaining, Some(remaining))
     }
 }

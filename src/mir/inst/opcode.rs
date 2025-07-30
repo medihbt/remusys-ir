@@ -488,12 +488,26 @@ pub enum MirOP {
     MirStrLitF64,
     #[doc = "Opcode class: MirStrLitF32"]
     MirStrLitF32,
+    #[doc = "Opcode class: MirStImm64"]
+    MirStImm64,
+    #[doc = "Opcode class: MirStSym64"]
+    MirStSym64,
+    #[doc = "Opcode class: MirStImm32"]
+    MirStImm32,
+    #[doc = "Opcode class: MirStImm64Sym"]
+    MirStImm64Sym,
+    #[doc = "Opcode class: MirStImm32Sym"]
+    MirStImm32Sym,
+    #[doc = "Opcode class: MirStSym64Sym"]
+    MirStSymSym,
     #[doc = "Opcode class: LoadConst64"]
     LoadConst64,
-    #[doc = "Opcode class: LoadConstF64"]
-    LoadConstF64,
     #[doc = "Opcode class: LoadConst64Symbol"]
     LoadConst64Symbol,
+    #[doc = "Opcode class: MirLdImmF64"]
+    MirLdImmF64,
+    #[doc = "Opcode class: MirLdImmF32"]
+    MirLdImmF32,
     #[doc = "Opcode class: CSel64"]
     CSel64,
     CSInc64,
@@ -524,6 +538,12 @@ pub enum MirOP {
     MirRestoreRegs,
     #[doc = "Opcode class: MirRestoreHostRegs"]
     MirRestoreHostRegs,
+    #[doc = "Opcode class: MirGEP"]
+    MirGEP,
+    #[doc = "Opcode class: MirComment"]
+    MirComment,
+    #[doc = "Opcode class: MirCommentedInst"]
+    MirCommentedInst,
 }
 impl MirOP {
     pub fn as_str(&self) -> &'static str {
@@ -901,9 +921,16 @@ impl MirOP {
             MirOP::MirStrLitG32 => "MirStrLitG32",
             MirOP::MirStrLitF64 => "MirStrLitF64",
             MirOP::MirStrLitF32 => "MirStrLitF32",
+            MirOP::MirStImm64 => "MirStImm64",
+            MirOP::MirStSym64 => "MirStSym64",
+            MirOP::MirStImm32 => "MirStImm32",
+            MirOP::MirStImm64Sym => "MirStImm64Sym",
+            MirOP::MirStImm32Sym => "MirStImm32Sym",
+            MirOP::MirStSymSym => "MirStSymSym",
             MirOP::LoadConst64 => "LoadConst64",
-            MirOP::LoadConstF64 => "LoadConstF64",
             MirOP::LoadConst64Symbol => "LoadConst64Symbol",
+            MirOP::MirLdImmF64 => "MirLdImmF64",
+            MirOP::MirLdImmF32 => "MirLdImmF32",
             MirOP::CSel64 => "CSel64",
             MirOP::CSInc64 => "CSInc64",
             MirOP::CSInv64 => "CSInv64",
@@ -922,6 +949,9 @@ impl MirOP {
             MirOP::MirSaveRegs => "MirSaveRegs",
             MirOP::MirRestoreRegs => "MirRestoreRegs",
             MirOP::MirRestoreHostRegs => "MirRestoreHostRegs",
+            MirOP::MirGEP => "MirGEP",
+            MirOP::MirComment => "MirComment",
+            MirOP::MirCommentedInst => "MirCommentedInst",
         }
     }
 }
@@ -1307,9 +1337,16 @@ impl std::str::FromStr for MirOP {
             "MirStrLitG32" => Ok(MirOP::MirStrLitG32),
             "MirStrLitF64" => Ok(MirOP::MirStrLitF64),
             "MirStrLitF32" => Ok(MirOP::MirStrLitF32),
+            "MirStImm64" => Ok(MirOP::MirStImm64),
+            "MirStSym64" => Ok(MirOP::MirStSym64),
+            "MirStImm32" => Ok(MirOP::MirStImm32),
+            "MirStImm64Sym" => Ok(MirOP::MirStImm64Sym),
+            "MirStImm32Sym" => Ok(MirOP::MirStImm32Sym),
+            "MirStSymSym" => Ok(MirOP::MirStSymSym),
             "LoadConst64" => Ok(MirOP::LoadConst64),
-            "LoadConstF64" => Ok(MirOP::LoadConstF64),
             "LoadConst64Symbol" => Ok(MirOP::LoadConst64Symbol),
+            "MirLdImmF64" => Ok(MirOP::MirLdImmF64),
+            "MirLdImmF32" => Ok(MirOP::MirLdImmF32),
             "CSel64" => Ok(MirOP::CSel64),
             "CSInc64" => Ok(MirOP::CSInc64),
             "CSInv64" => Ok(MirOP::CSInv64),
@@ -1328,6 +1365,9 @@ impl std::str::FromStr for MirOP {
             "MirSaveRegs" => Ok(MirOP::MirSaveRegs),
             "MirRestoreRegs" => Ok(MirOP::MirRestoreRegs),
             "MirRestoreHostRegs" => Ok(MirOP::MirRestoreHostRegs),
+            "MirGEP" => Ok(MirOP::MirGEP),
+            "MirComment" => Ok(MirOP::MirComment),
+            "MirCommentedInst" => Ok(MirOP::MirCommentedInst),
             _ => Err(format!("Unknown opcode: {}", s)),
         }
     }

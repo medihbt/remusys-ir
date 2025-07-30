@@ -20,8 +20,7 @@ impl<'a> Debug for FormatMir<'a> {
             .iter()
             .map(|i| FormatMirGlobal(self.0, *i))
             .collect();
-        f.debug_struct("MirModule")
-            .field("name", &self.0.name)
+        f.debug_struct(&format!("MirModule {}", self.0.name))
             .field("globals", &items);
         Ok(())
     }
@@ -54,9 +53,8 @@ impl Debug for FormatMirGVar {
             Section::Text | Section::RoData => "Constant",
             Section::Data | Section::Bss | Section::None => "Variable",
         };
-        let mut k = f.debug_struct(variant);
-        k.field("name", &v.get_name())
-            .field("section", &v.common.section)
+        let mut k = f.debug_struct(&format!("{} {}", variant, v.get_name()));
+        k.field("section", &v.common.section)
             .field("linkage", &v.common.linkage)
             .field("align_log2", &v.common.align_log2)
             .field("size", &v.common.size);
@@ -85,8 +83,7 @@ impl<'a> Debug for FormatMirFunc<'a> {
                 .map(|(bref, bb)| FormatMirBlock(bref, bb, module))
                 .collect()
         };
-        f.debug_struct("Function")
-            .field("name", &func.get_name())
+        f.debug_struct(&format!("Function {}", func.get_name()))
             .field("section", &func.common.section)
             .field("linkage", &func.common.linkage)
             .field("align_log2", &func.common.align_log2)
@@ -103,6 +100,10 @@ struct FormatMirBlock<'a>(MirBlockRef, &'a MirBlock, &'a MirModule);
 
 impl<'a> Debug for FormatMirBlock<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn bb_as_inst_list(bb: &MirBlock) -> bool {
+            bb.livein_regs.is_empty() && bb.successors.is_empty() && bb.predecessors.is_empty()
+        }
+
         let FormatMirBlock(bref, bb, module) = self.clone();
         let alloc_inst = module.borrow_alloc_inst();
         let insts: Vec<_> = bb
@@ -111,10 +112,20 @@ impl<'a> Debug for FormatMirBlock<'a> {
             .into_iter()
             .map(|(_, inst)| inst)
             .collect();
-        f.debug_struct("Block")
-            .field("mir_ref", &bref.get_handle())
-            .field("name", &bb.name)
-            .field("insts", &insts)
-            .finish()
+        let bb_head = &format!("Block[{}] = {}", bref.get_handle(), bb.name);
+        if bb_as_inst_list(bb) {
+            let mut f: std::fmt::DebugStruct<'_, '_> = f.debug_struct(&bb_head);
+            for (i, inst) in insts.iter().enumerate() {
+                f.field(&format!("[{i}]"), inst);
+            }
+            f.finish()
+        } else {
+            f.debug_struct(&bb_head)
+                .field("insts", &insts)
+                .field("pred", &bb.predecessors)
+                .field("succ", &bb.successors)
+                .field("livein", &bb.livein_regs)
+                .finish()
+        }
     }
 }

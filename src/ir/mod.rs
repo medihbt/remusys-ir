@@ -199,10 +199,10 @@ pub trait IValueVisitor:
             ValueSSA::None => {}
             ValueSSA::ConstData(data) => self.const_data_visitor_dispatch(&data),
             ValueSSA::FuncArg(func, index) => self.read_func_arg(func, index),
-            ValueSSA::Block(bb) => self.read_block(bb, bb.to_slabref_unwrap(alloc_block)),
+            ValueSSA::Block(bb) => self.read_block(bb, bb.to_data(alloc_block)),
             ValueSSA::ConstExpr(expr) => self.expr_visitor_dispatch(expr, alloc_expr),
             ValueSSA::Inst(inst_ref) => {
-                self.inst_visitor_dispatch(inst_ref, inst_ref.to_slabref_unwrap(alloc_inst))
+                self.inst_visitor_dispatch(inst_ref, inst_ref.to_data(alloc_inst))
             }
             ValueSSA::Global(global_ref) => {
                 self.global_object_visitor_dispatch(global_ref, alloc_global)

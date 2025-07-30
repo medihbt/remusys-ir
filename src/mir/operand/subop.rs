@@ -61,7 +61,7 @@ impl IMirSubOperand for MirBlockRef {
 
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let alloc_block = formatter.mir_module.borrow_alloc_block();
-        let bb_name = self.to_slabref_unwrap(&alloc_block).name.as_str();
+        let bb_name = self.to_data(&alloc_block).name.as_str();
         write!(formatter, "{bb_name}")
     }
 }
@@ -97,7 +97,7 @@ impl IMirSubOperand for MirGlobalRef {
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let alloc_global = formatter.mir_module.borrow_alloc_item();
         let name = self
-            .to_slabref_unwrap(&alloc_global)
+            .to_data(&alloc_global)
             .get_name()
             .unwrap_or("");
         formatter.write_str(name)

@@ -10,12 +10,12 @@ use super::slabref::SlabRef;
 ///
 /// `None <- HeadGuideNode <-> Node <-> Node <-> ... <-> Node <-> TailGuideNode -> None`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SlabRefListNodeHead {
+pub struct SlabListNodeHead {
     pub(crate) prev: usize,
     pub(crate) next: usize,
 }
 
-impl SlabRefListNodeHead {
+impl SlabListNodeHead {
     pub fn insert_prev(self, prev: Option<usize>) -> Self {
         Self { prev: prev.unwrap_or(usize::MAX), next: self.next }
     }
@@ -35,7 +35,7 @@ impl SlabRefListNodeHead {
  * Error type for `SlabRefList` items.
  */
 #[derive(Debug, Clone, Copy)]
-pub enum SlabRefListError {
+pub enum SlabListError {
     Empty,
     InvalidRef,
     SelfNotInList(usize),
@@ -46,7 +46,7 @@ pub enum SlabRefListError {
     RepeatedNode(usize),
 }
 
-pub trait SlabRefListNode {
+pub trait SlabListNode {
     /**
      * Constructor: Create an empty guide node.
      */
@@ -55,12 +55,12 @@ pub trait SlabRefListNode {
     /**
      * Get the node head.
      */
-    fn load_node_head(&self) -> SlabRefListNodeHead;
+    fn load_node_head(&self) -> SlabListNodeHead;
 
     /**
      * Set the node head.
      */
-    fn store_node_head(&self, node_head: SlabRefListNodeHead);
+    fn store_node_head(&self, node_head: SlabListNodeHead);
 
     fn get_next(&self) -> Option<usize> {
         self.load_node_head().get_next()
@@ -87,12 +87,12 @@ pub trait SlabRefListNode {
     }
 }
 
-pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
-    fn load_node_head(&self, alloc: &Slab<Self::RefObject>) -> SlabRefListNodeHead {
+pub trait SlabListNodeRef: SlabRef<RefObject: SlabListNode> {
+    fn load_node_head(&self, alloc: &Slab<Self::RefObject>) -> SlabListNodeHead {
         if self.is_null() {
             panic!("SlabRefListNodeRef::load_node_head() called on null reference");
         }
-        match self.to_slabref(alloc).map(SlabRefListNode::load_node_head) {
+        match self.as_data(alloc).map(SlabListNode::load_node_head) {
             Some(node) => node,
             None => panic!(
                 "SlabRefListNodeRef::load_node_head() called on invalid reference {}",
@@ -100,8 +100,8 @@ pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
             ),
         }
     }
-    fn store_node_head(&self, alloc: &Slab<Self::RefObject>, node_head: SlabRefListNodeHead) {
-        self.to_slabref(alloc)
+    fn store_node_head(&self, alloc: &Slab<Self::RefObject>, node_head: SlabListNodeHead) {
+        self.as_data(alloc)
             .map(|node| node.store_node_head(node_head))
             .expect("SlabRefListNodeRef::store_node_head() called on invalid reference");
     }
@@ -146,30 +146,30 @@ pub trait SlabRefListNodeRef: SlabRef<RefObject: SlabRefListNode> {
         curr: Self,
         next: Self,
         alloc: &Slab<Self::RefObject>,
-    ) -> Result<(), SlabRefListError>;
+    ) -> Result<(), SlabListError>;
     fn on_node_push_prev(
         curr: Self,
         prev: Self,
         alloc: &Slab<Self::RefObject>,
-    ) -> Result<(), SlabRefListError>;
-    fn on_node_unplug(curr: Self, alloc: &Slab<Self::RefObject>) -> Result<(), SlabRefListError>;
+    ) -> Result<(), SlabListError>;
+    fn on_node_unplug(curr: Self, alloc: &Slab<Self::RefObject>) -> Result<(), SlabListError>;
 }
 
-impl SlabRefListNodeHead {
+impl SlabListNodeHead {
     pub fn new() -> Self {
         Self { prev: usize::MAX, next: usize::MAX }
     }
 }
 
 #[derive(Debug)]
-pub struct SlabRefList<T: SlabRefListNodeRef> {
+pub struct SlabRefList<T: SlabListNodeRef> {
     pub(crate) _head: T,
     pub(crate) _tail: T,
     pub(crate) _size: Cell<usize>,
     __phantom__: std::marker::PhantomData<T>,
 }
 
-impl<T: SlabRefListNodeRef> SlabRefList<T> {
+impl<T: SlabListNodeRef> SlabRefList<T> {
     pub fn from_slab(slab: &mut Slab<T::RefObject>) -> Self {
         let head = slab.insert(T::RefObject::new_guide());
         let tail = slab.insert(T::RefObject::new_guide());
@@ -193,14 +193,14 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
 
     pub fn get_front_ref(&self, slab: &Slab<T::RefObject>) -> Option<T> {
         self._head
-            .to_slabref(slab)
+            .as_data(slab)
             .map(|n| n.get_next())
             .flatten()
             .map(T::from_handle)
     }
     pub fn get_back_ref(&self, slab: &Slab<T::RefObject>) -> Option<T> {
         self._tail
-            .to_slabref(slab)
+            .as_data(slab)
             .map(|n| n.get_prev())
             .flatten()
             .map(T::from_handle)
@@ -233,28 +233,28 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
         alloc: &Slab<T::RefObject>,
         node_ref: T,
         next_ref: T,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         if node_ref == next_ref {
-            return Err(SlabRefListError::RepeatedNode(node_ref.get_handle()));
+            return Err(SlabListError::RepeatedNode(node_ref.get_handle()));
         }
         T::on_node_push_next(node_ref.clone(), next_ref.clone(), alloc)?;
-        let node = match node_ref.to_slabref(alloc) {
+        let node = match node_ref.as_data(alloc) {
             Some(node) => node,
-            None => return Err(SlabRefListError::InvalidRef),
+            None => return Err(SlabListError::InvalidRef),
         };
-        let next_node = match next_ref.to_slabref(alloc) {
+        let next_node = match next_ref.as_data(alloc) {
             Some(node) => node,
-            None => return Err(SlabRefListError::InvalidRef),
+            None => return Err(SlabListError::InvalidRef),
         };
         let original_next_node = match node
             .get_next()
-            .map(|n| T::from_handle(n).to_slabref(alloc))
+            .map(|n| T::from_handle(n).as_data(alloc))
             .flatten()
         {
             Some(node) => node,
-            None => return Err(SlabRefListError::NodeIsTailGuide),
+            None => return Err(SlabListError::NodeIsTailGuide),
         };
-        next_node.store_node_head(SlabRefListNodeHead {
+        next_node.store_node_head(SlabListNodeHead {
             prev: node_ref.get_handle(),
             next: node.get_next().unwrap_or(usize::MAX),
         });
@@ -274,28 +274,28 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
         alloc: &Slab<T::RefObject>,
         node_ref: T,
         prev_ref: T,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         if node_ref == prev_ref {
-            return Err(SlabRefListError::RepeatedNode(node_ref.get_handle()));
+            return Err(SlabListError::RepeatedNode(node_ref.get_handle()));
         }
         T::on_node_push_prev(node_ref.clone(), prev_ref.clone(), alloc)?;
-        let node = match node_ref.to_slabref(alloc) {
+        let node = match node_ref.as_data(alloc) {
             Some(node) => node,
-            None => return Err(SlabRefListError::InvalidRef),
+            None => return Err(SlabListError::InvalidRef),
         };
-        let prev_node = match prev_ref.to_slabref(alloc) {
+        let prev_node = match prev_ref.as_data(alloc) {
             Some(node) => node,
-            None => return Err(SlabRefListError::InvalidRef),
+            None => return Err(SlabListError::InvalidRef),
         };
         let original_prev_node = match node
             .get_prev()
-            .map(|n| T::from_handle(n).to_slabref(alloc))
+            .map(|n| T::from_handle(n).as_data(alloc))
             .flatten()
         {
             Some(node) => node,
-            None => return Err(SlabRefListError::NodeIsHeadGuide),
+            None => return Err(SlabListError::NodeIsHeadGuide),
         };
-        prev_node.store_node_head(SlabRefListNodeHead {
+        prev_node.store_node_head(SlabListNodeHead {
             prev: node.get_prev().unwrap_or(usize::MAX),
             next: node_ref.get_handle(),
         });
@@ -314,30 +314,30 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
         &self,
         alloc: &Slab<T::RefObject>,
         node_ref: T,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         if self.is_empty() {
-            return Err(SlabRefListError::Empty);
+            return Err(SlabListError::Empty);
         }
         T::on_node_unplug(node_ref.clone(), alloc)?;
-        let node = match node_ref.to_slabref(alloc) {
+        let node = match node_ref.as_data(alloc) {
             Some(node) => node,
-            None => return Err(SlabRefListError::InvalidRef),
+            None => return Err(SlabListError::InvalidRef),
         };
         let prev_node = match node
             .get_prev()
-            .map(|n| T::from_handle(n).to_slabref(alloc))
+            .map(|n| T::from_handle(n).as_data(alloc))
             .flatten()
         {
             Some(node) => node,
-            None => return Err(SlabRefListError::NodeIsHeadGuide),
+            None => return Err(SlabListError::NodeIsHeadGuide),
         };
         let next_node = match node
             .get_next()
-            .map(|n| T::from_handle(n).to_slabref(alloc))
+            .map(|n| T::from_handle(n).as_data(alloc))
             .flatten()
         {
             Some(node) => node,
-            None => return Err(SlabRefListError::NodeIsTailGuide),
+            None => return Err(SlabListError::NodeIsTailGuide),
         };
         prev_node.set_next(node.get_next());
         next_node.set_prev(node.get_prev());
@@ -349,35 +349,35 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
         &self,
         alloc: &Slab<T::RefObject>,
         node_ref: T,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         self.node_add_prev(alloc, self._tail.clone(), node_ref)
     }
     pub fn push_front_ref(
         &self,
         alloc: &Slab<T::RefObject>,
         node_ref: T,
-    ) -> Result<(), SlabRefListError> {
+    ) -> Result<(), SlabListError> {
         self.node_add_next(alloc, self._head.clone(), node_ref)
     }
-    pub fn pop_back(&self, alloc: &Slab<T::RefObject>) -> Result<T, SlabRefListError> {
+    pub fn pop_back(&self, alloc: &Slab<T::RefObject>) -> Result<T, SlabListError> {
         let tail = &self._tail;
         let prev = tail
             .get_prev_ref(alloc)
-            .ok_or(SlabRefListError::NodeIsHeadGuide)?;
+            .ok_or(SlabListError::NodeIsHeadGuide)?;
         self.unplug_node(alloc, prev.clone())?;
         Ok(prev)
     }
-    pub fn pop_front(&self, alloc: &Slab<T::RefObject>) -> Result<T, SlabRefListError> {
+    pub fn pop_front(&self, alloc: &Slab<T::RefObject>) -> Result<T, SlabListError> {
         let head = &self._head;
         let next = head
             .get_next_ref(alloc)
-            .ok_or(SlabRefListError::NodeIsTailGuide)?;
+            .ok_or(SlabListError::NodeIsTailGuide)?;
         self.unplug_node(alloc, head.clone())?;
         Ok(next)
     }
 
-    pub fn view<'a>(&'a self, alloc: &'a Slab<T::RefObject>) -> SlabRefListView<'a, T> {
-        SlabRefListView {
+    pub fn view<'a>(&'a self, alloc: &'a Slab<T::RefObject>) -> SlabListView<'a, T> {
+        SlabListView {
             _list_range: SlabListRange {
                 node_head: self._head.clone(),
                 node_tail: self._tail.clone(),
@@ -407,14 +407,14 @@ impl<T: SlabRefListNodeRef> SlabRefList<T> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SlabListRange<T: SlabRefListNodeRef> {
+pub struct SlabListRange<T: SlabListNodeRef> {
     pub node_head: T,
     pub node_tail: T,
 }
 
-impl<T: SlabRefListNodeRef> SlabListRange<T> {
-    pub fn view<'a>(&'a self, slab: &'a Slab<T::RefObject>) -> SlabRefListView<'a, T> {
-        SlabRefListView { _list_range: self.clone(), _slab_alloc: slab }
+impl<T: SlabListNodeRef> SlabListRange<T> {
+    pub fn view<'a>(&'a self, slab: &'a Slab<T::RefObject>) -> SlabListView<'a, T> {
+        SlabListView { _list_range: self.clone(), _slab_alloc: slab }
     }
 
     pub fn calc_length(&self, slab: &Slab<T::RefObject>) -> usize {
@@ -428,49 +428,59 @@ impl<T: SlabRefListNodeRef> SlabListRange<T> {
     }
 }
 
-pub struct SlabRefListView<'a, T: SlabRefListNodeRef> {
+pub struct SlabListView<'a, T: SlabListNodeRef> {
     pub(crate) _list_range: SlabListRange<T>,
     pub(crate) _slab_alloc: &'a Slab<T::RefObject>,
 }
 
-pub struct SlabRefListIterator<'a, T: SlabRefListNodeRef> {
-    pub(crate) _current: Option<usize>,
-    pub(crate) _slab: &'a Slab<T::RefObject>,
+pub struct SlabListIterator<'a, T: SlabListNodeRef> {
+    _current: T,
+    _node_tail: T,
+    _alloc: &'a Slab<T::RefObject>,
 }
 
-impl<'a, T: SlabRefListNodeRef> Iterator for SlabRefListIterator<'a, T> {
+impl<'a, T: SlabListNodeRef> Iterator for SlabListIterator<'a, T> {
     type Item = (T, &'a T::RefObject);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current = self._current?;
-        let t_data = &self._slab[current];
-        let next = self._slab[current].get_next()?;
-        self._current = Some(next);
-        Some((T::from_handle(current), t_data))
+        if self._current == self._node_tail || self._current.is_null() {
+            return None;
+        }
+        let current_data = self._current.as_data(self._alloc)?;
+        let next = T::from_handle(current_data.get_next()?);
+        let item = (self._current.clone(), current_data);
+        self._current = next;
+        Some(item)
     }
 }
 
-impl<'a, T> IntoIterator for SlabRefListView<'a, T>
-where
-    T: SlabRefListNodeRef,
-{
+impl<'a, T: SlabListNodeRef> IntoIterator for SlabListView<'a, T> {
     type Item = (T, &'a T::RefObject);
-    type IntoIter = SlabRefListIterator<'a, T>;
+    type IntoIter = SlabListIterator<'a, T>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        let current = self
-            ._list_range
-            .node_head
-            .get_next_ref(self._slab_alloc)
-            .expect("Head node should have a next node")
-            .get_handle();
-        SlabRefListIterator { _current: Some(current), _slab: &self._slab_alloc }
+    fn into_iter(self) -> SlabListIterator<'a, T> {
+        let list_range = &self._list_range;
+        let curr = if list_range.node_head.is_null() {
+            list_range.node_tail.clone()
+        } else if list_range.node_head == list_range.node_tail {
+            list_range.node_tail.clone()
+        } else {
+            list_range
+                .node_head
+                .get_next_ref(self._slab_alloc)
+                .unwrap_or(list_range.node_tail.clone())
+        };
+        SlabListIterator {
+            _current: curr,
+            _node_tail: list_range.node_tail.clone(),
+            _alloc: self._slab_alloc,
+        }
     }
 }
 
-impl<T> std::fmt::Debug for SlabRefListView<'_, T>
+impl<T> std::fmt::Debug for SlabListView<'_, T>
 where
-    T: SlabRefListNodeRef<RefObject: std::fmt::Debug>,
+    T: SlabListNodeRef<RefObject: std::fmt::Debug>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list()
@@ -491,28 +501,28 @@ mod testing {
 
     #[derive(Debug)]
     struct TestNode {
-        node_head: Cell<SlabRefListNodeHead>,
+        node_head: Cell<SlabListNodeHead>,
         number: usize,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     struct TestNodeRef(usize);
 
-    impl SlabRefListNode for TestNode {
+    impl SlabListNode for TestNode {
         fn new_guide() -> Self {
-            Self { node_head: Cell::new(SlabRefListNodeHead::new()), number: 0 }
+            Self { node_head: Cell::new(SlabListNodeHead::new()), number: 0 }
         }
-        fn load_node_head(&self) -> SlabRefListNodeHead {
+        fn load_node_head(&self) -> SlabListNodeHead {
             self.node_head.get()
         }
-        fn store_node_head(&self, node_head: SlabRefListNodeHead) {
+        fn store_node_head(&self, node_head: SlabListNodeHead) {
             self.node_head.set(node_head);
         }
     }
 
     impl TestNode {
         fn new(number: usize) -> Self {
-            Self { node_head: Cell::new(SlabRefListNodeHead::new()), number }
+            Self { node_head: Cell::new(SlabListNodeHead::new()), number }
         }
     }
 
@@ -528,16 +538,16 @@ mod testing {
         }
     }
 
-    impl SlabRefListNodeRef for TestNodeRef {
-        fn on_node_push_next(_: Self, _: Self, _: &Slab<TestNode>) -> Result<(), SlabRefListError> {
+    impl SlabListNodeRef for TestNodeRef {
+        fn on_node_push_next(_: Self, _: Self, _: &Slab<TestNode>) -> Result<(), SlabListError> {
             Ok(())
         }
 
-        fn on_node_push_prev(_: Self, _: Self, _: &Slab<TestNode>) -> Result<(), SlabRefListError> {
+        fn on_node_push_prev(_: Self, _: Self, _: &Slab<TestNode>) -> Result<(), SlabListError> {
             Ok(())
         }
 
-        fn on_node_unplug(_: Self, _: &Slab<TestNode>) -> Result<(), SlabRefListError> {
+        fn on_node_unplug(_: Self, _: &Slab<TestNode>) -> Result<(), SlabListError> {
             Ok(())
         }
     }
@@ -589,7 +599,7 @@ mod testing {
 
         for i in 0..5 {
             let node = list.pop_back(&slab).unwrap();
-            assert_eq!(node.to_slabref(&slab).unwrap().number, 10 - i);
+            assert_eq!(node.as_data(&slab).unwrap().number, 10 - i);
             slab.remove(node.get_handle());
         }
         assert_eq!(list.len(), 5);

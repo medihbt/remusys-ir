@@ -1,5 +1,7 @@
 pub mod addr;
+pub mod comment;
 pub mod cond;
+pub mod gep;
 pub mod impls;
 pub mod inst;
 pub mod mir_call;
@@ -13,7 +15,7 @@ pub mod switch;
 
 use crate::{
     base::{
-        slablist::{SlabRefListError, SlabRefListNodeHead, SlabRefListNodeRef},
+        slablist::{SlabListError, SlabListNodeHead, SlabListNodeRef},
         slabref::SlabRef,
     },
     mir::{
@@ -29,18 +31,18 @@ pub use self::subinst::IMirSubInst;
 
 #[derive(Debug, Clone)]
 pub struct MirInstCommon {
-    node_head: Cell<SlabRefListNodeHead>,
+    node_head: Cell<SlabListNodeHead>,
     pub opcode: MirOP,
 }
 
 impl MirInstCommon {
     pub fn new(opcode: MirOP) -> Self {
-        MirInstCommon { node_head: Cell::new(SlabRefListNodeHead::new()), opcode }
+        MirInstCommon { node_head: Cell::new(SlabListNodeHead::new()), opcode }
     }
 
     pub fn new_guide() -> Self {
         MirInstCommon {
-            node_head: Cell::new(SlabRefListNodeHead::new()),
+            node_head: Cell::new(SlabListNodeHead::new()),
             opcode: MirOP::Add32I,
         }
     }
@@ -59,14 +61,14 @@ impl SlabRef for MirInstRef {
     }
 }
 
-impl SlabRefListNodeRef for MirInstRef {
-    fn on_node_push_next(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+impl SlabListNodeRef for MirInstRef {
+    fn on_node_push_next(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabListError> {
         Ok(())
     }
-    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+    fn on_node_push_prev(_: Self, _: Self, _: &Slab<MirInst>) -> Result<(), SlabListError> {
         Ok(())
     }
-    fn on_node_unplug(_: Self, _: &Slab<MirInst>) -> Result<(), SlabRefListError> {
+    fn on_node_unplug(_: Self, _: &Slab<MirInst>) -> Result<(), SlabListError> {
         Ok(())
     }
 }
