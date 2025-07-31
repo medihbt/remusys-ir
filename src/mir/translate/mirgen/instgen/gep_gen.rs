@@ -14,7 +14,6 @@ use crate::{
             IMirSubInst,
             gep::{MirGEP, MirGEPBase, MirGEPOffset},
             inst::MirInst,
-            mirops::MirCommentedInst,
         },
         module::vreg_alloc::VirtRegAlloc,
         operand::{IMirSubOperand, reg::GPR64},
@@ -85,16 +84,14 @@ pub(super) fn dispatch_gep(
     let mut mir_gep = MirGEP::new(dst, tmpreg, base_mir, offset_weight);
 
     // 优化手段: 直接合并常量偏移量
-    assert!(!mir_gep.offsets().is_empty(), "Expected at least one GEP offset");
+    assert!(
+        !mir_gep.offsets().is_empty(),
+        "Expected at least one GEP offset"
+    );
     mir_gep.merge_const_offsets();
 
-    // 尝试简化为简单的 MOV 或加法/减法指令，否则将 MIR GEP 添加到输出指令队列
-    if !mir_gep.try_simplify(|inst| out_insts.push_back(inst)) {
-        out_insts.push_back(mir_gep.into_mir());
-    } else {
-        let commented = MirCommentedInst::new(mir_gep.into_mir());
-        out_insts.push_back(commented.into_mir());
-    }
+    // 将 MIR GEP 添加到输出指令队列
+    out_insts.push_back(mir_gep.into_mir());
 }
 
 fn translate_base_ptr(operand_map: &OperandMap, base_ptr: ValueSSA) -> MirGEPBase {
