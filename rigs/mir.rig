@@ -563,6 +563,19 @@ template[Src, Offset] MirStoreImm {
     }
 }
 
+template[Src] MirStoreImmSym {
+    in: {
+        imm: Src,
+        target: Global,
+    },
+    out: { immreg: GPR64, addr_reg: GPR64 };
+    impl {
+        [Imm64]  => MirStImm64Sym { insts: [ MirStImm64Sym ], },
+        [Imm32]  => MirStImm32Sym { insts: [ MirStImm32Sym ], },
+        [Symbol] => MirStSym64Sym { insts: [ MirStSymSym ], },
+    }
+}
+
 template[Dst, Src] MirLoadConst {
     out: { rd: Dst, },
     in: { src: Src, };
