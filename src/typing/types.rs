@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{IValType, context::TypeContext, id::ValTypeID};
-use crate::{base::slabref::SlabRef, impl_slabref};
+use crate::{base::SlabRef, impl_slabref};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatTypeKind {

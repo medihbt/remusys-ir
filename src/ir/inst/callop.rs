@@ -5,7 +5,7 @@ use std::num::NonZero;
 use slab::Slab;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{
         PtrUser, ValueSSA, ValueSSAError,
         global::{

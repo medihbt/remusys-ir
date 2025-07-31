@@ -1,5 +1,5 @@
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{ValueSSA, constant::data::ConstData, module::Module},
     typing::{TypeMismatchError, id::ValTypeID},
 };

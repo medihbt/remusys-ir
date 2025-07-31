@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     mir::module::MirGlobalRef,
     typing::{context::TypeContext, id::ValTypeID},
 };

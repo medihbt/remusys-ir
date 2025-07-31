@@ -1,7 +1,7 @@
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
-        inst::{InstData, InstRef, usedef::UseData},
+        inst::{InstData, InstRef, UseData},
         module::Module,
         opcode::Opcode,
     },

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         global::{GlobalData, GlobalRef},
         module::Module,

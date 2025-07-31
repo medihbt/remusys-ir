@@ -3,7 +3,7 @@ use std::cell::Ref;
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     impl_slabref,
     ir::{ValueSSA, module::Module},
     typing::{id::ValTypeID, types::ArrayTypeRef},

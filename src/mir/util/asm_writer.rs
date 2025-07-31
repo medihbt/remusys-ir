@@ -1,7 +1,7 @@
 use std::{io::Write, rc::Rc};
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     mir::{
         fmt::FuncFormatContext,
         inst::switch::VecSwitchTab,

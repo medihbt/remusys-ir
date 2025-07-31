@@ -1,21 +1,13 @@
-use std::cell::{Cell, Ref};
-
-use slab::Slab;
-use terminator::TerminatorInst;
-use usedef::{UseData, UseKind, UseRef};
-
 use crate::{
     base::{
-        NullableValue,
-        slablist::{
-            SlabListRange, SlabRefList, SlabListError, SlabListNode, SlabListNodeHead,
-            SlabListNodeRef,
-        },
-        slabref::SlabRef,
+        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
+        SlabListRange, SlabRef, SlabRefList,
     },
     impl_slabref,
     typing::{TypeMismatchError, id::ValTypeID},
 };
+use slab::Slab;
+use std::cell::{Cell, Ref};
 
 use super::{
     ValueSSA, ValueSSAError,
@@ -24,20 +16,34 @@ use super::{
     opcode::Opcode,
 };
 
-pub mod alloca;
-pub mod binop;
-pub mod callop;
-pub mod cast;
-pub mod cmp;
-pub mod gep;
-pub mod load_store;
-pub mod phi;
-pub mod select;
-pub mod terminator;
-pub mod usedef;
-pub mod visitor;
-
+mod alloca;
+mod binop;
+mod callop;
+mod cast;
 mod checking;
+mod cmp;
+mod gep;
+mod load_store;
+mod phi;
+mod select;
+mod terminator;
+mod usedef;
+mod visitor;
+
+pub use {
+    alloca::Alloca,
+    binop::BinOp,
+    callop::CallOp,
+    cast::{CastError, CastOp},
+    cmp::CmpOp,
+    gep::{IndexChainNode, IndexPtrOp, IrGEPOffset, IrGEPOffsetIter},
+    load_store::{LoadOp, StoreOp},
+    phi::{PhiErr, PhiOp, PhiOpRef, PhiOperand},
+    select::SelectOp,
+    terminator::{Br, Jump, JumpCommon, Ret, Switch, TerminatorInst, TerminatorInstRef},
+    usedef::{UseData, UseKind, UseRef},
+    visitor::IInstVisitor,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstRef(usize);

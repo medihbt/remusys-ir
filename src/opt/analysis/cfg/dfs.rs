@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{
         block::BlockRef,
         global::{GlobalData, GlobalRef},

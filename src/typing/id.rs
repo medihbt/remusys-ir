@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::base::slabref::SlabRef;
+use crate::base::SlabRef;
 
 use super::{
     IValType,

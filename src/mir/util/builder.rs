@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     mir::{
         inst::{MirInstRef, inst::MirInst},
         module::{

@@ -1,8 +1,17 @@
-pub mod dsu;
-pub mod slablist;
-pub mod slabref;
+mod dsu;
+mod slablist;
+mod slabref;
 
-pub trait NullableValue: Clone + Eq {
+pub use {
+    dsu::DSU,
+    slablist::{
+        SlabListError, SlabListIterator, SlabListNode, SlabListNodeHead, SlabListNodeRef,
+        SlabListRange, SlabListView, SlabRefList,
+    },
+    slabref::SlabRef,
+};
+
+pub trait INullableValue: Clone + Eq {
     fn new_null() -> Self;
     fn is_null(&self) -> bool;
 

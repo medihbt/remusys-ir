@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     mir::{
         module::{MirGlobalRef, block::MirBlockRef},
         operand::{IMirSubOperand, MirOperand, subop::SwitchTab},

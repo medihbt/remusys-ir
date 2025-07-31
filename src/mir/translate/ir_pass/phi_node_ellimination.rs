@@ -15,10 +15,7 @@ use crate::{
         ValueSSA,
         block::BlockRef,
         global::GlobalRef,
-        inst::{
-            InstData,
-            phi::{PhiOpRef, PhiOperand},
-        },
+        inst::{InstData, PhiOpRef, PhiOperand},
         module::Module,
     },
     opt::analysis::cfg::snapshot::CfgSnapshot,

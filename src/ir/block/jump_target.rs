@@ -6,11 +6,8 @@ use slab::Slab;
 
 use crate::{
     base::{
-        NullableValue,
-        slablist::{
-            SlabRefList, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        },
-        slabref::SlabRef,
+        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRefList,
+        SlabRef,
     },
     impl_slabref,
     ir::{
@@ -111,9 +108,7 @@ impl SlabListNodeRef for JumpTargetRef {
     }
 
     fn on_node_unplug(curr: Self, alloc: &Slab<JumpTargetData>) -> Result<(), SlabListError> {
-        curr.to_data(alloc)
-            ._terminator
-            .set(InstRef::new_null());
+        curr.to_data(alloc)._terminator.set(InstRef::new_null());
         Ok(())
     }
 }

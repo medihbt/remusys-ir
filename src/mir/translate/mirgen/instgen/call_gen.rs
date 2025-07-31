@@ -1,12 +1,9 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         constant::data::ConstData,
-        inst::{
-            InstData, InstRef,
-            usedef::{UseData, UseRef},
-        },
+        inst::{InstData, InstRef, UseData, UseRef},
     },
     mir::{
         inst::{IMirSubInst, inst::MirInst, mirops::MirCall},

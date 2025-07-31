@@ -1,12 +1,8 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
-        inst::{
-            InstData, InstRef,
-            gep::{IrGEPOffset, IrGEPOffsetIter},
-            usedef::UseData,
-        },
+        inst::{InstData, InstRef, IrGEPOffset, IrGEPOffsetIter, UseData},
         module::Module,
     },
     mir::{

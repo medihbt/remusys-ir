@@ -1,5 +1,5 @@
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     mir::{
         fmt::FuncFormatContext,
         module::{MirGlobalRef, block::MirBlockRef},
@@ -96,10 +96,7 @@ impl IMirSubOperand for MirGlobalRef {
 
     fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
         let alloc_global = formatter.mir_module.borrow_alloc_item();
-        let name = self
-            .to_data(&alloc_global)
-            .get_name()
-            .unwrap_or("");
+        let name = self.to_data(&alloc_global).get_name().unwrap_or("");
         formatter.write_str(name)
     }
 }

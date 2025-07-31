@@ -1,5 +1,5 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     mir::{
         inst::{MirInstRef, inst::MirInst},
         module::{

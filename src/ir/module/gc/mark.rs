@@ -3,13 +3,13 @@ use std::cell::RefCell;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabListNodeRef, slabref::SlabRef},
+    base::{INullableValue, SlabListNodeRef, SlabRef},
     ir::{
         ValueSSA,
         block::jump_target::JumpTargetRef,
         constant::expr::{ConstExprData, ConstExprRef},
         global::{GlobalData, GlobalRef, func::FuncData},
-        inst::{terminator::TerminatorInst, usedef::UseRef, *},
+        inst::*,
         module::{Module, ModuleError},
     },
 };

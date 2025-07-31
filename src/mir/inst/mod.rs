@@ -14,10 +14,7 @@ pub mod subinst;
 pub mod switch;
 
 use crate::{
-    base::{
-        slablist::{SlabListError, SlabListNodeHead, SlabListNodeRef},
-        slabref::SlabRef,
-    },
+    base::{SlabListError, SlabListNodeHead, SlabListNodeRef, SlabRef},
     mir::{
         inst::{inst::MirInst, opcode::MirOP},
         module::MirModule,

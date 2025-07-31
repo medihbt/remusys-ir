@@ -7,7 +7,7 @@ use func::FuncData;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slablist::SlabListNode, slabref::SlabRef},
+    base::{INullableValue, SlabListNode, SlabRef},
     impl_slabref,
     typing::id::ValTypeID,
 };

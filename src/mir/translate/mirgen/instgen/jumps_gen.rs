@@ -1,9 +1,9 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         block::jump_target::JumpTargetData,
-        inst::{InstData, InstRef, cmp::CmpOp, usedef::UseData},
+        inst::{CmpOp, InstData, InstRef, UseData},
     },
     mir::{
         inst::{

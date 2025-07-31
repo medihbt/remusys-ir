@@ -3,16 +3,13 @@ use std::cell::Ref;
 
 use super::{IRGraphEdge, IRGraphEdgeHolder, IRGraphNode};
 use crate::{
-    base::{slablist::SlabRefList, slabref::SlabRef},
+    base::{SlabRef, SlabRefList},
     ir::{
         block::{
             BlockData, BlockRef,
             jump_target::{JumpTargetData, JumpTargetRef},
         },
-        inst::{
-            InstData,
-            terminator::{TerminatorInst, TerminatorInstRef},
-        },
+        inst::{InstData, TerminatorInst, TerminatorInstRef},
         module::{Module, rcfg::RcfgPerBlock},
     },
 };

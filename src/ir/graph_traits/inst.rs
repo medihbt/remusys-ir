@@ -3,13 +3,10 @@ use std::{cell::Ref, collections::HashSet};
 use slab::Slab;
 
 use crate::{
-    base::{slablist::SlabRefList, slabref::SlabRef},
+    base::{SlabRef, SlabRefList},
     ir::{
         ValueSSA,
-        inst::{
-            InstData, InstRef,
-            usedef::{UseData, UseRef},
-        },
+        inst::{InstData, InstRef, UseData, UseRef},
         module::{Module, rdfg::RdfgPerValue},
     },
 };

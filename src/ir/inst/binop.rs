@@ -9,7 +9,7 @@ use super::{
 };
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{ValueSSA, module::Module, opcode::Opcode},
     typing::{TypeMismatchError, id::ValTypeID},
 };

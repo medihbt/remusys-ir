@@ -9,7 +9,7 @@ use rdfg::RdfgAlloc;
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     typing::{context::TypeContext, id::ValTypeID},
 };
 
@@ -21,11 +21,7 @@ use super::{
     },
     constant::expr::{ConstExprData, ConstExprRef},
     global::{GlobalData, GlobalRef, func::FuncStorage},
-    inst::{
-        InstData, InstRef,
-        terminator::TerminatorInst,
-        usedef::{UseData, UseRef},
-    },
+    inst::{InstData, InstRef, TerminatorInst, UseData, UseRef},
 };
 
 pub mod gc;

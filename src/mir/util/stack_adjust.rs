@@ -8,11 +8,7 @@ use std::{
 use slab::Slab;
 
 use crate::{
-    base::{
-        NullableValue,
-        slablist::{SlabListRange, SlabListNodeRef},
-        slabref::SlabRef,
-    },
+    base::{INullableValue, SlabListNodeRef, SlabListRange, SlabRef},
     mir::{
         inst::{
             IMirSubInst, MirInstRef,
@@ -138,7 +134,10 @@ impl MirSpAdjustNode {
                 // 这个指令引用已经在上面处理子结点的过程中被处理过了, 跳过
                 continue;
             }
-            eprintln!("{}Adding offset for instruction {iref:?}: {this_node_offset}", "..".repeat(level as usize));
+            eprintln!(
+                "{}Adding offset for instruction {iref:?}: {this_node_offset}",
+                "..".repeat(level as usize)
+            );
             out_map.insert(iref, this_node_offset);
         }
     }

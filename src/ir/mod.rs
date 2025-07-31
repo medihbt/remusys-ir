@@ -7,12 +7,12 @@ use constant::{
     expr::{ConstExprRef, IConstExprVisitor},
 };
 use global::{GlobalData, GlobalRef, IGlobalObjectVisitor, func::FuncStorage};
-use inst::{InstRef, visitor::IInstVisitor};
+use inst::{InstRef, IInstVisitor};
 use module::{Module, ModuleAllocatorInner};
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     typing::id::ValTypeID,
 };
 
@@ -140,7 +140,7 @@ impl ValueSSA {
 
 /// Implementation of `NullableValue` trait for `Value` type.
 /// This allows `Value` to be treated as a nullable value where `Value::None` represents null.
-impl NullableValue for ValueSSA {
+impl INullableValue for ValueSSA {
     /// Checks if the value is null (i.e., `Value::None`).
     ///
     /// ### Returns

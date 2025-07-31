@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     mir::{
         module::{MirGlobalRef, block::MirBlockRef},
         operand::{

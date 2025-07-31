@@ -3,7 +3,7 @@ use std::{fmt::Debug, rc::Rc};
 use log::debug;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         PtrStorage,
         global::{GlobalData, GlobalRef, func::FuncStorage},

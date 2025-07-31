@@ -1,5 +1,5 @@
 use crate::{
-    base::slablist::SlabRefList,
+    base::SlabRefList,
     mir::{
         inst::{MirInstRef, inst::MirInst, switch::VecSwitchTab},
         module::{

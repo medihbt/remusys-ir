@@ -5,7 +5,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use slab::Slab;
 
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
         block::{
             BlockRef,

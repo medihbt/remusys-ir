@@ -1,18 +1,15 @@
-use std::cell::{Ref, RefCell, RefMut};
-
-use slab::Slab;
-
-use crate::{
-    base::{NullableValue, slabref::SlabRef},
-    ir::{ValueSSA, block::BlockRef, module::Module, opcode::Opcode},
-    typing::id::ValTypeID,
-};
-
 use super::{
     InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
     checking::check_operand_type_match,
     usedef::{UseData, UseKind, UseRef},
 };
+use crate::{
+    base::{INullableValue, SlabRef},
+    ir::{ValueSSA, block::BlockRef, module::Module, opcode::Opcode},
+    typing::id::ValTypeID,
+};
+use slab::Slab;
+use std::cell::{Ref, RefCell, RefMut};
 
 pub struct PhiOperand {
     pub from_bb: BlockRef,

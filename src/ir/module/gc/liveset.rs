@@ -1,11 +1,11 @@
 use std::usize;
 
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
         ValueSSA,
         block::jump_target::JumpTargetRef,
-        inst::usedef::UseRef,
+        inst::UseRef,
         module::{Module, ModuleError},
     },
 };

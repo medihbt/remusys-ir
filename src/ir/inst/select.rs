@@ -3,7 +3,7 @@
 use slab::Slab;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{ValueSSA, module::Module, opcode::Opcode},
     typing::id::ValTypeID,
 };

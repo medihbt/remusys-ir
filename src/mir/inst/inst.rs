@@ -866,14 +866,14 @@ impl std::fmt::Debug for MirInst {
         }
     }
 }
-impl crate::base::slablist::SlabListNode for MirInst {
+impl crate::base::SlabListNode for MirInst {
     fn new_guide() -> Self {
         MirInst::GuideNode(super::MirInstCommon::new_guide())
     }
-    fn load_node_head(&self) -> crate::base::slablist::SlabListNodeHead {
+    fn load_node_head(&self) -> crate::base::SlabListNodeHead {
         self.get_common().node_head.get()
     }
-    fn store_node_head(&self, head: crate::base::slablist::SlabListNodeHead) {
+    fn store_node_head(&self, head: crate::base::SlabListNodeHead) {
         self.get_common().node_head.set(head);
     }
 }

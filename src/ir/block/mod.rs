@@ -4,15 +4,11 @@ use slab::Slab;
 
 use crate::{
     base::{
-        NullableValue,
-        slablist::{
-            SlabListRange, SlabRefList, SlabListError, SlabListNode, SlabListNodeHead,
-            SlabListNodeRef,
-        },
-        slabref::SlabRef,
+        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
+        SlabListRange, SlabRef, SlabRefList,
     },
     impl_slabref,
-    ir::block::jump_target::JumpTargetRef,
+    ir::{block::jump_target::JumpTargetRef, inst::Ret},
     typing::id::ValTypeID,
 };
 
@@ -20,10 +16,7 @@ use super::{
     ValueSSA,
     constant::data::ConstData,
     global::GlobalRef,
-    inst::{
-        InstData, InstError, InstRef,
-        terminator::{self, TerminatorInstRef},
-    },
+    inst::{InstData, InstError, InstRef, TerminatorInstRef},
     module::Module,
 };
 
@@ -419,7 +412,7 @@ impl BlockData {
         let ret_bb = Self::new_empty(module);
 
         let (ret_common, ret_inst) =
-            terminator::Ret::new(module, ValueSSA::ConstData(ConstData::Zero(valtype)));
+            Ret::new(module, ValueSSA::ConstData(ConstData::Zero(valtype)));
         let ret_inst = module.insert_inst(InstData::Ret(ret_common, ret_inst));
 
         ret_bb

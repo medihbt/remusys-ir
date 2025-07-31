@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use slab::Slab;
 
-use crate::base::slabref::SlabRef;
+use crate::base::SlabRef;
 
 use super::{
     IValType,

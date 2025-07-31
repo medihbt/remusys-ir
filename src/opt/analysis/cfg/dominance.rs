@@ -1,15 +1,11 @@
 //! Dominance Tree Analysis
 
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    collections::BTreeSet,
-    rc::Rc,
+use super::{
+    dfs::{CfgDfsNode, CfgDfsSeq},
+    snapshot::CfgSnapshot,
 };
-
-use slab::Slab;
-
 use crate::{
-    base::{NullableValue, dsu::DSU, slablist::SlabListNodeRef},
+    base::{DSU, INullableValue, SlabListNodeRef},
     ir::{
         block::BlockRef,
         inst::{InstData, InstRef},
@@ -18,10 +14,11 @@ use crate::{
     },
     opt::util::DfsOrder,
 };
-
-use super::{
-    dfs::{CfgDfsNode, CfgDfsSeq},
-    snapshot::CfgSnapshot,
+use slab::Slab;
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::BTreeSet,
+    rc::Rc,
 };
 
 pub struct DominatorTreeNode {

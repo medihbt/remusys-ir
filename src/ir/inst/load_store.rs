@@ -5,7 +5,7 @@ use std::{cell::Cell, num::NonZero};
 use slab::Slab;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{PtrUser, ValueSSA, module::Module, opcode::Opcode},
     typing::{TypeMismatchError, id::ValTypeID},
 };

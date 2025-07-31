@@ -6,11 +6,7 @@ use std::{
 use slab::Slab;
 
 use crate::{
-    base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabListNodeRef},
-        slabref::SlabRef,
-    },
+    base::{INullableValue, SlabListNodeRef, SlabRef, SlabRefList},
     ir::{
         ValueSSA,
         block::{
@@ -52,10 +48,7 @@ pub trait TerminatorInst {
         if let Some(targets) = self.get_jump_targets() {
             let mut curr_node = targets._head;
             while curr_node.is_nonnull() {
-                curr_node
-                    .to_data(alloc_jt)
-                    ._terminator
-                    .set(self_ref);
+                curr_node.to_data(alloc_jt)._terminator.set(self_ref);
                 curr_node = match curr_node.get_next_ref(alloc_jt) {
                     Some(x) => x,
                     None => break,

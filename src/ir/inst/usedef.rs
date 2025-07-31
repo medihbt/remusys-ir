@@ -4,9 +4,7 @@ use slab::Slab;
 
 use crate::{
     base::{
-        NullableValue,
-        slablist::{SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef},
-        slabref::SlabRef,
+        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRef,
     },
     impl_slabref,
     ir::{

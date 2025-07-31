@@ -1,9 +1,9 @@
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
         block::{BlockData, BlockRef, jump_target::JumpTargetRef},
         global::{GlobalData, GlobalRef},
-        inst::{InstData, terminator::Jump},
+        inst::{InstData, Jump},
         module::Module,
     },
     opt::analysis::cfg::snapshot::CfgSnapshot,

@@ -1,11 +1,11 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         block::{BlockRef, jump_target::JumpTargetRef},
         constant::expr::ConstExprRef,
         global::GlobalRef,
-        inst::{InstRef, usedef::UseRef},
+        inst::{InstRef, UseRef},
         module::{Module, ModuleError},
     },
 };

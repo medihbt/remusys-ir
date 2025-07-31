@@ -1,19 +1,11 @@
 use crate::{
-    base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabListNode, SlabListNodeHead},
-        slabref::SlabRef,
-    },
+    base::{INullableValue, SlabListNode, SlabListNodeHead, SlabRef, SlabRefList},
     ir::{
         ValueSSA,
         block::{BlockRef, jump_target::JumpTargetRef},
         constant::expr::{ConstExprData, ConstExprRef},
         global::{GlobalData, GlobalRef},
-        inst::{
-            InstData, InstDataCommon, InstRef,
-            terminator::JumpCommon,
-            usedef::{UseKind, UseRef},
-        },
+        inst::{InstData, InstDataCommon, InstRef, JumpCommon, UseKind, UseRef},
         module::{Module, ModuleError},
     },
 };
@@ -256,10 +248,7 @@ impl<'a> Redirector<'a> {
         Ok(())
     }
 
-    fn redirect_inst_node_header(
-        &self,
-        header: &mut SlabListNodeHead,
-    ) -> Result<(), ModuleError> {
+    fn redirect_inst_node_header(&self, header: &mut SlabListNodeHead) -> Result<(), ModuleError> {
         let old_prev = InstRef::from_handle(header.prev);
         let old_next = InstRef::from_handle(header.next);
 

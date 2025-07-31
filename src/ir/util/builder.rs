@@ -1,29 +1,15 @@
 use std::{cell::Ref, rc::Rc};
 
 use crate::{
-    base::{
-        NullableValue,
-        slablist::{SlabListError, SlabListNodeRef},
-        slabref::SlabRef,
-    },
+    base::{INullableValue, SlabListError, SlabListNodeRef, SlabRef},
     ir::{
         ValueSSA,
         block::{BlockData, BlockRef},
         cmp_cond::CmpCond,
         global::{self, GlobalData, GlobalRef, func::FuncData},
         inst::{
-            InstData, InstError, InstRef,
-            alloca::Alloca,
-            binop::BinOp,
-            callop,
-            cast::CastOp,
-            cmp::CmpOp,
-            gep::IndexPtrOp,
-            load_store::{LoadOp, StoreOp},
-            phi::PhiOp,
-            select::SelectOp,
-            terminator::{Br, Jump, Ret, Switch},
-            usedef::UseKind,
+            Alloca, BinOp, Br, CallOp, CastOp, CmpOp, IndexPtrOp, InstData, InstError, InstRef,
+            Jump, LoadOp, PhiOp, Ret, SelectOp, StoreOp, Switch, UseKind,
         },
         module::Module,
         opcode::Opcode,
@@ -792,8 +778,8 @@ impl IRBuilder {
         callee: GlobalRef,
         args: impl Iterator<Item = ValueSSA> + Clone,
     ) -> Result<InstRef, IRBuilderError> {
-        let (common, call_op) = callop::CallOp::new_from_func(&self.module, callee, args)
-            .map_err(IRBuilderError::InstError)?;
+        let (common, call_op) =
+            CallOp::new_from_func(&self.module, callee, args).map_err(IRBuilderError::InstError)?;
         let inst = InstData::Call(common, call_op);
         self.add_inst(inst)
     }

@@ -1,7 +1,7 @@
 use std::{cell::Cell, fmt::Write, u32};
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     mir::{
         fmt::FuncFormatContext,
         inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},

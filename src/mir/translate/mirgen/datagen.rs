@@ -1,7 +1,7 @@
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         constant::{

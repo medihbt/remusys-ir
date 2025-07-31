@@ -1,10 +1,10 @@
 use super::InstDispatchError;
 use crate::{
-    base::{NullableValue, slabref::SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
         ValueSSA,
         constant::data::ConstData,
-        inst::{InstData, InstRef, cmp::CmpOp, usedef::UseData},
+        inst::{CmpOp, InstData, InstRef, UseData},
         module::Module,
         opcode::Opcode,
     },

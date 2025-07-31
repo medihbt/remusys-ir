@@ -1,11 +1,11 @@
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         block::jump_target::{JumpTargetData, JumpTargetRef},
-        inst::usedef::{UseData, UseRef},
+        inst::{UseData, UseRef},
         module::{Module, ModuleAllocatorInner},
     },
 };

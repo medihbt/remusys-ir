@@ -1,5 +1,5 @@
 use crate::{
-    base::slablist::SlabListNode,
+    base::SlabListNode,
     mir::{
         fmt::FuncFormatContext,
         inst::{IMirSubInst, MirInstCommon, inst::MirInst, opcode::MirOP},

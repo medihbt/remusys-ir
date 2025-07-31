@@ -4,7 +4,7 @@ use basic_value_formatting::format_value_by_ref;
 use slab::Slab;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         IValueVisitor, ValueSSA,
         block::{BlockData, BlockRef, jump_target::JumpTargetData},
@@ -16,21 +16,7 @@ use crate::{
             self, Alias, GlobalData, GlobalRef, IGlobalObjectVisitor,
             func::{FuncData, FuncStorage},
         },
-        inst::{
-            InstData, InstDataCommon, InstRef,
-            alloca::Alloca,
-            binop::BinOp,
-            callop::CallOp,
-            cast::CastOp,
-            cmp::CmpOp,
-            gep::IndexPtrOp,
-            load_store::{LoadOp, StoreOp},
-            phi::PhiOp,
-            select::SelectOp,
-            terminator::{Br, Jump, Ret, Switch},
-            usedef::UseData,
-            visitor::IInstVisitor,
-        },
+        inst::*,
         module::{Module, ModuleAllocatorInner},
     },
     typing::{id::ValTypeID, types::FloatTypeKind},

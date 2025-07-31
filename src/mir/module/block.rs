@@ -6,12 +6,7 @@ use std::{
 use slab::Slab;
 
 use crate::{
-    base::{
-        slablist::{
-            SlabRefList, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        },
-        slabref::SlabRef,
-    },
+    base::{SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRef, SlabRefList},
     mir::{
         inst::{MirInstRef, inst::MirInst},
         module::MirModule,

@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    base::{
-        NullableValue,
-        slablist::{SlabRefList, SlabListError},
-    },
+    base::{INullableValue, SlabListError, SlabRefList},
     ir::{
         PtrStorage, PtrUser,
         block::{BlockData, BlockRef},
@@ -136,11 +133,7 @@ impl FuncData {
         self.add_block_ref(mut_module, block_ref)?;
         Ok(block_ref)
     }
-    pub fn add_block_ref(
-        &self,
-        module: &Module,
-        block_ref: BlockRef,
-    ) -> Result<(), SlabListError> {
+    pub fn add_block_ref(&self, module: &Module, block_ref: BlockRef) -> Result<(), SlabListError> {
         self._body
             .borrow_mut()
             .as_mut()
@@ -173,7 +166,7 @@ mod testing {
             ValueSSA,
             constant::data::ConstData,
             global::GlobalData,
-            inst::{InstData, terminator::Ret},
+            inst::{InstData, Ret},
             module::Module,
         },
         typing::{

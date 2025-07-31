@@ -1,17 +1,24 @@
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
-        inst::{cmp::CmpOp, usedef::UseData, InstData, InstDataKind, InstRef}, module::Module, ValueSSA
+        ValueSSA,
+        inst::{CmpOp, InstData, InstDataKind, InstRef, UseData},
+        module::Module,
     },
     mir::{
         inst::{
-            impls::*, inst::MirInst, mirops::{MirComment, MirReturn}, opcode::MirOP, IMirSubInst, MirInstRef
+            IMirSubInst, MirInstRef,
+            impls::*,
+            inst::MirInst,
+            mirops::{MirComment, MirReturn},
+            opcode::MirOP,
         },
         module::vreg_alloc::VirtRegAlloc,
         operand::{
-            reg::{RegOperand, RegUseFlags, FPR32, FPR64, GPR32, GPR64}, MirOperand
+            MirOperand,
+            reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags},
         },
-        translate::mirgen::{operandgen::OperandMap, InstTranslateInfo},
+        translate::mirgen::{InstTranslateInfo, operandgen::OperandMap},
     },
     typing::id::ValTypeID,
 };

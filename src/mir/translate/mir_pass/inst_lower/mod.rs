@@ -5,7 +5,7 @@ mod lower_returns;
 mod post_lower;
 
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     mir::{
         inst::inst::MirInst,
         module::{MirGlobal, MirModule, func::MirFunc},

@@ -1,13 +1,7 @@
-use std::{cell::Ref, ops::Deref};
-
-use slab::Slab;
-
-use crate::base::{
-    slablist::{SlabListRange, SlabRefList, SlabListNodeRef},
-    slabref::SlabRef,
-};
-
 use super::module::Module;
+use crate::base::{SlabListNodeRef, SlabListRange, SlabRef, SlabRefList};
+use slab::Slab;
+use std::{cell::Ref, ops::Deref};
 
 pub mod block;
 pub mod inst;

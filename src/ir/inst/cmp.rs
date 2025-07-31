@@ -3,7 +3,7 @@
 use slab::Slab;
 
 use crate::{
-    base::NullableValue,
+    base::INullableValue,
     ir::{ValueSSA, cmp_cond::CmpCond, module::Module, opcode::Opcode},
     typing::{TypeMismatchError, id::ValTypeID},
 };

@@ -1,8 +1,8 @@
 use slab::Slab;
 
-use super::NullableValue;
+use super::INullableValue;
 
-pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
+pub trait SlabRef: Clone + Eq + INullableValue + std::fmt::Debug {
     type RefObject: Sized;
 
     fn from_handle(handle: usize) -> Self;
@@ -45,7 +45,7 @@ pub trait SlabRef: Clone + Eq + NullableValue + std::fmt::Debug {
     }
 }
 
-impl<T: SlabRef> NullableValue for T {
+impl<T: SlabRef> INullableValue for T {
     fn new_null() -> Self {
         Self::from_handle(usize::MAX)
     }
@@ -57,7 +57,7 @@ impl<T: SlabRef> NullableValue for T {
 #[macro_export]
 macro_rules! impl_slabref {
     ($ref_typename:ident, $data_typename:ident) => {
-        impl $crate::base::slabref::SlabRef for $ref_typename {
+        impl $crate::base::SlabRef for $ref_typename {
             type RefObject = $data_typename;
 
             fn from_handle(handle: usize) -> Self {

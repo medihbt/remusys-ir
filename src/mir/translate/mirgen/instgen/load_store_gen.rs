@@ -1,10 +1,10 @@
 use super::InstDispatchError;
 use crate::{
-    base::slabref::SlabRef,
+    base::SlabRef,
     ir::{
         ValueSSA,
         constant::data::ConstData,
-        inst::{InstData, InstRef, usedef::UseData},
+        inst::{InstData, InstRef, UseData},
     },
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
