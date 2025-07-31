@@ -4,12 +4,17 @@ use slab::Slab;
 #[derive(Debug, Clone)]
 pub struct VirtRegAlloc {
     pub general: Slab<GPReg>,
+    pub stackpos: Slab<GPR64>,
     pub float: Slab<VFReg>,
 }
 
 impl VirtRegAlloc {
     pub fn new() -> Self {
-        Self { general: Slab::new(), float: Slab::new() }
+        Self {
+            general: Slab::new(),
+            stackpos: Slab::new(),
+            float: Slab::new(),
+        }
     }
 
     pub fn insert_gp_for_index(&mut self, greg: GPReg) -> u32 {
@@ -45,6 +50,12 @@ impl VirtRegAlloc {
         let index = self.insert_gp_for_index(vreg.into_real());
         GPR32::from_real(self.general[index as usize])
     }
+    pub fn alloc_stackpos(&mut self) -> GPR64 {
+        let index = self.stackpos.vacant_key() as u32;
+        let vreg = GPR64::new_empty().insert_id(RegID::StackPos(index));
+        self.stackpos.insert(vreg);
+        vreg
+    }
     pub fn insert_float(&mut self, vreg: VFReg) -> VFReg {
         let index = self.insert_float_for_index(vreg.into_real());
         self.float[index as usize]
@@ -79,11 +90,18 @@ impl VirtRegAlloc {
     }
 
     pub fn dealloc_gp(&mut self, vreg: GPReg) -> bool {
-        let id = match vreg.get_id() {
-            RegID::Virt(id) => id,
+        match vreg.get_id() {
+            RegID::Virt(id) => self.general.try_remove(id as usize).is_some(),
+            RegID::StackPos(id) => self.stackpos.try_remove(id as usize).is_some(),
             _ => panic!("Expected a virtual GP register, found {:?}", vreg.get_id()),
+        }
+    }
+    pub fn dealloc_stackpos(&mut self, vreg: GPR64) -> bool {
+        let id = match vreg.get_id() {
+            RegID::StackPos(id) => id,
+            _ => panic!("Expected a stack position register, found {:?}", vreg.get_id()),
         };
-        self.general.try_remove(id as usize).is_some()
+        self.stackpos.try_remove(id as usize).is_some()
     }
     pub fn dealloc_float(&mut self, vreg: VFReg) -> bool {
         let id = match vreg.get_id() {

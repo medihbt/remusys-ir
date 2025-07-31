@@ -49,8 +49,8 @@ fn lower_mir_ldrlit_g64(inst: &MirLdrLitG64, actions: &mut VecDeque<PostLowerAct
     let src = inst.get_src();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
-    assert!(!dst.is_virtual());
+    assert!(addr.is_general_physical());
+    assert!(dst.is_physical());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, src);
     actions.push_back(PushFront(adr_inst.into_mir()));
@@ -67,8 +67,8 @@ fn lower_mir_ldrlit_g32(inst: &MirLdrLitG32, actions: &mut VecDeque<PostLowerAct
     let src = inst.get_src();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
-    assert!(!dst.is_virtual());
+    assert!(addr.is_general_physical());
+    assert!(dst.is_physical());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, src);
     actions.push_back(PushFront(adr_inst.into_mir()));
@@ -84,8 +84,8 @@ fn lower_mir_ldrlit_f64(inst: &MirLdrLitF64, actions: &mut VecDeque<PostLowerAct
     let src = inst.get_src();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
-    assert!(!dst.is_virtual());
+    assert!(addr.is_general_physical());
+    assert!(dst.is_physical());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, src);
     actions.push_back(PushFront(adr_inst.into_mir()));
@@ -101,8 +101,8 @@ fn lower_mir_ldrlit_f32(inst: &MirLdrLitF32, actions: &mut VecDeque<PostLowerAct
     let src = inst.get_src();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
-    assert!(!dst.is_virtual());
+    assert!(addr.is_general_physical());
+    assert!(dst.is_physical());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, src);
     actions.push_back(PushFront(adr_inst.into_mir()));
@@ -118,8 +118,8 @@ fn lower_mir_strlit_g64(inst: &MirStrLitG64, actions: &mut VecDeque<PostLowerAct
     let dst = inst.get_to();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
-    // assert!(!src.is_virtual());
+    assert!(addr.is_general_physical());
+    assert!(src.is_physical());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, dst);
     actions.push_back(PushFront(adr_inst.into_mir()));
@@ -136,7 +136,7 @@ fn lower_mir_strlit_g32(inst: &MirStrLitG32, actions: &mut VecDeque<PostLowerAct
     let dst = inst.get_to();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical(), "inst {inst:#?}");
+    assert!(addr.is_general_physical(), "inst {inst:#?}");
     assert!(!src.is_virtual(), "inst {inst:#?}");
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, dst);
@@ -153,7 +153,7 @@ fn lower_mir_strlit_f64(inst: &MirStrLitF64, actions: &mut VecDeque<PostLowerAct
     let dst = inst.get_to();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
+    assert!(addr.is_general_physical());
     assert!(!src.is_virtual());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, dst);
@@ -170,7 +170,7 @@ fn lower_mir_strlit_f32(inst: &MirStrLitF32, actions: &mut VecDeque<PostLowerAct
     let dst = inst.get_to();
     let addr = GPR64::from_real(inst.get_tmp_addr());
 
-    assert!(addr.is_physical());
+    assert!(addr.is_general_physical());
     assert!(!src.is_virtual());
 
     let adr_inst = Adr::new(MirOP::AdrP, addr, dst);
@@ -192,7 +192,7 @@ fn lower_ldimm_f32(inst: &MirLdImmF32, actions: &mut VecDeque<PostLowerAction>) 
         actions.push_back(DeleteThis);
     } else {
         let tmpreg = GPR64::from_real(inst.get_tmpreg());
-        assert!(tmpreg.is_physical());
+        assert!(tmpreg.is_general_physical());
         let ldrconst = LoadConst64::new(MirOP::LoadConst64, tmpreg, imm.zext_to_imm64());
         let fmovinst = UnaFG32::new(MirOP::FMovFG32, dst, tmpreg.trunc_to_gpr32());
         actions.push_back(PushFront(ldrconst.into_mir()));
@@ -213,7 +213,7 @@ fn lower_ldimm_f64(inst: &MirLdImmF64, actions: &mut VecDeque<PostLowerAction>) 
         actions.push_back(DeleteThis);
     } else {
         let tmpreg = GPR64::from_real(inst.get_tmpreg());
-        assert!(tmpreg.is_physical());
+        assert!(tmpreg.is_general_physical());
         let ldrconst = LoadConst64::new(MirOP::LoadConst64, tmpreg, imm);
         let fmovinst = UnaFG64::new(MirOP::FMovFG64, dst, tmpreg);
         actions.push_back(PushFront(ldrconst.into_mir()));
@@ -227,6 +227,7 @@ fn lower_stimm32(inst: &MirStImm32, actions: &mut VecDeque<PostLowerAction>) {
 
     let imm = inst.get_imm();
     let tmpreg = GPR64::from_real(inst.get_tmpreg());
+
     let base = GPR64::from_real(inst.get_base());
     let offset = inst.get_offset();
 
@@ -235,6 +236,11 @@ fn lower_stimm32(inst: &MirStImm32, actions: &mut VecDeque<PostLowerAction>) {
         actions.push_back(PushFront(store_wzr.into_mir()));
         actions.push_back(DeleteThis);
     } else {
+        assert_ne!(
+            tmpreg.get_id(),
+            RegID::Invalid,
+            "stimm32 {inst:#?} with invalid tmpreg"
+        );
         let load_const = LoadConst64::new(MirOP::LoadConst64, tmpreg, imm.zext_to_imm64());
         let store_reg =
             StoreGr32Base::new(MirOP::StrGr32Base, tmpreg.trunc_to_gpr32(), base, offset);
@@ -249,6 +255,12 @@ fn lower_stimm64(inst: &MirStImm64, actions: &mut VecDeque<PostLowerAction>) {
 
     let imm = inst.get_imm();
     let tmpreg = GPR64::from_real(inst.get_tmpreg());
+    assert_ne!(
+        tmpreg.get_id(),
+        RegID::Invalid,
+        "stimm64 {inst:#?} with invalid tmpreg"
+    );
+
     let base = GPR64::from_real(inst.get_base());
     let offset = inst.get_offset();
 
@@ -270,6 +282,12 @@ fn lower_stsym64(inst: &MirStSym64, actions: &mut VecDeque<PostLowerAction>) {
 
     let sym = inst.get_imm();
     let tmpreg = GPR64::from_real(inst.get_tmpreg());
+    assert_ne!(
+        tmpreg.get_id(),
+        RegID::Invalid,
+        "stsym64 {inst:#?} with invalid tmpreg"
+    );
+
     let base = GPR64::from_real(inst.get_base());
     let offset = inst.get_offset();
 
@@ -339,7 +357,7 @@ fn lower_stimm32_sym(inst: &MirStImm32Sym, actions: &mut VecDeque<PostLowerActio
 ///
 /// 把符号 `<imm>` 的地址存储到 `<target>` 中, 在存储过程中可能需要使用 `data <tmpreg64>` 中转数据、
 /// `addr <tmpreg64>` 中转地址.
-/// 
+///
 /// 在 Remusys MIR 中, 全局符号自己就表示自己的地址.
 fn lower_stsym64_sym(inst: &MirStSym64Sym, actions: &mut VecDeque<PostLowerAction>) {
     use PostLowerAction::*;

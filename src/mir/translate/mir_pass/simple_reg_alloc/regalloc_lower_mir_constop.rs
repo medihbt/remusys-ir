@@ -111,7 +111,8 @@ pub(super) fn lower_mstimm32(
             return false;
         }
         RegID::ZR => panic!("Cannot store to ZR register!"),
-        RegID::Virt(_) => { /* 接下来处理 */ }
+        RegID::Virt(_) | RegID::StackPos(_) => { /* 接下来处理 */ }
+        RegID::Invalid => panic!("Cannot store to Invalid register!"),
     }
     let Some(stackpos) = vreg_info.find_stackpos(base) else {
         // 没在分配列表就意味着 base 是个栈位置寄存器, 直接返回.
@@ -176,7 +177,8 @@ fn lower_mir_store_const_64(
             return None;
         }
         RegID::ZR => panic!("Cannot store to ZR register!"),
-        RegID::Virt(_) => { /* 接下来处理 */ }
+        RegID::Virt(_) | RegID::StackPos(_) => { /* 接下来处理 */ }
+        RegID::Invalid => panic!("Cannot store to Invalid register!"),
     }
     let Some(stackpos) = vreg_info.find_stackpos(base) else {
         // 没在分配列表就意味着 base 是个栈位置寄存器, 直接返回.

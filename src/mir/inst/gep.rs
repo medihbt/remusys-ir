@@ -4,10 +4,14 @@ use crate::{
     base::NullableValue,
     mir::{
         fmt::FuncFormatContext,
-        inst::{impls::*, inst::MirInst, opcode::MirOP, IMirSubInst, MirInstCommon},
+        inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
         module::MirGlobalRef,
         operand::{
-            compound::MirSymbolOp, imm::{Imm32, Imm64, ImmCalc}, imm_traits, reg::{RegUseFlags, GPR32, GPR64}, IMirSubOperand, MirOperand
+            IMirSubOperand, MirOperand,
+            compound::MirSymbolOp,
+            imm::{Imm32, Imm64, ImmCalc},
+            imm_traits,
+            reg::{GPR32, GPR64, GPReg, RegUseFlags},
         },
     },
 };
@@ -108,7 +112,9 @@ pub enum MirGEPOffset {
     /// 64 位整数寄存器变体
     G64(GPR64),
     /// 32 位有符号整数寄存器变体
-    S32(GPR32)
+    S32(GPR32),
+    /// 32 位无符号整数寄存器变体
+    U32(GPR32),
 }
 
 impl MirGEPOffset {
@@ -116,6 +122,7 @@ impl MirGEPOffset {
         match self {
             MirGEPOffset::G64(GPR64(_, uf)) => *uf = RegUseFlags::USE,
             MirGEPOffset::S32(GPR32(_, uf)) => *uf = RegUseFlags::USE,
+            MirGEPOffset::U32(GPR32(_, uf)) => *uf = RegUseFlags::USE,
             MirGEPOffset::Imm(_) => {}
         }
     }
@@ -127,6 +134,7 @@ impl std::fmt::Debug for MirGEPOffset {
             MirGEPOffset::Imm(imm) => write!(f, "Imm({})", imm),
             MirGEPOffset::G64(reg) => reg.fmt(f),
             MirGEPOffset::S32(reg) => reg.fmt(f),
+            MirGEPOffset::U32(reg) => reg.fmt(f),
         }
     }
 }
@@ -140,10 +148,18 @@ impl IMirSubOperand for MirGEPOffset {
 
     fn from_mir(mir: MirOperand) -> Self {
         match mir {
-            MirOperand::GPReg(gpreg) => match GPR64::try_from_real(gpreg) {
-                Some(reg) => MirGEPOffset::G64(reg),
-                None => panic!("GEPOffset can only be constructed from GPR64, but got: {gpreg:?}",),
-            },
+            MirOperand::GPReg(GPReg(id, si, mut uf)) => {
+                let has_sxtw = uf.contains(RegUseFlags::SXTW);
+                uf.remove(RegUseFlags::SXTW);
+                match (si.get_bits_log2(), has_sxtw) {
+                    (5, true) => Self::S32(GPR32(id, uf)),
+                    (5, false) => Self::U32(GPR32(id, uf)),
+                    (6, _) => Self::G64(GPR64(id, uf)),
+                    _ => panic!(
+                        "GEPOffset can only be constructed from GPR64 or GPR32, but got: {mir:?}",
+                    ),
+                }
+            }
             MirOperand::Imm64(Imm64(imm, _)) => Self::Imm(imm as i64),
             MirOperand::Imm32(Imm32(imm, _)) => Self::Imm(imm as i64),
             _ => panic!(
@@ -157,7 +173,11 @@ impl IMirSubOperand for MirGEPOffset {
         match self {
             MirGEPOffset::Imm(imm) => MirOperand::Imm64(Imm64::full(imm as u64)),
             MirGEPOffset::G64(reg) => reg.into_mir(),
-            MirGEPOffset::S32(reg) => reg.into_mir(),
+            MirGEPOffset::S32(mut reg) => {
+                reg.1.insert(RegUseFlags::SXTW);
+                reg.into_mir()
+            }
+            MirGEPOffset::U32(reg) => reg.into_mir(),
         }
     }
 
@@ -170,20 +190,27 @@ impl IMirSubOperand for MirGEPOffset {
     fn insert_to_real(self, real: Self) -> Self {
         use MirGEPOffset::*;
         match self {
-            Imm(imm) => match real {
-                Imm(_) => Imm(imm),
-                G64(_) => self,
-                S32(_) => self,
-            },
+            Imm(_) => self,
             G64(GPR64(id, _)) => match real {
                 G64(GPR64(_, uf)) => G64(GPR64(id, uf)),
-                S32(GPR32(_, uf)) => G64(GPR64(id, uf)),
+                S32(GPR32(_, uf)) | U32(GPR32(_, uf)) => G64(GPR64(id, uf)),
                 Imm(_) => G64(GPR64(id, RegUseFlags::USE)),
             },
             S32(GPR32(id, _)) => match real {
                 G64(GPR64(_, uf)) => S32(GPR32(id, uf)),
-                S32(GPR32(_, uf)) => S32(GPR32(id, uf)),
+                S32(r) | U32(r) => {
+                    let GPR32(_, uf) = r;
+                    S32(GPR32(id, uf))
+                }
                 Imm(_) => S32(GPR32(id, RegUseFlags::USE)),
+            },
+            U32(GPR32(id, _)) => match real {
+                G64(GPR64(_, uf)) => U32(GPR32(id, uf)),
+                S32(r) | U32(r) => {
+                    let GPR32(_, uf) = r;
+                    U32(GPR32(id, uf))
+                }
+                Imm(_) => U32(GPR32(id, RegUseFlags::USE)),
             },
         }
     }
@@ -193,6 +220,7 @@ impl IMirSubOperand for MirGEPOffset {
             MirGEPOffset::Imm(imm) => Imm64::full(*imm as u64).fmt_asm(formatter),
             MirGEPOffset::G64(reg) => reg.fmt_asm(formatter),
             MirGEPOffset::S32(reg) => reg.fmt_asm(formatter),
+            MirGEPOffset::U32(reg) => reg.fmt_asm(formatter),
         }
     }
 }

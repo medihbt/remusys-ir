@@ -128,7 +128,7 @@ pub(super) fn generate_store_inst(
 fn generate_store_to_reg(src_mir: StrSrc, dst_ptr: GPR64) -> MirInst {
     let zoff32 = ImmLSP32::new(0);
     let zoff64 = ImmLSP64::new(0);
-    let tmpreg = GPR64::new_empty();
+    let wasted = GPR64::new_empty();
     match src_mir {
         StrSrc::F32(fpr32) => {
             StoreF32Base::new(MirOP::StrF32Base, fpr32, dst_ptr, zoff32).into_mir()
@@ -143,14 +143,14 @@ fn generate_store_to_reg(src_mir: StrSrc, dst_ptr: GPR64) -> MirInst {
             StoreGr64Base::new(MirOP::StrGr64Base, gpr64, dst_ptr, zoff64).into_mir()
         }
         StrSrc::Imm32(imm32) => {
-            MirStImm32::new(MirOP::MirStImm32, tmpreg, imm32, dst_ptr, zoff32).into_mir()
+            MirStImm32::new(MirOP::MirStImm32, wasted, imm32, dst_ptr, zoff32).into_mir()
         }
         StrSrc::Imm64(imm64) => {
-            MirStImm64::new(MirOP::MirStImm64, tmpreg, imm64, dst_ptr, zoff64).into_mir()
+            MirStImm64::new(MirOP::MirStImm64, wasted, imm64, dst_ptr, zoff64).into_mir()
         }
         StrSrc::Global(gref) => {
             let imm = MirSymbolOp::Global(gref);
-            MirStSym64::new(MirOP::MirStSym64, tmpreg, imm, dst_ptr, zoff64).into_mir()
+            MirStSym64::new(MirOP::MirStSym64, wasted, imm, dst_ptr, zoff64).into_mir()
         }
     }
 }

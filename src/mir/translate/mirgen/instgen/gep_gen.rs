@@ -64,7 +64,7 @@ pub(super) fn dispatch_gep(
             Some(op) => match DispatchedReg::from_reg(op) {
                 DispatchedReg::G64(gpr64) => (MirGEPOffset::G64(gpr64), weight),
                 // 注意：按语法来说这里这里本应是 sext，但我为了省事儿实现成了 zext. 得想办法加点什么了.
-                DispatchedReg::G32(gpr32) => (MirGEPOffset::G64(gpr32.to_gpr64()), weight),
+                DispatchedReg::G32(gpr32) => (MirGEPOffset::U32(gpr32), weight),
                 _ => panic!("Expected a GPR64 register for GEP index, found: {op:?}"),
             },
             None => panic!("No operand found for GEP index argument: {arg_id:?}"),
@@ -73,7 +73,7 @@ pub(super) fn dispatch_gep(
             Some(InstRetval::Reg(op)) => match DispatchedReg::from_reg(op) {
                 DispatchedReg::G64(gpr64) => (MirGEPOffset::G64(gpr64), weight),
                 // 注意：按语法来说这里这里本应是 sext，但我为了省事儿实现成了 zext. 得想办法加点什么了.
-                DispatchedReg::G32(gpr32) => (MirGEPOffset::G64(gpr32.to_gpr64()), weight),
+                DispatchedReg::G32(gpr32) => (MirGEPOffset::U32(gpr32), weight),
                 _ => panic!("Expected a GPR64 register for GEP index, found: {op:?}"),
             },
             Some(InstRetval::Wasted) => {

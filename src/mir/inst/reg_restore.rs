@@ -163,7 +163,7 @@ impl MirRestoreRegs {
         // 先恢复所有寄存器
         for (index, reg) in saved_regs.iter().enumerate() {
             let RegOperand(id, _, _, is_fp) = reg;
-            let reg_id = RegID::from_real(id);
+            let reg_id = RegID::from_raw(id);
             let offset = ImmLSP64::new(index as u64 * 8);
             let sp = GPR64::sp();
 

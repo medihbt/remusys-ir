@@ -208,8 +208,13 @@ pub(super) fn lower_stackpos_reg_for_operand(
     extra_delta_sp: u64,
     insts: &mut VecDeque<MirInst>,
 ) -> Option<GPR64> {
-    if !vpos.is_virtual() {
-        return None;
+    match vpos.get_id() {
+        RegID::StackPos(_) => {}
+        RegID::Virt(_) => {
+            panic!("Expected a stackpos or physical register, found virtual register {vpos:?}")
+        }
+        RegID::Invalid => panic!("Cannot lower stack position for Invalid register {vpos:?}"),
+        _ => return None,
     }
     let vreg = vpos;
     let old_sp_offset = find_original_sp_offset(stack, vreg);

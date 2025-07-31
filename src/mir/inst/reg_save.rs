@@ -166,7 +166,7 @@ impl MirSaveRegs {
 
         for (index, reg) in saved_regs.iter().enumerate() {
             let RegOperand(id, _, _, is_fp) = reg;
-            let reg_id = RegID::from_real(id);
+            let reg_id = RegID::from_raw(id);
             let offset = ImmLSP64::new((index as u64) * 8);
 
             let str_inst = if is_fp {

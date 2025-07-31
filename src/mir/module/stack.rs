@@ -1,7 +1,7 @@
 use crate::{
     mir::{
         module::vreg_alloc::VirtRegAlloc,
-        operand::{IMirSubOperand, physreg_set::MirPhysRegSet, reg::*},
+        operand::{physreg_set::MirPhysRegSet, reg::*},
         translate::mirgen::operandgen::DispatchedReg,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
@@ -163,13 +163,16 @@ impl MirStackLayout {
     }
 
     pub fn find_saved_preg(&self, preg: GPR64) -> Option<&SavedReg> {
-        assert!(preg.is_physical());
+        assert!(preg.is_general_physical());
         self.saved_regs
             .iter()
             .find(|&reg| reg.matches_saved_preg(preg.into()))
     }
 
     pub fn find_vreg_spilled_arg_pos(&self, vreg: GPR64) -> Option<u32> {
+        if !vreg.is_stackpos() {
+            return None;
+        }
         for i in &self.args {
             if i.stackpos_reg.same_pos_as(vreg) {
                 return Some(i.index as u32);
@@ -178,7 +181,7 @@ impl MirStackLayout {
         None
     }
     pub fn find_vreg_variable_pos(&self, vreg: GPR64) -> Option<u32> {
-        if vreg.is_physical() {
+        if !vreg.is_stackpos() {
             return None;
         }
         for pos in &self.vars {
@@ -226,7 +229,7 @@ impl MirStackLayout {
         let item = MirStackItem {
             irtype,
             index: self.args.len(),
-            stackpos_reg: GPR64::from_real(vreg_alloc.insert_gp(GPR64::new_empty().into_real())),
+            stackpos_reg: vreg_alloc.alloc_stackpos(),
             offset: new_top as i64,
             size,
             size_with_padding: 0,
@@ -301,7 +304,7 @@ impl MirStackLayout {
         let item = MirStackItem {
             irtype,
             index: self.vars.len(),
-            stackpos_reg: vreg_alloc.insert_gpr64(GPR64::new_empty()),
+            stackpos_reg: vreg_alloc.alloc_stackpos(),
             offset: new_top as i64,
             size: size as u64,
             size_with_padding: size as u64, // Placeholder, will be updated later

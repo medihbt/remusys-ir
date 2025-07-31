@@ -121,9 +121,9 @@ impl MirPhysRegSet {
     pub const fn unsave_reg(&mut self, reg_operand: RegOperand) -> bool {
         let RegOperand(id, _, _, is_fp) = reg_operand;
         if is_fp {
-            self.unsave_fpr(RegID::from_real(id))
+            self.unsave_fpr(RegID::from_raw(id))
         } else {
-            self.unsave_gpr(RegID::from_real(id))
+            self.unsave_gpr(RegID::from_raw(id))
         }
     }
 
@@ -300,7 +300,7 @@ impl<const N: usize> From<&[GPReg; N]> for MirPhysRegSet {
     fn from(array: &[GPReg; N]) -> Self {
         let mut set = MirPhysRegSet::new_empty();
         for reg in array {
-            set.save_gpr(RegID::from_real(reg.get_id_raw()));
+            set.save_gpr(RegID::from_raw(reg.get_id_raw()));
         }
         set
     }
@@ -309,7 +309,7 @@ impl<const N: usize> From<&[VFReg; N]> for MirPhysRegSet {
     fn from(array: &[VFReg; N]) -> Self {
         let mut set = MirPhysRegSet::new_empty();
         for reg in array {
-            set.save_fpr(RegID::from_real(reg.get_id_raw()));
+            set.save_fpr(RegID::from_raw(reg.get_id_raw()));
         }
         set
     }
@@ -344,11 +344,11 @@ impl RegOperandSet {
             debug_assert!(i < 64, "Too many saved registers: {i}");
             let RegOperand(id, _, _, is_fp) = reg;
             let operand = if is_fp {
-                VFReg::new_double(RegID::from_real(id))
+                VFReg::new_double(RegID::from_raw(id))
                     .insert_use_flags(self._use_flags)
                     .into_mir()
             } else {
-                GPReg::new_long(RegID::from_real(id))
+                GPReg::new_long(RegID::from_raw(id))
                     .insert_use_flags(self._use_flags)
                     .into_mir()
             };

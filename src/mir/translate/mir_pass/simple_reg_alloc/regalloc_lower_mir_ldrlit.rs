@@ -19,7 +19,7 @@ pub(super) fn lower_mldrlit_g64(
 
     let mut tmp_regalloc = SRATmpRegAlloc::new();
     let z64 = ImmLSP64(0);
-    if dst.is_physical() {
+    if dst.is_general_physical() {
         // 反正 dst 寄存器的值不会被读取并且被覆盖, 拿这玩意当个临时寄存器用也行.
         ldrlit.set_tmp_addr(dst.into_real());
     } else {

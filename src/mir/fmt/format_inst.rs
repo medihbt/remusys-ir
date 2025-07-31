@@ -1708,7 +1708,7 @@ pub fn fmt_mir_strlit_f32(
 
 // ===== Store Imm to mem instructions =====
 pub fn fmt_mir_stimm64(formatter: &mut FuncFormatContext, inst: &MirStImm64) -> std::fmt::Result {
-    write!(formatter, "mir.stimm64 #")?;
+    write!(formatter, "mir.stimm.64 #")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to [")?;
     inst.get_base().fmt_asm(formatter)?;
@@ -1719,7 +1719,7 @@ pub fn fmt_mir_stimm64(formatter: &mut FuncFormatContext, inst: &MirStImm64) -> 
 }
 
 pub fn fmt_mir_stimm32(formatter: &mut FuncFormatContext, inst: &MirStImm32) -> std::fmt::Result {
-    write!(formatter, "mir.stimm32 ")?;
+    write!(formatter, "mir.stimm.32 ")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to [")?;
     inst.get_base().fmt_asm(formatter)?;
@@ -1730,7 +1730,7 @@ pub fn fmt_mir_stimm32(formatter: &mut FuncFormatContext, inst: &MirStImm32) -> 
 }
 
 pub fn fmt_mir_stsym64(formatter: &mut FuncFormatContext, inst: &MirStSym64) -> std::fmt::Result {
-    write!(formatter, "mir.stsym64 ")?;
+    write!(formatter, "mir.stsym.64 ")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to [")?;
     inst.get_base().fmt_asm(formatter)?;
@@ -1744,7 +1744,7 @@ pub fn fmt_mir_stimm32_sym(
     formatter: &mut FuncFormatContext,
     inst: &MirStImm32Sym,
 ) -> std::fmt::Result {
-    write!(formatter, "mir.stimm32_sym ")?;
+    write!(formatter, "mir.stimm.32.sym ")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to ")?;
     inst.get_target().fmt_asm(formatter)?;
@@ -1758,7 +1758,7 @@ pub fn fmt_mir_stimm64_sym(
     formatter: &mut FuncFormatContext,
     inst: &MirStImm64Sym,
 ) -> std::fmt::Result {
-    write!(formatter, "mir.stimm64_sym ")?;
+    write!(formatter, "mir.stimm.64.sym ")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to ")?;
     inst.get_target().fmt_asm(formatter)?;
@@ -1772,7 +1772,7 @@ pub fn fmt_mir_stsym_sym(
     formatter: &mut FuncFormatContext,
     inst: &MirStSym64Sym,
 ) -> std::fmt::Result {
-    write!(formatter, "mir.stsym_sym ")?;
+    write!(formatter, "mir.stimm.sym.sym ")?;
     inst.get_imm().fmt_asm(formatter)?;
     write!(formatter, " to ")?;
     inst.get_target().fmt_asm(formatter)?;

@@ -10,7 +10,7 @@ use crate::mir::{
     module::stack::MirStackLayout,
     operand::{
         compound::MirSymbolOp,
-        imm::{Imm64, ImmCalc, ImmLSP64},
+        imm::{Imm64, ImmCalc, ImmLSP32, ImmLSP64},
         imm_traits,
         reg::{GPR64, RegOP},
     },
@@ -71,7 +71,7 @@ pub(super) fn lower_gep(
                 lower_gep_immoff(loads_before, dst, tmpr, weight, off)
             }
             MirGEPOffset::G64(reg) => {
-                let reg = if reg.is_virtual() {
+                let offset = if reg.is_virtual() {
                     let stackpos = vreg_info.findpos_full_unwrap(stack, reg);
                     let ldr = LoadGr64Base::new(MirOP::LdrGr64Base, tmpr, stackpos, ImmLSP64(0));
                     loads_before.push_back(ldr.into_mir());
@@ -79,32 +79,36 @@ pub(super) fn lower_gep(
                 } else {
                     reg
                 };
-                if weight == 1 {
-                    let add = Bin64R::new(MirOP::Add64R, dst, dst, reg, None);
-                    loads_before.push_back(add.into_mir());
-                } else if weight.is_power_of_two() {
-                    let lsl_count = weight.trailing_zeros() as u8;
-                    let rm_op = RegOP::LSL(lsl_count);
-                    let add = Bin64R::new(MirOP::Add64R, dst, dst, reg, Some(rm_op));
-                    loads_before.push_back(add.into_mir());
-                } else {
-                    let weight_reg = loop {
-                        let tmpr = tmpr_alloc.alloc_gpr64();
-                        if !tmpr.same_pos_as(dst) && !base.matches_reg(tmpr) {
-                            break tmpr;
-                        }
-                    };
-                    let ldrconst = LoadConst64::new(
-                        MirOP::LoadConst64,
-                        weight_reg,
-                        Imm64::full(weight as u64),
-                    );
-                    loads_before.push_back(ldrconst.into_mir());
-                    let madd = TenaryG64::new(MirOP::MAdd64, dst, reg, weight_reg, dst);
-                    loads_before.push_back(madd.into_mir());
-                }
+                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset, weight);
             }
-            MirGEPOffset::S32(off) => todo!("Handle S32 GEP offsets: {off:?}"),
+            MirGEPOffset::S32(off) => {
+                let offset32 = if !off.is_virtual() {
+                    off
+                } else {
+                    let stackpos = vreg_info.findpos_full_unwrap(stack, off);
+                    let tmpr = tmpr.trunc_to_gpr32();
+                    let ldr = LoadGr32Base::new(MirOP::LdrGr32Base, tmpr, stackpos, ImmLSP32(0));
+                    loads_before.push_back(ldr.into_mir());
+                    tmpr
+                };
+                let offset64 = offset32.to_gpr64();
+                let sxtx = ExtR::new(MirOP::SXTW64, offset64, offset32);
+                loads_before.push_back(sxtx.into_mir());
+                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset64, weight);
+            }
+            MirGEPOffset::U32(off) => {
+                let offset = if !off.is_virtual() {
+                    off
+                } else {
+                    let stackpos = vreg_info.findpos_full_unwrap(stack, off);
+                    let tmpr = tmpr.trunc_to_gpr32();
+                    let ldr = LoadGr32Base::new(MirOP::LdrGr32Base, tmpr, stackpos, ImmLSP32(0));
+                    loads_before.push_back(ldr.into_mir());
+                    tmpr
+                };
+                let offset = offset.to_gpr64();
+                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset, weight);
+            }
         }
     }
 
@@ -174,5 +178,35 @@ fn lower_gep_immoff(loads: &mut VecDeque<MirInst>, dst: GPR64, tmpr: GPR64, weig
         loads.push_back(ldconst.into_mir());
         let add = Bin64R::new(MirOP::Add64R, dst, dst, tmpr, None);
         loads.push_back(add.into_mir());
+    }
+}
+
+fn lower_gep_gpr64_offset(
+    loads_before: &mut VecDeque<MirInst>,
+    tmpr_alloc: &mut SRATmpRegAlloc,
+    dst: GPR64,
+    base: MirGEPBase,
+    offset: GPR64,
+    weight: u64,
+) {
+    if weight == 1 {
+        let add = Bin64R::new(MirOP::Add64R, dst, dst, offset, None);
+        loads_before.push_back(add.into_mir());
+    } else if weight.is_power_of_two() {
+        let lsl_count = weight.trailing_zeros() as u8;
+        let rm_op = RegOP::LSL(lsl_count);
+        let add = Bin64R::new(MirOP::Add64R, dst, dst, offset, Some(rm_op));
+        loads_before.push_back(add.into_mir());
+    } else {
+        let weight_reg = loop {
+            let tmpr = tmpr_alloc.alloc_gpr64();
+            if !tmpr.same_pos_as(dst) && !base.matches_reg(tmpr) {
+                break tmpr;
+            }
+        };
+        let ldrconst = LoadConst64::new(MirOP::LoadConst64, weight_reg, Imm64::full(weight as u64));
+        loads_before.push_back(ldrconst.into_mir());
+        let madd = TenaryG64::new(MirOP::MAdd64, dst, offset, weight_reg, dst);
+        loads_before.push_back(madd.into_mir());
     }
 }

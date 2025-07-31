@@ -94,6 +94,8 @@ bitflags! {
         const USE  = 0b0000_0000_0000_1000;
         /// This register is defined implicitly in this instruction
         const IMPLICIT_DEF = 0b0000_0000_0001_0000;
+        /// This register is GPR32 and will be sign extended to GPR64
+        const SXTW = 0b0000_0000_0010_0000;
     }
 }
 
@@ -114,6 +116,9 @@ impl std::fmt::Display for RegUseFlags {
         }
         if self.contains(RegUseFlags::IMPLICIT_DEF) {
             flags.push_str("implicit-def ");
+        }
+        if self.contains(RegUseFlags::SXTW) {
+            flags.push_str("sxtw ");
         }
         write!(f, "{}", flags.trim_end())
     }
@@ -198,10 +203,12 @@ impl std::str::FromStr for RegOP {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RegID {
-    Phys(u32), // Physical register ID (ID < 31)
-    ZR,        // Zero Register, ID = 31
-    SP,        // Stack Pointer, ID = 32
-    Virt(u32), // Virtual register ID (ID >= 33)
+    Phys(u32),     // Physical register ID (ID < 31)
+    ZR,            // Zero Register, ID = 31
+    SP,            // Stack Pointer, ID = 32
+    Virt(u32),     // Virtual register ID (ID >= 33)
+    StackPos(u32), // Stack position, used for stack-based operations
+    Invalid,       // Invalid register ID, used for error handling
 }
 
 impl RegID {
@@ -211,18 +218,19 @@ impl RegID {
             RegID::ZR => 31,
             RegID::SP => 32,
             RegID::Phys(id) => id,
+            RegID::StackPos(id) => 0x8000_0000 + id, // Stack positions are offset to avoid conflicts with physical registers
+            RegID::Invalid => 0xFFFF_FFFF,           // Use a special value for invalid registers
         }
     }
 
-    pub const fn from_real(id: u32) -> Self {
-        if id < 31 {
-            RegID::Phys(id)
-        } else if id == 31 {
-            RegID::ZR
-        } else if id == 32 {
-            RegID::SP
-        } else {
-            RegID::Virt(id - 33)
+    pub const fn from_raw(id: u32) -> Self {
+        match id {
+            0..=30 => RegID::Phys(id),
+            31 => RegID::ZR,
+            32 => RegID::SP,
+            33..=0x7FFF_FFFF => RegID::Virt(id - 33),
+            0x8000_0000..=0xFFFF_FFFE => RegID::StackPos(id - 0x8000_0000),
+            0xFFFF_FFFF => RegID::Invalid, // This case should not happen, but it's here for safety
         }
     }
 }
@@ -233,7 +241,7 @@ pub struct GPReg(pub u32, pub SubRegIndex, pub RegUseFlags);
 impl Debug for GPReg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, si, uf) = self;
-        write!(f, "GPReg({:?}{si}, {uf})", RegID::from_real(id))
+        write!(f, "GPReg({:?}{si}, {uf})", RegID::from_raw(id))
     }
 }
 
@@ -244,13 +252,13 @@ impl GPReg {
     pub const RA_ID: RegID = RegID::Phys(30);
 
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_))
+        matches!(RegID::from_raw(self.0), RegID::Phys(_))
     }
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(RegID::from_raw(self.0), RegID::Virt(_) | RegID::StackPos(_))
     }
     pub fn get_id(self) -> RegID {
-        RegID::from_real(self.0)
+        RegID::from_raw(self.0)
     }
     pub fn get_id_raw(self) -> u32 {
         self.0
@@ -366,12 +374,16 @@ impl IMirSubOperand for GPReg {
                 RegID::Virt(id) => write!(formatter, "wv{}", id),
                 RegID::SP => write!(formatter, "wsp"),
                 RegID::ZR => write!(formatter, "wzr"),
+                RegID::StackPos(id) => panic!("WReg {id:#x} cannot be StackPos"),
+                RegID::Invalid => write!(formatter, "winvalid"),
             },
             _ => match self.get_id() {
                 RegID::Phys(id) => write!(formatter, "x{}", id),
                 RegID::Virt(id) => write!(formatter, "xv{}", id),
                 RegID::SP => write!(formatter, "sp"),
                 RegID::ZR => write!(formatter, "xzr"),
+                RegID::StackPos(id) => write!(formatter, "stack:{}", id),
+                RegID::Invalid => write!(formatter, "xinvalid"),
             },
         }
     }
@@ -385,7 +397,7 @@ pub struct VFReg(pub u32, pub SubRegIndex, pub RegUseFlags);
 impl Debug for VFReg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, si, uf) = self;
-        write!(f, "VFReg({:?}{si}, {uf})", RegID::from_real(id))
+        write!(f, "VFReg({:?}{si}, {uf})", RegID::from_raw(id))
     }
 }
 
@@ -393,13 +405,13 @@ impl VFReg {
     pub const RETVAL_POS: u32 = 0;
 
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+        matches!(RegID::from_raw(self.0), RegID::Phys(_) | RegID::ZR)
     }
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(RegID::from_raw(self.0), RegID::Virt(_))
     }
     pub fn get_id(self) -> RegID {
-        RegID::from_real(self.0)
+        RegID::from_raw(self.0)
     }
 
     pub fn get_id_raw(self) -> u32 {
@@ -515,6 +527,8 @@ impl IMirSubOperand for VFReg {
             RegID::ZR => "31".to_string(),
             RegID::Virt(id) => format!("v{}", id),
             RegID::SP => panic!("VFReg cannot be SP"),
+            RegID::StackPos(id) => panic!("VFReg cannot be StackPos: {}", id),
+            RegID::Invalid => "invalid".to_string(),
         };
         match self.get_subreg_index().get_bits_log2() {
             5 => write!(_formatter, "s{}", id_str),
@@ -579,7 +593,7 @@ pub struct GPR32(pub u32, pub RegUseFlags);
 impl Debug for GPR32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, uf) = self;
-        write!(f, "GPR32(id: {:?}, {uf:?})", RegID::from_real(id),)
+        write!(f, "GPR32(id: {:?}, {uf:?})", RegID::from_raw(id),)
     }
 }
 
@@ -631,7 +645,7 @@ impl GPR32 {
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
-        RegID::from_real(id)
+        RegID::from_raw(id)
     }
     pub fn insert_id(self, id: RegID) -> Self {
         let Self(_, uf) = self;
@@ -652,10 +666,10 @@ impl GPR32 {
     }
 
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(RegID::from_raw(self.0), RegID::Virt(_))
     }
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_))
+        matches!(RegID::from_raw(self.0), RegID::Phys(_))
     }
 
     pub fn same_pos_as<T>(self, other: T) -> bool
@@ -676,7 +690,7 @@ impl Debug for GPR64 {
         if id == u32::MAX {
             write!(f, "GPR64:Undefined({uf:?})")
         } else {
-            write!(f, "GPR64(id: {:?}, {uf:?})", RegID::from_real(id))
+            write!(f, "GPR64(id: {:?}, {uf:?})", RegID::from_raw(id))
         }
     }
 }
@@ -733,7 +747,7 @@ impl GPR64 {
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
-        RegID::from_real(id)
+        RegID::from_raw(id)
     }
     pub fn insert_id(self, id: RegID) -> Self {
         let Self(_, uf) = self;
@@ -744,10 +758,19 @@ impl GPR64 {
     }
 
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(
+            RegID::from_raw(self.0),
+            RegID::Virt(_) | RegID::StackPos(_)
+        )
+    }
+    pub fn is_stackpos(self) -> bool {
+        matches!(RegID::from_raw(self.0), RegID::StackPos(_))
+    }
+    pub fn is_general_physical(self) -> bool {
+        matches!(RegID::from_raw(self.0), RegID::Phys(_))
     }
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_))
+        matches!(RegID::from_raw(self.0), RegID::Phys(_) | RegID::ZR | RegID::SP)
     }
 
     pub fn same_pos_as<T>(self, other: T) -> bool
@@ -775,7 +798,7 @@ pub struct FPR32(pub u32, pub RegUseFlags);
 impl Debug for FPR32 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, uf) = self;
-        write!(f, "FPR32(id: {:?}, {uf:?})", RegID::from_real(id),)
+        write!(f, "FPR32(id: {:?}, {uf:?})", RegID::from_raw(id),)
     }
 }
 
@@ -792,7 +815,7 @@ impl FPR32 {
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
-        RegID::from_real(id)
+        RegID::from_raw(id)
     }
     pub fn insert_id(self, id: RegID) -> Self {
         let Self(_, uf) = self;
@@ -803,11 +826,11 @@ impl FPR32 {
     }
 
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(RegID::from_raw(self.0), RegID::Virt(_))
     }
     /// RegID 设计有缺陷, D31|S31 会被误认为是 ZR...
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+        matches!(RegID::from_raw(self.0), RegID::Phys(_) | RegID::ZR)
     }
     /// 检查是否与另一个寄存器在位置上相同 -- 即使它们的子寄存器索引不同。
     pub fn same_pos_as<T>(self, other: T) -> bool
@@ -858,7 +881,7 @@ pub struct FPR64(pub u32, pub RegUseFlags);
 impl Debug for FPR64 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, uf) = self;
-        write!(f, "FPR64(id: {:?}, {uf:?})", RegID::from_real(id),)
+        write!(f, "FPR64(id: {:?}, {uf:?})", RegID::from_raw(id),)
     }
 }
 
@@ -875,7 +898,7 @@ impl FPR64 {
 
     pub fn get_id(self) -> RegID {
         let Self(id, _) = self;
-        RegID::from_real(id)
+        RegID::from_raw(id)
     }
     pub fn insert_id(self, id: RegID) -> Self {
         let Self(_, uf) = self;
@@ -886,11 +909,11 @@ impl FPR64 {
     }
 
     pub fn is_virtual(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Virt(_))
+        matches!(RegID::from_raw(self.0), RegID::Virt(_))
     }
     /// RegID 设计有缺陷, D31|S31 会被误认为是 ZR...
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_real(self.0), RegID::Phys(_) | RegID::ZR)
+        matches!(RegID::from_raw(self.0), RegID::Phys(_) | RegID::ZR)
     }
     /// 检查是否与另一个寄存器在位置上相同 -- 即使它们的子寄存器索引不同。
     pub fn same_pos_as<T>(self, other: T) -> bool
@@ -942,9 +965,9 @@ impl Debug for RegOperand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let &Self(id, si, uf, is_fp) = self;
         if is_fp {
-            write!(f, "Reg:FP({:?}{si}, {uf})", RegID::from_real(id))
+            write!(f, "Reg:FP({:?}{si}, {uf})", RegID::from_raw(id))
         } else {
-            write!(f, "Reg:GP({:?}{si}, {uf})", RegID::from_real(id))
+            write!(f, "Reg:GP({:?}{si}, {uf})", RegID::from_raw(id))
         }
     }
 }
@@ -954,7 +977,7 @@ impl RegOperand {
         self.3
     }
     pub fn get_id(&self) -> RegID {
-        RegID::from_real(self.0)
+        RegID::from_raw(self.0)
     }
     pub fn insert_id(&self, id: RegID) -> Self {
         self.insert_id_raw(id.get_real())

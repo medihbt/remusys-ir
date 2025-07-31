@@ -214,13 +214,22 @@ impl SpillVRegsResult {
             for (iref, inst) in block.insts.view(alloc_inst) {
                 // 只处理带虚拟寄存器的指令
                 let mut has_vreg = false;
+                let mut has_invalid = false;
                 for operand in inst.in_operands() {
-                    has_vreg |= Self::try_add_vreg_operand(&inner, &mut vregs, operand.get());
+                    let (has_vreg_here, has_invalid_here) =
+                        Self::try_add_vreg_operand(&inner, &mut vregs, operand.get());
+                    has_vreg |= has_vreg_here;
+                    has_invalid |= has_invalid_here;
                 }
                 for operand in inst.out_operands() {
-                    has_vreg |= Self::try_add_vreg_operand(&inner, &mut vregs, operand.get());
+                    let (has_vreg_here, has_invalid_here) =
+                        Self::try_add_vreg_operand(&inner, &mut vregs, operand.get());
+                    has_vreg |= has_vreg_here;
+                    has_invalid |= has_invalid_here;
                 }
-                if has_vreg {
+                // 指令中一般不会随便出现 invalid -- 除非 stimm 等 MIR 伪指令。stimm 自己确实需要
+                // 做进一步处理, 所以这里不做忽略处理。
+                if has_vreg | has_invalid {
                     relative_insts.push((bref, iref));
                 }
             }
@@ -401,13 +410,16 @@ impl SpillVRegsResult {
         inner: &MirFuncInner,
         vregs: &mut Vec<RegOperand>,
         operand: MirOperand,
-    ) -> bool {
+    ) -> (bool, bool) {
         let vreg = match operand {
             MirOperand::GPReg(gpreg) if Self::gpreg_can_alloc(gpreg, inner) => {
                 RegOperand::from(gpreg)
             }
+            MirOperand::GPReg(gpreg) if gpreg.get_id() == RegID::Invalid => {
+                return (false, true); // Invalid register, skip
+            }
             MirOperand::VFReg(vfreg) if vfreg.is_virtual() => RegOperand::from(vfreg),
-            _ => return false,
+            _ => return (false, false),
         };
         let bits_log2 = vreg.get_bits_log2();
         let mut found_duplicate = false;
@@ -424,7 +436,7 @@ impl SpillVRegsResult {
         if !found_duplicate {
             vregs.push(vreg);
         }
-        true
+        (true, false)
     }
 
     /// 检查通用寄存器是否可以分配. 条件是:
@@ -432,8 +444,9 @@ impl SpillVRegsResult {
     /// * 寄存器是虚拟寄存器
     /// * 寄存器不是栈空间位置寄存器
     fn gpreg_can_alloc(gpreg: GPReg, inner: &MirFuncInner) -> bool {
-        if !gpreg.is_virtual() {
-            return false;
+        match gpreg.get_id() {
+            RegID::Virt(_) => {}
+            _ => return false, // 物理寄存器和栈寄存器不能分配
         }
         let Some(gpreg) = GPR64::try_from_real(gpreg) else {
             // 只有 GPR64 才能作为栈空间位置寄存器.
@@ -460,19 +473,31 @@ impl SRATmpRegAlloc {
     }
 
     pub fn alloc_gpr64(&mut self) -> GPR64 {
+        if self.0 >= 29 {
+            panic!("No more GPR64 registers available for allocation");
+        }
         self.0 += 1;
         GPR64::new(RegID::Phys(self.0 as u32))
     }
     pub fn alloc_gpr32(&mut self) -> GPR32 {
+        if self.0 >= 29 {
+            panic!("No more GPR32 registers available for allocation");
+        }
         self.0 += 1;
         GPR32::new(RegID::Phys(self.0 as u32))
     }
     pub fn alloc_fpr64(&mut self) -> FPR64 {
+        if self.1 >= 31 {
+            panic!("No more FPR64 registers available for allocation");
+        }
         self.1 += 1;
-        FPR64::new(RegID::Phys(self.0 as u32))
+        FPR64::new(RegID::Phys(self.1 as u32))
     }
     pub fn alloc_fpr32(&mut self) -> FPR32 {
+        if self.1 >= 31 {
+            panic!("No more FPR32 registers available for allocation");
+        }
         self.1 += 1;
-        FPR32::new(RegID::Phys(self.0 as u32))
+        FPR32::new(RegID::Phys(self.1 as u32))
     }
 }
