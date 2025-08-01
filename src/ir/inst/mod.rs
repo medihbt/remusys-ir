@@ -4,6 +4,7 @@ use crate::{
         SlabListRange, SlabRef, SlabRefList,
     },
     impl_slabref,
+    ir::block::jump_target::JumpTargetData,
     typing::{TypeMismatchError, id::ValTypeID},
 };
 use slab::Slab;
@@ -54,6 +55,26 @@ impl InstRef {
     }
     pub fn get_valtype_from_module(&self, module: &Module) -> ValTypeID {
         self.get_valtype(&module.borrow_value_alloc().alloc_inst)
+    }
+
+    pub fn from_allocs(
+        alloc_inst: &mut Slab<InstData>,
+        alloc_use: &Slab<UseData>,
+        alloc_jt: &Slab<JumpTargetData>,
+        mut data: InstData,
+    ) -> Self {
+        let ret = Self::from_handle(alloc_inst.vacant_key());
+        data.common_mut().map(|c| c.self_ref = ret);
+        data._inst_init_self_reference(ret, alloc_use);
+
+        match &data {
+            InstData::Br(_, br) => br._jt_init_set_self_reference(ret, alloc_jt),
+            InstData::Switch(_, sw) => sw._jt_init_set_self_reference(ret, alloc_jt),
+            InstData::Jump(_, jump) => jump._jt_init_set_self_reference(ret, alloc_jt),
+            _ => {}
+        }
+        alloc_inst.insert(data);
+        ret
     }
 }
 

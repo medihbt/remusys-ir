@@ -1,24 +1,17 @@
-use std::{cell::Ref, rc::Rc};
-
 use crate::{
     base::{INullableValue, SlabListError, SlabListNodeRef, SlabRef},
     ir::{
-        ValueSSA,
-        block::{BlockData, BlockRef},
-        cmp_cond::CmpCond,
-        global::{self, GlobalData, GlobalRef, func::FuncData},
-        inst::{
+        block::{BlockData, BlockRef}, cmp_cond::CmpCond, global::{self, func::FuncData, GlobalData, GlobalRef}, inst::{
             Alloca, BinOp, Br, CallOp, CastOp, CmpOp, IndexPtrOp, InstData, InstError, InstRef,
             Jump, LoadOp, PhiOp, Ret, SelectOp, StoreOp, Switch, UseKind,
-        },
-        module::Module,
-        opcode::Opcode,
+        }, module::Module, opcode::Opcode, ValueSSA
     },
-    typing::{id::ValTypeID, types::FuncTypeRef},
+    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
+use std::cell::Ref;
 
 pub struct IRBuilder {
-    pub module: Rc<Module>,
+    pub module: Module,
     pub focus: IRBuilderExpandedFocus,
     pub focus_check: IRBuilderFocusCheckOption,
 }
@@ -89,7 +82,7 @@ pub enum IRBuilderError {
 }
 
 impl IRBuilder {
-    pub fn new(module: Rc<Module>) -> Self {
+    pub fn new(module: Module) -> Self {
         Self {
             module,
             focus: IRBuilderExpandedFocus {
@@ -99,6 +92,10 @@ impl IRBuilder {
             },
             focus_check: IRBuilderFocusCheckOption::Degrade(false, false),
         }
+    }
+
+    pub fn get_type_ctx(&self) -> &TypeContext {
+        &self.module.type_ctx
     }
 
     pub fn get_focus_full(&self) -> IRBuilderExpandedFocus {

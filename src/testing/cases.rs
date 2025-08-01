@@ -1,8 +1,6 @@
 //! Since Remusys-lang frontend is not yet available, we build all our cases
 //! in this module.
 
-use std::rc::Rc;
-
 use crate::{
     ir::{
         ValueSSA,
@@ -95,10 +93,10 @@ use crate::{
 /// }
 /// ```
 #[allow(unused)]
-pub fn test_case_cfg_deep_while_br() -> (Rc<Module>, IRBuilder) {
-    let (module, mut builder) = create_module_and_builder("test_case_cfg_deep_while_br");
-    let ri32fty = module
-        .type_ctx
+pub fn test_case_cfg_deep_while_br() -> IRBuilder {
+    let mut builder = create_module_builder("test_case_cfg_deep_while_br");
+    let ri32fty = builder
+        .get_type_ctx()
         .make_func_type(&[], ValTypeID::Int(32), false);
 
     let getint_func = builder.declare_function("getint", ri32fty).unwrap();
@@ -137,8 +135,8 @@ pub fn test_case_cfg_deep_while_br() -> (Rc<Module>, IRBuilder) {
     let load_20 = builder
         .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
         .unwrap();
-    match &*module.get_inst(ret_inst) {
-        InstData::Ret(_, ret) => ret.retval.set_operand(&*module, ValueSSA::Inst(load_20)),
+    match &*builder.module.get_inst(ret_inst) {
+        InstData::Ret(_, ret) => ret.retval.set_operand(&builder.module, ValueSSA::Inst(load_20)),
         _ => unreachable!(),
     }
 
@@ -237,16 +235,14 @@ pub fn test_case_cfg_deep_while_br() -> (Rc<Module>, IRBuilder) {
         )
         .unwrap();
     builder.focus_set_jump_to(while_block_5).unwrap();
-
-    (module, builder)
+    builder
 }
 
-pub fn create_module_and_builder(name: &str) -> (Rc<Module>, IRBuilder) {
+pub fn create_module_builder(name: &str) -> IRBuilder {
     let host_platform = PlatformPolicy::new_host();
     let type_ctx = TypeContext::new_rc(host_platform);
-    let module = Rc::new(Module::new(name.into(), type_ctx));
-    let builder = IRBuilder::new(module.clone());
-    (module, builder)
+    let builder = IRBuilder::new(Module::new(name.into(), type_ctx));
+    builder
 }
 
 #[allow(unused)]

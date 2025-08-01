@@ -10,7 +10,7 @@ use slab::Slab;
 
 use crate::{
     base::{INullableValue, SlabRef},
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::context::TypeContext,
 };
 
 use super::{
@@ -21,7 +21,7 @@ use super::{
     },
     constant::expr::{ConstExprData, ConstExprRef},
     global::{GlobalData, GlobalRef, func::FuncStorage},
-    inst::{InstData, InstRef, TerminatorInst, UseData, UseRef},
+    inst::{InstData, InstRef, UseData, UseRef},
 };
 
 pub mod gc;
@@ -106,65 +106,20 @@ impl Module {
             inner.alloc_global.get(global.get_handle()).unwrap()
         })
     }
-    pub fn mut_global(&self, global: GlobalRef) -> RefMut<GlobalData> {
+    pub fn global_mut(&self, global: GlobalRef) -> RefMut<GlobalData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
             inner.alloc_global.get_mut(global.get_handle()).unwrap()
         })
     }
+    pub fn mut_get_global(&mut self, global: GlobalRef) -> &mut GlobalData {
+        global.to_data_mut(&mut self.get_value_alloc_mut().alloc_global)
+    }
     pub fn insert_global(&self, data: GlobalData) -> GlobalRef {
-        let name = data.get_common().name.clone();
-        let pointee_type = data.get_common().content_ty;
-        let data_is_func = matches!(&data, GlobalData::Func(_));
-
-        let ret = {
-            let mut inner = self.borrow_value_alloc_mut();
-            let id = inner.alloc_global.insert(data);
-            let ret = GlobalRef::from_handle(id);
-
-            let ret_data = ret.to_data(&inner.alloc_global);
-            ret_data.get_common().self_ref.set(ret);
-
-            // If this is a function, set its storage to the reference of this function.
-            match ret_data {
-                GlobalData::Func(f) => {
-                    if let Some(body) = f._body.borrow_mut().as_mut() {
-                        body.func = ret;
-                    }
-                }
-                _ => {}
-            }
-            ret
-        };
-
-        // Modify the slab reference of its instructions to point to this.
-        {
-            let inner = self.borrow_value_alloc();
-            let alloc_block = &inner.alloc_block;
-            let alloc_global = &inner.alloc_global;
-
-            ret.to_data(alloc_global)
-                ._init_set_self_reference(alloc_block, ret);
-        }
-
-        /* Try add this handle as operand. */
-        let maybe_func = if data_is_func {
-            match pointee_type {
-                ValTypeID::Func(f) => Some(f),
-                _ => panic!("Requires function type but got {:?}", pointee_type),
-            }
-        } else {
-            None
-        };
-        // Try add this handle as operand.
-        // If this is a function, also add its argument list to the reverse graph.
-        if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
-            rdfg.alloc_node(ValueSSA::Global(ret), maybe_func, &self.type_ctx)
-                .unwrap();
-        }
-        // Add the global value to the name table.
-        self.global_defs.borrow_mut().insert(name, ret);
-        ret
+        GlobalRef::from_module(self, data)
+    }
+    pub fn mut_insert_global(&mut self, data: GlobalData) -> GlobalRef {
+        GlobalRef::from_mut_module(self, data)
     }
 
     pub fn get_expr(&self, expr: ConstExprRef) -> Ref<ConstExprData> {
@@ -199,11 +154,14 @@ impl Module {
             inner.alloc_inst.get(inst.get_handle()).unwrap()
         })
     }
-    pub fn mut_inst(&self, inst: InstRef) -> RefMut<InstData> {
+    pub fn inst_mut(&self, inst: InstRef) -> RefMut<InstData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
             inner.alloc_inst.get_mut(inst.get_handle()).unwrap()
         })
+    }
+    pub fn mut_get_inst(&mut self, inst: InstRef) -> &mut InstData {
+        inst.to_data_mut(&mut self.get_value_alloc_mut().alloc_inst)
     }
     pub fn insert_inst(&self, data: InstData) -> InstRef {
         let operand_range = data
@@ -215,23 +173,10 @@ impl Module {
             .map(|jts| jts.load_range());
 
         let ret = {
-            let mut inner = self.borrow_value_alloc_mut();
-            let id = inner.alloc_inst.insert(data);
-            let ret = InstRef::from_handle(id);
-
-            // Modify the slab reference to point to this,
-            ret.to_data_mut(&mut inner.alloc_inst)
-                ._inst_init_self_reference(ret, &self.borrow_use_alloc());
-
-            // Modify the jump targets if this instruction is a terminator.
-            let mut alloc_jt = self.borrow_jt_alloc_mut();
-            match ret.to_data(&inner.alloc_inst) {
-                InstData::Jump(_, j) => j._jt_init_set_self_reference(ret, &mut alloc_jt),
-                InstData::Br(_, br) => br._jt_init_set_self_reference(ret, &mut alloc_jt),
-                InstData::Switch(_, s) => s._jt_init_set_self_reference(ret, &mut alloc_jt),
-                _ => {}
-            }
-            ret
+            let mut alloc_value = self.borrow_value_alloc_mut();
+            let alloc_use = self.borrow_use_alloc();
+            let alloc_jt = self.borrow_jt_alloc();
+            InstRef::from_allocs(&mut alloc_value.alloc_inst, &alloc_use, &alloc_jt, data)
         };
 
         // Try add this handle as operand.

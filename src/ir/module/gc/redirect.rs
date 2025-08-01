@@ -143,7 +143,7 @@ impl<'a> Redirector<'a> {
                 continue;
             }
             let oldpos = InstRef::from_handle(oldpos);
-            let mut oldpos_data = self.module.mut_inst(oldpos);
+            let mut oldpos_data = self.module.inst_mut(oldpos);
 
             if let Some(common) = oldpos_data.common_mut() {
                 // Redirect the instruction common data
@@ -327,7 +327,7 @@ impl<'a> Redirector<'a> {
             }
             let oldpos = GlobalRef::from_handle(oldpos);
             let newpos = GlobalRef::from_handle(*newpos);
-            let mut oldpos_data = self.module.mut_global(oldpos);
+            let mut oldpos_data = self.module.global_mut(oldpos);
 
             oldpos_data.common_mut().self_ref.set(newpos);
 

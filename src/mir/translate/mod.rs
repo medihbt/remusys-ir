@@ -58,7 +58,8 @@ mod testing {
 
     #[test]
     fn test_translate_ir_to_mir() {
-        let (ir_module, _) = test_case_cfg_deep_while_br();
+        let builder = test_case_cfg_deep_while_br();
+        let ir_module = Rc::new(builder.module);
         let mir_module = translate_ir_to_mir(&ir_module);
         let mut stdout = std::io::stdout();
         let mut asm_writer = AsmWriter::new(&mut stdout);
