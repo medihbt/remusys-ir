@@ -75,7 +75,7 @@ pub fn dispatch_inst(
     let kind = inst_info.kind;
 
     let alloc_value = ir_module.borrow_value_alloc();
-    let alloc_inst = &alloc_value.alloc_inst;
+    let alloc_inst = &alloc_value.insts;
     let alloc_use = ir_module.borrow_use_alloc();
     let alloc_jt = ir_module.borrow_jt_alloc();
     match kind {

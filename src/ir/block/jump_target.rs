@@ -6,8 +6,8 @@ use slab::Slab;
 
 use crate::{
     base::{
-        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRefList,
-        SlabRef,
+        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRef,
+        SlabRefList,
     },
     impl_slabref,
     ir::{

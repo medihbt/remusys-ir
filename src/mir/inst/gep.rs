@@ -470,7 +470,7 @@ impl MirGEP {
     }
 
     /// 尝试简化 GEP 指令为简单的 MOV 或加法/减法指令.
-    /// 
+    ///
     /// TODO: 这个函数有 bug, 调用该函数得到的简化序列有 SIGSEGV, 需要修复.
     pub fn try_simplify(&self, mut consume_inst: impl FnMut(MirInst)) -> bool {
         if self.weights().is_empty() && self.offsets().is_empty() {

@@ -100,7 +100,7 @@ impl CopyMap {
         let cfg_snapshot = CfgSnapshot::new_from_func(ir_module, func_ref);
 
         let alloc_value = ir_module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
         let alloc_use = ir_module.borrow_use_alloc();
         for node in cfg_snapshot.nodes.iter() {
             let bb = node.block;

@@ -32,8 +32,8 @@ impl IRValueNumberMap {
     }
     pub fn from_func(module: &Module, func: GlobalRef, option: NumberOption) -> Self {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_inst = &alloc_value.insts;
 
         let mut inst_map = BTreeMap::new();
         let mut block_map = BTreeMap::new();

@@ -7,8 +7,8 @@ use constant::{
     expr::{ConstExprRef, IConstExprVisitor},
 };
 use global::{GlobalData, GlobalRef, IGlobalObjectVisitor, func::FuncStorage};
-use inst::{InstRef, IInstVisitor};
-use module::{Module, ModuleAllocatorInner};
+use inst::{IInstVisitor, InstRef};
+use module::{IRAllocs, Module};
 use slab::Slab;
 
 use crate::{
@@ -190,11 +190,11 @@ pub trait IValueVisitor:
     fn read_block(&self, block: BlockRef, block_data: &BlockData);
     fn read_func_arg(&self, func: GlobalRef, index: u32);
 
-    fn value_visitor_diapatch(&self, value: ValueSSA, alloc_value: &ModuleAllocatorInner) {
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_global = &alloc_value.alloc_global;
-        let alloc_inst = &alloc_value.alloc_inst;
-        let alloc_expr = &alloc_value.alloc_expr;
+    fn value_visitor_diapatch(&self, value: ValueSSA, alloc_value: &IRAllocs) {
+        let alloc_block = &alloc_value.blocks;
+        let alloc_global = &alloc_value.globals;
+        let alloc_inst = &alloc_value.insts;
+        let alloc_expr = &alloc_value.exprs;
         match value {
             ValueSSA::None => {}
             ValueSSA::ConstData(data) => self.const_data_visitor_dispatch(&data),

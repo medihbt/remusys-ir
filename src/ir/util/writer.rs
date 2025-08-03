@@ -17,7 +17,7 @@ use crate::{
             func::{FuncData, FuncStorage},
         },
         inst::*,
-        module::{Module, ModuleAllocatorInner},
+        module::{IRAllocs, Module},
     },
     typing::{id::ValTypeID, types::FloatTypeKind},
 };
@@ -68,7 +68,7 @@ pub fn write_ir_expr(module: &Module, writer: &mut dyn IoWrite, expr: ConstExprR
 
 struct ModuleValueWriter<'a> {
     module: &'a Module,
-    alloc_value: Ref<'a, ModuleAllocatorInner>,
+    alloc_value: Ref<'a, IRAllocs>,
     alloc_use: Ref<'a, Slab<UseData>>,
     alloc_jt: Ref<'a, Slab<JumpTargetData>>,
 
@@ -98,9 +98,9 @@ impl<'a, 'b> Drop for ModuleWriterIndentGuard<'a, 'b> {
 impl<'a> ModuleValueWriter<'a> {
     fn new(module: &'a Module, writer: &'a mut dyn IoWrite) -> Self {
         let alloc_value = module.borrow_value_alloc();
-        let inst_id_map_capacity = alloc_value.alloc_inst.capacity();
-        let block_id_map_capcity = alloc_value.alloc_block.capacity();
-        let live_func_def_len = alloc_value.alloc_global.len();
+        let inst_id_map_capacity = alloc_value.insts.capacity();
+        let block_id_map_capcity = alloc_value.blocks.capacity();
+        let live_func_def_len = alloc_value.globals.len();
         Self {
             module: module,
             alloc_value: alloc_value,
@@ -121,7 +121,7 @@ impl<'a> ModuleValueWriter<'a> {
         let global_defs = self.module.global_defs.borrow();
         let globals: Vec<_> = global_defs.iter().map(|(_, gref)| gref).collect();
         for global in globals {
-            self.global_object_visitor_dispatch(*global, &self.alloc_value.alloc_global);
+            self.global_object_visitor_dispatch(*global, &self.alloc_value.globals);
         }
 
         let live_funcs = self.live_func_def.borrow();
@@ -129,7 +129,7 @@ impl<'a> ModuleValueWriter<'a> {
             if self.prints_slabref {
                 self.write_fmt(format_args!("; {:?}\n", func));
             }
-            let func = match func.to_data(&self.alloc_value.alloc_global) {
+            let func = match func.to_data(&self.alloc_value.globals) {
                 GlobalData::Func(f) => f,
                 _ => panic!("Invalid global data kind: Not Function"),
             };
@@ -142,11 +142,7 @@ impl<'a> ModuleValueWriter<'a> {
 
         // Then write body.
         self.write_str(" {");
-        for (block, block_data) in func
-            .get_blocks()
-            .unwrap()
-            .view(&self.alloc_value.alloc_block)
-        {
+        for (block, block_data) in func.get_blocks().unwrap().view(&self.alloc_value.blocks) {
             self.wrap_indent();
             self.read_block(block, block_data);
         }
@@ -214,7 +210,7 @@ impl<'a> ModuleValueWriter<'a> {
         let blocks = &*blocks.unwrap();
 
         let mut current_id = nargs;
-        for (bb, bb_data) in blocks.view(&self.alloc_value.alloc_block) {
+        for (bb, bb_data) in blocks.view(&self.alloc_value.blocks) {
             current_id = self.number_block(bb, bb_data, current_id);
         }
     }
@@ -225,7 +221,7 @@ impl<'a> ModuleValueWriter<'a> {
         block_id_map[block.get_handle()] = initial_id;
         let mut curr_id = initial_id + 1;
 
-        for (inst, inst_data) in block_data.instructions.view(&self.alloc_value.alloc_inst) {
+        for (inst, inst_data) in block_data.instructions.view(&self.alloc_value.insts) {
             match inst_data {
                 InstData::Unreachable(..)
                 | InstData::Ret(..)
@@ -304,7 +300,7 @@ impl IValueVisitor for ModuleValueWriter<'_> {
         }
 
         let _g = self.add_indent();
-        let insts = block_data.instructions.view(&self.alloc_value.alloc_inst);
+        let insts = block_data.instructions.view(&self.alloc_value.insts);
         for (inst_ref, inst_data) in insts {
             if self.prints_slabref {
                 self.wrap_indent();
@@ -334,7 +330,7 @@ impl<'a> ModuleValueWriter<'a> {
         let rcfg = self.module.borrow_rcfg_alloc().unwrap();
         let pred_jt = rcfg
             .get_node(block_ref)
-            .dump_pred_blocks(&self.alloc_jt, &self.alloc_value.alloc_inst);
+            .dump_pred_blocks(&self.alloc_jt, &self.alloc_value.insts);
         self.write_fmt(format_args!(
             "; Predecessors: {}",
             pred_jt
@@ -686,7 +682,7 @@ mod basic_value_formatting {
     use slab::Slab;
 
     pub fn format_value_by_ref(
-        module: &ModuleAllocatorInner,
+        module: &IRAllocs,
         type_ctx: &TypeContext,
         inst_id_map: &[usize],
         block_id_map: &[usize],
@@ -704,7 +700,7 @@ mod basic_value_formatting {
     }
 
     struct BasicValueFormatter<'a> {
-        pub module: &'a ModuleAllocatorInner,
+        pub module: &'a IRAllocs,
         pub type_ctx: &'a TypeContext,
         pub inst_id_map: &'a [usize],
         pub block_id_map: &'a [usize],
@@ -1037,8 +1033,8 @@ mod testing {
 
         {
             let alloc_value = module.borrow_value_alloc();
-            let alloc_inst = &alloc_value.alloc_inst;
-            let alloc_block = &alloc_value.alloc_block;
+            let alloc_inst = &alloc_value.insts;
+            let alloc_block = &alloc_value.blocks;
 
             let terminator = entry_block
                 .to_data(alloc_block)

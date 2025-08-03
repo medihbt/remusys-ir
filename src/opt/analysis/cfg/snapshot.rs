@@ -133,8 +133,8 @@ impl CfgSnapshot {
 
         let alloc_value = module.borrow_value_alloc();
         let alloc_jt = module.borrow_jt_alloc();
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_inst = &alloc_value.insts;
 
         // Get successors and predecessors of each block.
         let mut succ_map: BTreeMap<BlockRef, Vec<BlockRef>> = BTreeMap::new();

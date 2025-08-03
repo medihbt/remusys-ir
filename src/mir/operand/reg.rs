@@ -758,10 +758,7 @@ impl GPR64 {
     }
 
     pub fn is_virtual(self) -> bool {
-        matches!(
-            RegID::from_raw(self.0),
-            RegID::Virt(_) | RegID::StackPos(_)
-        )
+        matches!(RegID::from_raw(self.0), RegID::Virt(_) | RegID::StackPos(_))
     }
     pub fn is_stackpos(self) -> bool {
         matches!(RegID::from_raw(self.0), RegID::StackPos(_))
@@ -770,7 +767,10 @@ impl GPR64 {
         matches!(RegID::from_raw(self.0), RegID::Phys(_))
     }
     pub fn is_physical(self) -> bool {
-        matches!(RegID::from_raw(self.0), RegID::Phys(_) | RegID::ZR | RegID::SP)
+        matches!(
+            RegID::from_raw(self.0),
+            RegID::Phys(_) | RegID::ZR | RegID::SP
+        )
     }
 
     pub fn same_pos_as<T>(self, other: T) -> bool

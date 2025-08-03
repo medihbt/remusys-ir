@@ -6,7 +6,7 @@ use crate::{
         ValueSSA,
         block::jump_target::{JumpTargetData, JumpTargetRef},
         inst::{UseData, UseRef},
-        module::{Module, ModuleAllocatorInner},
+        module::{IRAllocs, Module},
     },
 };
 
@@ -29,19 +29,17 @@ impl<'a> CompactAlloc<'a> {
         let module = self.get_module();
         let mut old_alloc_value = module.borrow_value_alloc_mut();
         let new_alloc_expr =
-            self.build_value_alloc(&mut old_alloc_value.alloc_expr, ValueSSA::ConstExpr);
+            self.build_value_alloc(&mut old_alloc_value.exprs, ValueSSA::ConstExpr);
         let new_alloc_global =
-            self.build_value_alloc(&mut old_alloc_value.alloc_global, ValueSSA::Global);
-        let new_alloc_inst =
-            self.build_value_alloc(&mut old_alloc_value.alloc_inst, ValueSSA::Inst);
-        let new_alloc_block =
-            self.build_value_alloc(&mut old_alloc_value.alloc_block, ValueSSA::Block);
+            self.build_value_alloc(&mut old_alloc_value.globals, ValueSSA::Global);
+        let new_alloc_inst = self.build_value_alloc(&mut old_alloc_value.insts, ValueSSA::Inst);
+        let new_alloc_block = self.build_value_alloc(&mut old_alloc_value.blocks, ValueSSA::Block);
 
-        *old_alloc_value = ModuleAllocatorInner {
-            alloc_expr: new_alloc_expr,
-            alloc_global: new_alloc_global,
-            alloc_inst: new_alloc_inst,
-            alloc_block: new_alloc_block,
+        *old_alloc_value = IRAllocs {
+            exprs: new_alloc_expr,
+            globals: new_alloc_global,
+            insts: new_alloc_inst,
+            blocks: new_alloc_block,
         };
         drop(old_alloc_value);
 

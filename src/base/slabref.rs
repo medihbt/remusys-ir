@@ -21,10 +21,7 @@ pub trait SlabRef: Clone + Eq + INullableValue + std::fmt::Debug {
         slab.get(self.get_handle())
             .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }
-    fn to_data_mut<'a>(
-        &self,
-        slab: &'a mut Slab<Self::RefObject>,
-    ) -> &'a mut Self::RefObject {
+    fn to_data_mut<'a>(&self, slab: &'a mut Slab<Self::RefObject>) -> &'a mut Self::RefObject {
         slab.get_mut(self.get_handle())
             .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }

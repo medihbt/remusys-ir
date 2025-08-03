@@ -573,7 +573,7 @@ impl TerminatorInstRef {
     pub fn collect_jump_blocks_from_module(&self, module: &Module) -> Vec<BlockRef> {
         let alloc_value = module.borrow_value_alloc();
         let alloc_jt = &module.borrow_jt_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
         self.collect_jump_blocks(alloc_inst, alloc_jt)
     }
     pub fn collect_jump_blocks_nodedup(
@@ -597,7 +597,7 @@ impl TerminatorInstRef {
     pub fn collect_jump_blocks_from_module_nodedup(&self, module: &Module) -> Vec<BlockRef> {
         let alloc_value = module.borrow_value_alloc();
         let alloc_jt = &module.borrow_jt_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
         self.collect_jump_blocks_nodedup(alloc_inst, alloc_jt)
     }
     pub fn terminates_function(&self, alloc_inst: &Slab<InstData>) -> bool {

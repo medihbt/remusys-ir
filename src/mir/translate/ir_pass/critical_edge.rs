@@ -154,7 +154,7 @@ impl CriticalEdges {
 
         // Step 1: Modify `PHI` nodes of the successor block
         let alloc_value = ir_module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
         let to_bb_data = ir_module.get_block(edge.to);
 
         let mut n_phi_nodes = 0;
@@ -176,8 +176,8 @@ impl CriticalEdges {
         }
 
         // Step 2: Push new block into function body
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_global = &alloc_value.alloc_global;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_global = &alloc_value.globals;
         let parent_func = func;
         assert!(parent_func.is_nonnull());
         let parent_func = match parent_func.to_data(alloc_global) {

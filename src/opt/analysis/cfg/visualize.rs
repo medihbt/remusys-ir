@@ -31,7 +31,7 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
         .unwrap();
 
     let alloc_value = module.borrow_value_alloc();
-    let alloc_block = &alloc_value.alloc_block;
+    let alloc_block = &alloc_value.blocks;
     let mut cfg_edges = Vec::new();
     let mut block_order_map = BTreeMap::new();
     for (order, (block_ref, block)) in blocks_range.view(alloc_block).into_iter().enumerate() {

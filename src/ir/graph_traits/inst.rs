@@ -33,7 +33,7 @@ impl IRGraphEdgeHolder for InstRef {
 
     fn module_borrow_edge_holder_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<InstData>> {
         Ref::map(module.borrow_value_alloc(), |alloc_value| {
-            &alloc_value.alloc_inst
+            &alloc_value.insts
         })
     }
 
@@ -53,7 +53,7 @@ impl IRGraphNode for InstRef {
 
     fn module_borrow_self_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<InstData>> {
         Ref::map(module.borrow_value_alloc(), |alloc_value| {
-            &alloc_value.alloc_inst
+            &alloc_value.insts
         })
     }
     fn edge_holder_from_allocs(&self, _: &Slab<InstData>, _: &Slab<InstData>) -> Self {

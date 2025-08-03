@@ -151,7 +151,7 @@ impl DominatorTree {
         let inst1_block = inst1.get_parent(module).unwrap();
         let inst2_block = inst2.get_parent(module).unwrap();
         if inst1_block == inst2_block {
-            return inst1.comes_before_node(inst2, &module.borrow_value_alloc().alloc_inst);
+            return inst1.comes_before_node(inst2, &module.borrow_value_alloc().insts);
         }
         return self.block_dominates_block(inst1_block, inst2_block);
     }

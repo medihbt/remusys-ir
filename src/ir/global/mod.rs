@@ -242,7 +242,7 @@ impl GlobalRef {
     /// 这会把自己注册到全局量表中，并且如果 RDFG 启用了, 就注册到 RDFG 中，维护 RDFG 的一致性
     pub fn register_to_mut_module(self, module: &mut Module) {
         let allocs = module._alloc_value.get_mut();
-        let maybe_functy = match self.to_data(&allocs.alloc_global) {
+        let maybe_functy = match self.to_data(&allocs.globals) {
             GlobalData::Func(f) => Some(f.get_stored_func_type()),
             _ => None,
         };
@@ -255,13 +255,13 @@ impl GlobalRef {
         }
 
         // 把自己注册到全局量表中
-        let name = self.get_name_with_alloc(&allocs.alloc_global);
+        let name = self.get_name_with_alloc(&allocs.globals);
         module.global_defs.get_mut().insert(name.into(), self);
     }
 
     pub fn register_to_module(self, module: &Module) {
         let allocs = module.borrow_value_alloc();
-        let maybe_func = match self.to_data(&allocs.alloc_global) {
+        let maybe_func = match self.to_data(&allocs.globals) {
             GlobalData::Func(f) => Some(f.get_stored_func_type()),
             _ => None,
         };
@@ -273,14 +273,14 @@ impl GlobalRef {
         }
 
         // 把自己注册到全局量表中
-        let name = self.get_name_with_alloc(&allocs.alloc_global);
+        let name = self.get_name_with_alloc(&allocs.globals);
         module.global_defs.borrow_mut().insert(name.into(), self);
     }
 
     pub fn from_mut_module(module: &mut Module, data: GlobalData) -> Self {
         let ret = {
             let allocs = module._alloc_value.get_mut();
-            Self::from_allocs(&mut allocs.alloc_global, &allocs.alloc_block, data)
+            Self::from_allocs(&mut allocs.globals, &allocs.blocks, data)
         };
         ret.register_to_mut_module(module);
         ret
@@ -290,7 +290,7 @@ impl GlobalRef {
         let ret = {
             let mut allocs = module.borrow_value_alloc_mut();
             let allocs = &mut *allocs;
-            Self::from_allocs(&mut allocs.alloc_global, &allocs.alloc_block, data)
+            Self::from_allocs(&mut allocs.globals, &allocs.blocks, data)
         };
         ret.register_to_module(module);
         ret
@@ -312,7 +312,7 @@ impl GlobalRef {
     }
     pub fn is_extern_with_module(self, module: &Module) -> bool {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
+        let alloc_global = &alloc_value.globals;
         self.is_extern(alloc_global)
     }
 }

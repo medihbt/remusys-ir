@@ -32,27 +32,27 @@ pub struct Module {
     pub name: String,
     pub type_ctx: Rc<TypeContext>,
     pub global_defs: RefCell<HashMap<String, GlobalRef>>,
-    pub(super) _alloc_value: RefCell<ModuleAllocatorInner>,
+    pub(super) _alloc_value: RefCell<IRAllocs>,
     pub(super) _alloc_use: RefCell<Slab<UseData>>,
     pub(super) _alloc_jt: RefCell<Slab<JumpTargetData>>,
     pub(super) _rdfg_alloc: RefCell<Option<rdfg::RdfgAlloc>>,
     pub(super) _rcfg_alloc: RefCell<Option<rcfg::RcfgAlloc>>,
 }
 
-pub struct ModuleAllocatorInner {
-    pub(crate) alloc_global: Slab<GlobalData>,
-    pub(crate) alloc_expr: Slab<ConstExprData>,
-    pub(crate) alloc_inst: Slab<InstData>,
-    pub(crate) alloc_block: Slab<BlockData>,
+pub struct IRAllocs {
+    pub(crate) globals: Slab<GlobalData>,
+    pub(crate) exprs: Slab<ConstExprData>,
+    pub(crate) insts: Slab<InstData>,
+    pub(crate) blocks: Slab<BlockData>,
 }
 
 impl Module {
     pub fn new(name: String, type_ctx: Rc<TypeContext>) -> Self {
-        let inner = ModuleAllocatorInner {
-            alloc_global: Slab::with_capacity(32),
-            alloc_expr: Slab::with_capacity(4096),
-            alloc_inst: Slab::with_capacity(1024),
-            alloc_block: Slab::with_capacity(512),
+        let inner = IRAllocs {
+            globals: Slab::with_capacity(32),
+            exprs: Slab::with_capacity(4096),
+            insts: Slab::with_capacity(1024),
+            blocks: Slab::with_capacity(512),
         };
         Self {
             name,
@@ -66,13 +66,13 @@ impl Module {
         }
     }
 
-    pub fn get_value_alloc_mut(&mut self) -> &mut ModuleAllocatorInner {
+    pub fn get_value_alloc_mut(&mut self) -> &mut IRAllocs {
         self._alloc_value.get_mut()
     }
-    pub fn borrow_value_alloc<'a>(&'a self) -> Ref<'a, ModuleAllocatorInner> {
+    pub fn borrow_value_alloc<'a>(&'a self) -> Ref<'a, IRAllocs> {
         self._alloc_value.borrow()
     }
-    pub fn borrow_value_alloc_mut<'a>(&'a self) -> RefMut<'a, ModuleAllocatorInner> {
+    pub fn borrow_value_alloc_mut<'a>(&'a self) -> RefMut<'a, IRAllocs> {
         self._alloc_value.borrow_mut()
     }
 
@@ -103,17 +103,17 @@ impl Module {
     pub fn get_global(&self, global: GlobalRef) -> Ref<GlobalData> {
         let inner = self.borrow_value_alloc();
         Ref::map(inner, |inner| {
-            inner.alloc_global.get(global.get_handle()).unwrap()
+            inner.globals.get(global.get_handle()).unwrap()
         })
     }
     pub fn global_mut(&self, global: GlobalRef) -> RefMut<GlobalData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner.alloc_global.get_mut(global.get_handle()).unwrap()
+            inner.globals.get_mut(global.get_handle()).unwrap()
         })
     }
     pub fn mut_get_global(&mut self, global: GlobalRef) -> &mut GlobalData {
-        global.to_data_mut(&mut self.get_value_alloc_mut().alloc_global)
+        global.to_data_mut(&mut self.get_value_alloc_mut().globals)
     }
     pub fn insert_global(&self, data: GlobalData) -> GlobalRef {
         GlobalRef::from_module(self, data)
@@ -124,20 +124,18 @@ impl Module {
 
     pub fn get_expr(&self, expr: ConstExprRef) -> Ref<ConstExprData> {
         let inner = self.borrow_value_alloc();
-        Ref::map(inner, |inner| {
-            inner.alloc_expr.get(expr.get_handle()).unwrap()
-        })
+        Ref::map(inner, |inner| inner.exprs.get(expr.get_handle()).unwrap())
     }
     pub fn mut_expr(&self, expr: ConstExprRef) -> RefMut<ConstExprData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner.alloc_expr.get_mut(expr.get_handle()).unwrap()
+            inner.exprs.get_mut(expr.get_handle()).unwrap()
         })
     }
     pub fn insert_expr(&self, data: ConstExprData) -> ConstExprRef {
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
-            let id = inner.alloc_expr.insert(data);
+            let id = inner.exprs.insert(data);
             ConstExprRef::from_handle(id)
         };
         // Try add this handle as operand.
@@ -150,18 +148,16 @@ impl Module {
 
     pub fn get_inst(&self, inst: InstRef) -> Ref<InstData> {
         let inner = self.borrow_value_alloc();
-        Ref::map(inner, |inner| {
-            inner.alloc_inst.get(inst.get_handle()).unwrap()
-        })
+        Ref::map(inner, |inner| inner.insts.get(inst.get_handle()).unwrap())
     }
     pub fn inst_mut(&self, inst: InstRef) -> RefMut<InstData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner.alloc_inst.get_mut(inst.get_handle()).unwrap()
+            inner.insts.get_mut(inst.get_handle()).unwrap()
         })
     }
     pub fn mut_get_inst(&mut self, inst: InstRef) -> &mut InstData {
-        inst.to_data_mut(&mut self.get_value_alloc_mut().alloc_inst)
+        inst.to_data_mut(&mut self.get_value_alloc_mut().insts)
     }
     pub fn insert_inst(&self, data: InstData) -> InstRef {
         let operand_range = data
@@ -176,7 +172,7 @@ impl Module {
             let mut alloc_value = self.borrow_value_alloc_mut();
             let alloc_use = self.borrow_use_alloc();
             let alloc_jt = self.borrow_jt_alloc();
-            InstRef::from_allocs(&mut alloc_value.alloc_inst, &alloc_use, &alloc_jt, data)
+            InstRef::from_allocs(&mut alloc_value.insts, &alloc_use, &alloc_jt, data)
         };
 
         // Try add this handle as operand.
@@ -208,28 +204,26 @@ impl Module {
 
     pub fn get_block(&self, block: BlockRef) -> Ref<BlockData> {
         let inner = self.borrow_value_alloc();
-        Ref::map(inner, |inner| {
-            inner.alloc_block.get(block.get_handle()).unwrap()
-        })
+        Ref::map(inner, |inner| inner.blocks.get(block.get_handle()).unwrap())
     }
     pub fn mut_block(&self, block: BlockRef) -> RefMut<BlockData> {
         let inner = self.borrow_value_alloc_mut();
         RefMut::map(inner, |inner| {
-            inner.alloc_block.get_mut(block.get_handle()).unwrap()
+            inner.blocks.get_mut(block.get_handle()).unwrap()
         })
     }
     pub fn insert_block(&self, data: BlockData) -> BlockRef {
         let ret = {
             let mut inner = self.borrow_value_alloc_mut();
-            let id = inner.alloc_block.insert(data);
+            let id = inner.blocks.insert(data);
             BlockRef::from_handle(id)
         };
 
         // Modify the slab reference of its instructions to point to this.
         // Now the `parent_bb` of the instructions will not be `null` anymore.
         let inner = self.borrow_value_alloc();
-        ret.to_data(&inner.alloc_block)
-            .init_set_self_reference(ret, &inner.alloc_inst);
+        ret.to_data(&inner.blocks)
+            .init_set_self_reference(ret, &inner.insts);
 
         /* Try add this handle as operand. */
         if let Some(mut rdfg) = self.borrow_rdfg_alloc_mut() {
@@ -336,10 +330,10 @@ impl Module {
     pub fn enable_rdfg(&self) -> Result<(), ModuleError> {
         let type_ctx = self.type_ctx.as_ref();
         let self_alloc = self.borrow_value_alloc();
-        let global_alloc = &self_alloc.alloc_global;
-        let expr_alloc = &self_alloc.alloc_expr;
-        let inst_alloc = &self_alloc.alloc_inst;
-        let block_alloc = &self_alloc.alloc_block;
+        let global_alloc = &self_alloc.globals;
+        let expr_alloc = &self_alloc.exprs;
+        let inst_alloc = &self_alloc.insts;
+        let block_alloc = &self_alloc.blocks;
         let global_defs = &self.global_defs.borrow();
         let mut rdfg_alloc = RdfgAlloc::new_with_capacity(
             global_alloc.capacity(),
@@ -552,9 +546,9 @@ impl Module {
 
         // Step 1: Collect all live blocks and allocate nodes for them.
         let alloc_value = self.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_global = &alloc_value.globals;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_inst = &alloc_value.insts;
         let mut live_funcbody = Vec::with_capacity(alloc_global.len());
         for (_, global) in self.global_defs.borrow().iter() {
             match global.to_data(alloc_global) {
@@ -652,8 +646,8 @@ impl Module {
     /// Perform a basic check on the module.
     pub fn perform_basic_check(&self) {
         let alloc_value = self.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
-        let alloc_block = &alloc_value.alloc_block;
+        let alloc_global = &alloc_value.globals;
+        let alloc_block = &alloc_value.blocks;
 
         for (_, global) in alloc_global {
             let func_body = match global {

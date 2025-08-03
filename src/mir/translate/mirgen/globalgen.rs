@@ -302,7 +302,7 @@ impl MirGlobalItems {
         };
         let mut data_gen = DataGen::new();
         let alloc_value = ir_module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
+        let alloc_expr = &alloc_value.exprs;
         match data_gen.add_ir_value(initval, &ir_module.type_ctx, alloc_expr) {
             Ok(()) => {}
             Err(e) => {
