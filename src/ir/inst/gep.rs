@@ -334,10 +334,10 @@ impl<'a> IrGEPOffsetIter<'a> {
                 )
             }
             (V::Inst(inst), T::Array(aty)) => {
-                if !matches!(inst.get_valtype(&vallocs.alloc_inst), T::Int(_)) {
+                if !matches!(inst.get_valtype(&vallocs.insts), T::Int(_)) {
                     panic!(
                         "Expected an Int type for GEP index, found: {:?}",
-                        inst.get_valtype(&vallocs.alloc_inst)
+                        inst.get_valtype(&vallocs.insts)
                     );
                 }
                 let weight = aty.get_elem_aligned_size(type_ctx) as u64;

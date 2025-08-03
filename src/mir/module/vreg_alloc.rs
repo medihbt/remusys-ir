@@ -99,7 +99,10 @@ impl VirtRegAlloc {
     pub fn dealloc_stackpos(&mut self, vreg: GPR64) -> bool {
         let id = match vreg.get_id() {
             RegID::StackPos(id) => id,
-            _ => panic!("Expected a stack position register, found {:?}", vreg.get_id()),
+            _ => panic!(
+                "Expected a stack position register, found {:?}",
+                vreg.get_id()
+            ),
         };
         self.stackpos.try_remove(id as usize).is_some()
     }

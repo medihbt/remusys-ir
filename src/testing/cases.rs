@@ -136,7 +136,9 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
         .unwrap();
     match &*builder.module.get_inst(ret_inst) {
-        InstData::Ret(_, ret) => ret.retval.set_operand(&builder.module, ValueSSA::Inst(load_20)),
+        InstData::Ret(_, ret) => ret
+            .retval
+            .set_operand(&builder.module, ValueSSA::Inst(load_20)),
         _ => unreachable!(),
     }
 

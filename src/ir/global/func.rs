@@ -100,7 +100,7 @@ impl FuncData {
 
         let blocks = {
             let mut alloc_value = module.borrow_value_alloc_mut();
-            let alloc_block = &mut alloc_value.alloc_block;
+            let alloc_block = &mut alloc_value.blocks;
             let blocks = SlabRefList::from_slab(alloc_block);
             blocks.push_back_ref(alloc_block, unreachable_bb_ref)?;
             blocks
@@ -139,7 +139,7 @@ impl FuncData {
             .as_mut()
             .unwrap()
             .body
-            .push_back_ref(&module.borrow_value_alloc().alloc_block, block_ref)?;
+            .push_back_ref(&module.borrow_value_alloc().blocks, block_ref)?;
         Ok(())
     }
 

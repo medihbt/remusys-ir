@@ -249,7 +249,7 @@ impl<'a> MarkVisitor<'a> {
 
     fn mark_expr_body(&self, expr: ConstExprRef) -> Result<(), ModuleError> {
         let alloc_value = self.module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
+        let alloc_expr = &alloc_value.exprs;
         self._do_mark_expr_body(expr, alloc_expr)
     }
     fn _do_mark_expr_body(
@@ -296,7 +296,7 @@ impl<'a> MarkVisitor<'a> {
     pub(super) fn mark_global(&self) -> Result<Vec<GlobalRef>, ModuleError> {
         let mut live_funcdef = Vec::new();
         let alloc_value = self.module.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
+        let alloc_global = &alloc_value.globals;
 
         let global_map = self.module.global_defs.borrow();
         for (_, global_ref) in global_map.iter() {
@@ -323,9 +323,9 @@ impl<'a> MarkVisitor<'a> {
 
     pub(super) fn mark_func_tree(&self, func: GlobalRef) -> Result<MarkFuncTreeRes, ModuleError> {
         let alloc_value = self.module.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_global = &alloc_value.globals;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_inst = &alloc_value.insts;
 
         let alloc_use = self.module.borrow_use_alloc();
         let alloc_jt = self.module.borrow_jt_alloc();

@@ -223,7 +223,7 @@ impl DataGen {
     }
     pub fn add_ir_expr_from_module(&mut self, expr: ConstExprRef, module: &Module) {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
+        let alloc_expr = &alloc_value.exprs;
         let type_ctx = &*module.type_ctx;
         self.add_ir_expr(expr, type_ctx, alloc_expr);
     }

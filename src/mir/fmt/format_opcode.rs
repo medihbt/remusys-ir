@@ -465,7 +465,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::MirStImm32 => "mir.stimm.32",
         MirOP::MirStImm32Sym => "mir.stimm.32.sym",
         MirOP::MirStImm64Sym => "mir.stimm.64.sym",
-        MirOP::MirStSymSym   => "mir.stimm.sym.sym",
+        MirOP::MirStSymSym => "mir.stimm.sym.sym",
 
         // MIR 加载立即数到浮点寄存器伪指令
         MirOP::MirLdImmF64 => "mir.ldimm.f64",

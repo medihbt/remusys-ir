@@ -363,15 +363,9 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::MirStImm64(stimm) => format_inst::fmt_mir_stimm64(self, stimm),
             MirInst::MirStImm32(stimm) => format_inst::fmt_mir_stimm32(self, stimm),
             MirInst::MirStSym64(stsym) => format_inst::fmt_mir_stsym64(self, stsym),
-            MirInst::MirStImm32Sym(stimm_sym) => {
-                format_inst::fmt_mir_stimm32_sym(self, stimm_sym)
-            }
-            MirInst::MirStImm64Sym(stimm_sym) => {
-                format_inst::fmt_mir_stimm64_sym(self, stimm_sym)
-            }
-            MirInst::MirStSym64Sym(stsym_sym) => {
-                format_inst::fmt_mir_stsym_sym(self, stsym_sym)
-            }
+            MirInst::MirStImm32Sym(stimm_sym) => format_inst::fmt_mir_stimm32_sym(self, stimm_sym),
+            MirInst::MirStImm64Sym(stimm_sym) => format_inst::fmt_mir_stimm64_sym(self, stimm_sym),
+            MirInst::MirStSym64Sym(stsym_sym) => format_inst::fmt_mir_stsym_sym(self, stsym_sym),
             MirInst::LoadConst64(load_const64) => {
                 format_inst::fmt_load_const64(self, inst.get_opcode(), load_const64)
             }

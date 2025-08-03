@@ -1,10 +1,16 @@
 use crate::{
     base::{INullableValue, SlabListError, SlabListNodeRef, SlabRef},
     ir::{
-        block::{BlockData, BlockRef}, cmp_cond::CmpCond, global::{self, func::FuncData, GlobalData, GlobalRef}, inst::{
+        ValueSSA,
+        block::{BlockData, BlockRef},
+        cmp_cond::CmpCond,
+        global::{self, GlobalData, GlobalRef, func::FuncData},
+        inst::{
             Alloca, BinOp, Br, CallOp, CastOp, CmpOp, IndexPtrOp, InstData, InstError, InstRef,
             Jump, LoadOp, PhiOp, Ret, SelectOp, StoreOp, Switch, UseKind,
-        }, module::Module, opcode::Opcode, ValueSSA
+        },
+        module::Module,
+        opcode::Opcode,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
@@ -196,7 +202,7 @@ impl IRBuilder {
 
         let previous_focus = self.focus.inst;
         let alloc_value = self.module.borrow_value_alloc();
-        let alloc_block = &alloc_value.alloc_block;
+        let alloc_block = &alloc_value.blocks;
 
         let block = self.focus.block.to_data(alloc_block);
         self.focus.inst = block
@@ -229,7 +235,7 @@ impl IRBuilder {
 
         let (entry, inst) = {
             let alloc_value = self.module.borrow_value_alloc();
-            let alloc_block = &alloc_value.alloc_block;
+            let alloc_block = &alloc_value.blocks;
             let entry = func_data
                 .get_blocks()
                 .unwrap()
@@ -360,7 +366,7 @@ impl IRBuilder {
         // Now move all instructions after the `inst_split_pos` to the new block.
         // Step 1: Unplug all instructions after the `inst_split_pos` from the current block.
         let to_insert: Vec<InstRef> = {
-            let alloc_inst = &self.module.borrow_value_alloc().alloc_inst;
+            let alloc_inst = &self.module.borrow_value_alloc().insts;
             let mut to_insert = Vec::new();
 
             let mut curr_node = inst_split_pos.get_next_ref(alloc_inst);
@@ -459,7 +465,7 @@ impl IRBuilder {
             let blocks = func_data.get_blocks().unwrap();
             blocks
                 .node_add_next(
-                    &self.module.borrow_value_alloc().alloc_block,
+                    &self.module.borrow_value_alloc().blocks,
                     self.focus.block,
                     block_ref,
                 )
@@ -487,8 +493,8 @@ impl IRBuilder {
 
         // Now we need to update the PHI nodes in the successors of the original block.
         let alloc_value = module.borrow_value_alloc();
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_inst = &alloc_value.insts;
         for block in target_bbs {
             let bb_data = block.to_data(alloc_block);
             for (_, idata) in bb_data.instructions.view(alloc_inst) {
@@ -945,7 +951,7 @@ impl IRBuilder {
         let (old_termi, switch_inst) = self.focus_set_empty_switch(cond, default_block)?;
 
         let value_alloc = self.module.borrow_value_alloc();
-        match switch_inst.to_data(&value_alloc.alloc_inst) {
+        match switch_inst.to_data(&value_alloc.insts) {
             InstData::Switch(_, s) => {
                 for (case, block) in cases {
                     s.set_case(&self.module, case, block);

@@ -34,7 +34,7 @@ impl IRGraphEdgeHolder for TerminatorInstRef {
 
     fn module_borrow_edge_holder_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<InstData>> {
         Ref::map(module.borrow_value_alloc(), |alloc_value| {
-            &alloc_value.alloc_inst
+            &alloc_value.insts
         })
     }
     fn graph_edges_from_data<'a>(data: &'a InstData) -> Option<&'a SlabRefList<JumpTargetRef>> {
@@ -54,7 +54,7 @@ impl IRGraphNode for BlockRef {
 
     fn module_borrow_self_alloc<'a>(module: &'a Module) -> Ref<'a, Slab<BlockData>> {
         Ref::map(module.borrow_value_alloc(), |alloc_value| {
-            &alloc_value.alloc_block
+            &alloc_value.blocks
         })
     }
     fn edge_holder_from_allocs(

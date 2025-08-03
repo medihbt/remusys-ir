@@ -259,7 +259,7 @@ impl MirTranslateCtx {
             insts.reserve(len);
 
             let alloc_value = self.ir_module.borrow_value_alloc();
-            let alloc_inst = &alloc_value.alloc_inst;
+            let alloc_inst = &alloc_value.insts;
 
             for (ir, inst) in insts_in_block.view(alloc_inst) {
                 if let InstData::Alloca(_, a) = inst {

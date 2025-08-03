@@ -41,7 +41,7 @@ fn sweep_insts(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleErr
 
     // remove dead instructions
     let mut alloc_value = module.borrow_value_alloc_mut();
-    let alloc_inst = &mut alloc_value.alloc_inst;
+    let alloc_inst = &mut alloc_value.insts;
     for inst_ref in &dead_insts {
         alloc_inst.remove(inst_ref.get_handle());
     }
@@ -56,7 +56,7 @@ fn cleanup_insts_before_sweep(
     let alloc_value = module.borrow_value_alloc();
     let alloc_use = module.borrow_use_alloc();
     let alloc_jt = module.borrow_jt_alloc();
-    let alloc_inst = &alloc_value.alloc_inst;
+    let alloc_inst = &alloc_value.insts;
 
     // Clean up instruction data before sweeping.
     let rdfg = module.borrow_rdfg_alloc();
@@ -77,7 +77,7 @@ fn cleanup_insts_before_sweep(
 fn sweep_blocks(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleError> {
     let dead_blocks = {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_block = &alloc_value.alloc_block;
+        let alloc_block = &alloc_value.blocks;
         alloc_block
             .iter()
             .filter_map(|(handle, _)| {
@@ -106,7 +106,7 @@ fn sweep_blocks(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleEr
 
     // remove dead blocks
     let mut alloc_value = module.borrow_value_alloc_mut();
-    let alloc_block = &mut alloc_value.alloc_block;
+    let alloc_block = &mut alloc_value.blocks;
     for block_ref in &dead_blocks {
         alloc_block.remove(block_ref.get_handle());
     }
@@ -117,7 +117,7 @@ fn sweep_blocks(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleEr
 fn sweep_globals(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleError> {
     let dead_globals = {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_global = &alloc_value.alloc_global;
+        let alloc_global = &alloc_value.globals;
         alloc_global
             .iter()
             .filter_map(|(handle, _)| {
@@ -144,7 +144,7 @@ fn sweep_globals(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleE
 
     // remove dead globals
     let mut alloc_value = module.borrow_value_alloc_mut();
-    let alloc_global = &mut alloc_value.alloc_global;
+    let alloc_global = &mut alloc_value.globals;
     for global_ref in &dead_globals {
         alloc_global.remove(global_ref.get_handle());
     }
@@ -155,7 +155,7 @@ fn sweep_globals(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleE
 fn sweep_exprs(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleError> {
     let dead_exprs = {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.alloc_expr;
+        let alloc_expr = &alloc_value.exprs;
         alloc_expr
             .iter()
             .filter_map(|(handle, _)| {
@@ -182,7 +182,7 @@ fn sweep_exprs(module: &Module, live_set: &IRRefLiveSet) -> Result<(), ModuleErr
 
     // remove dead exprs
     let mut alloc_value = module.borrow_value_alloc_mut();
-    let alloc_expr = &mut alloc_value.alloc_expr;
+    let alloc_expr = &mut alloc_value.exprs;
     for expr_ref in &dead_exprs {
         alloc_expr.remove(expr_ref.get_handle());
     }

@@ -54,7 +54,7 @@ impl InstRef {
         self.to_data(alloc).get_value_type()
     }
     pub fn get_valtype_from_module(&self, module: &Module) -> ValTypeID {
-        self.get_valtype(&module.borrow_value_alloc().alloc_inst)
+        self.get_valtype(&module.borrow_value_alloc().insts)
     }
 
     pub fn from_allocs(
@@ -634,7 +634,7 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .node_add_next(&module.borrow_value_alloc().alloc_inst, *self, next)
+            .node_add_next(&module.borrow_value_alloc().insts, *self, next)
             .map_err(InstError::ListError)
     }
     pub fn add_prev_inst(&self, module: &Module, prev: InstRef) -> Result<(), InstError> {
@@ -650,7 +650,7 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .node_add_prev(&module.borrow_value_alloc().alloc_inst, *self, prev)
+            .node_add_prev(&module.borrow_value_alloc().insts, *self, prev)
             .map_err(InstError::ListError)
     }
     pub fn detach_self(&self, module: &Module) -> Result<(), InstError> {
@@ -666,7 +666,7 @@ impl InstRef {
         module
             .get_block(parent)
             .instructions
-            .unplug_node(&module.borrow_value_alloc().alloc_inst, *self)
+            .unplug_node(&module.borrow_value_alloc().insts, *self)
             .map_err(InstError::ListError)
     }
 
@@ -674,7 +674,7 @@ impl InstRef {
     pub fn finalize_with_module(&self, module: &Module) {
         let alloc_value = module.borrow_value_alloc();
         let use_alloc = module.borrow_use_alloc();
-        let self_data = self.to_data(&alloc_value.alloc_inst);
+        let self_data = self.to_data(&alloc_value.insts);
 
         // Clean up jump targets of the terminators.
         let (operands_range, len) = match self_data {

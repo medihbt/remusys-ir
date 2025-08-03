@@ -24,10 +24,10 @@ impl IRRefLiveSet {
         let alloc_value = module.borrow_value_alloc();
         let alloc_use = module.borrow_use_alloc();
         let alloc_jt = module.borrow_jt_alloc();
-        let alloc_block = &alloc_value.alloc_block;
-        let alloc_expr = &alloc_value.alloc_expr;
-        let alloc_global = &alloc_value.alloc_global;
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_block = &alloc_value.blocks;
+        let alloc_expr = &alloc_value.exprs;
+        let alloc_global = &alloc_value.globals;
+        let alloc_inst = &alloc_value.insts;
 
         Self::from_capacity(
             alloc_block.capacity(),

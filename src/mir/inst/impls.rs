@@ -4,7 +4,7 @@
 use crate::mir::{
     inst::{addr::*, cond::*, *},
     module::{block::*, func::*, global::*, *},
-    operand::{compound::*, imm::*, reg::*, subop::*, MirOperand},
+    operand::{MirOperand, compound::*, imm::*, reg::*, subop::*},
 };
 #[derive(Clone)]
 pub struct UncondBr {

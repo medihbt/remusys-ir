@@ -41,22 +41,22 @@ impl BlockRef {
         self.to_data(alloc).get_parent_func()
     }
     pub fn module_get_parent_func(self, module: &Module) -> GlobalRef {
-        self.get_parent_func(&module.borrow_value_alloc().alloc_block)
+        self.get_parent_func(&module.borrow_value_alloc().blocks)
     }
 
     pub fn get_terminator(self, module: &Module) -> Option<InstRef> {
-        self.to_data(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().blocks)
             .get_termiantor(module)
     }
     pub fn get_terminator_subref(self, module: &Module) -> Option<TerminatorInstRef> {
-        self.to_data(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().blocks)
             .get_terminator_subref(module)
     }
     pub fn get_jump_targets<'a>(
         self,
         module: &'a Module,
     ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
-        self.to_data(&module.borrow_value_alloc().alloc_block)
+        self.to_data(&module.borrow_value_alloc().blocks)
             .get_jump_targets(module)
     }
     pub fn load_jump_targets(self, module: &Module) -> Option<SlabListRange<JumpTargetRef>> {
@@ -65,8 +65,8 @@ impl BlockRef {
 
     pub fn has_phi(self, module: &Module) -> bool {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
-        let alloc_block = &alloc_value.alloc_block;
+        let alloc_inst = &alloc_value.insts;
+        let alloc_block = &alloc_value.blocks;
         self.to_data(alloc_block).has_phi(alloc_inst)
     }
 }
@@ -207,7 +207,7 @@ impl BlockData {
     }
     pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
         let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
         self.get_terminator_from_alloc(alloc_inst)
     }
     pub fn get_terminator_subref(&self, module: &Module) -> Option<TerminatorInstRef> {
@@ -312,7 +312,7 @@ impl BlockData {
     pub(super) fn perform_basic_check(&self, module: &Module) {
         // Preparations: allocators, etc.
         let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.alloc_inst;
+        let alloc_inst = &alloc_value.insts;
 
         // 1. Check if the block is initialized with its self reference and parent function.
         let self_ref = if self._inner.get()._self_ref.is_nonnull() {
@@ -379,7 +379,7 @@ impl BlockData {
 impl BlockData {
     pub fn new_empty(module: &Module) -> Self {
         let ret = Self {
-            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut().alloc_inst),
+            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut().insts),
             phi_node_end: Cell::new(InstRef::new_null()),
             _inner: Cell::new(BlockDataInner {
                 _node_head: SlabListNodeHead::new(),
@@ -391,7 +391,7 @@ impl BlockData {
 
         let phi_end = module.insert_inst(InstData::new_phi_end());
         ret.instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut().alloc_inst, phi_end)
+            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, phi_end)
             .unwrap();
         ret.phi_node_end.set(phi_end);
         ret
@@ -401,10 +401,8 @@ impl BlockData {
         let ret = Self::new_empty(module);
         let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
         let unreachable_inst = module.insert_inst(unreachable_inst);
-        ret.instructions.push_back_ref(
-            &mut module.borrow_value_alloc_mut().alloc_inst,
-            unreachable_inst,
-        )?;
+        ret.instructions
+            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, unreachable_inst)?;
         Ok(ret)
     }
 
@@ -417,7 +415,7 @@ impl BlockData {
 
         ret_bb
             .instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut().alloc_inst, ret_inst)?;
+            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, ret_inst)?;
         Ok(ret_bb)
     }
 }
