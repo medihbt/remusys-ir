@@ -1,6 +1,8 @@
 use crate::mir::{
     fmt::FuncFormatContext,
-    operand::{IMirSubOperand, MirOperand, imm_traits},
+    operand::{
+        imm_traits::{self, fp8aarch_to_fp32, fp8aarch_to_fp64}, IMirSubOperand, MirOperand
+    },
 };
 use std::fmt::Debug;
 
@@ -161,7 +163,7 @@ impl IMirSubOperand for Imm64 {
             ImmKind::CCmp => ImmCCmp::new(value as u32).fmt_asm(formatter),
             ImmKind::Mov => ImmMov::new(value).fmt_asm(formatter),
             ImmKind::MovZNK => ImmMovZNK::from_raw(value as u32).fmt_asm(formatter),
-            ImmKind::FMov => ImmFMov64::new(f64::from_bits(value)).fmt_asm(formatter),
+            ImmKind::FMov => ImmFMov64::from_real(*self).fmt_asm(formatter),
             ImmKind::SMax => ImmSMax::new(value as i64).fmt_asm(formatter),
             ImmKind::UMax => ImmUMax::new(value).fmt_asm(formatter),
             ImmKind::Shift => ImmShift::new(value).fmt_asm(formatter),
@@ -271,7 +273,7 @@ impl IMirSubOperand for Imm32 {
             ImmKind::CCmp => ImmCCmp::new(imm as u32).fmt_asm(formatter),
             ImmKind::Mov => ImmMov::new(imm as u64).fmt_asm(formatter),
             ImmKind::MovZNK => ImmMovZNK::from_raw(imm).fmt_asm(formatter),
-            ImmKind::FMov => ImmFMov32::new(f32::from_bits(imm)).fmt_asm(formatter),
+            ImmKind::FMov => ImmFMov32::from_real(*self).fmt_asm(formatter),
             ImmKind::SMax => ImmSMax::new(imm as i32 as i64).fmt_asm(formatter),
             ImmKind::UMax => ImmUMax::new(imm as u64).fmt_asm(formatter),
             ImmKind::Shift => ImmShift::new(imm as u64).fmt_asm(formatter),
@@ -1218,62 +1220,62 @@ impl std::hash::Hash for ImmFMov32 {
 }
 
 impl IMirSubOperand for ImmFMov32 {
-    type RealRepresents = Imm64;
+    type RealRepresents = Imm32;
 
     fn new_empty() -> Self {
         Self(0.0)
     }
 
     fn from_mir(mir: MirOperand) -> Self {
-        if let MirOperand::Imm32(Imm32(value, flag)) = mir {
-            if flag == ImmKind::FMov {
-                Self(f32::from_bits(value))
-            } else {
-                panic!("Expected Imm32 with FMov kind, found {:?}", flag);
-            }
-        } else {
-            panic!("Expected MirOperand::Imm32, found {:?}", mir);
-        }
+        let MirOperand::Imm32(imm) = mir else {
+            panic!("Expected MirOperand::Imm32, found {mir:?}");
+        };
+        Self::from_real(imm)
     }
 
     fn into_mir(self) -> MirOperand {
-        MirOperand::Imm32(Imm32(self.0.to_bits(), ImmKind::FMov))
+        self.into_real().into_mir()
     }
 
-    fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::FMov {
-            Some(Self(f32::from_bits(real.get_value() as u32)))
-        } else {
-            None
+    fn try_from_real(real: Imm32) -> Option<Self> {
+        if real.get_kind() != ImmKind::FMov {
+            return None;
         }
-    }
-
-    fn from_real(real: Imm64) -> Self {
-        if real.get_kind() == ImmKind::FMov {
-            Self(f32::from_bits(real.get_value() as u32))
-        } else {
-            panic!("Expected Imm64 with FMov kind, found {:?}", real.get_kind());
+        let imm = real.get_value();
+        if imm & 0xFFu32 != imm {
+            return None;
         }
+        Some(Self(fp8aarch_to_fp32(imm as u8)))
     }
 
-    fn into_real(self) -> Imm64 {
-        Imm64(self.0.to_bits() as u64, ImmKind::FMov)
-    }
-
-    fn insert_to_real(self, real: Imm64) -> Imm64 {
-        if real.get_kind() == ImmKind::FMov {
-            Imm64(self.0.to_bits() as u64, ImmKind::FMov)
-        } else {
-            panic!(
-                "Invalid immediate value: {} for flags: {:?}",
-                self.0,
-                real.get_kind()
-            );
+    fn from_real(real: Imm32) -> Self {
+        if real.get_kind() != ImmKind::FMov {
+            panic!("Expected Imm32 with FMov kind, found {:?}", real.get_kind());
         }
+        let value = real.get_value();
+        if value & 0xFFu32 != value {
+            panic!("Value format error: Found {value:#x}");
+        }
+        Self(fp8aarch_to_fp32(value as u8))
     }
 
-    fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
-        write!(formatter.writer, "#{:e}", self.0)
+    fn into_real(self) -> Imm32 {
+        let Self(value) = self;
+        let Some(x) = imm_traits::try_cast_f32_to_aarch8(value) else {
+            panic!("Value error: {value} cannot cast to FMovImm32");
+        };
+        Imm32(x as u32, ImmKind::FMov)
+    }
+
+    fn insert_to_real(self, real: Imm32) -> Imm32 {
+        if real.get_kind() != ImmKind::FMov {
+            panic!("Expected Imm32 with FMov kind, but found {real:?}");
+        }
+        self.into_real()
+    }
+
+    fn fmt_asm(&self, formatter: &mut FuncFormatContext<'_>) -> std::fmt::Result {
+        write!(formatter.writer, "#{:.20e}", self.0)
     }
 }
 
@@ -1304,7 +1306,7 @@ impl ImmFMov64 {
         if imm_traits::try_cast_f64_to_aarch8(value).is_some() {
             Self(value)
         } else {
-            panic!("Invalid immediate value: {} for FMov64 kind", value);
+            panic!("Invalid immediate value: {value} for FMov64 kind");
         }
     }
 }
@@ -1331,54 +1333,69 @@ impl IMirSubOperand for ImmFMov64 {
     }
 
     fn from_mir(mir: MirOperand) -> Self {
-        if let MirOperand::Imm64(Imm64(value, flag)) = mir {
-            if flag == ImmKind::FMov {
-                Self(f64::from_bits(value))
-            } else {
-                panic!("Expected Imm64 with FMov kind, found {:?}", flag);
-            }
-        } else {
-            panic!("Expected MirOperand::Imm64, found {:?}", mir);
-        }
+        let MirOperand::Imm64(x) = mir else {
+            panic!("Expected MirOperand::Imm64, found {mir:?}");
+        };
+        Self::from_real(x)
     }
 
     fn into_mir(self) -> MirOperand {
-        MirOperand::Imm64(Imm64(self.0.to_bits(), ImmKind::FMov))
+        self.into_real().into_mir()
     }
 
     fn try_from_real(real: Imm64) -> Option<Self> {
-        if real.get_kind() == ImmKind::FMov {
-            Some(Self(f64::from_bits(real.get_value())))
-        } else {
-            None
+        if real.get_kind() != ImmKind::FMov {
+            return None;
         }
+        let imm = real.get_value();
+        if imm & 0xFFu64 != imm {
+            return None;
+        }
+        Some(Self(fp8aarch_to_fp64(imm as u8)))
     }
 
     fn from_real(real: Imm64) -> Self {
-        if real.get_kind() == ImmKind::FMov {
-            Self(f64::from_bits(real.get_value()))
-        } else {
-            panic!("Expected Imm64 with FMov kind, found {:?}", real.get_kind());
+        if real.get_kind() != ImmKind::FMov {
+            panic!("Expected Imm64 with FMov kind, found {real:?}");
         }
+        let imm = real.get_value();
+        if imm & 0xFFu64 != imm {
+            panic!("Immediate {imm:#x} bits not available for FMov64");
+        }
+        Self(fp8aarch_to_fp64(imm as u8))
     }
 
     fn into_real(self) -> Imm64 {
-        Imm64(self.0.to_bits(), ImmKind::FMov)
+        let Self(value) = self;
+        let Some(x) = imm_traits::try_cast_f64_to_aarch8(value) else {
+            panic!("Value error: {value} cannot cast to FMovImm64");
+        };
+        Imm64(x as u64, ImmKind::FMov)
     }
 
     fn insert_to_real(self, real: Imm64) -> Imm64 {
-        if real.get_kind() == ImmKind::FMov {
-            Imm64(self.0.to_bits(), ImmKind::FMov)
-        } else {
-            panic!(
-                "Invalid immediate value: {} for flags: {:?}",
-                self.0,
-                real.get_kind()
-            );
+        if real.get_kind() != ImmKind::FMov {
+            panic!("Expected Imm64 with FMov kind, but found {real:?}");
         }
+        self.into_real()
     }
 
     fn fmt_asm(&self, formatter: &mut crate::mir::fmt::FuncFormatContext<'_>) -> std::fmt::Result {
         write!(formatter.writer, "#{:e}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod testing {
+    use crate::mir::operand::{imm::ImmFMov32, IMirSubOperand};
+
+    #[test]
+    fn test_imm_fmov32() {
+        let imm = ImmFMov32::new(1.0);
+        println!("{imm:?}");
+        println!("{:?}", imm.into_mir());
+        println!("{:?}", imm.into_real());
+
+        println!("{:.20e}", f32::from_bits(0x40b00000))
     }
 }

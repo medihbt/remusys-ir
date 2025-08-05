@@ -275,6 +275,14 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         // 32位到64位浮点转换指令
         MirOP::FCvtAS32F64 => "fcvtas",
         MirOP::FCvtAU32F64 => "fcvtau",
+        MirOP::FCvtMS32F64 => "fcvtms",
+        MirOP::FCvtMU32F64 => "fcvtmu",
+        MirOP::FCvtNS32F64 => "fcvtns",
+        MirOP::FCvtNU32F64 => "fcvtnu",
+        MirOP::FCvtPS32F64 => "fcvtps",
+        MirOP::FCvtPU32F64 => "fcvtpu",
+        MirOP::FCvtZS32F64 => "fcvtzs",
+        MirOP::FCvtZU32F64 => "fcvtzu",
 
         // 64位浮点一元运算指令
         MirOP::FMov64R => "fmov",

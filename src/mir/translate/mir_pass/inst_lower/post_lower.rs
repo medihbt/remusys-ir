@@ -186,7 +186,7 @@ fn lower_ldimm_f32(inst: &MirLdImmF32, actions: &mut VecDeque<PostLowerAction>) 
     let dst = FPR32::from_real(inst.get_rd());
     let imm = inst.get_src();
 
-    if let Some(src) = ImmFMov32::try_from_real(imm.zext_to_imm64()) {
+    if let Some(src) = ImmFMov32::try_from_real(imm) {
         let fmov_inst = FMov32I::new(MirOP::FMov32I, dst, src);
         actions.push_back(PushFront(fmov_inst.into_mir()));
         actions.push_back(DeleteThis);

@@ -7140,7 +7140,19 @@ impl IMirSubInst for UnaG32F64 {
         &self._operands[1usize..2usize]
     }
     fn accepts_opcode(opcode: MirOP) -> bool {
-        matches!(opcode, MirOP::FCvtAS32F64 | MirOP::FCvtAU32F64)
+        matches!(
+            opcode,
+            MirOP::FCvtAS32F64
+                | MirOP::FCvtAU32F64
+                | MirOP::FCvtMS32F64
+                | MirOP::FCvtMU32F64
+                | MirOP::FCvtNS32F64
+                | MirOP::FCvtNU32F64
+                | MirOP::FCvtPS32F64
+                | MirOP::FCvtPU32F64
+                | MirOP::FCvtZS32F64
+                | MirOP::FCvtZU32F64
+        )
     }
     fn new_empty(opcode: MirOP) -> Self {
         if !Self::accepts_opcode(opcode) {
