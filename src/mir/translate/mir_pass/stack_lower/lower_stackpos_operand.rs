@@ -153,6 +153,9 @@ fn lower_stackpos_operands_for_inst(
         MirInst::LoadGr64Base(inst) => {
             lower_stackpos_ldst::lower_stackpos_for_ldr64base(inst, insts, stack, tmpreg, dsp, sp)
         }
+        MirInst::LdrSWBase(inst) => {
+            lower_stackpos_ldst::lower_stackpos_for_ldrsw(inst, insts, stack, tmpreg, dsp, sp)
+        }
         MirInst::LoadF32Base(inst) => {
             lower_stackpos_ldst::lower_stackpos_for_ldrf32base(inst, insts, stack, tmpreg, dsp, sp)
         }

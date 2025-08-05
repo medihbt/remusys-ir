@@ -960,6 +960,24 @@ pub fn fmt_load_gr64(
     write!(formatter, "]")
 }
 
+pub fn fmt_load_g64g32(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    ldrsw: &LoadG64G32,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    ldrsw.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    ldrsw.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    ldrsw.get_rm().fmt_asm(formatter)?;
+    if let Some(rm_op) = ldrsw.get_rm_op() {
+        write!(formatter, ", {rm_op}")?;
+    }
+    write!(formatter, "]")
+}
+
 pub fn fmt_load_gr32(
     formatter: &mut FuncFormatContext,
     opcode: MirOP,
@@ -1027,6 +1045,21 @@ pub fn fmt_load_gr64_base(
     load_gr64_base.get_rn().fmt_asm(formatter)?;
     write!(formatter, ", ")?;
     load_gr64_base.get_rm().fmt_asm(formatter)?;
+    write!(formatter, "]")
+}
+
+pub fn fmt_ldrsw_base(
+    formatter: &mut FuncFormatContext,
+    opcode: MirOP,
+    ldrsw: &LdrSWBase,
+) -> std::fmt::Result {
+    let name = opcode_get_name_str(opcode);
+    write!(formatter, "{name} ")?;
+    ldrsw.get_rd().fmt_asm(formatter)?;
+    write!(formatter, ", [")?;
+    ldrsw.get_rn().fmt_asm(formatter)?;
+    write!(formatter, ", ")?;
+    ldrsw.get_rm().fmt_asm(formatter)?;
     write!(formatter, "]")
 }
 

@@ -230,6 +230,9 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::LoadGr64(load_gr64) => {
                 format_inst::fmt_load_gr64(self, inst.get_opcode(), load_gr64)
             }
+            MirInst::LoadG64G32(ldrsw) => {
+                format_inst::fmt_load_g64g32(self, inst.get_opcode(), ldrsw)
+            }
             MirInst::LoadGr32(load_gr32) => {
                 format_inst::fmt_load_gr32(self, inst.get_opcode(), load_gr32)
             }
@@ -241,6 +244,9 @@ impl<'a> FuncFormatContext<'a> {
             }
             MirInst::LoadGr64Base(load_gr64_base) => {
                 format_inst::fmt_load_gr64_base(self, inst.get_opcode(), load_gr64_base)
+            }
+            MirInst::LdrSWBase(ldrsw) => {
+                format_inst::fmt_ldrsw_base(self, inst.get_opcode(), ldrsw)
             }
             MirInst::LoadGr32Base(load_gr32_base) => {
                 format_inst::fmt_load_gr32_base(self, inst.get_opcode(), load_gr32_base)
@@ -395,6 +401,7 @@ impl<'a> FuncFormatContext<'a> {
             MirInst::MirGEP(gep) => gep.fmt_asm(self),
             MirInst::MirComment(comment) => comment.fmt_asm(self),
             MirInst::MirCommentedInst(commented_inst) => commented_inst.fmt_asm(self),
+            MirInst::MirFuncPrologue(inst) => inst.fmt_asm(self),
         }
     }
 }

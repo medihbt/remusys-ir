@@ -352,6 +352,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrHGr32 => "ldrh",
         MirOP::LdrSBGr32 => "ldrsb",
         MirOP::LdrSHGr32 => "ldrsh",
+        MirOP::LdrSW | MirOP::LdrSWOG32 => "ldrsw",
         MirOP::StrGr32 => "str",
         MirOP::StrBGr32 => "strb",
         MirOP::StrHGr32 => "strh",
@@ -386,6 +387,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrHGr32Base => "ldrh",
         MirOP::LdrSBGr32Base => "ldrsb",
         MirOP::LdrSHGr32Base => "ldrsh",
+        MirOP::LdrSWBase => "ldrsw",
         MirOP::StrGr32Base => "str",
         MirOP::StrBGr32Base => "strb",
         MirOP::StrHGr32Base => "strh",
@@ -399,6 +401,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::StrGr32BaseS => "str",
         MirOP::StrBGr32BaseS => "strb",
         MirOP::StrHGr32BaseS => "strh",
+        MirOP::LdrSWBaseS => "ldrsw",
 
         // 浮点加载/存储指令（基址偏移寻址）
         MirOP::LdrF64Base | MirOP::LdrF32Base => "ldr",
@@ -438,6 +441,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::LdrHGr64Literal => "ldrh",
         MirOP::LdrSBGr64Literal => "ldrsb",
         MirOP::LdrSHGr64Literal => "ldrsh",
+        MirOP::LdrSWLiteral => "ldrsw",
 
         // 32位加载指令（字面量寻址）
         MirOP::LdrGr32Literal => "ldr",
@@ -489,6 +493,7 @@ pub fn opcode_get_name_str(opcode: MirOP) -> &'static str {
         MirOP::MirSaveRegs => "mir.save_regs",
         MirOP::MirRestoreRegs => "mir.restore_regs",
         MirOP::MirRestoreHostRegs => "mir.restore_host_regs",
+        MirOP::MirFuncPrologue => "mir.func_prologue",
 
         MirOP::MirGEP => "mir.gep",
         MirOP::MirComment => ";",

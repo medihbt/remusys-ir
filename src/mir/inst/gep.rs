@@ -318,7 +318,8 @@ impl MirGEP {
                     write!(f, ", ")?;
                 }
                 let (offset, weight) = self.get_offset_weight(i);
-                write!(f, "{offset:?} x {weight}")?;
+                offset.fmt_asm(f)?;
+                write!(f, " x {weight}")?;
             }
             write!(f, "]")?;
         }

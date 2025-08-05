@@ -268,7 +268,8 @@ impl<'a> BinGenContext<'a> {
 
         // Step 3: Generate `sub res, lhs, res`
         self.opcode = O::Sub;
-        self.do_generate_iaddsub_by_mir(res.into(), O::Sub, lhs, res_pure);
+        let inst = self.do_generate_iaddsub_by_mir(res.into(), O::Sub, lhs, res_pure);
+        self.out_insts.push_back(inst);
     }
 
     fn generate_frem(mut self) {
@@ -293,7 +294,8 @@ impl<'a> BinGenContext<'a> {
 
         // Step 3: Generate `fsub res, lhs, res`
         self.opcode = O::Fsub;
-        Self::do_generate_faddsub_by_mir(lhs, res_pure, res.into(), O::Fsub);
+        let inst = Self::do_generate_faddsub_by_mir(lhs, res_pure, res.into(), O::Fsub);
+        self.out_insts.push_back(inst);
     }
 
     fn generate_bitwise(mut self) {

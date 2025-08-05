@@ -350,6 +350,9 @@ pub enum MirOP {
     LdrHGr64,
     LdrSBGr64,
     LdrSHGr64,
+    LdrSW,
+    #[doc = "Opcode class: LoadG64G32"]
+    LdrSWOG32,
     #[doc = "Opcode class: LoadGr32"]
     LdrGr32,
     LdrBGr32,
@@ -378,6 +381,8 @@ pub enum MirOP {
     LdrHGr64Base,
     LdrSBGr64Base,
     LdrSHGr64Base,
+    #[doc = "Opcode class: LdrSWBase"]
+    LdrSWBase,
     #[doc = "Opcode class: LoadGr32Base"]
     LdrGr32Base,
     LdrBGr32Base,
@@ -394,6 +399,7 @@ pub enum MirOP {
     LdrHGr64BaseS,
     LdrSBGr64BaseS,
     LdrSHGr64BaseS,
+    LdrSWBaseS,
     #[doc = "Opcode class: LoadGr32BaseS"]
     LdrGr32BaseS,
     LdrBGr32BaseS,
@@ -462,6 +468,7 @@ pub enum MirOP {
     LdrHGr64Literal,
     LdrSBGr64Literal,
     LdrSHGr64Literal,
+    LdrSWLiteral,
     #[doc = "Opcode class: LoadGr32Literal"]
     LdrGr32Literal,
     LdrBGr32Literal,
@@ -544,6 +551,8 @@ pub enum MirOP {
     MirComment,
     #[doc = "Opcode class: MirCommentedInst"]
     MirCommentedInst,
+    #[doc = "Opcode class: MirFuncPrologue"]
+    MirFuncPrologue,
 }
 impl MirOP {
     pub fn as_str(&self) -> &'static str {
@@ -826,6 +835,8 @@ impl MirOP {
             MirOP::LdrHGr64 => "LdrHGr64",
             MirOP::LdrSBGr64 => "LdrSBGr64",
             MirOP::LdrSHGr64 => "LdrSHGr64",
+            MirOP::LdrSW => "LdrSW",
+            MirOP::LdrSWOG32 => "LdrSWOG32",
             MirOP::LdrGr32 => "LdrGr32",
             MirOP::LdrBGr32 => "LdrBGr32",
             MirOP::LdrHGr32 => "LdrHGr32",
@@ -846,6 +857,7 @@ impl MirOP {
             MirOP::LdrHGr64Base => "LdrHGr64Base",
             MirOP::LdrSBGr64Base => "LdrSBGr64Base",
             MirOP::LdrSHGr64Base => "LdrSHGr64Base",
+            MirOP::LdrSWBase => "LdrSWBase",
             MirOP::LdrGr32Base => "LdrGr32Base",
             MirOP::LdrBGr32Base => "LdrBGr32Base",
             MirOP::LdrHGr32Base => "LdrHGr32Base",
@@ -858,6 +870,7 @@ impl MirOP {
             MirOP::LdrHGr64BaseS => "LdrHGr64BaseS",
             MirOP::LdrSBGr64BaseS => "LdrSBGr64BaseS",
             MirOP::LdrSHGr64BaseS => "LdrSHGr64BaseS",
+            MirOP::LdrSWBaseS => "LdrSWBaseS",
             MirOP::LdrGr32BaseS => "LdrGr32BaseS",
             MirOP::LdrBGr32BaseS => "LdrBGr32BaseS",
             MirOP::LdrHGr32BaseS => "LdrHGr32BaseS",
@@ -906,6 +919,7 @@ impl MirOP {
             MirOP::LdrHGr64Literal => "LdrHGr64Literal",
             MirOP::LdrSBGr64Literal => "LdrSBGr64Literal",
             MirOP::LdrSHGr64Literal => "LdrSHGr64Literal",
+            MirOP::LdrSWLiteral => "LdrSWLiteral",
             MirOP::LdrGr32Literal => "LdrGr32Literal",
             MirOP::LdrBGr32Literal => "LdrBGr32Literal",
             MirOP::LdrHGr32Literal => "LdrHGr32Literal",
@@ -952,6 +966,7 @@ impl MirOP {
             MirOP::MirGEP => "MirGEP",
             MirOP::MirComment => "MirComment",
             MirOP::MirCommentedInst => "MirCommentedInst",
+            MirOP::MirFuncPrologue => "MirFuncPrologue",
         }
     }
 }
@@ -1242,6 +1257,8 @@ impl std::str::FromStr for MirOP {
             "LdrHGr64" => Ok(MirOP::LdrHGr64),
             "LdrSBGr64" => Ok(MirOP::LdrSBGr64),
             "LdrSHGr64" => Ok(MirOP::LdrSHGr64),
+            "LdrSW" => Ok(MirOP::LdrSW),
+            "LdrSWOG32" => Ok(MirOP::LdrSWOG32),
             "LdrGr32" => Ok(MirOP::LdrGr32),
             "LdrBGr32" => Ok(MirOP::LdrBGr32),
             "LdrHGr32" => Ok(MirOP::LdrHGr32),
@@ -1262,6 +1279,7 @@ impl std::str::FromStr for MirOP {
             "LdrHGr64Base" => Ok(MirOP::LdrHGr64Base),
             "LdrSBGr64Base" => Ok(MirOP::LdrSBGr64Base),
             "LdrSHGr64Base" => Ok(MirOP::LdrSHGr64Base),
+            "LdrSWBase" => Ok(MirOP::LdrSWBase),
             "LdrGr32Base" => Ok(MirOP::LdrGr32Base),
             "LdrBGr32Base" => Ok(MirOP::LdrBGr32Base),
             "LdrHGr32Base" => Ok(MirOP::LdrHGr32Base),
@@ -1274,6 +1292,7 @@ impl std::str::FromStr for MirOP {
             "LdrHGr64BaseS" => Ok(MirOP::LdrHGr64BaseS),
             "LdrSBGr64BaseS" => Ok(MirOP::LdrSBGr64BaseS),
             "LdrSHGr64BaseS" => Ok(MirOP::LdrSHGr64BaseS),
+            "LdrSWBaseS" => Ok(MirOP::LdrSWBaseS),
             "LdrGr32BaseS" => Ok(MirOP::LdrGr32BaseS),
             "LdrBGr32BaseS" => Ok(MirOP::LdrBGr32BaseS),
             "LdrHGr32BaseS" => Ok(MirOP::LdrHGr32BaseS),
@@ -1322,6 +1341,7 @@ impl std::str::FromStr for MirOP {
             "LdrHGr64Literal" => Ok(MirOP::LdrHGr64Literal),
             "LdrSBGr64Literal" => Ok(MirOP::LdrSBGr64Literal),
             "LdrSHGr64Literal" => Ok(MirOP::LdrSHGr64Literal),
+            "LdrSWLiteral" => Ok(MirOP::LdrSWLiteral),
             "LdrGr32Literal" => Ok(MirOP::LdrGr32Literal),
             "LdrBGr32Literal" => Ok(MirOP::LdrBGr32Literal),
             "LdrHGr32Literal" => Ok(MirOP::LdrHGr32Literal),
@@ -1368,6 +1388,7 @@ impl std::str::FromStr for MirOP {
             "MirGEP" => Ok(MirOP::MirGEP),
             "MirComment" => Ok(MirOP::MirComment),
             "MirCommentedInst" => Ok(MirOP::MirCommentedInst),
+            "MirFuncPrologue" => Ok(MirOP::MirFuncPrologue),
             _ => Err(format!("Unknown opcode: {}", s)),
         }
     }

@@ -70,6 +70,34 @@ pub(crate) fn lower_stackpos_for_ldr64base(
     }
 }
 
+pub(crate) fn lower_stackpos_for_ldrsw(
+    inst: &LdrSWBase,
+    insts: &mut VecDeque<MirInst>,
+    stack: &MirStackLayout,
+    tmpreg: GPR64,
+    extra_delta_sp: u64,
+    sp: GPR64,
+) -> LowerPosAction {
+    let rd = GPR64::from_real(inst.get_rd());
+    let base_ptr = GPR64::from_real(inst.get_rn());
+    let ImmLSP32(offset_op) = inst.get_rm();
+
+    let sp_offset = extra_delta_sp + find_original_sp_offset(stack, base_ptr);
+    let new_offset = offset_op as u64 + sp_offset;
+    if let Some(new_offset) = ImmLSP32::try_new(new_offset.try_into().unwrap()) {
+        inst.set_rn(GPR64::sp().into_real());
+        inst.set_rm(new_offset);
+        LowerPosAction::Keep
+    } else {
+        let ldr_const64 =
+            LoadConst64::new(MirOP::LoadConst64, tmpreg, Imm64(new_offset, ImmKind::Full));
+        insts.push_back(ldr_const64.into_mir());
+        let ldrr = LoadGr64::new(MirOP::LdrGr64, rd, sp, tmpreg, None);
+        insts.push_back(ldrr.into_mir());
+        LowerPosAction::Replace
+    }
+}
+
 pub(crate) fn lower_stackpos_for_ldrf32base(
     inst: &LoadF32Base,
     insts: &mut VecDeque<MirInst>,

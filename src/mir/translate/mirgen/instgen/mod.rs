@@ -4,6 +4,7 @@ use crate::{
         ValueSSA,
         inst::{CmpOp, InstData, InstDataKind, InstRef, UseData},
         module::Module,
+        util::numbering::IRValueNumberMap,
     },
     mir::{
         inst::{
@@ -70,9 +71,12 @@ pub fn dispatch_inst(
     operand_map: &OperandMap,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
+    numbers: &IRValueNumberMap,
 ) -> Result<(), InstDispatchError> {
     let ir_ref = inst_info.ir;
     let kind = inst_info.kind;
+
+    let number = numbers.inst_get_number(ir_ref);
 
     let alloc_value = ir_module.borrow_value_alloc();
     let alloc_inst = &alloc_value.insts;
@@ -178,7 +182,13 @@ pub fn dispatch_inst(
         }
     };
 
-    let comment = MirComment::new(format!(" -- Ended IR inst {ir_ref:?} kind {kind:?}\n"));
+    let comment = MirComment::new({
+        if let Some(x) = number {
+            format!(" -- Ended IR inst {ir_ref:?} kind {kind:?} number %{x}\n")
+        } else {
+            format!(" -- Ended IR inst {ir_ref:?} kind {kind:?} numberless\n")
+        }
+    });
     out_insts.push_back(comment.into_mir());
 
     Ok(())

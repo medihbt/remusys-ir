@@ -155,6 +155,8 @@ impl MirTranslateCtx {
         // Step 1.5 翻译每个基本块的指令
         let (operand_map, inst_template) =
             OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs.clone(), block_map);
+        let numbers =
+            IRValueNumberMap::from_func(&self.ir_module, cfg.func, NumberOption::ignore_all());
         let entry_block = operand_map.blocks[0].mir;
         for inst in inst_template {
             let mut mir_builder = MirBuilder::new(&mut self.mir_module);
@@ -162,7 +164,7 @@ impl MirTranslateCtx {
             mir_builder.add_inst(inst);
         }
         for i in 0..operand_map.blocks.len() {
-            self.inst_dispatch_for_one_mir_block(&operand_map, i);
+            self.inst_dispatch_for_one_mir_block(&operand_map, i, &numbers);
         }
     }
 
@@ -360,13 +362,24 @@ impl MirTranslateCtx {
     }
 
     /// Step 1.5: 翻译每个基本块的指令
-    fn inst_dispatch_for_one_mir_block(&mut self, operand_map: &OperandMap, block_index: usize) {
+    fn inst_dispatch_for_one_mir_block(
+        &mut self,
+        operand_map: &OperandMap,
+        block_index: usize,
+        numbers: &IRValueNumberMap,
+    ) {
         let block_info = &operand_map.blocks[block_index];
         let ir_block = block_info.ir;
         let mir_block = block_info.mir;
 
         let mut mir_builder = MirBuilder::new(&mut self.mir_module);
         mir_builder.set_focus(MirFocus::Block(Rc::clone(&operand_map.func), mir_block));
+        let number = numbers.block_get_number(ir_block);
+        if let Some(number) = number {
+            mir_builder.add_comment(format!("Begin IR block {ir_block:?} (%{number})"));
+        } else {
+            mir_builder.add_comment(format!("Begin IR block {ir_block:?} (numberless)"));
+        }
 
         // Step .1: 生成基本块的 MIR
         let mut state = InstDispatchState::new();
@@ -381,6 +394,7 @@ impl MirTranslateCtx {
                 operand_map,
                 vreg_alloc,
                 &mut inst_queue,
+                numbers,
             ) {
                 Ok(()) => {
                     let mut inst_ref = MirInstRef::new_null();

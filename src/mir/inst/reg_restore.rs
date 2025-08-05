@@ -1,6 +1,8 @@
 use crate::mir::{
     fmt::FuncFormatContext,
-    inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
+    inst::{
+        IMirSubInst, MirInstCommon, impls::*, inst::MirInst, mirops::MirComment, opcode::MirOP,
+    },
     module::stack::MirStackLayout,
     operand::{
         IMirSubOperand, MirOperand,
@@ -182,6 +184,12 @@ impl MirRestoreRegs {
         let sp = GPR64::sp();
         let add_sp = Bin64RC::new(MirOP::Add64I, sp, sp, ImmCalc::new(size));
         out_insts.push_back(MirInst::Bin64RC(add_sp));
+
+        // 然后放个注释上去
+        let comment = MirComment::new(format!(
+            " -- Restored {num_regs} regs, released {size} bytes of stack space [ SP = SP + {size:#x} ]",
+        ));
+        out_insts.push_back(comment.into_mir());
     }
 }
 
@@ -292,6 +300,12 @@ impl MirRestoreHostRegs {
         let var_section_size = parent_stack.vars_size;
         let reg_section_size = parent_stack.saved_regs_section_size();
         let sp = GPR64::sp();
+
+        // Step 0: 放个注释上去
+        let comment = MirComment::new(format!(
+            " -- Funtion lifetime ended: vars section {var_section_size}, reg section {reg_section_size}",
+        ));
+        out_insts.push_back(comment.into_mir());
 
         // Step 1: 收回局部变量段的栈空间
         if var_section_size == 0 {

@@ -1,6 +1,7 @@
 pub mod addr;
 pub mod comment;
 pub mod cond;
+pub mod func_prologue;
 pub mod gep;
 pub mod impls;
 pub mod inst;

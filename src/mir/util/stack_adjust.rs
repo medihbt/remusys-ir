@@ -274,7 +274,7 @@ impl MirSpAdjustTree {
             };
             if node.block == last_parent_bb
                 && regset == back_set
-                && last_reg_restore.get_next_ref(alloc_inst) == Some(save_reg)
+                && Self::inst_range_near(alloc_inst, last_reg_restore, save_reg)
             {
                 // 当前区间和上一个区间相邻, 合并它们
                 back_range.end += 1;
@@ -288,6 +288,20 @@ impl MirSpAdjustTree {
 
         to_merge.retain(|(_, range)| range.len() > 1);
         to_merge
+    }
+
+    fn inst_range_near(alloc_inst: &Slab<MirInst>, prev: MirInstRef, next: MirInstRef) -> bool {
+        let mut curr = prev.get_next_ref(alloc_inst);
+        while let Some(instref) = curr {
+            match instref.to_data(alloc_inst) {
+                MirInst::MirComment(..) | MirInst::MirCommentedInst(..) => {
+                    curr = instref.get_next_ref(alloc_inst);
+                    continue;
+                }
+                _ => return instref == next,
+            }
+        }
+        false
     }
 
     fn merge_range_interval(

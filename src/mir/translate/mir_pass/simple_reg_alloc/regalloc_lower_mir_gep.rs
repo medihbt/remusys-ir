@@ -60,6 +60,12 @@ pub(super) fn lower_gep(
 
     lower_gep_base(vreg_info, stack, loads_before, base, dst);
 
+    let weight_reg = loop {
+        let tmpr = tmpr_alloc.alloc_gpr64();
+        if !tmpr.same_pos_as(dst) && !base.matches_reg(tmpr) {
+            break tmpr;
+        }
+    };
     for (off, weight) in gep.iter_offsets() {
         match off {
             MirGEPOffset::Imm(off) => {
@@ -79,22 +85,20 @@ pub(super) fn lower_gep(
                 } else {
                     reg
                 };
-                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset, weight);
+                lower_gep_gpr64_offset(loads_before, weight_reg, dst, offset, weight);
             }
             MirGEPOffset::S32(off) => {
-                let offset32 = if !off.is_virtual() {
-                    off
-                } else {
+                let (offset64, inst) = if off.is_virtual() {
                     let stackpos = vreg_info.findpos_full_unwrap(stack, off);
-                    let tmpr = tmpr.trunc_to_gpr32();
-                    let ldr = LoadGr32Base::new(MirOP::LdrGr32Base, tmpr, stackpos, ImmLSP32(0));
-                    loads_before.push_back(ldr.into_mir());
-                    tmpr
+                    let ldrsw = LdrSWBase::new(MirOP::LdrSWBase, tmpr, stackpos, ImmLSP32(0));
+                    (tmpr, ldrsw.into_mir())
+                } else {
+                    let offset64 = off.to_gpr64();
+                    let sxtw = ExtR::new(MirOP::SXTW64, offset64, off);
+                    (offset64, sxtw.into_mir())
                 };
-                let offset64 = offset32.to_gpr64();
-                let sxtx = ExtR::new(MirOP::SXTW64, offset64, offset32);
-                loads_before.push_back(sxtx.into_mir());
-                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset64, weight);
+                loads_before.push_back(inst);
+                lower_gep_gpr64_offset(loads_before, weight_reg, dst, offset64, weight);
             }
             MirGEPOffset::U32(off) => {
                 let offset = if !off.is_virtual() {
@@ -107,7 +111,7 @@ pub(super) fn lower_gep(
                     tmpr
                 };
                 let offset = offset.to_gpr64();
-                lower_gep_gpr64_offset(loads_before, &mut tmpr_alloc, dst, base, offset, weight);
+                lower_gep_gpr64_offset(loads_before, weight_reg, dst, offset, weight);
             }
         }
     }
@@ -183,9 +187,8 @@ fn lower_gep_immoff(loads: &mut VecDeque<MirInst>, dst: GPR64, tmpr: GPR64, weig
 
 fn lower_gep_gpr64_offset(
     loads_before: &mut VecDeque<MirInst>,
-    tmpr_alloc: &mut SRATmpRegAlloc,
+    weight_reg: GPR64,
     dst: GPR64,
-    base: MirGEPBase,
     offset: GPR64,
     weight: u64,
 ) {
@@ -198,12 +201,6 @@ fn lower_gep_gpr64_offset(
         let add = Bin64R::new(MirOP::Add64R, dst, dst, offset, Some(rm_op));
         loads_before.push_back(add.into_mir());
     } else {
-        let weight_reg = loop {
-            let tmpr = tmpr_alloc.alloc_gpr64();
-            if !tmpr.same_pos_as(dst) && !base.matches_reg(tmpr) {
-                break tmpr;
-            }
-        };
         let ldrconst = LoadConst64::new(MirOP::LoadConst64, weight_reg, Imm64::full(weight as u64));
         loads_before.push_back(ldrconst.into_mir());
         let madd = TenaryG64::new(MirOP::MAdd64, dst, offset, weight_reg, dst);

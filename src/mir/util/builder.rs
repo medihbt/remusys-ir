@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::{
     base::INullableValue,
     mir::{
-        inst::{MirInstRef, inst::MirInst},
+        inst::{IMirSubInst, MirInstRef, inst::MirInst, mirops::MirComment},
         module::{
             MirGlobal, MirGlobalRef, MirModule,
             block::MirBlockRef,
@@ -142,5 +142,10 @@ impl<'a> MirBuilder<'a> {
         let inst_ref = MirInstRef::from_mut_module(self.mir_module, inst);
         self.add_inst_ref(inst_ref);
         inst_ref
+    }
+
+    pub fn add_comment<T: Into<String>>(&mut self, comment: T) -> MirInstRef {
+        let comment_inst = MirComment::new(comment.into());
+        self.add_inst(comment_inst.into_mir())
     }
 }

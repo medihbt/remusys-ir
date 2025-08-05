@@ -74,6 +74,7 @@ pub enum MirInst {
     TenaryF64(super::impls::TenaryF64),
     TenaryF32(super::impls::TenaryF32),
     LoadGr64(super::impls::LoadGr64),
+    LoadG64G32(super::impls::LoadG64G32),
     LoadGr32(super::impls::LoadGr32),
     LoadF64(super::impls::LoadF64),
     LoadF32(super::impls::LoadF32),
@@ -82,6 +83,7 @@ pub enum MirInst {
     StoreF64(super::impls::StoreF64),
     StoreF32(super::impls::StoreF32),
     LoadGr64Base(super::impls::LoadGr64Base),
+    LdrSWBase(super::impls::LdrSWBase),
     LoadGr32Base(super::impls::LoadGr32Base),
     LoadF64Base(super::impls::LoadF64Base),
     LoadF32Base(super::impls::LoadF32Base),
@@ -142,6 +144,7 @@ pub enum MirInst {
     MirGEP(super::mirops::MirGEP),
     MirComment(super::mirops::MirComment),
     MirCommentedInst(super::mirops::MirCommentedInst),
+    MirFuncPrologue(super::mirops::MirFuncPrologue),
 }
 impl MirInst {
     pub fn get_common(&self) -> &super::MirInstCommon {
@@ -217,6 +220,7 @@ impl MirInst {
             MirInst::TenaryF64(inst) => inst.get_common(),
             MirInst::TenaryF32(inst) => inst.get_common(),
             MirInst::LoadGr64(inst) => inst.get_common(),
+            MirInst::LoadG64G32(inst) => inst.get_common(),
             MirInst::LoadGr32(inst) => inst.get_common(),
             MirInst::LoadF64(inst) => inst.get_common(),
             MirInst::LoadF32(inst) => inst.get_common(),
@@ -225,6 +229,7 @@ impl MirInst {
             MirInst::StoreF64(inst) => inst.get_common(),
             MirInst::StoreF32(inst) => inst.get_common(),
             MirInst::LoadGr64Base(inst) => inst.get_common(),
+            MirInst::LdrSWBase(inst) => inst.get_common(),
             MirInst::LoadGr32Base(inst) => inst.get_common(),
             MirInst::LoadF64Base(inst) => inst.get_common(),
             MirInst::LoadF32Base(inst) => inst.get_common(),
@@ -285,6 +290,7 @@ impl MirInst {
             MirInst::MirGEP(inst) => inst.get_common(),
             MirInst::MirComment(inst) => inst.get_common(),
             MirInst::MirCommentedInst(inst) => inst.get_common(),
+            MirInst::MirFuncPrologue(inst) => inst.get_common(),
         }
     }
     pub fn common_mut(&mut self) -> &mut super::MirInstCommon {
@@ -360,6 +366,7 @@ impl MirInst {
             MirInst::TenaryF64(inst) => inst.common_mut(),
             MirInst::TenaryF32(inst) => inst.common_mut(),
             MirInst::LoadGr64(inst) => inst.common_mut(),
+            MirInst::LoadG64G32(inst) => inst.common_mut(),
             MirInst::LoadGr32(inst) => inst.common_mut(),
             MirInst::LoadF64(inst) => inst.common_mut(),
             MirInst::LoadF32(inst) => inst.common_mut(),
@@ -368,6 +375,7 @@ impl MirInst {
             MirInst::StoreF64(inst) => inst.common_mut(),
             MirInst::StoreF32(inst) => inst.common_mut(),
             MirInst::LoadGr64Base(inst) => inst.common_mut(),
+            MirInst::LdrSWBase(inst) => inst.common_mut(),
             MirInst::LoadGr32Base(inst) => inst.common_mut(),
             MirInst::LoadF64Base(inst) => inst.common_mut(),
             MirInst::LoadF32Base(inst) => inst.common_mut(),
@@ -428,6 +436,7 @@ impl MirInst {
             MirInst::MirGEP(inst) => inst.common_mut(),
             MirInst::MirComment(inst) => inst.common_mut(),
             MirInst::MirCommentedInst(inst) => inst.common_mut(),
+            MirInst::MirFuncPrologue(inst) => inst.common_mut(),
         }
     }
     #[doc = "Returns the opcode of the instruction. This is useful for matching or dispatching logic."]
@@ -507,6 +516,7 @@ impl MirInst {
             MirInst::TenaryF64(inst) => inst.in_operands(),
             MirInst::TenaryF32(inst) => inst.in_operands(),
             MirInst::LoadGr64(inst) => inst.in_operands(),
+            MirInst::LoadG64G32(inst) => inst.in_operands(),
             MirInst::LoadGr32(inst) => inst.in_operands(),
             MirInst::LoadF64(inst) => inst.in_operands(),
             MirInst::LoadF32(inst) => inst.in_operands(),
@@ -515,6 +525,7 @@ impl MirInst {
             MirInst::StoreF64(inst) => inst.in_operands(),
             MirInst::StoreF32(inst) => inst.in_operands(),
             MirInst::LoadGr64Base(inst) => inst.in_operands(),
+            MirInst::LdrSWBase(inst) => inst.in_operands(),
             MirInst::LoadGr32Base(inst) => inst.in_operands(),
             MirInst::LoadF64Base(inst) => inst.in_operands(),
             MirInst::LoadF32Base(inst) => inst.in_operands(),
@@ -575,6 +586,7 @@ impl MirInst {
             MirInst::MirGEP(inst) => inst.in_operands(),
             MirInst::MirComment(inst) => inst.in_operands(),
             MirInst::MirCommentedInst(inst) => inst.in_operands(),
+            MirInst::MirFuncPrologue(inst) => inst.in_operands(),
         }
     }
     pub fn out_operands(&self) -> &[Cell<MirOperand>] {
@@ -650,6 +662,7 @@ impl MirInst {
             MirInst::TenaryF64(inst) => inst.out_operands(),
             MirInst::TenaryF32(inst) => inst.out_operands(),
             MirInst::LoadGr64(inst) => inst.out_operands(),
+            MirInst::LoadG64G32(inst) => inst.out_operands(),
             MirInst::LoadGr32(inst) => inst.out_operands(),
             MirInst::LoadF64(inst) => inst.out_operands(),
             MirInst::LoadF32(inst) => inst.out_operands(),
@@ -658,6 +671,7 @@ impl MirInst {
             MirInst::StoreF64(inst) => inst.out_operands(),
             MirInst::StoreF32(inst) => inst.out_operands(),
             MirInst::LoadGr64Base(inst) => inst.out_operands(),
+            MirInst::LdrSWBase(inst) => inst.out_operands(),
             MirInst::LoadGr32Base(inst) => inst.out_operands(),
             MirInst::LoadF64Base(inst) => inst.out_operands(),
             MirInst::LoadF32Base(inst) => inst.out_operands(),
@@ -718,6 +732,7 @@ impl MirInst {
             MirInst::MirGEP(inst) => inst.out_operands(),
             MirInst::MirComment(inst) => inst.out_operands(),
             MirInst::MirCommentedInst(inst) => inst.out_operands(),
+            MirInst::MirFuncPrologue(inst) => inst.out_operands(),
         }
     }
 }
@@ -795,6 +810,7 @@ impl std::fmt::Debug for MirInst {
             MirInst::TenaryF64(inst) => inst.fmt(f),
             MirInst::TenaryF32(inst) => inst.fmt(f),
             MirInst::LoadGr64(inst) => inst.fmt(f),
+            MirInst::LoadG64G32(inst) => inst.fmt(f),
             MirInst::LoadGr32(inst) => inst.fmt(f),
             MirInst::LoadF64(inst) => inst.fmt(f),
             MirInst::LoadF32(inst) => inst.fmt(f),
@@ -803,6 +819,7 @@ impl std::fmt::Debug for MirInst {
             MirInst::StoreF64(inst) => inst.fmt(f),
             MirInst::StoreF32(inst) => inst.fmt(f),
             MirInst::LoadGr64Base(inst) => inst.fmt(f),
+            MirInst::LdrSWBase(inst) => inst.fmt(f),
             MirInst::LoadGr32Base(inst) => inst.fmt(f),
             MirInst::LoadF64Base(inst) => inst.fmt(f),
             MirInst::LoadF32Base(inst) => inst.fmt(f),
@@ -863,6 +880,7 @@ impl std::fmt::Debug for MirInst {
             MirInst::MirGEP(inst) => inst.fmt(f),
             MirInst::MirComment(inst) => inst.fmt(f),
             MirInst::MirCommentedInst(inst) => inst.fmt(f),
+            MirInst::MirFuncPrologue(inst) => inst.fmt(f),
         }
     }
 }

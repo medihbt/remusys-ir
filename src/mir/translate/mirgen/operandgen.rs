@@ -3,6 +3,7 @@ use std::{collections::VecDeque, rc::Rc};
 use crate::{
     ir::{ValueSSA, block::BlockRef, constant::data::ConstData, global::GlobalRef, inst::InstRef},
     mir::{
+        fmt::FuncFormatContext,
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
         module::{
             MirGlobalRef,
@@ -459,6 +460,16 @@ impl DispatchedReg {
         } else {
             let fbits = f.to_bits();
             Self::G64(Self::make_ldr_for_imm64(fbits, alloc_reg, out_insts))
+        }
+    }
+
+    pub fn fmt_asm(&self, f: &mut FuncFormatContext) -> std::fmt::Result {
+        use DispatchedReg::*;
+        match &self {
+            F32(r) => r.fmt_asm(f),
+            F64(r) => r.fmt_asm(f),
+            G32(r) => r.fmt_asm(f),
+            G64(r) => r.fmt_asm(f),
         }
     }
 }

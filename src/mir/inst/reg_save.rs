@@ -1,6 +1,8 @@
 use crate::mir::{
     fmt::FuncFormatContext,
-    inst::{IMirSubInst, MirInstCommon, impls::*, inst::MirInst, opcode::MirOP},
+    inst::{
+        IMirSubInst, MirInstCommon, impls::*, inst::MirInst, mirops::MirComment, opcode::MirOP,
+    },
     operand::{
         IMirSubOperand, MirOperand,
         imm::{ImmCalc, ImmLSP64},
@@ -159,7 +161,15 @@ impl MirSaveRegs {
         if num_regs == 0 {
             return;
         }
+
         let size = (num_regs * 8).next_multiple_of(16);
+
+        // 放个注释上去
+        let comment = MirComment::new(format!(
+            " -- Saving {num_regs} regs, allocating {size} bytes of stack space [SP = SP - {size:#x}]",
+        ));
+        out_insts.push_back(comment.into_mir());
+
         let sp = GPR64::sp();
         let sub_sp = Bin64RC::new(MirOP::Sub64I, sp, sp, ImmCalc::new(size));
         out_insts.push_back(MirInst::Bin64RC(sub_sp));
