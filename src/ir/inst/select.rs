@@ -1,84 +1,167 @@
-//! Instructions that do not fit into the other categories.
-
-use slab::Slab;
-
 use crate::{
-    base::INullableValue,
-    ir::{ValueSSA, module::Module, opcode::Opcode},
+    ir::{
+        IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use, UseKind,
+        ValueSSA,
+        inst::{ISubInstRef, InstOperands},
+    },
     typing::id::ValTypeID,
 };
+use std::rc::Rc;
 
-use super::{
-    InstDataCommon, InstDataUnique, InstError,
-    checking::check_operand_type_match,
-    usedef::{UseData, UseKind, UseRef},
-};
-
+/// 选择指令
+#[derive(Debug)]
 pub struct SelectOp {
-    pub cond: UseRef,
-    pub true_val: UseRef,
-    pub false_val: UseRef,
+    common: InstCommon,
+    operands: [Rc<Use>; 3],
 }
 
-impl InstDataUnique for SelectOp {
-    fn build_operands(
-        &mut self,
-        common: &mut super::InstDataCommon,
-        alloc_use: &mut Slab<UseData>,
-    ) {
-        self.cond = common.alloc_use(alloc_use, UseKind::SelectCond);
-        self.true_val = common.alloc_use(alloc_use, UseKind::SelectTrueVal);
-        self.false_val = common.alloc_use(alloc_use, UseKind::SelectFalseVal);
+impl ISubInst for SelectOp {
+    fn new_empty(_: Opcode) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Select, ValTypeID::Void),
+            operands: [
+                Use::new(UseKind::SelectCond),
+                Use::new(UseKind::SelectTrue),
+                Use::new(UseKind::SelectFalse),
+            ],
+        }
     }
-
-    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
-        let self_type = common.ret_type;
-        let alloc_use = module.borrow_use_alloc();
-        let cond_value = self.cond.get_operand(&alloc_use);
-        let true_value = self.true_val.get_operand(&alloc_use);
-        let false_value = self.false_val.get_operand(&alloc_use);
-
-        check_operand_type_match(ValTypeID::new_boolean(), cond_value, module)?;
-        check_operand_type_match(self_type, true_value, module)?;
-        check_operand_type_match(self_type, false_value, module)
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        if let InstData::Select(select_op) = inst { Some(select_op) } else { None }
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        if let InstData::Select(select_op) = inst { Some(select_op) } else { None }
+    }
+    fn into_ir(self) -> InstData {
+        InstData::Select(self)
+    }
+    fn get_common(&self) -> &InstCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut InstCommon {
+        &mut self.common
+    }
+    fn is_terminator(&self) -> bool {
+        false
+    }
+    fn get_operands(&self) -> InstOperands {
+        InstOperands::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
     }
 }
 
 impl SelectOp {
-    pub fn new_raw(mut_module: &Module, valtype: ValTypeID) -> (InstDataCommon, Self) {
-        let mut alloc_use = mut_module.borrow_use_alloc_mut();
-        let mut common = InstDataCommon::new(Opcode::Select, valtype, &mut alloc_use);
-        let mut inst = SelectOp {
-            cond: UseRef::new_null(),
-            true_val: UseRef::new_null(),
-            false_val: UseRef::new_null(),
-        };
-        inst.build_operands(&mut common, &mut alloc_use);
-        (common, inst)
+    pub fn new_raw(ret_type: ValTypeID) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Select, ret_type),
+            operands: [
+                Use::new(UseKind::SelectCond),
+                Use::new(UseKind::SelectTrue),
+                Use::new(UseKind::SelectFalse),
+            ],
+        }
     }
 
     pub fn new(
-        mut_module: &Module,
+        allocs: &IRAllocs,
         cond: ValueSSA,
         true_val: ValueSSA,
         false_val: ValueSSA,
-    ) -> Result<(InstDataCommon, Self), InstError> {
-        match (cond, true_val, false_val) {
-            (ValueSSA::None, ..) | (_, ValueSSA::None, _) | (_, _, ValueSSA::None) => {
-                return Err(InstError::OperandNull);
-            }
-            _ => {}
+    ) -> Self {
+        let ret_type = Self::do_check_operands(allocs, &cond, &true_val, &false_val).unwrap();
+        let select_op = Self::new_raw(ret_type);
+        select_op.operands[0].set_operand(allocs, cond);
+        select_op.operands[1].set_operand(allocs, true_val);
+        select_op.operands[2].set_operand(allocs, false_val);
+        select_op
+    }
+
+    fn do_check_operands(
+        allocs: &IRAllocs,
+        cond: &ValueSSA,
+        true_val: &ValueSSA,
+        false_val: &ValueSSA,
+    ) -> Result<ValTypeID, String> {
+        let ValTypeID::Int(1) = cond.get_valtype(allocs) else {
+            return Err("SelectOp condition must be a boolean type".into());
+        };
+        let true_ty = true_val.get_valtype(allocs);
+        let false_ty = false_val.get_valtype(allocs);
+        if true_ty != false_ty {
+            return Err(format!(
+                "SelectOp true and false values must have the same type: {true_ty:?} != {false_ty:?}"
+            ));
         }
-        check_operand_type_match(ValTypeID::new_boolean(), cond, mut_module)?;
-        let value_type = true_val.get_value_type(mut_module);
-        check_operand_type_match(value_type, false_val, mut_module)?;
+        let ret_ty = match true_ty {
+            ValTypeID::Int(_) | ValTypeID::Float(_) | ValTypeID::Ptr => true_ty,
+            ValTypeID::Struct(_) | ValTypeID::Array(_) => true_ty,
+            _ => {
+                return Err(format!("SelectOp does not support this type: {true_ty:?}",));
+            }
+        };
+        Ok(ret_ty)
+    }
 
-        let (c, s) = Self::new_raw(mut_module, value_type);
+    pub fn check(&self, allocs: &IRAllocs) -> Result<(), String> {
+        let ret_ty = Self::do_check_operands(
+            allocs, // 使用默认的 IRAllocs 进行检查
+            &self.operands[0].get_operand(),
+            &self.operands[1].get_operand(),
+            &self.operands[2].get_operand(),
+        )?;
+        if ret_ty == self.common.ret_type {
+            Ok(())
+        } else {
+            Err(format!(
+                "SelectOp return type mismatch: expected {:?}, got {:?}",
+                self.common.ret_type, ret_ty
+            ))
+        }
+    }
 
-        let mut alloc_use = mut_module.borrow_use_alloc_mut();
-        s.cond.set_operand_nordfg(&mut alloc_use, cond);
-        s.true_val.set_operand_nordfg(&mut alloc_use, true_val);
-        s.false_val.set_operand_nordfg(&mut alloc_use, false_val);
-        Ok((c, s))
+    pub fn cond_use(&self) -> &Rc<Use> {
+        &self.operands[0]
+    }
+    pub fn true_use(&self) -> &Rc<Use> {
+        &self.operands[1]
+    }
+    pub fn false_use(&self) -> &Rc<Use> {
+        &self.operands[2]
+    }
+
+    pub fn get_cond(&self) -> ValueSSA {
+        self.operands[0].get_operand()
+    }
+    pub fn get_true_val(&self) -> ValueSSA {
+        self.operands[1].get_operand()
+    }
+    pub fn get_false_val(&self) -> ValueSSA {
+        self.operands[2].get_operand()
+    }
+
+    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
+        self.operands[0].set_operand(allocs, cond);
+    }
+    pub fn set_true_val(&self, allocs: &IRAllocs, true_val: ValueSSA) {
+        self.operands[1].set_operand(allocs, true_val);
+    }
+    pub fn set_false_val(&self, allocs: &IRAllocs, false_val: ValueSSA) {
+        self.operands[2].set_operand(allocs, false_val);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SelectOpRef(InstRef);
+
+impl ISubInstRef for SelectOpRef {
+    type InstDataT = SelectOp;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        SelectOpRef(inst_ref)
+    }
+    fn into_raw(self) -> InstRef {
+        self.0
     }
 }

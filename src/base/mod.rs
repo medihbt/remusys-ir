@@ -1,14 +1,20 @@
+mod apint;
+mod bitset;
 mod dsu;
 mod slablist;
 mod slabref;
+mod weak_list;
 
 pub use {
+    apint::APInt,
+    bitset::{FixBitSet, FixBitSetIter},
     dsu::DSU,
     slablist::{
         SlabListError, SlabListIterator, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        SlabListRange, SlabListView, SlabRefList,
+        SlabListRange, SlabListRes, SlabListView, SlabRefList,
     },
     slabref::SlabRef,
+    weak_list::*,
 };
 
 pub trait INullableValue: Clone + Eq {

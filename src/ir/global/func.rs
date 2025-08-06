@@ -1,21 +1,19 @@
-use std::{
-    cell::{Cell, Ref, RefCell},
-    num::NonZero,
-};
+use slab::Slab;
 
 use crate::{
-    base::{INullableValue, SlabListError, SlabRefList},
+    base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
-        PtrStorage, PtrUser,
-        block::{BlockData, BlockRef},
-        module::Module,
+        BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalRef, IRAllocs, IRWriter,
+        ISubValueSSA, ITraceableValue, Module, PtrStorage, PtrUser, UserList, ValueSSA,
+        global::ISubGlobal,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
+use std::cell::Cell;
 
-use super::{GlobalDataCommon, GlobalRef};
-
+/// 函数存储接口，为存储函数值的对象提供类型信息访问能力
 pub trait FuncStorage: PtrStorage {
+    /// 获取存储的函数类型引用
     fn get_stored_func_type(&self) -> FuncTypeRef {
         match self.get_stored_pointee_type() {
             ValTypeID::Func(func_type) => func_type,
@@ -23,20 +21,29 @@ pub trait FuncStorage: PtrStorage {
         }
     }
 
+    /// 获取函数的返回值类型
     fn get_return_type(&self, type_ctx: &TypeContext) -> ValTypeID {
         self.get_stored_func_type().get_return_type(type_ctx)
     }
+
+    /// 获取函数参数个数
     fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
         self.get_stored_func_type().get_nargs(type_ctx)
     }
+
+    /// 获取指定索引的参数类型
     fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
         self.get_stored_func_type().get_arg(type_ctx, index)
     }
+
+    /// 检查函数是否为可变参数函数
     fn is_vararg(&self, type_ctx: &TypeContext) -> bool {
         self.get_stored_func_type().is_vararg(type_ctx)
     }
 }
+/// 函数使用接口，为使用函数作为操作数的对象提供类型信息访问能力
 pub trait FuncUser: PtrUser {
+    /// 获取操作数的函数类型引用
     fn get_operand_func_type(&self) -> FuncTypeRef {
         match self.get_operand_pointee_type() {
             ValTypeID::Func(func_type) => func_type,
@@ -44,174 +51,391 @@ pub trait FuncUser: PtrUser {
         }
     }
 
+    /// 获取操作数函数的返回值类型
     fn get_return_type(&self, type_ctx: &TypeContext) -> ValTypeID {
         self.get_operand_func_type().get_return_type(type_ctx)
     }
+
+    /// 获取操作数函数的参数个数
     fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
         self.get_operand_func_type().get_nargs(type_ctx)
     }
+
+    /// 获取操作数函数指定索引的参数类型
     fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
         self.get_operand_func_type().get_arg(type_ctx, index)
     }
 }
 
+/// 函数对象，表示 IR 中的一个函数
+///
+/// 函数可以处于两种状态之一：
+/// - 外部函数 (extern): 只有函数签名，没有函数体
+/// - 已定义函数: 包含完整的基本块序列
 #[derive(Debug)]
-pub struct FuncData {
-    pub(crate) _common: GlobalDataCommon,
-    pub(crate) _body: RefCell<Option<FuncBody>>,
+pub struct Func {
+    /// 全局对象的通用数据 (名称、类型、可见性等)
+    pub common: GlobalDataCommon,
+    /// 函数参数列表，每个参数包含类型和使用者追踪信息
+    pub args: Box<[FuncArg]>,
+    /// 返回类型
+    pub return_type: ValTypeID,
+    /// 函数体的基本块列表 (空列表表示外部函数)
+    body: SlabRefList<BlockRef>,
+    /// 函数入口基本块的引用
+    entry: Cell<BlockRef>,
 }
 
-#[derive(Debug)]
-pub struct FuncBody {
-    pub func: GlobalRef,
-    pub body: SlabRefList<BlockRef>,
-    pub entry: BlockRef,
-}
-
-impl PtrStorage for FuncData {
-    fn get_stored_pointee_type(&self) -> ValTypeID {
-        self._common.content_ty.clone()
-    }
-
-    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
-        None
-    }
-}
-impl FuncStorage for FuncData {}
-
-impl FuncData {
-    pub fn new_extern(functy: FuncTypeRef, name: String) -> Self {
-        Self {
-            _common: GlobalDataCommon {
-                name,
-                content_ty: ValTypeID::Func(functy),
-                self_ref: Cell::new(GlobalRef::new_null()),
-            },
-            _body: RefCell::new(None),
+impl ISubGlobal for Func {
+    fn from_ir(data: &GlobalData) -> Option<&Self> {
+        match data {
+            GlobalData::Func(func) => Some(func),
+            _ => None,
         }
     }
-    pub fn new_with_unreachable(
-        module: &Module,
-        functy: FuncTypeRef,
-        name: String,
-    ) -> Result<Self, SlabListError> {
-        let unreachable_bb = BlockData::new_unreachable(module)?;
-        let unreachable_bb_ref = module.insert_block(unreachable_bb);
-
-        let blocks = {
-            let mut alloc_value = module.borrow_value_alloc_mut();
-            let alloc_block = &mut alloc_value.blocks;
-            let blocks = SlabRefList::from_slab(alloc_block);
-            blocks.push_back_ref(alloc_block, unreachable_bb_ref)?;
-            blocks
-        };
-
-        Ok(Self {
-            _common: GlobalDataCommon {
-                name,
-                content_ty: ValTypeID::Func(functy),
-                self_ref: Cell::new(GlobalRef::new_null()),
-            },
-            _body: RefCell::new(Some(FuncBody {
-                func: GlobalRef::new_null(),
-                body: blocks,
-                entry: unreachable_bb_ref,
-            })),
-        })
+    fn into_ir(self) -> GlobalData {
+        GlobalData::Func(self)
+    }
+    fn get_common(&self) -> &GlobalDataCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut GlobalDataCommon {
+        &mut self.common
+    }
+    fn is_readonly(&self) -> bool {
+        true
+    }
+    fn is_extern(&self) -> bool {
+        !self.body.is_valid()
     }
 
-    pub fn is_extern(&self) -> bool {
-        self._body.borrow().is_none()
+    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        self.fmt_header(writer)?;
+        if self.is_extern() {
+            writeln!(writer, "; external function")?;
+            return Ok(());
+        }
+
+        writeln!(writer, " {{")?;
+        for (block_ref, _) in self.body.view(&writer.allocs.blocks) {
+            block_ref.fmt_ir(writer)?;
+        }
+        writeln!(writer, "}}")
+    }
+}
+
+impl Func {
+    fn fmt_header(&self, writer: &IRWriter) -> std::io::Result<()> {
+        let storage = if self.is_extern() { "declare" } else { "define" };
+        write!(writer, "{storage} dso_local ")?;
+        writer.write_type(self.return_type)?;
+        write!(writer, " @{}", self.common.name)?;
+        self.fmt_args(writer)
     }
 
-    pub fn add_block_data(
-        &self,
-        mut_module: &Module,
-        block_data: BlockData,
-    ) -> Result<BlockRef, SlabListError> {
-        let block_ref = mut_module.insert_block(block_data);
-        self.add_block_ref(mut_module, block_ref)?;
-        Ok(block_ref)
-    }
-    pub fn add_block_ref(&self, module: &Module, block_ref: BlockRef) -> Result<(), SlabListError> {
-        self._body
-            .borrow_mut()
-            .as_mut()
-            .unwrap()
-            .body
-            .push_back_ref(&module.borrow_value_alloc().blocks, block_ref)?;
+    fn fmt_args(&self, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_str("(")?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                writer.write_str(", ")?;
+            }
+            writer.write_type(arg.ty)?;
+        }
+        if self.is_vararg(&writer.type_ctx) {
+            if !self.args.is_empty() {
+                writer.write_str(", ")?;
+            }
+            writer.write_str("...")?;
+        }
+        writer.write_str(")")?;
         Ok(())
     }
+}
 
-    pub fn get_blocks(&self) -> Option<Ref<SlabRefList<BlockRef>>> {
-        let body = self._body.borrow();
-        if body.is_none() {
-            None
-        } else {
-            Some(Ref::map(body, |body| &body.as_ref().unwrap().body))
+impl FuncStorage for Func {
+    /* auto-implemented */
+}
+
+impl Func {
+    fn create_extern(name: String, functy: FuncTypeRef, type_ctx: &TypeContext) -> Self {
+        let content_ty = ValTypeID::Func(functy);
+        let common = GlobalDataCommon::new(name, content_ty, 0);
+
+        let args = {
+            let mut args = Vec::with_capacity(functy.get_nargs(type_ctx));
+            for (index, arg_ty) in functy.get_args(type_ctx).iter().enumerate() {
+                args.push(FuncArg { ty: arg_ty.clone(), index, users: UserList::new_empty() });
+            }
+            args.into_boxed_slice()
+        };
+        let return_type = functy.get_return_type(type_ctx);
+        Func {
+            common,
+            args,
+            body: SlabRefList::new_guide(),
+            entry: Cell::new(BlockRef::new_null()),
+            return_type,
         }
     }
-    pub fn get_entry(&self) -> BlockRef {
-        self._body.borrow().as_ref().unwrap().entry
+
+    /// 创建一个外部函数 (函数声明)
+    ///
+    /// # 参数
+    /// - `functy`: 函数类型引用
+    /// - `name`: 函数名称
+    /// - `type_ctx`: 类型上下文，用于解析函数类型信息
+    ///
+    /// # 返回
+    /// 返回一个只有声明没有定义的外部函数
+    pub fn new_extern<T: Into<String>>(
+        functy: FuncTypeRef,
+        name: T,
+        type_ctx: &TypeContext,
+    ) -> Self {
+        Self::create_extern(name.into(), functy, type_ctx)
     }
-    pub fn get_name(&self) -> &str {
-        &self._common.name
+
+    fn make_defined_with_unreachable(&self, allocs: &mut IRAllocs) {
+        debug_assert!(
+            self.is_extern(),
+            "Function must be extern to define with unreachable"
+        );
+        let unreachable_bb = {
+            let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
+            BlockRef::from_allocs(allocs, data)
+        };
+        self.body
+            .push_back_ref(&allocs.blocks, unreachable_bb)
+            .expect("Failed to push unreachable block");
+        self.entry.set(unreachable_bb);
+    }
+    /// 创建一个包含单个 unreachable 基本块的函数
+    ///
+    /// 这是一个便利函数，用于创建一个"已定义"但永远不会被执行到的函数。
+    /// 常用于占位符或测试场景。
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用 (不可变借用)
+    /// - `functy`: 函数类型引用
+    /// - `name`: 函数名称
+    ///
+    /// # 返回
+    /// 返回一个包含单个 unreachable 基本块的已定义函数
+    pub fn new_with_unreachable<T: Into<String>>(
+        module: &Module,
+        functy: FuncTypeRef,
+        name: T,
+    ) -> Self {
+        let func = Self::create_extern(name.into(), functy, &module.type_ctx);
+        let mut allocs = module.allocs.borrow_mut();
+        func.make_defined_with_unreachable(&mut allocs);
+        func
+    }
+
+    /// 创建一个包含单个 unreachable 基本块的函数 (可变模块版本)
+    ///
+    /// 与 `new_with_unreachable` 功能相同，但接受可变的模块引用，
+    /// 避免了内部的 RefCell 借用检查开销。
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    /// - `functy`: 函数类型引用
+    /// - `name`: 函数名称
+    ///
+    /// # 返回
+    /// 返回一个包含单个 unreachable 基本块的已定义函数
+    pub fn new_with_unreachable_from_mut_module<T: Into<String>>(
+        module: &mut Module,
+        functy: FuncTypeRef,
+        name: T,
+    ) -> Self {
+        let func = Self::create_extern(name.into(), functy, &module.type_ctx);
+        let allocs = module.allocs.get_mut();
+        func.make_defined_with_unreachable(allocs);
+        func
     }
 }
 
-#[cfg(test)]
-mod testing {
-    use crate::{
-        ir::{
-            ValueSSA,
-            constant::data::ConstData,
-            global::GlobalData,
-            inst::{InstData, Ret},
-            module::Module,
-        },
-        typing::{
-            context::{PlatformPolicy, TypeContext},
-            id::ValTypeID,
-        },
-    };
+impl Func {
+    /// 向函数添加基本块引用 (使用分配器)
+    ///
+    /// 将一个已存在的基本块添加到函数的基本块列表中。
+    /// 只有外部函数可以添加基本块 (用于将其转换为已定义函数)。
+    ///
+    /// # 参数
+    /// - `allocs`: IR 分配器的可变引用
+    /// - `block`: 要添加的基本块引用
+    ///
+    /// # 返回
+    /// - `Ok(())`: 成功添加基本块
+    /// - `Err(SlabListError)`: 添加失败 (通常是因为函数已经有定义)
+    pub fn add_block_ref_from_alloc(&self, allocs: &mut IRAllocs, block: BlockRef) -> SlabListRes {
+        if !self.is_extern() {
+            return Err(SlabListError::InvalidList);
+        }
+        self.body.push_back_ref(&allocs.blocks, block)
+    }
 
-    use super::FuncData;
+    /// 向函数添加基本块引用 (使用模块)
+    ///
+    /// 功能与 `add_block_ref_from_alloc` 相同，但从模块中获取分配器。
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用
+    /// - `block`: 要添加的基本块引用
+    ///
+    /// # 返回
+    /// - `Ok(())`: 成功添加基本块
+    /// - `Err(SlabListError)`: 添加失败
+    pub fn add_block_ref(&self, module: &Module, block: BlockRef) -> SlabListRes {
+        let mut allocs = module.allocs.borrow_mut();
+        self.add_block_ref_from_alloc(&mut allocs, block)
+    }
 
-    #[test]
-    fn test_new_func_data() {
-        let platform = PlatformPolicy::new_host();
-        let type_ctx = TypeContext::new_rc(platform);
-        let module = Module::new("io.medihbt.RemusysIRTes".into(), type_ctx.clone());
+    /// 向函数添加基本块引用 (使用可变模块)
+    ///
+    /// 功能与 `add_block_ref` 相同，但接受可变模块引用，避免借用检查开销。
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    /// - `block`: 要添加的基本块引用
+    ///
+    /// # 返回
+    /// - `Ok(())`: 成功添加基本块
+    /// - `Err(SlabListError)`: 添加失败
+    pub fn add_block_ref_from_mut_module(
+        &self,
+        module: &mut Module,
+        block: BlockRef,
+    ) -> SlabListRes {
+        let allocs = module.allocs.get_mut();
+        self.add_block_ref_from_alloc(allocs, block)
+    }
 
-        let main_functy = type_ctx.make_func_type(
-            &[ValTypeID::Int(32), ValTypeID::Ptr],
-            ValTypeID::Int(32),
-            false,
-        );
-        let main_func_data =
-            FuncData::new_with_unreachable(&module, main_functy, "main".into()).unwrap();
-        assert_eq!(main_func_data.is_extern(), false);
+    /// 获取函数的入口基本块引用
+    ///
+    /// # 返回
+    /// 函数入口基本块的引用。对于外部函数，返回空引用。
+    pub fn get_entry(&self) -> BlockRef {
+        self.entry.get()
+    }
 
-        let main_func_ref = module.insert_global(GlobalData::Func(main_func_data));
+    /// 获取函数体的基本块列表
+    ///
+    /// # 返回
+    /// - `Some(&SlabRefList<BlockRef>)`: 对于已定义函数，返回基本块列表的引用
+    /// - `None`: 对于外部函数，返回 None
+    pub fn get_body(&self) -> Option<&SlabRefList<BlockRef>> {
+        if self.is_extern() { None } else { Some(&self.body) }
+    }
 
-        // Add `return 0` to the function body.
-        let (c, r) = Ret::new(
-            &module,
-            ValueSSA::ConstData(ConstData::Zero(ValTypeID::Int(32))),
-        );
-        let ret_inst = module.insert_inst(InstData::Ret(c, r));
+    pub fn get_nargs(&self) -> usize {
+        self.args.len()
+    }
+}
 
-        match &*module.get_global(main_func_ref) {
-            GlobalData::Func(func_data) => {
-                let entry = func_data._body.borrow().as_ref().unwrap().entry;
-                module
-                    .get_block(entry)
-                    .set_terminator(&module, ret_inst)
-                    .unwrap();
-            }
+/// 函数参数表示
+///
+/// 封装了函数参数的类型信息、位置索引和使用者追踪信息，
+/// 支持 Use-Def 链分析和优化。
+#[derive(Debug)]
+pub struct FuncArg {
+    /// 参数的类型
+    pub ty: ValTypeID,
+    /// 参数在参数列表中的索引位置
+    pub index: usize,
+    /// 追踪使用此参数的指令列表 (Use-Def 链)
+    pub users: UserList,
+}
+
+impl ITraceableValue for FuncArg {
+    fn users(&self) -> &UserList {
+        &self.users
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FuncArgRef(pub GlobalRef, pub usize);
+
+impl FuncArgRef {
+    pub fn get_func(self) -> GlobalRef {
+        self.0
+    }
+    pub fn get_index(self) -> usize {
+        self.1
+    }
+
+    pub fn from_ir(value: ValueSSA) -> Option<Self> {
+        match value {
+            ValueSSA::FuncArg(func, index) => Some(Self(func, index as usize)),
+            _ => None,
+        }
+    }
+    pub fn into_ir(self) -> ValueSSA {
+        ValueSSA::FuncArg(self.0, self.1 as u32)
+    }
+
+    pub fn to_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a FuncArg {
+        let func_data = self.0.to_data(alloc);
+        match func_data {
+            GlobalData::Func(func) => &func.args[self.1],
             _ => panic!("Expected a function data"),
         }
+    }
+    pub fn as_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> Option<&'a FuncArg> {
+        let func_data = self.0.to_data(alloc);
+        match func_data {
+            GlobalData::Func(func) => func.args.get(self.1),
+            _ => None,
+        }
+    }
 
-        module.perform_basic_check();
+    pub fn get_valtype<'a>(&self, alloc: &'a Slab<GlobalData>) -> ValTypeID {
+        self.to_data(alloc).ty
+    }
+    pub fn get_users<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a UserList {
+        self.to_data(alloc).users()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FuncRef(pub GlobalRef);
+
+impl FuncRef {
+    pub fn as_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> Option<&'a Func> {
+        let func_data = self.0.to_data(alloc);
+        match func_data {
+            GlobalData::Func(func) => Some(func),
+            _ => None,
+        }
+    }
+    pub fn to_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a Func {
+        self.as_data(alloc).expect("Expected a function data")
+    }
+
+    pub fn try_from_real(real: GlobalRef, alloc: &Slab<GlobalData>) -> Option<Self> {
+        let func_data = real.to_data(alloc);
+        match func_data {
+            GlobalData::Func(_) => Some(Self(real)),
+            _ => None,
+        }
+    }
+    pub fn from_real(real: GlobalRef, alloc: &Slab<GlobalData>) -> Self {
+        Self::try_from_real(real, alloc).expect("Expected a function data")
+    }
+
+    pub fn try_from_ir(value: ValueSSA, alloc: &Slab<GlobalData>) -> Option<Self> {
+        if let ValueSSA::Global(gref) = value { Self::try_from_real(gref, alloc) } else { None }
+    }
+    pub fn from_ir(value: ValueSSA, alloc: &Slab<GlobalData>) -> Self {
+        Self::try_from_ir(value, alloc).expect("Expected a function refrence")
+    }
+
+    pub fn get_arg(self, alloc: &Slab<GlobalData>, index: usize) -> Option<FuncArgRef> {
+        let func_data = self.to_data(alloc);
+        if index < func_data.args.len() { Some(FuncArgRef(self.0, index)) } else { None }
+    }
+    pub fn args<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a [FuncArg] {
+        self.to_data(alloc).args.as_ref()
     }
 }

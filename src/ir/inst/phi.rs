@@ -1,278 +1,218 @@
-use super::{
-    InstData, InstDataCommon, InstDataUnique, InstError, InstRef,
-    checking::check_operand_type_match,
-    usedef::{UseData, UseKind, UseRef},
-};
 use crate::{
-    base::{INullableValue, SlabRef},
-    ir::{ValueSSA, block::BlockRef, module::Module, opcode::Opcode},
+    ir::{
+        BlockRef, IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use,
+        UseKind, ValueSSA,
+        inst::{ISubInstRef, InstOperands},
+    },
     typing::id::ValTypeID,
 };
-use slab::Slab;
-use std::cell::{Ref, RefCell, RefMut};
+use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 
-pub struct PhiOperand {
-    pub from_bb: BlockRef,
-    pub from_bb_use: UseRef,
-    pub from_value_use: UseRef,
+#[derive(Debug)]
+pub enum PhiError {
+    IncomeBBNotFound(BlockRef),
 }
 
-pub struct PhiOp {
-    from: RefCell<Vec<PhiOperand>>,
+#[derive(Debug)]
+pub struct PhiNode {
+    common: InstCommon,
+    operands: RefCell<Vec<Rc<Use>>>,
+    /// 把前驱基本块映射到对应的操作数索引.
+    incoming_map: RefCell<BTreeMap<BlockRef, (usize, usize)>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum PhiErr {
-    FromBBShouldInsert(BlockRef),
-}
-
-impl PhiOp {
-    pub fn get_from_use(&self, from_bb: BlockRef) -> Option<UseRef> {
-        self.from
-            .borrow()
-            .iter()
-            .find(|op| op.from_bb == from_bb)
-            .map(|op| op.from_bb_use)
-    }
-
-    pub fn get_from_value(&self, from_bb: BlockRef, alloc_use: &Slab<UseData>) -> Option<ValueSSA> {
-        self.get_from_use(from_bb)
-            .map(|u| u.to_data(alloc_use).get_operand())
-    }
-
-    pub fn get_from_all(&self) -> Ref<[PhiOperand]> {
-        Ref::map(self.from.borrow(), Vec::as_slice)
-    }
-    pub fn get_from_all_mut(&self) -> RefMut<Vec<PhiOperand>> {
-        self.from.borrow_mut()
-    }
-
-    pub fn set_from_value_noinsert_nordfg(
-        &self,
-        from_bb: BlockRef,
-        alloc_use: &Slab<UseData>,
-        value: ValueSSA,
-    ) -> Result<(), PhiErr> {
-        let x = self
-            .get_from_use(from_bb)
-            .map(|u| u.set_operand_nordfg(alloc_use, value));
-        match x {
-            Some(_) => Ok(()),
-            None => Err(PhiErr::FromBBShouldInsert(from_bb)),
+impl ISubInst for PhiNode {
+    fn new_empty(opcode: Opcode) -> Self {
+        if opcode != Opcode::Phi {
+            panic!("Tried to create a PhiNode with non-Phi opcode");
         }
-    }
-    pub fn set_from_value_noinsert(
-        &self,
-        from_bb: BlockRef,
-        module: &Module,
-        value: ValueSSA,
-    ) -> Result<(), PhiErr> {
-        let x = self
-            .get_from_use(from_bb)
-            .map(|u| u.set_operand(module, value));
-        match x {
-            Some(_) => Ok(()),
-            None => Err(PhiErr::FromBBShouldInsert(from_bb)),
+        Self {
+            common: InstCommon::new(opcode, ValTypeID::Void),
+            operands: RefCell::new(Vec::new()),
+            incoming_map: RefCell::new(BTreeMap::new()),
         }
     }
 
-    pub fn insert_from_value_nordfg(
-        instref: InstRef,
-        module: &Module,
-        from_bb: BlockRef,
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        if let InstData::Phi(phi) = inst { Some(phi) } else { None }
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        if let InstData::Phi(phi) = inst { Some(phi) } else { None }
+    }
+
+    fn into_ir(self) -> InstData {
+        InstData::Phi(self)
+    }
+
+    fn get_common(&self) -> &InstCommon {
+        &self.common
+    }
+
+    fn common_mut(&mut self) -> &mut InstCommon {
+        &mut self.common
+    }
+
+    fn is_terminator(&self) -> bool {
+        false
+    }
+
+    fn get_operands(&self) -> InstOperands {
+        InstOperands::InRef(self.operands.borrow())
+    }
+
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        self.operands.get_mut().as_mut_slice()
+    }
+}
+
+impl PhiNode {
+    pub fn new(ret_type: ValTypeID) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Phi, ret_type),
+            operands: RefCell::new(Vec::new()),
+            incoming_map: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub fn get_income_index(&self, block: BlockRef) -> Option<(usize, usize)> {
+        self.incoming_map.borrow().get(&block).cloned()
+    }
+    pub fn get_income_uses(&self, block: BlockRef) -> Option<(Rc<Use>, Rc<Use>)> {
+        self.get_income_index(block)
+            .and_then(|(val_idx, block_idx)| {
+                let ops = self.operands.borrow();
+                Some((ops.get(val_idx)?.clone(), ops.get(block_idx)?.clone()))
+            })
+    }
+    pub fn get_income_block_use(&self, block: BlockRef) -> Option<Rc<Use>> {
+        self.get_income_index(block)
+            .and_then(|(_, block_idx)| self.operands.borrow().get(block_idx).cloned())
+    }
+    pub fn get_income_value_use(&self, block: BlockRef) -> Option<Rc<Use>> {
+        self.get_income_index(block)
+            .and_then(|(val_idx, _)| self.operands.borrow().get(val_idx).cloned())
+    }
+    pub fn get_income_value(&self, block: BlockRef) -> Option<ValueSSA> {
+        self.get_income_value_use(block)
+            .map(|use_ref| use_ref.get_operand())
+    }
+
+    pub fn set_existing_income(
+        &self,
+        allocs: &IRAllocs,
+        block: BlockRef,
         value: ValueSSA,
-    ) -> Result<UseRef, PhiErr> {
-        let new_useref = if let InstData::Phi(_, phi) = &*module.get_inst(instref) {
-            phi.get_from_use(from_bb)
+    ) -> Result<(), PhiError> {
+        let (val_idx, _) = self
+            .get_income_index(block)
+            .ok_or(PhiError::IncomeBBNotFound(block))?;
+        let mut ops = self.operands.borrow_mut();
+        if let Some(use_ref) = ops.get_mut(val_idx) {
+            use_ref.set_operand(allocs, value);
+            Ok(())
         } else {
-            panic!("Requries PHI but got {:?}", instref);
-        };
-
-        match new_useref {
-            Some(u) => {
-                u.set_operand_nordfg(&module.borrow_use_alloc(), value);
-                Ok(u)
-            }
-            None => {
-                let (block_useref, value_useref) = Self::insert_value_build_uses(module, from_bb);
-                if let InstData::Phi(common, phi) = &*module.get_inst(instref) {
-                    common
-                        .operands
-                        .push_back_ref(&*module.borrow_use_alloc(), value_useref)
-                        .unwrap();
-                    phi.from.borrow_mut().push(PhiOperand {
-                        from_bb,
-                        from_bb_use: block_useref,
-                        from_value_use: value_useref,
-                    });
-                } else {
-                    panic!();
-                }
-                Ok(value_useref)
-            }
+            Err(PhiError::IncomeBBNotFound(block))
         }
     }
-    pub fn insert_from_value(
-        instref: InstRef,
-        module: &Module,
-        from_bb: BlockRef,
+
+    /// 为指定前驱基本块设置一个传入值, 如果该基本块已经存在传入值则覆盖.
+    /// 如果该基本块不存在传入值则新增一对传入值和传入基本块操作数.
+    pub fn set_income(
+        &self,
+        allocs: &IRAllocs,
+        block: BlockRef,
         value: ValueSSA,
-    ) -> Result<UseRef, PhiErr> {
-        let new_useref = if let InstData::Phi(_, phi) = &*module.get_inst(instref) {
-            phi.get_from_use(from_bb)
+    ) -> Result<(), PhiError> {
+        match self.set_existing_income(allocs, block, value) {
+            Ok(()) => return Ok(()),
+            Err(PhiError::IncomeBBNotFound(_)) => {}
+        };
+
+        let mut operands = self.operands.borrow_mut();
+        let income_val_idx = operands.len();
+        let income_block_idx = income_val_idx + 1;
+
+        // 构建互引用关系: PhiIncomingValue 里存的是对应的基本块索引, PhiIncomingBlock 里存的是对应的值索引
+        // 这样设计是为了方便在删除某个前驱基本块时, 可以通过值索引快速找到对应的值 Use
+        // 而不需要遍历所有的 Use 列表。
+        let value_use = Use::new(UseKind::PhiIncomingValue(block, income_block_idx as u32));
+        let block_use = Use::new(UseKind::PhiIncomingBlock(income_val_idx as u32));
+
+        value_use.set_operand(allocs, value);
+        block_use.set_operand(allocs, ValueSSA::Block(block));
+
+        operands.push(value_use);
+        operands.push(block_use);
+
+        self.incoming_map
+            .borrow_mut()
+            .insert(block, (income_val_idx, income_block_idx));
+
+        Ok(())
+    }
+
+    /// 移除指定前驱基本块的传入值, 如果该基本块不存在传入值则返回错误.
+    /// 移除时会保持操作数列表的紧凑性, 通过与末尾元素交换并弹出末尾元素来实现.
+    /// 这种方式会改变被交换元素的索引, 因此需要更新它们的 UseKind 以反映新的索引.
+    /// 同时也需要更新 incoming_map 中的索引映射.
+    pub fn remove_income(&self, block: BlockRef) -> Result<(), PhiError> {
+        let Some((val_idx, block_idx)) = self.get_income_index(block) else {
+            return Err(PhiError::IncomeBBNotFound(block));
+        };
+
+        let mut ops = self.operands.borrow_mut();
+        let len = ops.len();
+
+        if block_idx == len - 1 {
+            debug_assert_eq!(
+                val_idx,
+                len - 2,
+                "Incoming value Use should be arranged before block Use"
+            );
+            ops.pop();
+            ops.pop();
+            let mut map = self.incoming_map.borrow_mut();
+            map.remove(&block);
         } else {
-            panic!("Requries PHI but got {:?}", instref);
-        };
+            // Swap with the back and pop
 
-        match new_useref {
-            Some(u) => {
-                u.set_operand(&module, value);
-                Ok(u)
-            }
-            None => {
-                let (block_useref, value_useref) = Self::insert_value_build_uses(module, from_bb);
-                if let InstData::Phi(common, phi) = &*module.get_inst(instref) {
-                    common
-                        .operands
-                        .push_back_ref(&*module.borrow_use_alloc(), value_useref)
-                        .unwrap();
-                    phi.from.borrow_mut().push(PhiOperand {
-                        from_bb,
-                        from_bb_use: block_useref,
-                        from_value_use: value_useref,
-                    });
-                } else {
-                    unreachable!()
-                }
-                value_useref.set_operand(&module, value);
-                Ok(value_useref)
-            }
-        }
-    }
+            let back_block_use = ops.pop().unwrap();
+            let back_value_use = ops.pop().unwrap();
 
-    fn insert_value_build_uses(module: &Module, from_bb: BlockRef) -> (UseRef, UseRef) {
-        let block_useref = module.insert_use(UseData::new(
-            UseKind::PhiIncomingBlock(UseRef::new_null()),
-            InstRef::new_null(),
-            ValueSSA::None,
-        ));
-        let value_useref = module.insert_use(UseData::new(
-            UseKind::PhiIncomingValue { from_bb, from_bb_use: block_useref },
-            InstRef::new_null(),
-            ValueSSA::None,
-        ));
-        match module.mut_use(block_useref).kind.get_mut() {
-            UseKind::PhiIncomingBlock(related_value_use) => *related_value_use = value_useref,
-            _ => unreachable!("Expected PhiIncomingBlock use kind"),
-        };
-        (block_useref, value_useref)
-    }
+            // 修复互引用关系: 这两个 Use 会被替换到被删除的 Use 位置, 需要更新它们的索引信息.
+            // back_block_use 里存的是对应的值索引, back_value_use 里存的是对应的基本块索引
+            let back_block = *BlockRef::from_ir(&back_block_use.get_operand());
+            back_block_use
+                .kind
+                .set(UseKind::PhiIncomingBlock(val_idx as u32));
+            back_value_use
+                .kind
+                .set(UseKind::PhiIncomingValue(back_block, block_idx as u32));
 
-    pub fn unset_from(
-        &self,
-        common: &InstDataCommon,
-        from_bb: BlockRef,
-        module: &Module,
-    ) -> Option<(UseRef, UseRef)> {
-        let mut from = self.from.borrow_mut();
-        let index = from.iter().position(|op| op.from_bb == from_bb);
-        let u = match index {
-            Some(i) => {
-                let op = from.swap_remove(i);
-                op.from_value_use.set_operand(module, ValueSSA::None);
-                common.remove_use(&module.borrow_use_alloc(), op.from_bb_use);
-                Some((op.from_bb_use, op.from_value_use))
-            }
-            None => None,
-        };
-        u
-    }
+            ops[val_idx] = back_value_use;
+            ops[block_idx] = back_block_use;
 
-    pub fn replace_from_bb_with_new(
-        &self,
-        from_bb: BlockRef,
-        new_from_bb: BlockRef,
-        module: &Module,
-    ) -> bool {
-        if from_bb == new_from_bb {
-            return true; // No change
-        }
-        let mut from = self.from.borrow_mut();
-        let from = &mut *from;
-        let from_ref = if let Some(i) = from.iter().position(|op| op.from_bb == from_bb) {
-            &mut from[i]
-        } else {
-            return false; // No such from_bb
-        };
-        from_ref.from_bb = new_from_bb;
-        from_ref
-            .from_bb_use
-            .set_operand(module, ValueSSA::Block(new_from_bb));
-        from_ref
-            .from_value_use
-            .kind_by_module(module)
-            .set(UseKind::PhiIncomingValue {
-                from_bb: new_from_bb,
-                from_bb_use: from_ref.from_bb_use,
-            });
-        true
-    }
+            drop(ops);
 
-    pub fn new(ret_type: ValTypeID, module: &Module) -> (InstDataCommon, Self) {
-        (
-            InstDataCommon::new(Opcode::Phi, ret_type, &mut module.borrow_use_alloc_mut()),
-            Self { from: RefCell::new(Vec::new()) },
-        )
-    }
-}
+            // Update the map
 
-impl InstDataUnique for PhiOp {
-    fn build_operands(&mut self, _: &mut InstDataCommon, _: &mut Slab<UseData>) {}
-
-    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
-        let self_type = common.ret_type;
-        for op in self.from.borrow().iter() {
-            let from = op.from_value_use.get_operand(&module.borrow_use_alloc());
-            check_operand_type_match(self_type, from, module)?;
+            let mut map = self.incoming_map.borrow_mut();
+            map.remove(&block);
+            map.insert(back_block, (val_idx, block_idx));
         }
         Ok(())
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct PhiOpRef(InstRef);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhiRef(InstRef);
 
-impl PhiOpRef {
-    pub fn new(module: &Module, ret_type: ValTypeID) -> Self {
-        let (common, phi) = PhiOp::new(ret_type, module);
-        let instref = module.insert_inst(InstData::Phi(common, phi));
-        Self(instref)
+impl ISubInstRef for PhiRef {
+    type InstDataT = PhiNode;
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        Self(inst_ref)
     }
-
-    pub fn from_inst_raw(instref: InstRef) -> Self {
-        Self(instref)
-    }
-    pub fn from_inst_checked(instref: InstRef, module: &Module) -> Option<Self> {
-        if let InstData::Phi(_, _) = &*module.get_inst(instref) {
-            Some(Self(instref))
-        } else {
-            None
-        }
-    }
-
-    pub fn get_data<'a>(&self, module: &'a Module) -> Ref<'a, PhiOp> {
-        Ref::map(module.get_inst(self.0), |data| {
-            if let InstData::Phi(_, phi) = data {
-                phi
-            } else {
-                panic!("Requries PHI but got {:?}", self.0);
-            }
-        })
-    }
-}
-
-impl Into<InstRef> for PhiOpRef {
-    fn into(self) -> InstRef {
+    fn into_raw(self) -> InstRef {
         self.0
     }
 }

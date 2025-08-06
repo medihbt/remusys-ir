@@ -1,13 +1,9 @@
-use std::cell::Ref;
-
-use slab::Slab;
-
 use crate::{
     base::SlabRef,
-    impl_slabref,
-    ir::{ValueSSA, module::Module},
-    typing::{id::ValTypeID, types::ArrayTypeRef},
+    ir::{IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, UserList, ValueSSA},
+    typing::{context::TypeContext, id::ValTypeID, types::ArrayTypeRef},
 };
+use slab::Slab;
 
 #[derive(Debug, Clone)]
 pub enum ConstExprData {
@@ -15,135 +11,220 @@ pub enum ConstExprData {
     Struct(Struct),
 }
 
-#[derive(Debug, Clone)]
-pub struct Array {
-    pub arrty: ArrayTypeRef,
-    pub elems: Vec<ValueSSA>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Struct {
-    pub structty: ValTypeID,
-    pub elems: Vec<ValueSSA>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConstExprRef(usize);
-impl_slabref!(ConstExprRef, ConstExprData);
-
-impl ConstExprRef {
-    pub fn get_value_type(&self, module: &Module) -> ValTypeID {
-        match &*module.get_expr(self.clone()) {
-            ConstExprData::Array(data) => ValTypeID::Array(data.arrty),
-            ConstExprData::Struct(data) => data.structty.clone(),
-        }
-    }
-
-    pub fn is_aggregate(&self) -> bool {
-        true
-    }
-    pub fn as_aggregate<'a>(&self, module: &'a Module) -> Option<ConstAggregateView<'a>> {
-        match &*module.get_expr(self.clone()) {
-            ConstExprData::Array(..) | ConstExprData::Struct(..) => {} // _ => return None
-        }
-        Some(ConstAggregateView(self.clone(), module))
-    }
-
-    pub fn binary_is_zero(&self, module: &Module) -> bool {
-        module.get_expr(self.clone()).binary_is_zero(module)
-    }
-    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<ConstExprData>) -> bool {
-        self.to_data(alloc_expr)
-            .binary_is_zero_from_alloc(alloc_expr)
-    }
-}
-
-#[derive(Clone)]
-pub struct ConstAggregateView<'a>(pub ConstExprRef, &'a Module);
-
-impl<'a> ConstAggregateView<'a> {
-    fn borrow_elems(&self) -> Ref<Vec<ValueSSA>> {
-        let ConstAggregateView(handle, module) = self.clone();
-        Ref::map(module.get_expr(handle), |x| match x {
-            ConstExprData::Array(arr) => &arr.elems,
-            ConstExprData::Struct(s) => &s.elems,
-        })
-    }
-
-    pub fn load_elems(&self) -> Vec<ValueSSA> {
-        self.borrow_elems().clone()
-    }
-
-    pub fn get_elem(&self, index: usize) -> Option<ValueSSA> {
-        self.borrow_elems().get(index).map(|x| *x)
-    }
-    pub fn get_nelems(&self) -> usize {
-        self.borrow_elems().len()
-    }
-
-    pub fn insert_elem_to_data(&self, index: usize, value: ValueSSA) -> Option<ConstExprData> {
-        let ConstAggregateView(handle, module) = self.clone();
-        match &*module.get_expr(handle) {
-            ConstExprData::Array(a) => {
-                if a.elems.len() <= index {
-                    None
-                } else {
-                    let mut ret = a.clone();
-                    ret.elems[index] = value;
-                    Some(ConstExprData::Array(ret))
-                }
-            }
-            ConstExprData::Struct(s) => {
-                if s.elems.len() <= index {
-                    None
-                } else {
-                    let mut ret = s.clone();
-                    ret.elems[index] = value;
-                    Some(ConstExprData::Struct(ret))
-                }
-            }
-        }
-    }
-    pub fn insert_elem_to_ref(&self, index: usize, value: ValueSSA) -> Option<ConstExprRef> {
-        self.insert_elem_to_data(index, value)
-            .map(|data| self.1.insert_expr(data))
-    }
-}
-
-pub trait IConstExprVisitor {
-    fn read_array(&self, array_ref: ConstExprRef, array_data: &Array);
-    fn read_struct(&self, struct_ref: ConstExprRef, struct_data: &Struct);
-
-    fn expr_visitor_dispatch(&self, expr_ref: ConstExprRef, alloc_expr: &Slab<ConstExprData>) {
-        let expr_data = expr_ref.to_data(alloc_expr);
-        match expr_data {
-            ConstExprData::Array(array) => self.read_array(expr_ref, array),
-            ConstExprData::Struct(struct_data) => self.read_struct(expr_ref, struct_data),
+impl ITraceableValue for ConstExprData {
+    fn users(&self) -> &UserList {
+        match self {
+            ConstExprData::Array(data) => &data.users,
+            ConstExprData::Struct(data) => &data.users,
         }
     }
 }
 
 impl ConstExprData {
-    pub fn binary_is_zero(&self, module: &Module) -> bool {
+    pub fn get_value_type(&self) -> ValTypeID {
         match self {
-            ConstExprData::Array(a) => Self::binary_is_zero_aggregate(&a.elems, module),
-            ConstExprData::Struct(s) => Self::binary_is_zero_aggregate(&s.elems, module),
-        }
-    }
-    pub fn binary_is_zero_from_alloc(&self, alloc_expr: &Slab<ConstExprData>) -> bool {
-        match self {
-            ConstExprData::Array(a) => a
-                .elems
-                .iter()
-                .all(|v| v.binary_is_zero_from_alloc(alloc_expr)),
-            ConstExprData::Struct(s) => s
-                .elems
-                .iter()
-                .all(|v| v.binary_is_zero_from_alloc(alloc_expr)),
+            ConstExprData::Array(data) => ValTypeID::Array(data.arrty),
+            ConstExprData::Struct(data) => data.structty,
         }
     }
 
-    fn binary_is_zero_aggregate(values: &[ValueSSA], module: &Module) -> bool {
-        if values.is_empty() { true } else { values.iter().all(|v| v.binary_is_zero(module)) }
+    pub fn is_aggregate(&self) -> bool {
+        matches!(self, ConstExprData::Array(_) | ConstExprData::Struct(_))
+    }
+}
+
+#[derive(Debug)]
+pub struct Array {
+    pub arrty: ArrayTypeRef,
+    pub elems: Vec<ValueSSA>,
+
+    /// 有哪些指令使用了该常量表达式引用
+    ///
+    /// **重要限制**: ConstExpr 不是引用唯一的，相同值的常量表达式可能
+    /// 有多个不同的 ConstExprRef。因此这个 UserList 只能反映使用了
+    /// **当前这个引用** 的指令，而不是使用了相同**值**的所有指令。
+    ///
+    /// 要获得完整的使用信息，需要先运行 Const Expression Compression Pass
+    /// 将所有值相同的表达式合并，之后 UserList 才能准确反映该值的所有使用者。
+    ///
+    /// ### 示例
+    ///
+    /// ```ignore
+    /// // 编译前：两个相同值的不同引用
+    /// let ref1 = ConstExpr([1, 2, 3]);  // users: [inst1, inst3]  
+    /// let ref2 = ConstExpr([1, 2, 3]);  // users: [inst2, inst4]
+    ///
+    /// // 压缩后：合并为同一个引用
+    /// let merged = ConstExpr([1, 2, 3]); // users: [inst1, inst2, inst3, inst4]
+    /// ```
+    pub users: UserList,
+}
+
+impl Clone for Array {
+    /// 克隆时不克隆 users 列表，保持为空。因为 UserList 在设计上就不支持深拷贝.
+    fn clone(&self) -> Self {
+        Self {
+            arrty: self.arrty,
+            elems: self.elems.clone(),
+            users: UserList::new_empty(),
+        }
+    }
+}
+
+impl Array {
+    pub fn len(&self) -> usize {
+        self.elems.len()
+    }
+
+    pub fn is_zero(&self, allocs: &IRAllocs) -> bool {
+        self.elems.iter().all(|elem| elem.is_zero(allocs))
+    }
+
+    pub fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        if self.is_zero(&writer.allocs) {
+            return write!(writer.output.borrow_mut(), "zeroinitializer");
+        }
+        writer.write_str("[")?;
+        for (i, elem) in self.elems.iter().enumerate() {
+            if i > 0 {
+                writer.write_str(", ")?;
+            }
+            elem.fmt_ir(writer)?;
+        }
+        writer.write_str("]")
+    }
+}
+
+#[derive(Debug)]
+pub struct Struct {
+    pub structty: ValTypeID,
+    pub elems: Vec<ValueSSA>,
+
+    /// 有哪些指令使用了该常量表达式引用
+    ///
+    /// **重要限制**: ConstExpr 不是引用唯一的，相同值的常量表达式可能
+    /// 有多个不同的 ConstExprRef。因此这个 UserList 只能反映使用了
+    /// **当前这个引用** 的指令，而不是使用了相同**值**的所有指令。
+    ///
+    /// 要获得完整的使用信息，需要先运行 Const Expression Compression Pass
+    /// 将所有值相同的表达式合并，之后 UserList 才能准确反映该值的所有使用者。
+    ///
+    /// ### 示例
+    ///
+    /// ```ignore
+    /// // 编译前：两个相同值的不同引用
+    /// let ref1 = ConstExpr([1, 2, 3]);  // users: [inst1, inst3]  
+    /// let ref2 = ConstExpr([1, 2, 3]);  // users: [inst2, inst4]
+    ///
+    /// // 压缩后：合并为同一个引用
+    /// let merged = ConstExpr([1, 2, 3]); // users: [inst1, inst2, inst3, inst4]
+    /// ```
+    pub users: UserList,
+}
+
+impl Clone for Struct {
+    /// 克隆时不克隆 users 列表，保持为空。因为 UserList 在设计上就不支持深拷贝.
+    fn clone(&self) -> Self {
+        Self {
+            structty: self.structty,
+            elems: self.elems.clone(),
+            users: UserList::new_empty(),
+        }
+    }
+}
+
+impl Struct {
+    pub fn is_zero(&self, allocs: &IRAllocs) -> bool {
+        self.elems.iter().all(|elem| elem.is_zero(allocs))
+    }
+
+    pub fn is_packed(&self, type_ctx: &TypeContext) -> bool {
+        match self.structty {
+            ValTypeID::Struct(structty) => structty.is_packed(type_ctx),
+            ValTypeID::StructAlias(sa) => {
+                let str = sa.get_aliasee(type_ctx);
+                str.is_packed(type_ctx)
+            }
+            _ => panic!("Expected struct type but got {:?}", self.structty),
+        }
+    }
+
+    pub fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        if self.is_zero(&writer.allocs) {
+            return write!(writer.output.borrow_mut(), "zeroinitializer");
+        }
+        let is_packed = self.is_packed(&writer.type_ctx);
+        if is_packed {
+            writer.write_str("<{")?;
+        } else {
+            writer.write_str("{")?;
+        }
+        for (i, elem) in self.elems.iter().enumerate() {
+            if i > 0 {
+                writer.write_str(", ")?;
+            }
+            elem.fmt_ir(writer)?;
+        }
+        if is_packed { writer.write_str("}>") } else { writer.write_str("}") }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConstExprRef(usize);
+
+impl SlabRef for ConstExprRef {
+    type RefObject = ConstExprData;
+    fn from_handle(handle: usize) -> Self {
+        ConstExprRef(handle)
+    }
+    fn get_handle(&self) -> usize {
+        self.0
+    }
+}
+
+impl ConstExprRef {
+    pub fn from_alloc(alloc: &mut Slab<ConstExprData>, data: ConstExprData) -> Self {
+        ConstExprRef(alloc.insert(data))
+    }
+}
+
+impl ISubValueSSA for ConstExprRef {
+    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+        match value {
+            ValueSSA::ConstExpr(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::ConstExpr(self)
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
+        match self.to_data(&allocs.exprs) {
+            ConstExprData::Array(data) => ValTypeID::Array(data.arrty),
+            ConstExprData::Struct(data) => data.structty,
+        }
+    }
+
+    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
+        None
+    }
+
+    fn is_zero(&self, allocs: &IRAllocs) -> bool {
+        match self.to_data(&allocs.exprs) {
+            ConstExprData::Array(data) => data.elems.iter().all(|elem| elem.is_zero(allocs)),
+            ConstExprData::Struct(data) => data.elems.iter().all(|elem| elem.is_zero(allocs)),
+        }
+    }
+
+    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        if self.is_zero(&writer.allocs) {
+            return write!(writer.output.borrow_mut(), "zeroinitializer");
+        }
+        match self.to_data(&writer.allocs.exprs) {
+            ConstExprData::Array(arr) => arr.fmt_ir(writer),
+            ConstExprData::Struct(str) => str.fmt_ir(writer),
+        }
     }
 }

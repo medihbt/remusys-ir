@@ -1,4 +1,4 @@
-use std::{cell::Cell, marker::PhantomData};
+use std::{cell::Cell, marker::PhantomData, ops::ControlFlow};
 
 use slab::Slab;
 
@@ -38,6 +38,7 @@ impl SlabListNodeHead {
 pub enum SlabListError {
     Empty,
     InvalidRef,
+    InvalidList,
     SelfNotInList(usize),
     NodeIsTailGuide,
     NodeIsHeadGuide,
@@ -404,6 +405,36 @@ impl<T: SlabListNodeRef> SlabRefList<T> {
             __phantom__: PhantomData,
         }
     }
+
+    /// 遍历所有结点, 包括头尾定位结点.
+    pub fn forall_nodes(
+        &self,
+        alloc: &Slab<T::RefObject>,
+        mut f: impl FnMut(&T, &T::RefObject) -> ControlFlow<()>,
+    ) {
+        if !self.is_valid() {
+            return;
+        }
+        let mut current = self._head.clone();
+        loop {
+            let data = match current.as_data(alloc) {
+                Some(data) => data,
+                None => break,
+            };
+            if let ControlFlow::Break(_) = f(&current, data) {
+                break;
+            }
+            // 到达尾结点后停止
+            if current == self._tail {
+                break;
+            }
+            let next = match current.get_next_ref(alloc) {
+                Some(n) => n,
+                None => break,
+            };
+            current = next;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -421,6 +452,10 @@ impl<T: SlabListNodeRef> SlabListRange<T> {
         let mut length = 0;
         let mut current = self.node_head.get_next_ref(slab);
         while let Some(node) = current {
+            // 如果遇到 tail guide 节点，停止计数
+            if node == self.node_tail {
+                break;
+            }
             length += 1;
             current = node.get_next_ref(slab);
         }
@@ -493,6 +528,8 @@ where
             .finish()
     }
 }
+
+pub type SlabListRes = Result<(), SlabListError>;
 
 #[cfg(test)]
 mod testing {
@@ -604,5 +641,33 @@ mod testing {
         }
         assert_eq!(list.len(), 5);
         print_test_list(&list, &slab);
+    }
+
+    #[test]
+    fn calc_length_test() {
+        let mut slab = Slab::new();
+        
+        // 测试空列表
+        let empty_list = test_list_from_vec(&mut slab, vec![]);
+        let range = empty_list.load_range();
+        assert_eq!(range.calc_length(&slab), 0);
+        assert_eq!(range.calc_length(&slab), empty_list.len());
+        
+        // 测试有元素的列表
+        let list = test_list_from_vec(&mut slab, vec![1, 2, 3, 4, 5]);
+        let range = list.load_range();
+        assert_eq!(range.calc_length(&slab), 5);
+        assert_eq!(range.calc_length(&slab), list.len());
+        
+        // 添加更多元素后测试
+        for i in 6..=10 {
+            let test_ref = TestNodeRef(slab.insert(TestNode::new(i)));
+            list.push_back_ref(&mut slab, test_ref).unwrap();
+        }
+        let range = list.load_range();
+        assert_eq!(range.calc_length(&slab), 10);
+        assert_eq!(range.calc_length(&slab), list.len());
+        
+        println!("calc_length test passed!");
     }
 }

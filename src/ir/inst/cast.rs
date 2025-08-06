@@ -1,153 +1,100 @@
-use slab::Slab;
-
 use crate::{
-    base::INullableValue,
-    ir::{ValueSSA, module::Module, opcode::Opcode},
-    typing::{TypeMismatchError, id::ValTypeID, types::FloatTypeKind},
+    ir::{
+        IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind, InstRef, Opcode, Use,
+        UseKind, ValueSSA,
+        inst::{ISubInstRef, InstOperands},
+    },
+    typing::id::ValTypeID,
 };
+use std::rc::Rc;
 
-use super::{
-    InstDataCommon, InstDataUnique, InstError,
-    checking::check_type_kind_match,
-    usedef::{UseData, UseKind, UseRef},
-};
-
-#[derive(Debug, Clone, Copy)]
-pub enum CastError {
-    ExtCastOperandTooLarge(ValTypeID, ValTypeID),
-    TruncCastOperandTooSmall(ValTypeID, ValTypeID),
-    InvalidOpcode(Opcode),
-}
-
+#[derive(Debug)]
 pub struct CastOp {
-    pub from_op: UseRef,
+    common: InstCommon,
+    fromop: [Rc<Use>; 1],
+    pub fromty: ValTypeID, // 源类型
 }
 
-impl InstDataUnique for CastOp {
-    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.from_op = common.alloc_use(alloc_use, UseKind::CastOpFrom);
+impl ISubInst for CastOp {
+    fn new_empty(opcode: Opcode) -> Self {
+        Self {
+            common: InstCommon::new(opcode, ValTypeID::Void),
+            fromop: [Use::new(UseKind::CastOpFrom)],
+            fromty: ValTypeID::Void, // 初始类型为 Void
+        }
     }
-
-    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError> {
-        let alloc_use = module.borrow_use_alloc();
-        let from_value = self.from_op.get_operand(&alloc_use);
-        if from_value.is_null() {
-            return Ok(());
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        if let InstData::Cast(cast) = inst { Some(cast) } else { None }
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        match inst {
+            InstData::Cast(cast) => Some(cast),
+            _ => None,
         }
-        let from_ty = from_value.get_value_type(module);
-        let ret_ty = common.ret_type;
-        match common.opcode {
-            Opcode::Zext | Opcode::Sext => match (from_ty, ret_ty) {
-                (ValTypeID::Int(from_bits), ValTypeID::Int(ret_bits)) => {
-                    if from_bits >= ret_bits {
-                        Err(InstError::InvalidCast(CastError::ExtCastOperandTooLarge(
-                            ret_ty, from_ty,
-                        )))
-                    } else {
-                        Ok(())
-                    }
-                }
-                _ => Err(InstError::OperandTypeMismatch(
-                    TypeMismatchError::KindNotMatch(ret_ty, from_ty),
-                    from_value,
-                )),
-            },
-            Opcode::Fpext => match (from_ty, ret_ty) {
-                (ValTypeID::Float(from_kind), ValTypeID::Float(ret_kind)) => {
-                    if from_kind.get_binary_bits() <= ret_kind.get_binary_bits() {
-                        Ok(())
-                    } else {
-                        Err(InstError::InvalidCast(CastError::ExtCastOperandTooLarge(
-                            ret_ty, from_ty,
-                        )))
-                    }
-                }
-                _ => Err(InstError::OperandTypeMismatch(
-                    TypeMismatchError::KindNotMatch(ret_ty, from_ty),
-                    from_value,
-                )),
-            },
-            Opcode::Trunc => match (from_ty, ret_ty) {
-                (ValTypeID::Int(from_bits), ValTypeID::Int(ret_bits)) => {
-                    if from_bits <= ret_bits {
-                        Err(InstError::InvalidCast(CastError::TruncCastOperandTooSmall(
-                            ret_ty, from_ty,
-                        )))
-                    } else {
-                        Ok(())
-                    }
-                }
-                _ => Err(InstError::OperandTypeMismatch(
-                    TypeMismatchError::KindNotMatch(ret_ty, from_ty),
-                    from_value,
-                )),
-            },
-            Opcode::Fptrunc => match (from_ty, ret_ty) {
-                (ValTypeID::Float(from_kind), ValTypeID::Float(ret_kind)) => {
-                    if from_kind.get_binary_bits() >= ret_kind.get_binary_bits() {
-                        Ok(())
-                    } else {
-                        Err(InstError::InvalidCast(CastError::TruncCastOperandTooSmall(
-                            ret_ty, from_ty,
-                        )))
-                    }
-                }
-                _ => Err(InstError::OperandTypeMismatch(
-                    TypeMismatchError::KindNotMatch(ret_ty, from_ty),
-                    from_value,
-                )),
-            },
-            Opcode::Bitcast => {
-                // Bitcast is allowed between any types whose instance size are equal.
-                let type_ctx = &*module.type_ctx;
-                if from_ty.get_instance_size(type_ctx) == ret_ty.get_instance_size(type_ctx) {
-                    Ok(())
-                } else {
-                    Err(InstError::InvalidCast(CastError::ExtCastOperandTooLarge(
-                        ret_ty, from_ty,
-                    )))
-                }
-            }
-            Opcode::PtrToInt => check_type_kind_match(ValTypeID::Ptr, from_ty)
-                .map_err(|e| InstError::OperandTypeMismatch(e, from_value)),
-            Opcode::IntToPtr => check_type_kind_match(ValTypeID::Ptr, ret_ty)
-                .map_err(|e| InstError::OperandTypeMismatch(e, from_value)),
-            Opcode::Sitofp | Opcode::Uitofp => check_type_kind_match(ValTypeID::Int(0), from_ty)
-                .map_err(|e| InstError::OperandTypeMismatch(e, from_value)),
-            Opcode::Fptosi => {
-                check_type_kind_match(ValTypeID::Float(FloatTypeKind::Ieee32), from_ty)
-                    .map_err(|e| InstError::OperandTypeMismatch(e, from_value))
-            }
-            _ => panic!("Invalid cast opcode: {:?}", common.opcode),
-        }
+    }
+    fn into_ir(self) -> InstData {
+        InstData::Cast(self)
+    }
+    fn get_common(&self) -> &InstCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut InstCommon {
+        &mut self.common
+    }
+    fn is_terminator(&self) -> bool {
+        false
+    }
+    fn get_operands(&self) -> InstOperands {
+        InstOperands::Fixed(&self.fromop)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.fromop
     }
 }
 
 impl CastOp {
-    pub fn new_raw(
-        mut_module: &Module,
-        opcode: Opcode,
-        ret_ty: ValTypeID,
-    ) -> Result<(InstDataCommon, Self), InstError> {
-        if !opcode.is_cast_op() {
-            return Err(InstError::InvalidCast(CastError::InvalidOpcode(opcode)));
+    pub fn new_raw(opcode: Opcode, fromty: ValTypeID, to_ty: ValTypeID) -> Self {
+        assert_eq!(opcode.get_kind(), InstKind::Cast);
+        Self {
+            common: InstCommon::new(opcode, to_ty),
+            fromop: [Use::new(UseKind::CastOpFrom)],
+            fromty,
         }
-        let mut common =
-            InstDataCommon::new(opcode, ret_ty, &mut mut_module.borrow_use_alloc_mut());
-        let mut ret = Self { from_op: UseRef::new_null() };
-        ret.build_operands(&mut common, &mut mut_module.borrow_use_alloc_mut());
-        Ok((common, ret))
     }
 
-    pub fn new(
-        mut_module: &Module,
-        opcode: Opcode,
-        ret_ty: ValTypeID,
-        from_value: ValueSSA,
-    ) -> Result<(InstDataCommon, Self), InstError> {
-        let (common, ret) = Self::new_raw(mut_module, opcode, ret_ty)?;
-        let alloc_use = mut_module.borrow_use_alloc();
-        ret.from_op.set_operand_nordfg(&alloc_use, from_value);
-        Ok((common, ret))
+    pub fn new(allocs: &IRAllocs, opcode: Opcode, to_ty: ValTypeID, from: ValueSSA) -> Self {
+        let cast_op = Self::new_raw(opcode, from.get_valtype(allocs), to_ty);
+        cast_op.fromop[0].set_operand(allocs, from);
+        cast_op
+    }
+
+    pub fn get_to_type(&self) -> ValTypeID {
+        self.get_common().ret_type
+    }
+
+    pub fn get_from(&self) -> ValueSSA {
+        self.fromop[0].get_operand()
+    }
+    pub fn set_from(&mut self, allocs: &IRAllocs, from: ValueSSA) {
+        if self.fromty != from.get_valtype(allocs) {
+            let fromty = self.fromty;
+            let new_fromty = from.get_valtype(allocs);
+            panic!("Type mismatch: expected {fromty:?}, got {new_fromty:?}");
+        }
+        self.fromop[0].set_operand(allocs, from);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CastOpRef(InstRef);
+
+impl ISubInstRef for CastOpRef {
+    type InstDataT = CastOp;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        CastOpRef(inst_ref)
+    }
+    fn into_raw(self) -> InstRef {
+        self.0
     }
 }

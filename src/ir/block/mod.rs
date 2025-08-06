@@ -1,73 +1,407 @@
-use std::cell::{Cell, Ref};
-
-use slab::Slab;
-
 use crate::{
     base::{
         INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
         SlabListRange, SlabRef, SlabRefList,
     },
-    impl_slabref,
-    ir::{block::jump_target::JumpTargetRef, inst::Ret},
+    ir::{
+        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstCommon,
+        InstData, InstRef, JumpTarget, Module, PredList, TerminatorRef, UserList, ValueSSA,
+        block::jump_target::JumpTargets,
+        global::GlobalRef,
+        inst::{BrRef, ISubInstRef, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
+    },
     typing::id::ValTypeID,
 };
-
-use super::{
-    ValueSSA,
-    constant::data::ConstData,
-    global::GlobalRef,
-    inst::{InstData, InstError, InstRef, TerminatorInstRef},
-    module::Module,
+use slab::Slab;
+use std::{
+    cell::{Cell, Ref},
+    ops::ControlFlow,
+    rc::Rc,
 };
 
-pub mod jump_target;
+pub(super) mod jump_target;
 
+/// 基本块数据结构
+///
+/// 基本块是控制流图的基本单元，包含一系列按顺序执行的指令。
+/// 每个基本块有唯一的入口点（第一条指令）和出口点（终结指令）。
+#[derive(Debug)]
+pub struct BlockData {
+    /// 基本块的内部数据（节点头、父函数、ID等）
+    pub inner: Cell<BlockDataInner>,
+    /// 基本块自身的引用
+    pub self_ref: BlockRef,
+    /// 基本块内的指令列表
+    pub insts: SlabRefList<InstRef>,
+    /// Phi 指令区域的结束标记
+    pub phi_end: InstRef,
+    /// 使用此基本块作为操作数的指令列表 (Use-Def 链)
+    pub users: UserList,
+    /// 此基本块的前驱基本块列表 (控制流图的入边)
+    pub preds: PredList,
+}
+
+impl SlabListNode for BlockData {
+    fn new_guide() -> Self {
+        BlockData {
+            inner: Cell::new(BlockDataInner {
+                _node_head: SlabListNodeHead::new(),
+                _id: 0,
+                _parent_func: GlobalRef::new_null(),
+            }),
+            self_ref: BlockRef::new_null(),
+            insts: SlabRefList::new_guide(),
+            phi_end: InstRef::new_null(),
+            users: UserList::new_empty(),
+            preds: PredList::new_empty(),
+        }
+    }
+    fn load_node_head(&self) -> SlabListNodeHead {
+        self.inner.get()._node_head
+    }
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
+        let mut inner = self.inner.get();
+        inner._node_head = node_head;
+        self.inner.set(inner);
+    }
+}
+
+impl ITraceableValue for BlockData {
+    fn users(&self) -> &UserList {
+        &self.users
+    }
+}
+
+impl BlockData {
+    /// 从指令分配器创建一个空的基本块
+    ///
+    /// 创建一个只包含 Phi 指令结束标记的空基本块。
+    ///
+    /// # 参数
+    /// - `alloc`: 指令分配器的可变引用
+    ///
+    /// # 返回
+    /// 返回新创建的空基本块
+    pub fn empty_from_alloc(alloc: &mut Slab<InstData>) -> Self {
+        let mut ret = Self {
+            inner: Cell::new(BlockDataInner {
+                _node_head: SlabListNodeHead::new(),
+                _parent_func: GlobalRef::new_null(),
+                _id: 0,
+            }),
+            self_ref: BlockRef::new_null(),
+            insts: SlabRefList::from_slab(alloc),
+            phi_end: InstRef::new_null(),
+            users: UserList::new_empty(),
+            preds: PredList::new_empty(),
+        };
+        let phi_end = {
+            let phi_end = InstData::PhiInstEnd(InstCommon::new_empty());
+            InstRef::from_alloc(alloc, phi_end)
+        };
+        ret.insts
+            .push_back_ref(alloc, phi_end)
+            .expect("Failed to push phi end");
+        ret.phi_end = phi_end;
+        ret
+    }
+    /// 从模块创建一个空的基本块
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用
+    ///
+    /// # 返回
+    /// 返回新创建的空基本块
+    pub fn new_empty(module: &Module) -> Self {
+        let mut alloc = module.allocs.borrow_mut();
+        Self::empty_from_alloc(&mut alloc.insts)
+    }
+
+    /// 从可变模块创建一个空的基本块
+    ///
+    /// 与 `new_empty` 功能相同，但接受可变模块引用，避免借用检查开销。
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    ///
+    /// # 返回
+    /// 返回新创建的空基本块
+    pub fn new_empty_from_mut_module(module: &mut Module) -> Self {
+        let alloc = module.allocs.get_mut();
+        Self::empty_from_alloc(&mut alloc.insts)
+    }
+
+    /// 从指令分配器创建一个包含 unreachable 指令的基本块
+    ///
+    /// 创建一个包含单个 unreachable 指令的基本块，表示不可达的代码路径。
+    ///
+    /// # 参数
+    /// - `alloc`: 指令分配器的可变引用
+    ///
+    /// # 返回
+    /// 返回包含 unreachable 指令的基本块
+    pub fn new_unreachable_from_alloc(alloc: &mut Slab<InstData>) -> Self {
+        let ret = Self::empty_from_alloc(alloc);
+        let unreachable = {
+            let data = InstData::Unreachable(InstCommon::new_empty());
+            InstRef::from_alloc(alloc, data)
+        };
+        ret.insts
+            .push_back_ref(alloc, unreachable)
+            .expect("Failed to push unreachable inst");
+        ret
+    }
+
+    /// 从模块创建一个包含 unreachable 指令的基本块
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用
+    ///
+    /// # 返回
+    /// 返回包含 unreachable 指令的基本块
+    pub fn new_unreachable(module: &Module) -> Self {
+        let mut alloc = module.allocs.borrow_mut();
+        Self::new_unreachable_from_alloc(&mut alloc.insts)
+    }
+
+    /// 从可变模块创建一个包含 unreachable 指令的基本块
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    ///
+    /// # 返回
+    /// 返回包含 unreachable 指令的基本块
+    pub fn new_unreachable_from_mut_module(module: &mut Module) -> Self {
+        let alloc = module.allocs.get_mut();
+        Self::new_unreachable_from_alloc(&mut alloc.insts)
+    }
+
+    /// 从指令分配器创建一个返回零值的基本块
+    ///
+    /// 创建一个包含返回零值指令的基本块，用于函数的默认返回路径。
+    /// 零值根据返回类型自动确定（void 类型返回无值，其他类型返回对应的零值）。
+    ///
+    /// # 参数
+    /// - `alloc`: 指令分配器的可变引用
+    /// - `ret_ty`: 函数的返回值类型
+    ///
+    /// # 返回
+    /// 返回包含返回零值指令的基本块
+    ///
+    /// # Panics
+    /// 如果返回类型不支持零值构造则会 panic
+    pub fn new_return_zero_from_alloc(alloc: &mut Slab<InstData>, ret_ty: ValTypeID) -> Self {
+        let ret_bb = Self::empty_from_alloc(alloc);
+        let ret_inst = {
+            let zero_value = match ret_ty {
+                ValTypeID::Void => ValueSSA::None,
+                ValTypeID::Ptr
+                | ValTypeID::Int(_)
+                | ValTypeID::Float(_)
+                | ValTypeID::Array(_)
+                | ValTypeID::Struct(_) => ConstData::Zero(ret_ty).into_ir(),
+                _ => panic!("Unsupported return type {ret_ty:?} for zero return"),
+            };
+            let retinst = Ret::new_raw(ret_ty);
+            // 如上所示, 0 值都是不可追踪的常量, 因此这里直接绕开数据流反图追踪机制.
+            retinst.retval().operand.set(zero_value);
+            InstRef::from_alloc(alloc, retinst.into_ir())
+        };
+        ret_bb
+            .insts
+            .push_back_ref(alloc, ret_inst)
+            .expect("Failed to push return inst");
+        ret_bb
+    }
+    /// 从模块创建一个返回零值的基本块
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用
+    /// - `ret_ty`: 函数的返回值类型
+    ///
+    /// # 返回
+    /// 返回包含返回零值指令的基本块
+    pub fn new_return_zero(module: &Module, ret_ty: ValTypeID) -> Self {
+        let mut alloc = module.allocs.borrow_mut();
+        Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
+    }
+
+    /// 从可变模块创建一个返回零值的基本块
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    /// - `ret_ty`: 函数的返回值类型
+    ///
+    /// # 返回
+    /// 返回包含返回零值指令的基本块
+    pub fn new_return_zero_from_mut_module(module: &mut Module, ret_ty: ValTypeID) -> Self {
+        let alloc = module.allocs.get_mut();
+        Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
+    }
+}
+
+impl BlockData {
+    /// 获取基本块所属的父函数
+    pub fn get_parent_func(&self) -> GlobalRef {
+        self.inner.get()._parent_func
+    }
+
+    /// 设置基本块所属的父函数
+    pub fn set_parent_func(&self, parent: GlobalRef) {
+        let mut inner = self.inner.get();
+        inner._parent_func = parent;
+        self.inner.set(inner);
+    }
+
+    /// 加载基本块内所有指令的范围
+    ///
+    /// # 返回
+    /// - `Some(SlabListRange)`: 如果基本块有指令，返回指令范围
+    /// - `None`: 如果基本块为空
+    pub fn load_inst_range(&self) -> Option<SlabListRange<InstRef>> {
+        if self.insts.is_valid() { Some(self.insts.load_range()) } else { None }
+    }
+
+    /// 加载基本块内 Phi 指令的范围
+    ///
+    /// Phi 指令位于基本块的开始部分，用于 SSA 形式的控制流汇合。
+    ///
+    /// # 返回
+    /// - `Some(SlabListRange)`: 如果基本块有 Phi 指令，返回 Phi 指令范围
+    /// - `None`: 如果基本块为空
+    pub fn try_load_phi_range(&self) -> Option<SlabListRange<InstRef>> {
+        if self.insts.is_valid() {
+            debug_assert!(
+                self.phi_end.is_nonnull(),
+                "Phi end should be set if insts is valid"
+            );
+            let node_head = self.insts._head;
+            let node_tail = self.phi_end;
+            Some(SlabListRange { node_head, node_tail })
+        } else {
+            None
+        }
+    }
+
+    pub fn load_phi_range(&self) -> SlabListRange<InstRef> {
+        self.try_load_phi_range()
+            .expect("Block instructions are not valid")
+    }
+
+    /// 加载基本块内普通指令的范围
+    ///
+    /// 普通指令位于 Phi 指令之后，包含所有非 Phi 指令。
+    ///
+    /// # 返回
+    /// - `Some(SlabListRange)`: 如果基本块有普通指令，返回普通指令范围
+    /// - `None`: 如果基本块为空
+    pub fn load_common_range(&self) -> Option<SlabListRange<InstRef>> {
+        if self.insts.is_valid() {
+            debug_assert!(
+                self.phi_end.is_nonnull(),
+                "Phi end should be set if insts is valid"
+            );
+            let node_head = self.phi_end;
+            let node_tail = self.insts._tail;
+            Some(SlabListRange { node_head, node_tail })
+        } else {
+            None
+        }
+    }
+
+    pub fn try_get_terminator(
+        &self,
+        alloc: &Slab<InstData>,
+    ) -> Result<TerminatorRef, &'static str> {
+        let insts = &self.insts;
+        let Some(back) = insts.get_back_ref(alloc) else {
+            return Err("Block has no instructions");
+        };
+        let terminator = match back.to_data(alloc) {
+            InstData::Unreachable(_) => TerminatorRef::Unreachable(back),
+            InstData::Ret(_) => TerminatorRef::Ret(RetRef::from_raw_nocheck(back)),
+            InstData::Jump(_) => TerminatorRef::Jump(JumpRef::from_raw_nocheck(back)),
+            InstData::Br(_) => TerminatorRef::Br(BrRef::from_raw_nocheck(back)),
+            InstData::Switch(_) => TerminatorRef::Switch(SwitchRef::from_raw_nocheck(back)),
+            _ => return Err("Block does not have a terminator instruction"),
+        };
+        Ok(terminator)
+    }
+
+    pub fn get_terminator(&self, alloc: &Slab<InstData>) -> TerminatorRef {
+        self.try_get_terminator(alloc)
+            .expect("Block does not have a terminator instruction")
+    }
+
+    pub fn has_terminator(&self, alloc: &Slab<InstData>) -> bool {
+        self.insts.is_valid() && self.try_get_terminator(alloc).is_ok()
+    }
+
+    pub fn get_successors<'a>(&self, alloc: &'a Slab<InstData>) -> JumpTargets<'a> {
+        self.get_terminator(alloc).get_jts(alloc)
+    }
+    pub fn successors_mut<'a>(
+        &mut self,
+        alloc: &'a mut Slab<InstData>,
+    ) -> &'a mut [Rc<JumpTarget>] {
+        self.get_terminator(alloc).jts_mut(alloc)
+    }
+
+    pub fn has_phi(&self, alloc: &Slab<InstData>) -> bool {
+        let range = self.load_phi_range();
+        range.calc_length(alloc) > 0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.insts.is_valid() || self.insts.is_empty()
+    }
+
+    pub fn build_add_phi(&self, alloc: &Slab<InstData>, phi: PhiRef) {
+        self.insts
+            .node_add_prev(alloc, self.phi_end, phi.into_raw())
+            .expect("Failed to add phi instruction");
+    }
+    pub fn build_add_inst(&self, alloc: &Slab<InstData>, inst: impl ISubInstRef) {
+        let inst = inst.into_raw();
+
+        match inst.to_data(alloc) {
+            InstData::Phi(_) => self.build_add_phi(alloc, PhiRef::from_raw_nocheck(inst)),
+            x if x.is_terminator() => {
+                if self.has_terminator(alloc) {
+                    panic!("Tried to add a terminator instruction to a block that already has one");
+                }
+                self.insts
+                    .push_back_ref(alloc, inst)
+                    .expect("Failed to push terminator instruction")
+            }
+            _ => self
+                .insts
+                .push_back_ref(alloc, inst)
+                .expect("Failed to push instruction"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BlockDataInner {
+    pub(super) _node_head: SlabListNodeHead,
+    pub(super) _parent_func: GlobalRef,
+    pub(super) _id: usize,
+}
+
+/// 基本块引用，用于在 IR 中标识和访问基本块
+///
+/// 实现了必要的比较和排序 trait，可以用作集合的键值。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockRef(usize);
 
-impl_slabref!(BlockRef, BlockData);
-
-impl BlockRef {
-    /// Virtual exit block reference, used for post-dominance analysis.
-    /// This block is not a real block, but a placeholder for the virtual exit.
-    pub const fn new_vexit() -> Self {
-        Self(usize::MAX - 1)
+impl SlabRef for BlockRef {
+    type RefObject = BlockData;
+    fn from_handle(handle: usize) -> Self {
+        BlockRef(handle)
     }
-    pub const fn is_vexit(self) -> bool {
-        self.0 == usize::MAX - 1
-    }
-
-    pub fn get_parent_func(self, alloc: &Slab<BlockData>) -> GlobalRef {
-        self.to_data(alloc).get_parent_func()
-    }
-    pub fn module_get_parent_func(self, module: &Module) -> GlobalRef {
-        self.get_parent_func(&module.borrow_value_alloc().blocks)
-    }
-
-    pub fn get_terminator(self, module: &Module) -> Option<InstRef> {
-        self.to_data(&module.borrow_value_alloc().blocks)
-            .get_termiantor(module)
-    }
-    pub fn get_terminator_subref(self, module: &Module) -> Option<TerminatorInstRef> {
-        self.to_data(&module.borrow_value_alloc().blocks)
-            .get_terminator_subref(module)
-    }
-    pub fn get_jump_targets<'a>(
-        self,
-        module: &'a Module,
-    ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
-        self.to_data(&module.borrow_value_alloc().blocks)
-            .get_jump_targets(module)
-    }
-    pub fn load_jump_targets(self, module: &Module) -> Option<SlabListRange<JumpTargetRef>> {
-        self.get_jump_targets(module).map(|list| list.load_range())
-    }
-
-    pub fn has_phi(self, module: &Module) -> bool {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.insts;
-        let alloc_block = &alloc_value.blocks;
-        self.to_data(alloc_block).has_phi(alloc_inst)
+    fn get_handle(&self) -> usize {
+        self.0
     }
 }
 
@@ -110,312 +444,117 @@ impl SlabListNodeRef for BlockRef {
     }
 }
 
-/// Basic block data.
-pub struct BlockData {
-    pub instructions: SlabRefList<InstRef>,
-    pub phi_node_end: Cell<InstRef>,
-    pub(super) _inner: Cell<BlockDataInner>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct BlockDataInner {
-    pub(super) _node_head: SlabListNodeHead,
-    pub(super) _self_ref: BlockRef,
-    pub(super) _parent_func: GlobalRef,
-    pub(super) _id: usize,
-}
-
-impl BlockDataInner {
-    fn insert_node_head(mut self, node_head: SlabListNodeHead) -> Self {
-        self._node_head = node_head;
-        self
-    }
-    fn insert_self_ref(mut self, self_ref: BlockRef) -> Self {
-        self._self_ref = self_ref;
-        self
-    }
-    pub(super) fn insert_parent_func(mut self, parent_func: GlobalRef) -> Self {
-        self._parent_func = parent_func;
-        self
-    }
-    fn insert_id(mut self, id: usize) -> Self {
-        self._id = id;
-        self
-    }
-    pub(super) fn assign_to(&self, cell: &Cell<BlockDataInner>) {
-        cell.set(*self);
-    }
-}
-
-impl SlabListNode for BlockData {
-    fn new_guide() -> Self {
-        Self {
-            instructions: SlabRefList::new_guide(),
-            phi_node_end: Cell::new(InstRef::new_null()),
-            _inner: Cell::new(BlockDataInner {
-                _node_head: SlabListNodeHead::new(),
-                _self_ref: BlockRef::new_null(),
-                _parent_func: GlobalRef::new_null(),
-                _id: 0,
-            }),
+impl ISubValueSSA for BlockRef {
+    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+        match value {
+            ValueSSA::Block(bb) => Some(bb),
+            _ => None,
         }
     }
-
-    fn load_node_head(&self) -> SlabListNodeHead {
-        self._inner.get()._node_head
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::Block(self)
     }
 
-    fn store_node_head(&self, node_head: SlabListNodeHead) {
-        self._inner
-            .get()
-            .insert_node_head(node_head)
-            .assign_to(&self._inner);
+    fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
+        ValTypeID::Void
+    }
+
+    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
+        Some(ValTypeID::Void)
+    }
+
+    fn is_zero(&self, _: &IRAllocs) -> bool {
+        false
+    }
+
+    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        let number = writer.numbering.block_get_number(*self);
+        if let Some(number) = number {
+            writer.wrap_indent();
+            write!(writer.output.borrow_mut(), "%{number}:")?;
+        }
+        writer.inc_indent();
+        let alloc_block = &writer.allocs.blocks;
+        let alloc_inst = &writer.allocs.insts;
+        for (instref, inst) in self.insts_from_alloc(alloc_block).view(alloc_inst) {
+            writer.wrap_indent();
+            let number = writer.numbering.inst_get_number(instref);
+            inst.fmt_ir(number, writer)?;
+        }
+        writer.dec_indent();
+        writer.wrap_indent();
+        Ok(())
     }
 }
 
-impl BlockData {
-    pub fn get_parent_func(&self) -> GlobalRef {
-        self._inner.get()._parent_func
-    }
-    pub fn set_parent_func(&self, parent_func: GlobalRef) {
-        self._inner
-            .get()
-            .insert_parent_func(parent_func)
-            .assign_to(&self._inner);
-    }
-
-    pub fn get_id(&self) -> usize {
-        self._inner.get()._id
-    }
-    pub fn set_id(&self, id: usize) {
-        self._inner.get().insert_id(id).assign_to(&self._inner);
-    }
-
-    pub fn get_terminator_from_alloc(&self, alloc_inst: &Slab<InstData>) -> Option<InstRef> {
-        let back_inst = match self.instructions.get_back_ref(alloc_inst) {
-            Some(inst) => inst,
-            None => return None,
-        };
-        if back_inst.to_data(alloc_inst).is_terminator() { Some(back_inst) } else { None }
-    }
-    pub fn get_terminator_subref_from_alloc(
-        &self,
-        alloc_inst: &Slab<InstData>,
-    ) -> Option<TerminatorInstRef> {
-        self.get_terminator_from_alloc(alloc_inst)
-            .map(TerminatorInstRef)
-    }
-    pub fn get_termiantor(&self, module: &Module) -> Option<InstRef> {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.insts;
-        self.get_terminator_from_alloc(alloc_inst)
-    }
-    pub fn get_terminator_subref(&self, module: &Module) -> Option<TerminatorInstRef> {
-        self.get_termiantor(module).map(TerminatorInstRef)
-    }
-    pub fn has_terminator(&self, module: &Module) -> bool {
-        self.get_termiantor(module).is_some()
-    }
-    /// Set the terminator instruction of the block and return the old terminator instruction.
-    /// If there is no old terminator instruction, insert the new terminator and return None.
-    pub fn set_terminator(
-        &self,
-        module: &Module,
-        terminator: InstRef,
-    ) -> Result<Option<InstRef>, InstError> {
-        if terminator.is_null() {
-            panic!("Null Exception: New terminator is null.");
-        }
-        let ret = match self.get_termiantor(module) {
-            Some(old) => {
-                old.detach_self(module)?;
-                Some(old)
-            }
-            None => None,
-        };
-        self.instructions._tail.add_prev_inst(module, terminator)?;
-        Ok(ret)
-    }
-
-    pub fn get_jump_targets<'a>(
-        &self,
-        module: &'a Module,
-    ) -> Option<Ref<'a, SlabRefList<JumpTargetRef>>> {
-        self.get_terminator_subref(module)
-            .and_then(|t| t.get_jump_targets(module))
-    }
-
-    pub fn has_phi(&self, alloc_inst: &Slab<InstData>) -> bool {
-        let phi_end = self.phi_node_end.get();
-        self.instructions
-            .get_front_ref(alloc_inst)
-            .expect("Block structure error: Should have a PHIEnd node as splitter")
-            != phi_end
-    }
-
-    pub fn build_add_inst(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {
-        if let InstData::Phi(..) = &*module.get_inst(inst) {
-            self.build_add_phi(inst, module)
-        } else if let Some(terminator) = self.get_termiantor(module) {
-            if module.get_inst(inst).is_terminator() {
-                return Err(InstError::ReplicatedTerminator(terminator, inst));
-            }
-            terminator.add_prev_inst(module, inst)
-        } else {
-            self.instructions._tail.add_prev_inst(module, inst)
-        }
-    }
-    pub fn build_add_phi(&self, inst: InstRef, module: &Module) -> Result<(), InstError> {
-        match &*module.get_inst(inst) {
-            InstData::Phi(..) => {
-                let phi_node_end = self.phi_node_end.get();
-                phi_node_end.add_prev_inst(module, inst)
-            }
-            _ => panic!("Expected a phi node but got {:?}", inst),
-        }
-    }
-
-    /// Set the self reference of the block.
-    /// Then, initialize all instructions in the block with the self reference.
-    /// This function is called when the block is allocated into the module.
-    pub(super) fn init_set_self_reference(&self, self_ref: BlockRef, alloc_inst: &Slab<InstData>) {
-        self._inner
-            .get()
-            .insert_self_ref(self_ref)
-            .assign_to(&self._inner);
-        let mut noderef = self.instructions._head;
-        while noderef.is_nonnull() {
-            let inst = noderef.to_data(alloc_inst);
-            match inst {
-                InstData::ListGuideNode(_, bb) => bb.set(self_ref),
-                _ => {
-                    let inner = &inst.get_common_unwrap().inner;
-                    inner
-                        .get()
-                        .insert_parent_bb(Some(self_ref))
-                        .assign_to(&inner);
-                }
-            }
-            noderef = InstRef::from_option(noderef.get_next_ref(alloc_inst));
-        }
-    }
-
-    /// Perform a basic check on the block data.
+impl BlockRef {
+    /// 从 IR 分配器创建基本块引用
     ///
-    /// ### Rules
+    /// 将基本块数据插入分配器并返回对应的引用。
+    /// 同时更新基本块内所有指令的父基本块信息和用户的操作数。
     ///
-    /// 1. Block should be initialized with its self reference and parent function.
-    /// 2. Block should have a terminator instruction at the end.
-    /// 3. Block should contain a `PhiEnd` node to split `Phi` nodes and other instructions.
-    ///    All `Phi` nodes should be before the `PhiEnd` node while other instructions should be after it.
-    /// 4. Every instruction in the block should pass its operand check.
-    pub(super) fn perform_basic_check(&self, module: &Module) {
-        // Preparations: allocators, etc.
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.insts;
-
-        // 1. Check if the block is initialized with its self reference and parent function.
-        let self_ref = if self._inner.get()._self_ref.is_nonnull() {
-            self._inner.get()._self_ref
-        } else {
-            panic!("Block is not initialized with its self reference.");
-        };
-        if self._inner.get()._parent_func.is_null() {
-            panic!("Block is not initialized with its parent function.");
+    /// # 参数
+    /// - `allocs`: IR 分配器的可变引用
+    /// - `data`: 要插入的基本块数据
+    ///
+    /// # 返回
+    /// 返回新创建的基本块引用
+    pub fn from_allocs(allocs: &mut IRAllocs, mut data: BlockData) -> Self {
+        let ret = BlockRef(allocs.blocks.vacant_key());
+        data.self_ref = ret;
+        data.insts.forall_nodes(&allocs.insts, |_, inst| {
+            inst.set_parent_bb(ret);
+            ControlFlow::Continue(())
+        });
+        for user in &data.users {
+            user.operand.set(ValueSSA::Block(ret));
         }
-
-        // 2. Check if the block has a terminator instruction at the end.
-        if self.get_termiantor(module).is_none() {
-            panic!("Block does not have a terminator instruction at the end.");
-        }
-
-        // 3. Check if the block contains a `PhiEnd` node to split `Phi` nodes and other instructions.
-        //    All `Phi` nodes should be before the `PhiEnd` node while other instructions should be after it.
-        let phi_node_end = self.phi_node_end.get();
-        if phi_node_end.is_null() {
-            panic!(
-                "Block does not contain a `PhiEnd` node to split `Phi` nodes and other instructions."
-            );
-        }
-        if !module.get_inst(phi_node_end).is_attached() {
-            panic!("`PhiEnd` node is not attached to the block.");
-        }
-
-        // 3.1. Traverse through all PHI nodes (from entry to `PhiEnd`) and check if they are valid.
-        {
-            let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
-            while noderef != phi_node_end {
-                let inst = noderef.to_data(alloc_inst);
-                if !inst.is_attached() {
-                    panic!("`Phi` node is not attached to the block.");
-                }
-                match inst {
-                    InstData::Phi(..) => {}
-                    _ => panic!("Expected a `Phi` node but got {:?}", inst.get_opcode()),
-                }
-                if inst.get_parent_bb() != Some(self_ref) {
-                    panic!("`Phi` node is not attached to the block.");
-                }
-                inst.check_operands(module).unwrap();
-                noderef = InstRef::from_handle(inst.load_node_head().next);
-            }
-        }
-
-        // 4. Check if all instructions in the block pass their operand check.
-        {
-            let mut noderef = self.instructions._head.get_next_ref(alloc_inst).unwrap();
-            while noderef.is_nonnull() {
-                let inst = noderef.to_data(alloc_inst);
-                if inst.get_parent_bb() != Some(self_ref) {
-                    panic!("Instruction is not attached to the block.");
-                }
-                inst.check_operands(module).unwrap();
-                noderef = InstRef::from_handle(inst.load_node_head().next);
-            }
-        }
-    }
-}
-
-impl BlockData {
-    pub fn new_empty(module: &Module) -> Self {
-        let ret = Self {
-            instructions: SlabRefList::from_slab(&mut module.borrow_value_alloc_mut().insts),
-            phi_node_end: Cell::new(InstRef::new_null()),
-            _inner: Cell::new(BlockDataInner {
-                _node_head: SlabListNodeHead::new(),
-                _self_ref: BlockRef::new_null(),
-                _parent_func: GlobalRef::new_null(),
-                _id: 0,
-            }),
-        };
-
-        let phi_end = module.insert_inst(InstData::new_phi_end());
-        ret.instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, phi_end)
-            .unwrap();
-        ret.phi_node_end.set(phi_end);
+        allocs.blocks.insert(data);
         ret
     }
 
-    pub fn new_unreachable(module: &Module) -> Result<Self, SlabListError> {
-        let ret = Self::new_empty(module);
-        let unreachable_inst = InstData::new_unreachable(&mut module.borrow_use_alloc_mut());
-        let unreachable_inst = module.insert_inst(unreachable_inst);
-        ret.instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, unreachable_inst)?;
-        Ok(ret)
+    pub fn new_unreachable(allocs: &mut IRAllocs) -> Self {
+        let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
+        BlockRef::from_allocs(allocs, data)
     }
 
-    pub fn new_return_zero(module: &Module, valtype: ValTypeID) -> Result<Self, SlabListError> {
-        let ret_bb = Self::new_empty(module);
+    pub fn new_return_zero(allocs: &mut IRAllocs, ret_ty: ValTypeID) -> Self {
+        let data = BlockData::new_return_zero_from_alloc(&mut allocs.insts, ret_ty);
+        BlockRef::from_allocs(allocs, data)
+    }
 
-        let (ret_common, ret_inst) =
-            Ret::new(module, ValueSSA::ConstData(ConstData::Zero(valtype)));
-        let ret_inst = module.insert_inst(InstData::Ret(ret_common, ret_inst));
+    /// 从分配器获取基本块的指令列表
+    ///
+    /// # 参数
+    /// - `alloc`: 基本块分配器的引用
+    ///
+    /// # 返回
+    /// 返回基本块指令列表的引用
+    pub fn insts_from_alloc<'a>(self, alloc: &'a Slab<BlockData>) -> &'a SlabRefList<InstRef> {
+        &self.to_data(alloc).insts
+    }
 
-        ret_bb
-            .instructions
-            .push_back_ref(&mut module.borrow_value_alloc_mut().insts, ret_inst)?;
-        Ok(ret_bb)
+    /// 从模块获取基本块的指令列表
+    ///
+    /// # 参数
+    /// - `module`: IR 模块引用
+    ///
+    /// # 返回
+    /// 返回基本块指令列表的借用引用
+    pub fn insts<'a>(self, module: &'a Module) -> Ref<'a, SlabRefList<InstRef>> {
+        let allocs = module.allocs.borrow();
+        Ref::map(allocs, |allocs| self.insts_from_alloc(&allocs.blocks))
+    }
+
+    /// 从可变模块获取基本块的指令列表
+    ///
+    /// # 参数
+    /// - `module`: IR 模块的可变引用
+    ///
+    /// # 返回
+    /// 返回基本块指令列表的引用
+    pub fn insts_from_mut_module<'a>(self, module: &'a mut Module) -> &'a SlabRefList<InstRef> {
+        let alloc = module.allocs.get_mut();
+        self.insts_from_alloc(&alloc.blocks)
     }
 }

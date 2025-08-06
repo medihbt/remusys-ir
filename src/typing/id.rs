@@ -20,6 +20,18 @@ pub enum ValTypeID {
     Func(FuncTypeRef),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValTypeIDClass {
+    Void,
+    Ptr,
+    Int,
+    Float,
+    Array,
+    Struct,
+    StructAlias,
+    Func,
+}
+
 impl Debug for ValTypeID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -36,7 +48,7 @@ impl Debug for ValTypeID {
 }
 
 impl ValTypeID {
-    pub fn new_boolean() -> Self {
+    pub const fn new_boolean() -> Self {
         Self::Int(1)
     }
     pub fn int_get_binary_bits(&self) -> u8 {
@@ -92,6 +104,15 @@ impl ValTypeID {
             }
             ValTypeID::Void | ValTypeID::Func(_) => None,
         }
+    }
+    pub fn try_get_align_log2(&self, type_ctx: &TypeContext) -> Option<u8> {
+        self.get_instance_align(type_ctx).and_then(|align| {
+            if align.is_power_of_two() { Some(align.trailing_zeros() as u8) } else { None }
+        })
+    }
+    pub fn get_align_log2(&self, type_ctx: &TypeContext) -> u8 {
+        self.try_get_align_log2(type_ctx)
+            .expect("ValTypeID must have a valid alignment")
     }
 
     pub fn makes_instance(&self) -> bool {

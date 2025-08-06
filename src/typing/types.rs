@@ -268,6 +268,10 @@ impl StructTypeRef {
         self.read_data_ref(type_ctx, |s| s.get_instance_align(type_ctx))
     }
 
+    pub fn is_packed(&self, type_ctx: &TypeContext) -> bool {
+        self.read_data_ref(type_ctx, |s| s.packed)
+    }
+
     pub fn iter_offsets<'a>(self, type_ctx: &'a TypeContext) -> StructOffsetIter<'a> {
         StructOffsetIter::new(self.clone(), type_ctx)
     }
