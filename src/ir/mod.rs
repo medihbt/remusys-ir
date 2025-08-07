@@ -27,7 +27,7 @@ pub use self::{
         expr::{Array, ConstExprData, ConstExprRef, Struct},
     },
     global::{
-        GlobalData, GlobalDataCommon, GlobalRef, ISubGlobal,
+        GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal,
         func::{Func, FuncArg, FuncArgRef, FuncRef, FuncStorage, FuncUser},
         var::{Var, VarInner},
     },
@@ -36,7 +36,7 @@ pub use self::{
         usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
     },
     module::{
-        IRAllocs, Module,
+        IRAllocs, IRAllocsRef, Module,
         gc::{IRLiveValueSet, IRValueMarker},
     },
     opcode::{InstKind, Opcode},

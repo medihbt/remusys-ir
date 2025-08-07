@@ -4,14 +4,21 @@ use slab::Slab;
 
 use crate::{
     ir::{
-        BlockData, BlockRef, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef, JumpTarget,
-        JumpTargetKind, Opcode, Use, ValueSSA,
+        BlockData, BlockRef, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef,
+        JumpTarget, JumpTargetKind, Opcode, Use, ValueSSA,
         block::jump_target::JumpTargets,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
 };
 
+/// 无条件跳转到某个基本块
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// br label <block>
+/// ```
 #[derive(Debug)]
 pub struct Jump {
     common: InstCommon,
@@ -67,6 +74,11 @@ impl ISubInst for Jump {
         for jt in &self.target {
             jt.terminator.set(self_ref);
         }
+    }
+
+    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_str("br label ")?;
+        writer.write_operand(self.get_target())
     }
 }
 

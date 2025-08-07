@@ -4,9 +4,7 @@ use crate::{
 };
 use slab::Slab;
 use std::{
-    cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
-    rc::Rc,
+    cell::{Ref, RefCell, RefMut}, collections::HashMap, ops::Deref, rc::Rc
 };
 
 pub(super) mod gc;
@@ -100,5 +98,27 @@ impl IRAllocs {
     pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = crate::ir::ValueSSA>) {
         let mut marker = gc::IRValueMarker::from_allocs(self);
         marker.mark_and_sweep(roots);
+    }
+}
+
+pub enum IRAllocsRef<'a> {
+    Fix(&'a IRAllocs),
+    Dyn(Ref<'a, IRAllocs>)
+}
+
+impl<'a> IRAllocsRef<'a> {
+    pub fn get(&self) -> &IRAllocs {
+        match self {
+            IRAllocsRef::Fix(x) => *x,
+            IRAllocsRef::Dyn(x) => &*x,
+        }
+    }
+}
+
+impl<'a> Deref for IRAllocsRef<'a> {
+    type Target = IRAllocs;
+
+    fn deref(&self) -> &Self::Target {
+        self.get()
     }
 }

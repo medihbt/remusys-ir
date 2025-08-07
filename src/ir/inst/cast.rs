@@ -1,13 +1,24 @@
 use crate::{
     ir::{
-        IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind, InstRef, Opcode, Use,
-        UseKind, ValueSSA,
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind, InstRef,
+        Opcode, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
 };
 use std::rc::Rc;
 
+/// Cast 指令：实现 LLVM IR 中的类型转换
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// %<result> = <op> <type> <value> to <type>
+/// ```
+/// 
+/// ### 操作数布局
+/// 
+/// * `operands[0]`: 源操作数 (CastOpFrom) - 指向要转换的值
 #[derive(Debug)]
 pub struct CastOp {
     common: InstCommon,
@@ -49,6 +60,21 @@ impl ISubInst for CastOp {
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.fromop
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for CastOp"));
+        };
+        write!(writer, "%{id} = {} ", self.get_opcode().get_name())?;
+        writer.write_type(self.fromty)?;
+        writer.write_str(" ")?;
+        // 写入源操作数
+        writer.write_operand(self.get_from())?;
+        writer.write_str(" to ")?;
+        writer.write_type(self.get_valtype())?;
+        Ok(())
     }
 }
 

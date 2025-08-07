@@ -1,6 +1,6 @@
 use super::GlobalDataCommon;
 use crate::{
-    ir::{GlobalData, IRWriter, ISubValueSSA, ValueSSA, global::ISubGlobal},
+    ir::{GlobalData, GlobalKind, GlobalRef, IRWriter, ISubValueSSA, ValueSSA, global::ISubGlobal},
     typing::id::ValTypeID,
 };
 use std::cell::Cell;
@@ -31,9 +31,19 @@ impl ISubGlobal for Var {
     fn get_common(&self) -> &GlobalDataCommon {
         &self.common
     }
-
     fn common_mut(&mut self) -> &mut GlobalDataCommon {
         &mut self.common
+    }
+
+    fn get_kind(&self) -> GlobalKind {
+        let is_extern = self.is_extern();
+        let is_const = self.is_extern();
+        match (is_extern, is_const) {
+            (true, true) => GlobalKind::ExternConst,
+            (true, false) => GlobalKind::ExternVar,
+            (false, true) => GlobalKind::Const,
+            (false, false) => GlobalKind::Var,
+        }
     }
 
     fn is_readonly(&self) -> bool {
@@ -43,15 +53,13 @@ impl ISubGlobal for Var {
         matches!(self.inner.get().init, ValueSSA::None)
     }
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        write!(writer, "@{} = ", self.common.name)?;
-        if self.is_extern() {
-            write!(writer, "extern global ")?;
-        } else if self.is_readonly() {
-            write!(writer, "global readonly ")?;
-        } else {
-            write!(writer, "global ")?;
-        }
+    fn fmt_ir(&self, _: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
+        write!(
+            writer,
+            "@{} = {} ",
+            self.common.name,
+            self.get_kind().get_ir_prefix()
+        )?;
         writer.write_type(self.common.content_ty)?;
 
         if let ValueSSA::None = self.get_init() {

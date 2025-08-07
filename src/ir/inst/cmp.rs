@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        CmpCond, IRAllocs, ISubInst, InstCommon, InstData, InstKind, InstRef, Opcode, Use,
-        UseKind, ValueSSA,
+        CmpCond, IRAllocs, IRWriter, ISubInst, InstCommon, InstData, InstKind, InstRef, Opcode,
+        Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
@@ -9,15 +9,21 @@ use crate::{
 use std::rc::Rc;
 
 /// 比较指令
-/// 
+///
 /// 执行两个操作数的比较运算，根据比较条件返回布尔值结果。
 /// 支持整数、浮点数等类型的各种比较操作（相等、大于、小于等）。
-/// 
-/// # 操作数布局
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// %<result> = <op> <cond> <type> <lhs>, <rhs>
+/// ```
+///
+/// ### 操作数布局
 /// - `operands[0]`: 左操作数 (LHS)
 /// - `operands[1]`: 右操作数 (RHS)
-/// 
-/// # 返回类型
+///
+/// ### 返回类型
 /// 固定返回布尔类型 (`ValTypeID::new_boolean()`)
 #[derive(Debug)]
 pub struct CmpOp {
@@ -62,15 +68,30 @@ impl ISubInst for CmpOp {
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
     }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for CmpOp"));
+        };
+        let opcode = self.get_opcode().get_name();
+        let cond = self.cond;
+        write!(writer, "{id} = {opcode} {cond} ")?;
+        writer.write_type(self.get_valtype())?;
+        writer.write_str(" ")?;
+        writer.write_operand(self.get_lhs())?;
+        writer.write_str(", ")?;
+        writer.write_operand(self.get_rhs())
+    }
 }
 
 impl CmpOp {
     /// 创建一个未初始化操作数的比较指令
-    /// 
+    ///
     /// # 参数
     /// - `opcode`: 指令操作码，必须是比较类型
     /// - `cond`: 比较条件
-    /// 
+    ///
     /// # Panics
     /// 如果 opcode 不是比较指令类型则 panic
     pub fn new_raw(opcode: Opcode, cond: CmpCond) -> Self {
@@ -83,16 +104,16 @@ impl CmpOp {
             cond,
         }
     }
-    
+
     /// 创建一个完全初始化的比较指令
-    /// 
+    ///
     /// # 参数
     /// - `allocs`: IR 分配器，用于建立 Use-Def 关系
     /// - `opcode`: 指令操作码，必须是比较类型
     /// - `cond`: 比较条件
     /// - `lhs`: 左操作数
     /// - `rhs`: 右操作数
-    /// 
+    ///
     /// # Panics
     /// 如果 opcode 不是比较指令类型则 panic
     pub fn new(
@@ -109,15 +130,15 @@ impl CmpOp {
     }
 
     /// 获取左操作数的 Use 引用
-    /// 
+    ///
     /// # 返回
     /// 左操作数的 Use 对象引用，用于 Use-Def 链分析
     pub fn lhs_use(&self) -> &Rc<Use> {
         &self.operands[0]
     }
-    
+
     /// 获取右操作数的 Use 引用
-    /// 
+    ///
     /// # 返回
     /// 右操作数的 Use 对象引用，用于 Use-Def 链分析
     pub fn rhs_use(&self) -> &Rc<Use> {
@@ -125,15 +146,15 @@ impl CmpOp {
     }
 
     /// 获取左操作数的值
-    /// 
+    ///
     /// # 返回
     /// 左操作数的 SSA 值
     pub fn get_lhs(&self) -> ValueSSA {
         self.lhs_use().get_operand()
     }
-    
+
     /// 设置左操作数的值
-    /// 
+    ///
     /// # 参数
     /// - `allocs`: IR 分配器，用于维护 Use-Def 关系
     /// - `value`: 新的左操作数值
@@ -142,15 +163,15 @@ impl CmpOp {
     }
 
     /// 获取右操作数的值
-    /// 
+    ///
     /// # 返回
     /// 右操作数的 SSA 值
     pub fn get_rhs(&self) -> ValueSSA {
         self.rhs_use().get_operand()
     }
-    
+
     /// 设置右操作数的值
-    /// 
+    ///
     /// # 参数
     /// - `allocs`: IR 分配器，用于维护 Use-Def 关系
     /// - `value`: 新的右操作数值
@@ -160,7 +181,7 @@ impl CmpOp {
 }
 
 /// 比较指令的强类型引用
-/// 
+///
 /// 包装 `InstRef` 提供类型安全的比较指令引用，
 /// 确保引用指向的确实是比较指令而非其他类型的指令。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

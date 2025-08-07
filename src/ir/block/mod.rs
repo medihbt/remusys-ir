@@ -468,7 +468,7 @@ impl ISubValueSSA for BlockRef {
     }
 
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        let number = writer.numbering.block_get_number(*self);
+        let number = writer.borrow_numbers().block_get_number(*self);
         if let Some(number) = number {
             writer.wrap_indent();
             write!(writer.output.borrow_mut(), "%{number}:")?;
@@ -478,7 +478,7 @@ impl ISubValueSSA for BlockRef {
         let alloc_inst = &writer.allocs.insts;
         for (instref, inst) in self.insts_from_alloc(alloc_block).view(alloc_inst) {
             writer.wrap_indent();
-            let number = writer.numbering.inst_get_number(instref);
+            let number = writer.borrow_numbers().inst_get_number(instref);
             inst.fmt_ir(number, writer)?;
         }
         writer.dec_indent();

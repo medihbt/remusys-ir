@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, PtrUser, Use,
-        UseKind, ValueSSA,
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, PtrUser,
+        Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::{context::TypeContext, id::ValTypeID},
@@ -67,6 +67,18 @@ impl ISubInst for StoreOp {
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
+    }
+
+    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_str("store ")?;
+        writer.write_type(self.source_ty)?;
+        writer.write_str(" ")?;
+        writer.write_operand(self.get_source())?;
+
+        writer.write_str(", ptr ")?;
+        writer.write_operand(self.get_target())?;
+
+        write!(writer, ", align {}", 1 << self.source_align_log2)
     }
 }
 

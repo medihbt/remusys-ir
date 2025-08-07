@@ -1,6 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrUser, Use, UseKind, ValueSSA,
+        IRAllocs, IRWriter, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrUser, Use, UseKind,
+        ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::{context::TypeContext, id::ValTypeID},
@@ -87,6 +88,18 @@ impl ISubInst for LoadOp {
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for LoadOp"));
+        };
+        write!(writer, "%{id} = load ")?;
+        writer.write_type(self.get_valtype())?;
+        writer.write_str(", ptr ")?;
+        writer.write_operand(self.get_source())?;
+        write!(writer, ", align {}", 1 << self.pointee_align_log2)
     }
 }
 

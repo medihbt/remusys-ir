@@ -3,9 +3,9 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
-        BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalRef, IRAllocs, IRWriter,
-        ISubValueSSA, ITraceableValue, Module, PtrStorage, PtrUser, UserList, ValueSSA,
-        global::ISubGlobal,
+        BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs,
+        IRValueNumberMap, IRWriter, ISubValueSSA, ITraceableValue, Module, NumberOption,
+        PtrStorage, PtrUser, UserList, ValueSSA, global::ISubGlobal,
     },
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
@@ -108,13 +108,22 @@ impl ISubGlobal for Func {
     fn is_extern(&self) -> bool {
         !self.body.is_valid()
     }
+    fn get_kind(&self) -> GlobalKind {
+        if self.is_extern() { GlobalKind::ExternFunc } else { GlobalKind::Func }
+    }
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         self.fmt_header(writer)?;
         if self.is_extern() {
             writeln!(writer, "; external function")?;
             return Ok(());
         }
+
+        writer.numbering.replace(IRValueNumberMap::new(
+            &writer.allocs,
+            self_ref,
+            NumberOption::ignore_all(),
+        ));
 
         writeln!(writer, " {{")?;
         for (block_ref, _) in self.body.view(&writer.allocs.blocks) {

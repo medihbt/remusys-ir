@@ -1,8 +1,8 @@
 use crate::{
     base::APInt,
     ir::{
-        ConstData, IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode,
-        PtrStorage, PtrUser, Use, UseKind, ValueSSA,
+        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef,
+        Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::{context::TypeContext, id::ValTypeID, types::StructTypeRef},
@@ -84,6 +84,27 @@ impl ISubInst for IndexPtr {
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for GEPop"));
+        };
+        let opcode = self.get_opcode().get_name();
+        write!(writer, "%{id} = getelementptr inbounds {opcode} ")?;
+        writer.write_type(self.first_unpacked_ty)?;
+        writer.write_str(", ptr")?;
+        writer.write_operand(self.get_base())?;
+        for u in self.index_uses() {
+            let index = u.get_operand();
+            let index_ty = index.get_valtype(&writer.allocs);
+            writer.write_str(", ")?;
+            writer.write_type(index_ty)?;
+            writer.write_str(" ")?;
+            writer.write_operand(index)?;
+        }
+        Ok(())
     }
 }
 

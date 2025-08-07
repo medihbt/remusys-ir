@@ -1,18 +1,21 @@
 use crate::{
-    ir::{IRAllocs, IRValueNumberMap, ISubValueSSA, ValueSSA},
+    ir::{GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module, ValueSSA},
     typing::{context::TypeContext, id::ValTypeID},
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, Ref, RefCell},
+    collections::HashMap,
     io::Write,
 };
 
 pub struct IRWriter<'a> {
     pub output: RefCell<&'a mut dyn Write>,
     pub type_ctx: &'a TypeContext,
-    pub allocs: &'a IRAllocs,
+    pub allocs: IRAllocsRef<'a>,
     pub indent_level: Cell<usize>,
-    pub numbering: IRValueNumberMap,
+    pub numbering: RefCell<IRValueNumberMap>,
+    pub globals: Vec<GlobalRef>,
+    type_str_cache: RefCell<HashMap<ValTypeID, String>>,
 }
 
 impl<'a> Write for IRWriter<'a> {
@@ -31,6 +34,32 @@ impl<'a> Write for IRWriter<'a> {
 }
 
 impl<'a> IRWriter<'a> {
+    pub fn new(
+        output: &'a mut dyn Write,
+        type_ctx: &'a TypeContext,
+        allocs: IRAllocsRef<'a>,
+        globals: impl IntoIterator<Item = GlobalRef>,
+    ) -> Self {
+        Self {
+            output: RefCell::new(output),
+            type_ctx,
+            allocs,
+            indent_level: Cell::new(0),
+            numbering: RefCell::new(IRValueNumberMap::new_empty()),
+            globals: globals.into_iter().collect(),
+            type_str_cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub fn from_module(output: &'a mut dyn Write, module: &'a Module) -> Self {
+        Self::new(
+            output,
+            &module.type_ctx,
+            IRAllocsRef::Dyn(module.allocs.borrow()),
+            module.globals.borrow().iter().map(|(_, &gref)| gref),
+        )
+    }
+
     pub fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
         self.output.borrow_mut().write(buf)
     }
@@ -87,11 +116,11 @@ impl<'a> IRWriter<'a> {
                 write!(self.output.borrow_mut(), "@{}", name)
             }
             ValueSSA::Block(block_ref) => {
-                let id = self.numbering.block_get_number(block_ref).unwrap();
+                let id = self.borrow_numbers().block_get_number(block_ref).unwrap();
                 write!(self.output.borrow_mut(), "%{id}")
             }
             ValueSSA::Inst(inst_ref) => {
-                let id = self.numbering.inst_get_number(inst_ref).unwrap();
+                let id = self.borrow_numbers().inst_get_number(inst_ref).unwrap();
                 write!(self.output.borrow_mut(), "%{id}")
             }
             ValueSSA::Global(global_ref) => {
@@ -101,6 +130,49 @@ impl<'a> IRWriter<'a> {
         }
     }
     pub fn write_type(&self, ty: ValTypeID) -> std::io::Result<()> {
-        write!(self, "{}", ty.get_display_name(&self.type_ctx))
+        if let Some(name) = self.type_str_cache.borrow().get(&ty) {
+            self.write_str(name)
+        } else {
+            let name = ty.get_display_name(self.type_ctx);
+            self.type_str_cache.borrow_mut().insert(ty, name.clone());
+            self.write_str(&name)
+        }
+    }
+
+    pub fn borrow_numbers(&self) -> Ref<IRValueNumberMap> {
+        self.numbering.borrow()
+    }
+
+    pub fn write_module(&self) {
+        // %{name} = type {struct}
+        self.type_ctx.read_struct_aliases(|name, aliasee| {
+            write!(self, "%{name} = type ").unwrap();
+            self.write_type(ValTypeID::Struct(aliasee))
+                .expect("Failed to write type aliases");
+            self.wrap_indent();
+        });
+
+        if self.globals.is_empty() {
+            return;
+        }
+        let globals = {
+            let mut globals = Vec::with_capacity(self.globals.capacity());
+            for &g in self.globals.iter() {
+                globals.push((g, GlobalKind::from_global(g, &self.allocs)));
+            }
+            globals.sort_by_key(|(_, k)| *k);
+            globals
+        };
+
+        let (_, mut curr_kind) = globals[0];
+        self.wrap_indent();
+        for &(g, kind) in &globals {
+            if kind != curr_kind {
+                self.wrap_indent();
+                curr_kind = kind;
+            }
+            self.wrap_indent();
+            g.fmt_ir(self).expect("Failed to write IR");
+        }
     }
 }

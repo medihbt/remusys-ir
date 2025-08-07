@@ -3,7 +3,8 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        global::func::Func, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, PtrStorage, UserList, ValueSSA, Var
+        IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, PtrStorage, UserList, ValueSSA,
+        Var, global::func::Func,
     },
     typing::id::ValTypeID,
 };
@@ -38,6 +39,13 @@ impl ISubGlobal for GlobalData {
         }
     }
 
+    fn get_kind(&self) -> GlobalKind {
+        match self {
+            GlobalData::Var(var) => var.get_kind(),
+            GlobalData::Func(func) => func.get_kind(),
+        }
+    }
+
     fn is_readonly(&self) -> bool {
         match self {
             GlobalData::Var(var) => var.is_readonly(),
@@ -52,10 +60,10 @@ impl ISubGlobal for GlobalData {
         }
     }
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         match self {
-            GlobalData::Var(var) => var.fmt_ir(writer),
-            GlobalData::Func(func) => func.fmt_ir(writer),
+            GlobalData::Var(var) => var.fmt_ir(self_ref, writer),
+            GlobalData::Func(func) => func.fmt_ir(self_ref, writer),
         }
     }
 }
@@ -76,6 +84,8 @@ pub trait ISubGlobal {
     fn get_common(&self) -> &GlobalDataCommon;
     fn common_mut(&mut self) -> &mut GlobalDataCommon;
 
+    fn get_kind(&self) -> GlobalKind;
+
     /// 判断该全局量是否为外部符号.
     fn is_extern(&self) -> bool;
 
@@ -87,7 +97,7 @@ pub trait ISubGlobal {
         &self.get_common().name
     }
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
+    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()>;
 }
 
 impl<T: ISubGlobal> PtrStorage for T {
@@ -164,7 +174,7 @@ impl ISubValueSSA for GlobalRef {
         Some(ValTypeID::Ptr)
     }
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        todo!()
+        self.to_data(&writer.allocs.globals).fmt_ir(*self, writer)
     }
 }
 
@@ -225,5 +235,35 @@ impl GlobalRef {
     pub fn get_content_type_from_mut_module(self, module: &mut Module) -> ValTypeID {
         let alloc = module.allocs.get_mut();
         self.get_content_type_from_alloc(&alloc.globals)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalKind {
+    ExternVar,
+    ExternConst,
+    Var,
+    Const,
+    ExternFunc,
+    Func,
+}
+
+impl GlobalKind {
+    pub fn from_global(gref: GlobalRef, allocs: &IRAllocs) -> Self {
+        Self::from_data(gref.to_data(&allocs.globals))
+    }
+    pub fn from_data(data: &GlobalData) -> Self {
+        data.get_kind()
+    }
+
+    pub fn get_ir_prefix(self) -> &'static str {
+        match self {
+            GlobalKind::ExternVar => "external global",
+            GlobalKind::ExternConst => "external constant",
+            GlobalKind::Var => "dso_local global",
+            GlobalKind::Const => "dso_local constant",
+            GlobalKind::ExternFunc => "declare",
+            GlobalKind::Func => "define",
+        }
     }
 }

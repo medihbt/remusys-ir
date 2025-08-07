@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use, UseKind,
-        ValueSSA,
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use,
+        UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
@@ -9,6 +9,12 @@ use crate::{
 use std::rc::Rc;
 
 /// 选择指令
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// %<name> = select <type>, i1 <cond>, <true value>, <false value>
+/// ```
 #[derive(Debug)]
 pub struct SelectOp {
     common: InstCommon,
@@ -50,6 +56,24 @@ impl ISubInst for SelectOp {
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
     }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for CastOp"));
+        };
+        write!(writer, "%{id} = select ")?;
+        writer.write_type(self.get_valtype())?;
+
+        writer.write_str(", i1 ")?;
+        writer.write_operand(self.get_cond())?;
+
+        writer.write_str(", ")?;
+        writer.write_operand(self.get_true_val())?;
+
+        writer.write_str(", ")?;
+        writer.write_operand(self.get_false_val())
+    }
 }
 
 impl SelectOp {
@@ -64,12 +88,7 @@ impl SelectOp {
         }
     }
 
-    pub fn new(
-        allocs: &IRAllocs,
-        cond: ValueSSA,
-        true_val: ValueSSA,
-        false_val: ValueSSA,
-    ) -> Self {
+    pub fn new(allocs: &IRAllocs, cond: ValueSSA, true_val: ValueSSA, false_val: ValueSSA) -> Self {
         let ret_type = Self::do_check_operands(allocs, &cond, &true_val, &false_val).unwrap();
         let select_op = Self::new_raw(ret_type);
         select_op.operands[0].set_operand(allocs, cond);

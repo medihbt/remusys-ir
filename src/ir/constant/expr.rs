@@ -85,11 +85,11 @@ impl Array {
             return write!(writer.output.borrow_mut(), "zeroinitializer");
         }
         writer.write_str("[")?;
-        for (i, elem) in self.elems.iter().enumerate() {
+        for (i, &elem) in self.elems.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
-            elem.fmt_ir(writer)?;
+            writer.write_operand(elem)?;
         }
         writer.write_str("]")
     }
@@ -159,11 +159,11 @@ impl Struct {
         } else {
             writer.write_str("{")?;
         }
-        for (i, elem) in self.elems.iter().enumerate() {
+        for (i, &elem) in self.elems.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
-            elem.fmt_ir(writer)?;
+            writer.write_operand(elem)?;
         }
         if is_packed { writer.write_str("}>") } else { writer.write_str("}") }
     }

@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        BlockRef, IRAllocs, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use,
-        UseKind, ValueSSA,
+        BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef,
+        Opcode, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
@@ -13,11 +13,39 @@ pub enum PhiError {
     IncomeBBNotFound(BlockRef),
 }
 
+/// Phi 节点：实现 SSA 形式中的 φ 函数
+///
+/// ## LLVM IR 语法
+/// ```llvm
+/// %<result> = phi <type> [ <value0>, %<label0> ], [ <value1>, %<label1> ], ...
+/// ```
+///
+/// ## 操作数布局
+/// Phi 节点的操作数以成对形式存储：
+/// - `operands[2i]`: 第 i 个传入值 (value)
+/// - `operands[2i + 1]`: 第 i 个来源基本块 (block)
+///
+/// ## 内部数据结构
+/// - **incoming_map**: 将基本块映射到操作数索引对 `(value_idx, block_idx)`
+/// - **operands**: 动态数组存储所有操作数的 Use 引用
+///
+/// ## 语义
+/// 根据控制流的来源选择相应的值：
+/// 1. 在运行时，根据前一个执行的基本块
+/// 2. 从对应的传入值中选择一个作为 Phi 节点的结果
+/// 3. 所有传入值必须与 Phi 节点具有相同的类型
+///
+/// ## 约束
+/// - 每个前驱基本块最多只能有一个对应的传入值
+/// - 所有传入值的类型必须与 Phi 节点的返回类型相同
+/// - Phi 节点必须出现在基本块的开始位置（在非 Phi 指令之前）
 #[derive(Debug)]
 pub struct PhiNode {
+    /// 指令的公共数据（操作码、类型、用户列表等）
     common: InstCommon,
+    /// 操作数列表：包含值和基本块的 Use 引用，按 [value, block, value, block, ...] 的模式排列
     operands: RefCell<Vec<Rc<Use>>>,
-    /// 把前驱基本块映射到对应的操作数索引.
+    /// 前驱基本块到操作数索引的映射：BlockRef -> (value_index, block_index)
     incoming_map: RefCell<BTreeMap<BlockRef, (usize, usize)>>,
 }
 
@@ -62,6 +90,48 @@ impl ISubInst for PhiNode {
 
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         self.operands.get_mut().as_mut_slice()
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(
+                InvalidInput,
+                "ID must be provided for Phi instruction",
+            ));
+        };
+
+        // 写入指令格式: %id = phi <type>
+        let opcode = self.get_opcode().get_name();
+        write!(writer, "%{} = {} ", id, opcode)?;
+        writer.write_type(self.common.ret_type)?;
+
+        // 如果没有 incoming values，输出有效的空 phi
+        let incoming_map = self.incoming_map.borrow();
+        if incoming_map.is_empty() {
+            return Ok(());
+        }
+
+        // 写入所有 incoming values: [ <value>, %<label> ], ...
+        let operands = self.operands.borrow();
+        for (i, (&block, &(value_idx, _))) in incoming_map.iter().enumerate() {
+            if i > 0 {
+                writer.write_str(", ")?;
+            }
+            writer.write_str(" [ ")?;
+
+            // 写入值
+            let incoming_val = operands[value_idx].get_operand();
+            writer.write_operand(incoming_val)?;
+
+            // 写入来源基本块
+            writer.write_str(", ")?;
+            writer.write_operand(block)?;
+
+            writer.write_str(" ]")?;
+        }
+
+        Ok(())
     }
 }
 

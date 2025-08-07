@@ -1,11 +1,22 @@
 use crate::{
     ir::{
-        block::jump_target::JumpTargets, inst::{ISubInstRef, InstOperands}, IRAllocs, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef, JumpTarget, Opcode, Use, UseKind, ValueSSA
+        IRAllocs, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef, JumpTarget,
+        Opcode, Use, UseKind, ValueSSA,
+        block::jump_target::JumpTargets,
+        inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
 };
 use std::rc::Rc;
 
+/// 返回指令
+///
+/// ### LLVM 语法
+///
+/// ```llvm
+/// ret <ty> <value> ; when returns a value
+/// ret void ; when returns nothing
+/// ```
 #[derive(Debug)]
 pub struct Ret {
     common: InstCommon,
@@ -51,6 +62,18 @@ impl ISubInst for Ret {
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.operands
+    }
+
+    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_str("ret ")?;
+        if self.common.ret_type != ValTypeID::Void {
+            writer.write_type(self.common.ret_type)?;
+            writer.write_str(" ")?;
+            writer.write_operand(self.get_retval())?;
+        } else {
+            writer.write_str("void")?;
+        }
+        Ok(())
     }
 }
 

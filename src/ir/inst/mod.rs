@@ -471,7 +471,8 @@ impl ISubValueSSA for InstRef {
     }
 
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        todo!()
+        let id = writer.borrow_numbers().inst_get_number(*self);
+        self.to_data(&writer.allocs.insts).fmt_ir(id, writer)
     }
 }
 
