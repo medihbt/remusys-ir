@@ -203,7 +203,7 @@ impl LoadOp {
         source: ValueSSA,
     ) -> Self {
         let align_log2 = {
-            let align = ret_ty.get_instance_align(type_ctx).unwrap();
+            let align = ret_ty.try_get_instance_align(type_ctx).unwrap();
             if align.is_power_of_two() {
                 align.trailing_zeros() as u8
             } else {

@@ -174,6 +174,85 @@ impl<T: IWeakListNode> WeakList<T> {
     pub fn clone_view(&self) -> Self {
         WeakList { sential: self.sential.clone() }
     }
+
+    /// 移动所有节点到另一个列表, 并清空自己.
+    pub fn move_all_to(&self, other: &WeakList<T>, mut on_move: impl FnMut(&Rc<T>)) {
+        if Rc::ptr_eq(&self.sential, &other.sential) {
+            return;
+        }
+        let self_front = self.sential.get_next(); // 链表头
+        let self_back = self.sential.get_prev(); // 链表尾
+
+        if self_front.ptr_eq(&Rc::downgrade(&self.sential)) {
+            // 自己是空的, 没什么可搬的.
+            return;
+        }
+
+        // 清空自己.
+        self.sential.set_next(Rc::downgrade(&self.sential));
+        self.sential.set_prev(Rc::downgrade(&self.sential));
+
+        let other_back = other.sential.get_prev();
+        // 把自己的链表尾接到 other 的最后面 -- `sential.prev`.
+        other.sential.set_prev(self_back.clone());
+
+        // 把自己的链表头接到 other 表尾的后面 -- `other_back.next`.
+        other_back.upgrade().map(|p| p.set_next(self_front.clone()));
+
+        // 修正被转移链表的边界连接
+        self_back
+            .upgrade()
+            .map(|p| p.set_next(Rc::downgrade(&other.sential)));
+        self_front.upgrade().map(|p| p.set_prev(other_back.clone()));
+
+        // 旧链表结点的前后指针不需要修正——头尾结点已经接到 new_list 上了, 中间结点的 prev/next 仍然有效.
+
+        // 遍历所有被转移的结点, 调用 `on_move` 处理其他操作.
+        let mut current = self_front;
+        let target_sentinel = Rc::downgrade(&other.sential);
+        while !current.ptr_eq(&target_sentinel) {
+            let Some(current_strong) = current.upgrade() else {
+                panic!("Found a non-existing node in WeakList during move_to");
+            };
+            let next = current_strong.get_next(); // 提前获取下一个节点
+            on_move(&current_strong);
+            current = next;
+        }
+    }
+
+    /// 根据条件移动节点到另一个列表, 并在移动时调用回调函数.
+    /// 只移动满足 `predicate` 条件的节点. 保持节点在原列表中的相对顺序.
+    /// 注意: 该操作会遍历整个列表, 复杂度为 O(n).
+    pub fn move_to_if(
+        &self,
+        other: &WeakList<T>,
+        mut predicate: impl FnMut(&Rc<T>) -> bool,
+        mut on_move: impl FnMut(&Rc<T>),
+    ) {
+        if Rc::ptr_eq(&self.sential, &other.sential) {
+            return;
+        }
+
+        let mut current = self.sential.get_next();
+        let self_sentinel_weak = Rc::downgrade(&self.sential);
+
+        while !current.ptr_eq(&self_sentinel_weak) {
+            let Some(current_strong) = current.upgrade() else {
+                // 遇到已释放的节点，链表损坏, 停止移动
+                panic!("Found a non-existing node in WeakList during move_to_if");
+            };
+
+            let next = current_strong.get_next(); // 提前获取下一个节点
+            if predicate(&current_strong) {
+                // 从当前链表中移除
+                current_strong.detach();
+                // 动态获取目标链表的当前尾部，确保插入到最后
+                other.push_back(Rc::downgrade(&current_strong));
+                on_move(&current_strong);
+            }
+            current = next;
+        }
+    }
 }
 
 pub struct WeakListIter<T: IWeakListNode> {

@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        CmpCond, IRAllocs, IRWriter, ISubInst, InstCommon, InstData, InstKind, InstRef, Opcode,
-        Use, UseKind, ValueSSA,
+        CmpCond, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind,
+        InstRef, Opcode, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
@@ -116,13 +116,21 @@ impl CmpOp {
     ///
     /// # Panics
     /// 如果 opcode 不是比较指令类型则 panic
-    pub fn new(
-        allocs: &IRAllocs,
-        opcode: Opcode,
-        cond: CmpCond,
-        lhs: ValueSSA,
-        rhs: ValueSSA,
-    ) -> Self {
+    pub fn new(allocs: &IRAllocs, cond: CmpCond, lhs: ValueSSA, rhs: ValueSSA) -> Self {
+        let ty = {
+            let lty = lhs.get_valtype(allocs);
+            let rty = rhs.get_valtype(allocs);
+            assert_eq!(
+                lty, rty,
+                "Left and right operands must have the same type for comparison"
+            );
+            lty
+        };
+        let opcode = match ty {
+            ValTypeID::Ptr | ValTypeID::Int(_) => Opcode::Icmp,
+            ValTypeID::Float(_) => Opcode::Fcmp,
+            _ => panic!("Unsupported type for comparison: {ty:?}"),
+        };
         let cmp = Self::new_raw(opcode, cond);
         cmp.set_lhs(allocs, lhs);
         cmp.set_rhs(allocs, rhs);

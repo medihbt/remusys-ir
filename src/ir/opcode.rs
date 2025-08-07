@@ -65,12 +65,7 @@ impl Opcode {
     pub fn is_divrem_op(self) -> bool {
         matches!(
             self,
-            Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
-                | Opcode::Frem
-                | Opcode::Fdiv
+            Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::Frem | Opcode::Fdiv
         )
     }
     pub fn is_constexpr_op(self) -> bool {
@@ -132,52 +127,75 @@ impl Opcode {
         match self {
             // Guide node
             Opcode::GuideNode => InstKind::ListGuideNode,
-            
+
             // Phi instruction
             Opcode::Phi => InstKind::Phi,
-            
+
             // Terminator instructions
             Opcode::Unreachable => InstKind::Unreachable,
             Opcode::Ret => InstKind::Ret,
             Opcode::Jmp => InstKind::Jump,
             Opcode::Br => InstKind::Br,
             Opcode::Switch => InstKind::Switch,
-            
+
             // Memory operations
             Opcode::Alloca | Opcode::DynAlloca => InstKind::Alloca,
             Opcode::Load => InstKind::Load,
             Opcode::Store => InstKind::Store,
-            
+
             // Selection and indexing
             Opcode::Select => InstKind::Select,
             Opcode::IndexPtr | Opcode::IndexExtract | Opcode::IndexInsert => InstKind::IndexPtr,
-            
+
             // Function calls
             Opcode::Call | Opcode::DynCall => InstKind::Call,
             Opcode::Intrin => InstKind::Intrin,
-            
+
             // Binary operations (arithmetic and logical)
-            Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Shl | Opcode::Lshr | Opcode::Ashr |
-            Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem |
-            Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem => InstKind::BinOp,
-            
+            Opcode::BitAnd
+            | Opcode::BitOr
+            | Opcode::BitXor
+            | Opcode::Shl
+            | Opcode::Lshr
+            | Opcode::Ashr
+            | Opcode::Add
+            | Opcode::Sub
+            | Opcode::Mul
+            | Opcode::Sdiv
+            | Opcode::Udiv
+            | Opcode::Srem
+            | Opcode::Urem
+            | Opcode::Fadd
+            | Opcode::Fsub
+            | Opcode::Fmul
+            | Opcode::Fdiv
+            | Opcode::Frem => InstKind::BinOp,
+
             // Comparison operations
             Opcode::Icmp | Opcode::Fcmp => InstKind::Cmp,
-            
+
             // Cast operations
-            Opcode::Sitofp | Opcode::Uitofp | Opcode::Fptosi | Opcode::Zext | Opcode::Sext | 
-            Opcode::Trunc | Opcode::Fpext | Opcode::Fptrunc | Opcode::Bitcast | 
-            Opcode::IntToPtr | Opcode::PtrToInt => InstKind::Cast,
-            
+            Opcode::Sitofp
+            | Opcode::Uitofp
+            | Opcode::Fptosi
+            | Opcode::Zext
+            | Opcode::Sext
+            | Opcode::Trunc
+            | Opcode::Fpext
+            | Opcode::Fptrunc
+            | Opcode::Bitcast
+            | Opcode::IntToPtr
+            | Opcode::PtrToInt => InstKind::Cast,
+
             // Special cases for undefined or reserved opcodes
             Opcode::None => panic!("Opcode::None does not have a kind"),
             Opcode::ReservedCnt => panic!("Opcode::ReservedCnt does not have a kind"),
-            
+
             // Constant expressions - these might need special handling
             // For now, treating them as binary operations since they can appear in constant expressions
             Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec | Opcode::ConstPtrNull => {
                 panic!("Constant opcodes should not be used in instructions")
-            },
+            }
             Opcode::IndexOffsetOf => InstKind::IndexPtr,
         }
     }

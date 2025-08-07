@@ -646,19 +646,19 @@ mod testing {
     #[test]
     fn calc_length_test() {
         let mut slab = Slab::new();
-        
+
         // 测试空列表
         let empty_list = test_list_from_vec(&mut slab, vec![]);
         let range = empty_list.load_range();
         assert_eq!(range.calc_length(&slab), 0);
         assert_eq!(range.calc_length(&slab), empty_list.len());
-        
+
         // 测试有元素的列表
         let list = test_list_from_vec(&mut slab, vec![1, 2, 3, 4, 5]);
         let range = list.load_range();
         assert_eq!(range.calc_length(&slab), 5);
         assert_eq!(range.calc_length(&slab), list.len());
-        
+
         // 添加更多元素后测试
         for i in 6..=10 {
             let test_ref = TestNodeRef(slab.insert(TestNode::new(i)));
@@ -667,7 +667,7 @@ mod testing {
         let range = list.load_range();
         assert_eq!(range.calc_length(&slab), 10);
         assert_eq!(range.calc_length(&slab), list.len());
-        
+
         println!("calc_length test passed!");
     }
 }

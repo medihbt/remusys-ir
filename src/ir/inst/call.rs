@@ -230,11 +230,15 @@ impl CallOp {
     pub fn from_allocs<'a>(
         allocs: &IRAllocs,
         type_ctx: &TypeContext,
-        func_ty: FuncTypeRef,
         callee: GlobalRef,
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> Self {
         let nargs = args.clone().count();
+        let func_ty = callee.get_content_type_from_alloc(&allocs.globals);
+        let func_ty = match func_ty {
+            ValTypeID::Func(func_ty) => func_ty,
+            _ => panic!("Callee must be a function type for CallOp"),
+        };
         let ret = Self::new_raw_from_allocs(type_ctx, func_ty, nargs);
         ret.operands[0].set_operand(allocs, ValueSSA::Global(callee));
         for (i, arg) in args.enumerate() {
@@ -260,7 +264,6 @@ impl CallOp {
     /// 如果 `callee` 不是 `ValueSSA::Global` 类型则会 panic
     pub fn new<'a>(
         module: &Module,
-        func_ty: FuncTypeRef,
         callee: ValueSSA,
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> Self {
@@ -270,7 +273,6 @@ impl CallOp {
         Self::from_allocs(
             &module.allocs.borrow(),
             module.type_ctx.as_ref(),
-            func_ty,
             callee,
             args,
         )
@@ -290,7 +292,6 @@ impl CallOp {
     /// 返回完全初始化的函数调用指令
     pub fn new_with_mut_module<'a>(
         module: &mut Module,
-        func_ty: FuncTypeRef,
         callee: ValueSSA,
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> Self {
@@ -300,7 +301,6 @@ impl CallOp {
         Self::from_allocs(
             &module.allocs.get_mut(),
             module.type_ctx.as_ref(),
-            func_ty,
             callee,
             args,
         )
@@ -325,11 +325,7 @@ impl CallOp {
         func: GlobalRef,
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> Self {
-        let func_ty = func.get_content_type(module);
-        let ValTypeID::Func(func_ty) = func_ty else {
-            panic!("Expected a function type for CallOp");
-        };
-        Self::new(module, func_ty, ValueSSA::Global(func), args)
+        Self::new(module, ValueSSA::Global(func), args)
     }
 }
 

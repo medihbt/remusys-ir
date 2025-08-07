@@ -278,7 +278,7 @@ impl Func {
     /// # 返回
     /// - `Ok(())`: 成功添加基本块
     /// - `Err(SlabListError)`: 添加失败 (通常是因为函数已经有定义)
-    pub fn add_block_ref_from_alloc(&self, allocs: &mut IRAllocs, block: BlockRef) -> SlabListRes {
+    pub fn add_block_ref_from_allocs(&self, allocs: &IRAllocs, block: BlockRef) -> SlabListRes {
         if !self.is_extern() {
             return Err(SlabListError::InvalidList);
         }
@@ -298,7 +298,7 @@ impl Func {
     /// - `Err(SlabListError)`: 添加失败
     pub fn add_block_ref(&self, module: &Module, block: BlockRef) -> SlabListRes {
         let mut allocs = module.allocs.borrow_mut();
-        self.add_block_ref_from_alloc(&mut allocs, block)
+        self.add_block_ref_from_allocs(&mut allocs, block)
     }
 
     /// 向函数添加基本块引用 (使用可变模块)
@@ -318,7 +318,7 @@ impl Func {
         block: BlockRef,
     ) -> SlabListRes {
         let allocs = module.allocs.get_mut();
-        self.add_block_ref_from_alloc(allocs, block)
+        self.add_block_ref_from_allocs(allocs, block)
     }
 
     /// 获取函数的入口基本块引用
@@ -418,8 +418,18 @@ impl FuncRef {
             _ => None,
         }
     }
+    pub fn as_data_mut(self, alloc: &mut Slab<GlobalData>) -> Option<&mut Func> {
+        let func_data = self.0.to_data_mut(alloc);
+        match func_data {
+            GlobalData::Func(func) => Some(func),
+            _ => None,
+        }
+    }
     pub fn to_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a Func {
         self.as_data(alloc).expect("Expected a function data")
+    }
+    pub fn to_data_mut(self, alloc: &mut Slab<GlobalData>) -> &mut Func {
+        self.as_data_mut(alloc).expect("Expected a function data")
     }
 
     pub fn try_from_real(real: GlobalRef, alloc: &Slab<GlobalData>) -> Option<Self> {

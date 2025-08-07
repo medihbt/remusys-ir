@@ -90,19 +90,19 @@ impl<const N: usize> FixBitSet<N> {
         let mut count = 0;
         let slice = self.get_slice();
         let full_words = self.len() / 64;
-        
+
         // 计算完整 u64 字的位数
         for i in 0..full_words {
             count += slice[i].count_ones() as usize;
         }
-        
+
         // 处理最后一个不完整的字
         let remaining_bits = self.len() % 64;
         if remaining_bits > 0 && full_words < slice.len() {
             let mask = (1u64 << remaining_bits) - 1;
             count += (slice[full_words] & mask).count_ones() as usize;
         }
-        
+
         count
     }
 }
@@ -166,17 +166,17 @@ mod testing {
     #[test]
     fn test_small_bitset() {
         let mut bitset = FixBitSet::<2>::with_len(100); // 应该使用 Small 变体
-        
+
         // 测试基本操作
         assert_eq!(bitset.len(), 100);
         assert!(!bitset.get(50));
-        
+
         bitset.enable(50);
         assert!(bitset.get(50));
-        
+
         bitset.disable(50);
         assert!(!bitset.get(50));
-        
+
         // 测试边界检查
         bitset.enable(150); // 超出范围，应该被忽略
         assert!(!bitset.get(150));
@@ -186,11 +186,11 @@ mod testing {
     #[test]
     fn test_large_bitset() {
         let mut bitset = FixBitSet::<1>::with_len(100); // 应该使用 Large 变体
-        
+
         assert_eq!(bitset.len(), 100);
         bitset.enable(99);
         assert!(bitset.get(99));
-        
+
         // 测试越界访问
         bitset.enable(100); // 超出范围
         assert_eq!(bitset.try_get(100), None);
@@ -202,7 +202,7 @@ mod testing {
         bitset.enable(2);
         bitset.enable(5);
         bitset.enable(7);
-        
+
         let set_bits: Vec<usize> = bitset.into_iter().collect();
         assert_eq!(set_bits, vec![2, 5, 7]);
     }
@@ -211,12 +211,12 @@ mod testing {
     fn test_count_ones() {
         let mut bitset = FixBitSet::<2>::with_len(100);
         assert_eq!(bitset.count_ones(), 0);
-        
+
         bitset.enable(10);
         bitset.enable(20);
         bitset.enable(99);
         assert_eq!(bitset.count_ones(), 3);
-        
+
         bitset.disable(20);
         assert_eq!(bitset.count_ones(), 2);
     }
@@ -227,7 +227,7 @@ mod testing {
         bitset.enable(10);
         bitset.enable(50);
         assert_eq!(bitset.count_ones(), 2);
-        
+
         bitset.clear();
         assert_eq!(bitset.count_ones(), 0);
         assert!(!bitset.get(10));
@@ -240,11 +240,11 @@ mod testing {
         let mut bitset = FixBitSet::<2>::with_len(65);
         bitset.enable(63); // 第一个 u64 的最后一位
         bitset.enable(64); // 第二个 u64 的第一位
-        
+
         assert!(bitset.get(63));
         assert!(bitset.get(64));
         assert_eq!(bitset.count_ones(), 2);
-        
+
         let set_bits: Vec<usize> = bitset.into_iter().collect();
         assert_eq!(set_bits, vec![63, 64]);
     }

@@ -195,8 +195,8 @@ impl IndexPtr {
             base_ty,
             last_ty,
             nindices,
-            strict_ilog2(base_ty.get_instance_align(type_ctx).unwrap()),
-            strict_ilog2(last_ty.get_instance_align(type_ctx).unwrap()),
+            strict_ilog2(base_ty.try_get_instance_align(type_ctx).unwrap()),
+            strict_ilog2(last_ty.try_get_instance_align(type_ctx).unwrap()),
         );
 
         // 设置索引操作数

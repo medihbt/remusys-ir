@@ -1,9 +1,9 @@
-use std::hash::Hash;
 use crate::{
     base::APInt,
     ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
     typing::{id::ValTypeID, types::FloatTypeKind},
 };
+use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ConstData {

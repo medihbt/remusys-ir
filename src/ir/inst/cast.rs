@@ -15,9 +15,9 @@ use std::rc::Rc;
 /// ```llvm
 /// %<result> = <op> <type> <value> to <type>
 /// ```
-/// 
+///
 /// ### 操作数布局
-/// 
+///
 /// * `operands[0]`: 源操作数 (CastOpFrom) - 指向要转换的值
 #[derive(Debug)]
 pub struct CastOp {

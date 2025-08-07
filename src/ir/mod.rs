@@ -41,6 +41,7 @@ pub use self::{
     },
     opcode::{InstKind, Opcode},
     utils::{
+        builder::IRBuilder,
         numbering::{IRValueNumberMap, NumberOption},
         writer::IRWriter,
     },

@@ -169,9 +169,10 @@ impl Switch {
     ///
     /// # Panics
     /// 如果条件操作数不是整数类型则会 panic
-    pub fn new(allocs: &IRAllocs, cond: ValueSSA) -> Self {
+    pub fn new(allocs: &IRAllocs, cond: ValueSSA, default: BlockRef) -> Self {
         let mut switch = Self::new_empty(Opcode::Switch);
         switch.set_cond(allocs, cond);
+        switch.set_default(&allocs.blocks, default);
         switch
     }
 

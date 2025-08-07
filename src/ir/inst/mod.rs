@@ -5,9 +5,9 @@ use crate::{
     },
     ir::{
         BlockRef, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Opcode, Use, UserList,
-        ValueSSA,
+        ValueSSA, ValueSSAError,
     },
-    typing::id::ValTypeID,
+    typing::{TypeMismatchError, id::ValTypeID},
 };
 use slab::Slab;
 use std::{
@@ -50,6 +50,25 @@ pub use self::{
     store::{StoreOp, StoreOpRef},
     switch::{Switch, SwitchRef},
 };
+
+#[derive(Debug, Clone, Copy)]
+pub enum InstError {
+    OperandNull,
+    OperandUninit,
+    OperandOverflow,
+    OperandTypeMismatch(TypeMismatchError, ValueSSA),
+    OperandError(ValueSSAError),
+    OperandNotComptimeConst(ValueSSA),
+
+    InvalidCast,
+    InvalidArgumentCount(usize, usize),
+    DividedByZero,
+
+    SelfNotAttached(InstRef),
+    SelfAlreadyAttached(InstRef, BlockRef),
+    ListError(SlabListError),
+    ReplicatedTerminator(InstRef, InstRef),
+}
 
 #[derive(Debug)]
 pub enum InstData {
@@ -258,6 +277,10 @@ impl ITraceableValue for InstData {
 impl InstData {
     pub fn is_guide_node(&self) -> bool {
         matches!(self, InstData::ListGuideNode(_) | InstData::PhiInstEnd(_))
+    }
+
+    pub fn new_unreachable() -> Self {
+        InstData::Unreachable(InstCommon::new(Opcode::Unreachable, ValTypeID::Void))
     }
 }
 
@@ -495,6 +518,22 @@ impl InstRef {
         data.init_self_reference(ret);
         alloc.insert(data);
         ret
+    }
+
+    /// 如果自己在指令列表里, 就把自己移除掉.
+    pub fn detach_self(self, allocs: &IRAllocs) -> Result<(), InstError> {
+        let (parent, opcode) = {
+            let data = self.to_data(&allocs.insts);
+            (data.get_parent_bb(), data.get_opcode())
+        };
+        if parent.is_null() {
+            log::debug!("Trying to unplug an instruction {self:?} (opcode {opcode:?}) NOT in list");
+            return Err(InstError::SelfNotAttached(self));
+        }
+        parent
+            .insts_from_alloc(&allocs.blocks)
+            .unplug_node(&allocs.insts, self)
+            .map_err(InstError::ListError)
     }
 }
 

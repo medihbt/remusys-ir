@@ -4,7 +4,10 @@ use crate::{
 };
 use slab::Slab;
 use std::{
-    cell::{Ref, RefCell, RefMut}, collections::HashMap, ops::Deref, rc::Rc
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+    ops::Deref,
+    rc::Rc,
 };
 
 pub(super) mod gc;
@@ -103,7 +106,7 @@ impl IRAllocs {
 
 pub enum IRAllocsRef<'a> {
     Fix(&'a IRAllocs),
-    Dyn(Ref<'a, IRAllocs>)
+    Dyn(Ref<'a, IRAllocs>),
 }
 
 impl<'a> IRAllocsRef<'a> {

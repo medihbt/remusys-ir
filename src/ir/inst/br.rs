@@ -1,6 +1,9 @@
 use crate::{
     ir::{
-        block::jump_target::JumpTargets, inst::{ISubInstRef, InstOperands}, BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode, Use, UseKind, ValueSSA
+        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData,
+        InstRef, JumpTarget, JumpTargetKind, Opcode, Use, UseKind, ValueSSA,
+        block::jump_target::JumpTargets,
+        inst::{ISubInstRef, InstOperands},
     },
     typing::id::ValTypeID,
 };
@@ -8,9 +11,9 @@ use slab::Slab;
 use std::rc::Rc;
 
 /// 条件分支指令: 根据布尔条件表达式的值，跳转到不同的基本块。
-/// 
+///
 /// ### LLVM 语法
-/// 
+///
 /// ```llvm
 /// br i1 <cond>, label <if_true>, label <if_false>
 /// ```

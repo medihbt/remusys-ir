@@ -87,6 +87,17 @@ impl PtrStorage for Alloca {
     }
 }
 
+impl Alloca {
+    /// 创建一个新的 Alloca 指令, 分配指定类型的内存.
+    pub fn new(pointee_ty: ValTypeID, align_log2: u8) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Alloca, ValTypeID::Ptr),
+            pointee_ty,
+            align_log2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AllocaRef(InstRef);
 
