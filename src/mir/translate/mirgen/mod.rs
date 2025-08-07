@@ -8,11 +8,8 @@ use log::debug;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        block::BlockRef,
-        global::GlobalRef,
-        inst::{InstData, InstDataKind, InstRef},
-        module::Module as IRModule,
-        util::numbering::{IRValueNumberMap, NumberOption},
+        BlockRef, GlobalRef, IRValueNumberMap, InstData, InstKind as InstDataKind, InstRef,
+        Module as IRModule, NumberOption,
     },
     mir::{
         inst::MirInstRef,
@@ -114,8 +111,8 @@ impl MirTranslateCtx {
             let mir_func_info = globals
                 .find_func(ir_func_ref)
                 .expect("MIR function info not found for IR function reference");
-            let numbers = IRValueNumberMap::from_func(
-                &self.ir_module,
+            let numbers = IRValueNumberMap::new(
+                &self.ir_module.borrow_allocs(),
                 ir_func_ref,
                 NumberOption::ignore_all(),
             );
@@ -145,27 +142,28 @@ impl MirTranslateCtx {
         // Step 1.3 dump 出所有指令, 并为函数确定参数布局和栈布局
         let allocas = self.dump_insts_and_layout(&mut block_map);
         // Step 1.4 为每个指令分配虚拟寄存器
-        let vregs = {
-            self.ir_module
-                .enable_rdfg()
-                .expect("RDFG must be enabled to allocate storage for MIR instructions");
-            self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func)
-        };
+        /////// //// 重构后整个 RDFG 系统都不存在了, 这里要重写一些逻辑.
+        // let vregs = {
+        //     self.ir_module
+        //         .enable_rdfg()
+        //         .expect("RDFG must be enabled to allocate storage for MIR instructions");
+        //     self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func)
+        // };
 
-        // Step 1.5 翻译每个基本块的指令
-        let (operand_map, inst_template) =
-            OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs.clone(), block_map);
-        let numbers =
-            IRValueNumberMap::from_func(&self.ir_module, cfg.func, NumberOption::ignore_all());
-        let entry_block = operand_map.blocks[0].mir;
-        for inst in inst_template {
-            let mut mir_builder = MirBuilder::new(&mut self.mir_module);
-            mir_builder.set_focus(MirFocus::Block(Rc::clone(mir_func), entry_block));
-            mir_builder.add_inst(inst);
-        }
-        for i in 0..operand_map.blocks.len() {
-            self.inst_dispatch_for_one_mir_block(&operand_map, i, &numbers);
-        }
+        // // Step 1.5 翻译每个基本块的指令
+        // let (operand_map, inst_template) =
+        //     OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs.clone(), block_map);
+        // let numbers =
+        //     IRValueNumberMap::from_func(&self.ir_module, cfg.func, NumberOption::ignore_all());
+        // let entry_block = operand_map.blocks[0].mir;
+        // for inst in inst_template {
+        //     let mut mir_builder = MirBuilder::new(&mut self.mir_module);
+        //     mir_builder.set_focus(MirFocus::Block(Rc::clone(mir_func), entry_block));
+        //     mir_builder.add_inst(inst);
+        // }
+        // for i in 0..operand_map.blocks.len() {
+        //     self.inst_dispatch_for_one_mir_block(&operand_map, i, &numbers);
+        // }
     }
 
     /// Step 1.1: 为每个函数的基本块分配 MIR 块引用

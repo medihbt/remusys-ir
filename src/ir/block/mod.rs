@@ -1,7 +1,7 @@
 use crate::{
     base::{
         INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        SlabListRange, SlabRef, SlabRefList,
+        SlabListRange, SlabListView, SlabRef, SlabRefList,
     },
     ir::{
         ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstCommon,
@@ -96,7 +96,7 @@ impl BlockData {
             preds: PredList::new_empty(),
         };
         let phi_end = {
-            let phi_end = InstData::PhiInstEnd(InstCommon::new_empty());
+            let phi_end = InstData::new_phi_inst_end();
             InstRef::from_alloc(alloc, phi_end)
         };
         ret.insts
@@ -143,7 +143,7 @@ impl BlockData {
     pub fn new_unreachable_from_alloc(alloc: &mut Slab<InstData>) -> Self {
         let ret = Self::empty_from_alloc(alloc);
         let unreachable = {
-            let data = InstData::Unreachable(InstCommon::new_empty());
+            let data = InstData::new_unreachable();
             InstRef::from_alloc(alloc, data)
         };
         ret.insts
@@ -317,7 +317,7 @@ impl BlockData {
         let Some(back) = insts.get_back_ref(alloc) else {
             return Err("Block has no instructions");
         };
-        let terminator = match back.to_data(alloc) {
+        let terminator = match back.to_inst(alloc) {
             InstData::Unreachable(_) => TerminatorRef::Unreachable(back),
             InstData::Ret(_) => TerminatorRef::Ret(RetRef::from_raw_nocheck(back)),
             InstData::Jump(_) => TerminatorRef::Jump(JumpRef::from_raw_nocheck(back)),
@@ -345,7 +345,7 @@ impl BlockData {
         if terminator.is_null() {
             panic!("Null Exception: New terminator is null.");
         }
-        if !terminator.to_data(alloc).is_terminator() {
+        if !terminator.to_inst(alloc).is_terminator() {
             panic!("Instruction NOT terminator: {terminator:?}")
         }
         let ret = if let Ok(terminator) = self.try_get_terminator(alloc) {
@@ -396,7 +396,7 @@ impl BlockData {
     pub fn build_add_inst(&self, alloc: &Slab<InstData>, inst: impl ISubInstRef) {
         let inst = inst.into_raw();
 
-        match inst.to_data(alloc) {
+        match inst.to_inst(alloc) {
             InstData::Phi(_) => self.build_add_phi(alloc, PhiRef::from_raw_nocheck(inst)),
             x if x.is_terminator() => {
                 if self.has_terminator(alloc) {
@@ -406,10 +406,17 @@ impl BlockData {
                     .push_back_ref(alloc, inst)
                     .expect("Failed to push terminator instruction")
             }
-            _ => self
-                .insts
-                .push_back_ref(alloc, inst)
-                .expect("Failed to push instruction"),
+            _ => {
+                if let Ok(terminator) = self.try_get_terminator(alloc) {
+                    self.insts
+                        .node_add_prev(alloc, terminator.get_inst(), inst)
+                        .expect("Failed to add instruction before terminator");
+                } else {
+                    self.insts
+                        .push_back_ref(alloc, inst)
+                        .expect("Failed to push instruction")
+                }
+            }
         }
     }
 }
@@ -520,6 +527,8 @@ impl ISubValueSSA for BlockRef {
 }
 
 impl BlockRef {
+    pub const VEXIT_ID: usize = 0xFFFF_FFFF_FFFF_FFFE;
+
     /// 从 IR 分配器创建基本块引用
     ///
     /// 将基本块数据插入分配器并返回对应的引用。
@@ -578,6 +587,21 @@ impl BlockRef {
         Ref::map(allocs, |allocs| self.insts_from_alloc(&allocs.blocks))
     }
 
+    /// 直接从分配器获取可迭代的基本块指令视图
+    pub fn view_insts(self, allocs: &IRAllocs) -> SlabListView<InstRef> {
+        self.insts_from_alloc(&allocs.blocks).view(&allocs.insts)
+    }
+
+    pub fn users(self, allocs: &IRAllocs) -> &UserList {
+        self.to_data(&allocs.blocks).users()
+    }
+    pub fn preds(self, allocs: &IRAllocs) -> &PredList {
+        &self.to_data(&allocs.blocks).preds
+    }
+    pub fn succs(self, allocs: &IRAllocs) -> JumpTargets {
+        self.to_data(&allocs.blocks).get_successors(&allocs.insts)
+    }
+
     /// 从可变模块获取基本块的指令列表
     ///
     /// # 参数
@@ -588,5 +612,17 @@ impl BlockRef {
     pub fn insts_from_mut_module<'a>(self, module: &'a mut Module) -> &'a SlabRefList<InstRef> {
         let alloc = module.allocs.get_mut();
         self.insts_from_alloc(&alloc.blocks)
+    }
+
+    pub fn new_vexit() -> Self {
+        BlockRef(Self::VEXIT_ID)
+    }
+
+    pub fn is_vexit(&self) -> bool {
+        self.0 == Self::VEXIT_ID
+    }
+
+    pub fn has_phi(self, allocs: &IRAllocs) -> bool {
+        self.to_data(&allocs.blocks).has_phi(&allocs.insts)
     }
 }

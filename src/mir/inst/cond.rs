@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 
-use crate::ir::cmp_cond::CmpCond;
+use crate::ir::CmpCond;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MirCondFlag {

@@ -290,17 +290,7 @@ impl MirGlobalVariable {
         ty: ValTypeID,
         type_ctx: &TypeContext,
     ) -> Self {
-        let instance_align = ty
-            .get_instance_align(type_ctx)
-            .expect("Type must have instance alignment");
-        let align_log2 = if instance_align.is_power_of_two() {
-            3.max(instance_align.trailing_zeros() as u8)
-        } else {
-            panic!(
-                "Instance alignment is not a power of two: {}",
-                instance_align
-            );
-        };
+        let align_log2 = ty.get_align_log2(type_ctx).max(3);
         Self {
             common: MirGlobalCommon::new(name, section, align_log2, Linkage::Extern),
             ty,
@@ -314,17 +304,7 @@ impl MirGlobalVariable {
         initval: Vec<MirGlobalData>,
         type_ctx: &TypeContext,
     ) -> Self {
-        let instance_align = ty
-            .get_instance_align(type_ctx)
-            .expect("Type must have instance alignment");
-        let align_log2 = if instance_align.is_power_of_two() {
-            3.max(instance_align.trailing_zeros() as u8)
-        } else {
-            panic!(
-                "Instance alignment is not a power of two: {}",
-                instance_align
-            );
-        };
+        let align_log2 = ty.get_align_log2(type_ctx).max(3);
         Self {
             common: MirGlobalCommon::new(name, section, align_log2, Linkage::Global),
             ty,

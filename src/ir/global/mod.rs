@@ -113,7 +113,7 @@ impl GlobalDataCommon {
     pub fn new(name: String, content_ty: ValTypeID, content_align: usize) -> Self {
         debug_assert!(
             content_align.is_power_of_two(),
-            "Content alignment must be a power of two"
+            "Content alignment must be a power of two buf got {content_align}"
         );
         GlobalDataCommon {
             name,
@@ -144,7 +144,7 @@ impl ITraceableValue for GlobalData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalRef(usize);
 
 impl SlabRef for GlobalRef {
@@ -235,6 +235,13 @@ impl GlobalRef {
     pub fn get_content_type_from_mut_module(self, module: &mut Module) -> ValTypeID {
         let alloc = module.allocs.get_mut();
         self.get_content_type_from_alloc(&alloc.globals)
+    }
+
+    pub fn is_extern(self, allocs: &IRAllocs) -> bool {
+        self.to_data(&allocs.globals).is_extern()
+    }
+    pub fn is_extern_from_alloc(self, alloc: &Slab<GlobalData>) -> bool {
+        self.to_data(alloc).is_extern()
     }
 }
 

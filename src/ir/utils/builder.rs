@@ -135,7 +135,7 @@ impl IRBuilder {
             }
             IRBuilderFocus::Inst(inst) => {
                 self.focus.inst = inst;
-                self.focus.block = inst.to_data(&self.allocs_mut().insts).get_parent_bb();
+                self.focus.block = inst.to_inst(&self.allocs_mut().insts).get_parent_bb();
             }
         }
         let function = {
@@ -324,7 +324,7 @@ impl IRBuilder {
         } else {
             // Focus is an instruction.
             let focus_inst = self.focus.inst;
-            let focus_kind = match focus_inst.to_data(&self.allocs_mut().insts) {
+            let focus_kind = match focus_inst.to_inst(&self.allocs_mut().insts) {
                 InstData::Phi(..) => FocusInstKind::Phi,
                 x if x.is_terminator() => FocusInstKind::Terminator,
                 _ => FocusInstKind::Normal,
@@ -510,7 +510,7 @@ impl IRBuilder {
                 // 这里不使用 set_operand(), 因为链表已经发生移动了.
                 u.operand.set(new_block.into_ir());
                 let phi_inst = PhiRef::from_inst(u.inst.get(), &allocs.insts);
-                let phi_operands = phi_inst.to_data(&allocs.insts).get_operands();
+                let phi_operands = phi_inst.to_inst(&allocs.insts).get_operands();
                 let phi_value_use = &phi_operands[value_use_index as usize];
                 let UseKind::PhiIncomingValue(_, block_idx) = phi_value_use.kind.get() else {
                     panic!("PHI inst structure broken");
@@ -593,7 +593,7 @@ impl IRBuilder {
         };
 
         // Checking enabled.
-        let focus_kind = match focus_inst.to_data(&self.allocs_mut().insts) {
+        let focus_kind = match focus_inst.to_inst(&self.allocs_mut().insts) {
             InstData::Phi(..) => FocusInstKind::Phi,
             x if x.is_terminator() => FocusInstKind::Terminator,
             _ => FocusInstKind::Normal,

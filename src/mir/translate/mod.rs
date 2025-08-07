@@ -14,7 +14,7 @@
 //! * `reg_alloc`: Allocates registers for the MIR module.
 
 use crate::{
-    ir::module::Module,
+    ir::Module,
     mir::{module::MirModule, translate::ir_pass::phi_node_ellimination::CopyMap},
 };
 use std::rc::Rc;

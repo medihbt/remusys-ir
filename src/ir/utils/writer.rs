@@ -8,6 +8,11 @@ use std::{
     io::Write,
 };
 
+pub fn write_ir_module(module: &Module, output: &mut dyn Write) {
+    let writer = IRWriter::from_module(output, module);
+    writer.write_module()
+}
+
 pub struct IRWriter<'a> {
     pub output: RefCell<&'a mut dyn Write>,
     pub type_ctx: &'a TypeContext,
@@ -94,11 +99,10 @@ impl<'a> IRWriter<'a> {
     }
 
     pub fn wrap_indent(&self) {
+        let mut writer = self.output.borrow_mut();
+        write!(&mut writer, "\n").expect("Failed to write newline");
         for _ in 0..self.indent_level.get() {
-            self.output
-                .borrow_mut()
-                .write_all(b"    ")
-                .expect("Failed to write indentation");
+            write!(&mut writer, "    ").expect("Failed to write indentation");
         }
     }
 
@@ -111,21 +115,18 @@ impl<'a> IRWriter<'a> {
             ValueSSA::None => write!(self.output.borrow_mut(), "none"),
             ValueSSA::ConstData(data) => data.fmt_ir(self),
             ValueSSA::ConstExpr(expr) => expr.fmt_ir(self),
-            ValueSSA::FuncArg(global_ref, _) => {
-                let name = global_ref.get_name_from_alloc(&self.allocs.globals);
-                write!(self.output.borrow_mut(), "@{}", name)
-            }
+            ValueSSA::FuncArg(_, id) => write!(self, "%{id}"),
             ValueSSA::Block(block_ref) => {
                 let id = self.borrow_numbers().block_get_number(block_ref).unwrap();
-                write!(self.output.borrow_mut(), "%{id}")
+                write!(self, "%{id}")
             }
             ValueSSA::Inst(inst_ref) => {
                 let id = self.borrow_numbers().inst_get_number(inst_ref).unwrap();
-                write!(self.output.borrow_mut(), "%{id}")
+                write!(self, "%{id}")
             }
             ValueSSA::Global(global_ref) => {
                 let name = global_ref.get_name_from_alloc(&self.allocs.globals);
-                write!(self.output.borrow_mut(), "@{}", name)
+                write!(self, "@{name}")
             }
         }
     }
@@ -165,14 +166,13 @@ impl<'a> IRWriter<'a> {
         };
 
         let (_, mut curr_kind) = globals[0];
-        self.wrap_indent();
         for &(g, kind) in &globals {
             if kind != curr_kind {
                 self.wrap_indent();
                 curr_kind = kind;
             }
-            self.wrap_indent();
             g.fmt_ir(self).expect("Failed to write IR");
+            self.wrap_indent();
         }
     }
 }

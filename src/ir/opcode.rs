@@ -16,7 +16,7 @@ pub enum Opcode {
     Call, DynCall, Phi,
     Icmp, Fcmp,
     ConstArray, ConstStruct, ConstVec, ConstPtrNull,
-    Intrin, GuideNode, ReservedCnt,
+    Intrin, GuideNode, PhiEnd, ReservedCnt,
 }
 
 impl Opcode {
@@ -127,6 +127,7 @@ impl Opcode {
         match self {
             // Guide node
             Opcode::GuideNode => InstKind::ListGuideNode,
+            Opcode::PhiEnd => InstKind::PhiInstEnd,
 
             // Phi instruction
             Opcode::Phi => InstKind::Phi,
@@ -236,7 +237,7 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "icmp", "fcmp",
     "constarray", "conststruct", "constvec",
     "constptrnull",
-    "intrin", "guide-node"
+    "intrin", "guide-node", "phi-end",
 ];
 
 lazy_static::lazy_static! {

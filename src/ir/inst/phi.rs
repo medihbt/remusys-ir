@@ -6,7 +6,11 @@ use crate::{
     },
     typing::id::ValTypeID,
 };
-use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::BTreeMap,
+    rc::Rc,
+};
 
 #[derive(Debug)]
 pub enum PhiError {
@@ -271,6 +275,44 @@ impl PhiNode {
             map.insert(back_block, (val_idx, block_idx));
         }
         Ok(())
+    }
+}
+
+pub struct PhiIncomeIter<'a> {
+    operands: Ref<'a, [Rc<Use>]>,
+    index: usize,
+}
+
+impl<'a> Iterator for PhiIncomeIter<'a> {
+    type Item = (ValueSSA, BlockRef);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.operands.len() {
+            return None;
+        }
+        let value_use = &self.operands[self.index];
+        let block_use = &self.operands[self.index + 1];
+        self.index += 2;
+
+        let value = value_use.get_operand();
+        let block = *BlockRef::from_ir(&block_use.get_operand());
+        Some((value, block))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.operands.len() - self.index) / 2;
+        (remaining, Some(remaining))
+    }
+}
+
+impl<'a> IntoIterator for &'a PhiNode {
+    type Item = (ValueSSA, BlockRef);
+    type IntoIter = PhiIncomeIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let operands = self.operands.borrow();
+        let operands = Ref::map(operands, |ops| ops.as_slice());
+        PhiIncomeIter { operands, index: 0 }
     }
 }
 

@@ -4,6 +4,9 @@
 
 pub mod base;
 pub mod ir;
+pub mod mir;
+pub mod opt;
+pub mod testing;
 pub mod typing;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

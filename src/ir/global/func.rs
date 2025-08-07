@@ -115,7 +115,7 @@ impl ISubGlobal for Func {
     fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         self.fmt_header(writer)?;
         if self.is_extern() {
-            writeln!(writer, "; external function")?;
+            write!(writer, "; external function")?;
             return Ok(());
         }
 
@@ -125,11 +125,11 @@ impl ISubGlobal for Func {
             NumberOption::ignore_all(),
         ));
 
-        writeln!(writer, " {{")?;
+        write!(writer, " {{")?;
         for (block_ref, _) in self.body.view(&writer.allocs.blocks) {
             block_ref.fmt_ir(writer)?;
         }
-        writeln!(writer, "}}")
+        write!(writer, "}}")
     }
 }
 
@@ -168,7 +168,7 @@ impl FuncStorage for Func {
 impl Func {
     fn create_extern(name: String, functy: FuncTypeRef, type_ctx: &TypeContext) -> Self {
         let content_ty = ValTypeID::Func(functy);
-        let common = GlobalDataCommon::new(name, content_ty, 0);
+        let common = GlobalDataCommon::new(name, content_ty, 8);
 
         let args = {
             let mut args = Vec::with_capacity(functy.get_nargs(type_ctx));
@@ -204,11 +204,15 @@ impl Func {
         Self::create_extern(name.into(), functy, type_ctx)
     }
 
-    fn make_defined_with_unreachable(&self, allocs: &mut IRAllocs) {
+    fn make_defined_with_unreachable(&mut self, allocs: &mut IRAllocs) {
         debug_assert!(
             self.is_extern(),
             "Function must be extern to define with unreachable"
         );
+
+        // 将函数体设置为一个空的基本块列表
+        self.body = SlabRefList::from_slab(&mut allocs.blocks);
+
         let unreachable_bb = {
             let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
             BlockRef::from_allocs(allocs, data)
@@ -216,6 +220,12 @@ impl Func {
         self.body
             .push_back_ref(&allocs.blocks, unreachable_bb)
             .expect("Failed to push unreachable block");
+        assert!(
+            unreachable_bb
+                .to_data(&allocs.blocks)
+                .has_terminator(&allocs.insts),
+            "Failed to push unreachable block"
+        );
         self.entry.set(unreachable_bb);
     }
     /// 创建一个包含单个 unreachable 基本块的函数
@@ -235,7 +245,7 @@ impl Func {
         functy: FuncTypeRef,
         name: T,
     ) -> Self {
-        let func = Self::create_extern(name.into(), functy, &module.type_ctx);
+        let mut func = Self::create_extern(name.into(), functy, &module.type_ctx);
         let mut allocs = module.allocs.borrow_mut();
         func.make_defined_with_unreachable(&mut allocs);
         func
@@ -258,7 +268,7 @@ impl Func {
         functy: FuncTypeRef,
         name: T,
     ) -> Self {
-        let func = Self::create_extern(name.into(), functy, &module.type_ctx);
+        let mut func = Self::create_extern(name.into(), functy, &module.type_ctx);
         let allocs = module.allocs.get_mut();
         func.make_defined_with_unreachable(allocs);
         func

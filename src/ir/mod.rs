@@ -1,4 +1,4 @@
-use crate::typing::id::ValTypeID;
+use crate::{base::APInt, typing::id::ValTypeID};
 use std::{fmt::Debug, hash::Hash, num::NonZero};
 
 mod block;
@@ -41,9 +41,12 @@ pub use self::{
     },
     opcode::{InstKind, Opcode},
     utils::{
-        builder::IRBuilder,
+        builder::{
+            IRBuilder, IRBuilderError, IRBuilderExpandedFocus, IRBuilderFocus,
+            IRBuilderFocusCheckOption,
+        },
         numbering::{IRValueNumberMap, NumberOption},
-        writer::IRWriter,
+        writer::{IRWriter, write_ir_module},
     },
 };
 
@@ -118,6 +121,32 @@ impl ISubValueSSA for ValueSSA {
             ValueSSA::Block(block) => block.fmt_ir(writer),
             ValueSSA::Inst(inst) => inst.fmt_ir(writer),
             ValueSSA::Global(global) => global.fmt_ir(writer),
+        }
+    }
+}
+
+impl From<APInt> for ValueSSA {
+    fn from(value: APInt) -> Self {
+        ValueSSA::ConstData(ConstData::Int(value.bits(), value.as_unsigned()))
+    }
+}
+
+impl TryInto<APInt> for ValueSSA {
+    type Error = ValueSSAError;
+
+    fn try_into(self) -> Result<APInt, Self::Error> {
+        match self {
+            ValueSSA::ConstData(x) => match x.as_apint() {
+                Some(apint) => Ok(apint),
+                None => Err(ValueSSAError::KindNotMatch(
+                    self,
+                    ValueSSA::ConstData(ConstData::Int(0, 0)),
+                )),
+            },
+            _ => Err(ValueSSAError::KindNotMatch(
+                self,
+                ValueSSA::ConstData(ConstData::Int(0, 0)),
+            )),
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
         SlabListRes, SlabRef,
     },
     ir::{
-        BlockRef, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Opcode, Use, UserList,
+        BlockRef, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, Opcode, Use, UserList,
         ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, id::ValTypeID},
@@ -282,6 +282,9 @@ impl InstData {
     pub fn new_unreachable() -> Self {
         InstData::Unreachable(InstCommon::new(Opcode::Unreachable, ValTypeID::Void))
     }
+    pub fn new_phi_inst_end() -> Self {
+        InstData::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
+    }
 }
 
 #[derive(Debug)]
@@ -465,7 +468,7 @@ impl SlabListNodeRef for InstRef {
         curr.node_attach_set_parent(prev, alloc)
     }
     fn on_node_unplug(curr: Self, alloc: &Slab<InstData>) -> SlabListRes {
-        curr.to_data(alloc).set_parent_bb(BlockRef::new_null());
+        curr.to_inst(alloc).set_parent_bb(BlockRef::new_null());
         Ok(())
     }
 }
@@ -482,7 +485,7 @@ impl ISubValueSSA for InstRef {
     }
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
-        self.to_data(&allocs.insts).get_common().ret_type
+        self.to_inst(&allocs.insts).get_common().ret_type
     }
 
     fn try_gettype_noalloc(self) -> Option<ValTypeID> {
@@ -501,11 +504,10 @@ impl ISubValueSSA for InstRef {
 
 impl InstRef {
     fn node_attach_set_parent(self, to_attach: Self, alloc: &Slab<InstData>) -> SlabListRes {
-        let parent = self.to_data(alloc).get_parent_bb();
-        if parent.is_null() {
-            return Err(SlabListError::SelfNotInList(self.get_handle()));
-        }
-        let data = to_attach.to_data(alloc);
+        let parent = self.to_inst(alloc).get_parent_bb();
+        // 这里就不处理 parent == null 的情况了.
+        // 当基本块对象刚刚构造、还没放到堆上时, parent 就可能是 null. 此时也有可能会 push 一些指令上去.
+        let data = to_attach.to_inst(alloc);
         if data.get_parent_bb().is_nonnull() {
             return Err(SlabListError::PluggedItemAttached(to_attach.get_handle()));
         }
@@ -523,7 +525,7 @@ impl InstRef {
     /// 如果自己在指令列表里, 就把自己移除掉.
     pub fn detach_self(self, allocs: &IRAllocs) -> Result<(), InstError> {
         let (parent, opcode) = {
-            let data = self.to_data(&allocs.insts);
+            let data = self.to_inst(&allocs.insts);
             (data.get_parent_bb(), data.get_opcode())
         };
         if parent.is_null() {
@@ -535,6 +537,17 @@ impl InstRef {
             .unplug_node(&allocs.insts, self)
             .map_err(InstError::ListError)
     }
+
+    pub fn get_parent(self, allocs: &IRAllocs) -> BlockRef {
+        self.to_inst(&allocs.insts).get_parent_bb()
+    }
+    pub fn get_parent_from_alloc(self, alloc: &Slab<InstData>) -> BlockRef {
+        self.to_inst(alloc).get_parent_bb()
+    }
+    pub fn get_parent_with_module(self, module: &Module) -> BlockRef {
+        let alloc = module.allocs.borrow();
+        self.to_inst(&alloc.insts).get_parent_bb()
+    }
 }
 
 pub trait ISubInstRef: Sized {
@@ -544,7 +557,7 @@ pub trait ISubInstRef: Sized {
     fn into_raw(self) -> InstRef;
 
     fn try_from_inst(inst: InstRef, alloc: &Slab<InstData>) -> Option<Self> {
-        let inst_data = inst.to_data(alloc);
+        let inst_data = inst.to_inst(alloc);
         match Self::InstDataT::try_from_ir(inst_data) {
             Some(_) => Some(Self::from_raw_nocheck(inst)),
             None => None,
@@ -554,30 +567,30 @@ pub trait ISubInstRef: Sized {
         Self::try_from_inst(inst, alloc).expect("Expected a valid instruction reference")
     }
 
-    fn as_data(self, alloc: &Slab<InstData>) -> Option<&Self::InstDataT> {
+    fn as_inst(self, alloc: &Slab<InstData>) -> Option<&Self::InstDataT> {
         self.into_raw()
             .as_data(alloc)
             .and_then(|data| Self::InstDataT::try_from_ir(data))
     }
-    fn as_data_mut(self, alloc: &mut Slab<InstData>) -> Option<&mut Self::InstDataT> {
+    fn as_inst_mut(self, alloc: &mut Slab<InstData>) -> Option<&mut Self::InstDataT> {
         self.into_raw()
             .as_data_mut(alloc)
             .and_then(|data| Self::InstDataT::try_from_ir_mut(data))
     }
-    fn to_data(self, alloc: &Slab<InstData>) -> &Self::InstDataT {
-        self.as_data(alloc)
+    fn to_inst(self, alloc: &Slab<InstData>) -> &Self::InstDataT {
+        self.as_inst(alloc)
             .expect("Expected a valid instruction data reference")
     }
-    fn to_data_mut(self, alloc: &mut Slab<InstData>) -> &mut Self::InstDataT {
-        self.as_data_mut(alloc)
+    fn to_inst_mut(self, alloc: &mut Slab<InstData>) -> &mut Self::InstDataT {
+        self.as_inst_mut(alloc)
             .expect("Expected a valid instruction data reference")
     }
 
     fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {
-        self.to_data(alloc).get_common().opcode
+        self.to_inst(alloc).get_common().opcode
     }
     fn get_valtype(self, alloc: &IRAllocs) -> ValTypeID {
-        self.to_data(&alloc.insts).get_common().ret_type
+        self.to_inst(&alloc.insts).get_common().ret_type
     }
 }
 

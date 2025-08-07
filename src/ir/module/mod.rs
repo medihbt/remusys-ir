@@ -1,12 +1,16 @@
 use crate::{
-    ir::{BlockData, ConstExprData, GlobalData, GlobalRef, InstData, ValueSSA},
+    base::SlabRef,
+    ir::{
+        BlockData, ConstExprData, Func, FuncRef, GlobalData, GlobalRef, ISubGlobal, InstData,
+        ValueSSA,
+    },
     typing::context::TypeContext,
 };
 use slab::Slab;
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
-    ops::Deref,
+    ops::{ControlFlow, Deref},
     rc::Rc,
 };
 
@@ -64,6 +68,48 @@ impl Module {
             marker.push_mark(global);
         }
         marker.mark_and_sweep(roots);
+    }
+
+    pub fn forall_funcs(&self, has_extern: bool, f: impl FnMut(FuncRef, &Func) -> ControlFlow<()>) {
+        let allocs = self.allocs.borrow();
+        let globals = self.globals.borrow();
+        let mut f = f;
+        for (_, &global) in globals.iter() {
+            let GlobalData::Func(func) = global.to_data(&allocs.globals) else {
+                continue;
+            };
+            if !has_extern && func.is_extern() {
+                continue;
+            }
+            if let ControlFlow::Break(()) = f(FuncRef(global), func) {
+                break;
+            }
+        }
+    }
+    pub fn dump_funcs(&self, has_extern: bool) -> Vec<FuncRef> {
+        let mut ret = Vec::new();
+        self.forall_funcs(has_extern, |func_ref, _| {
+            ret.push(func_ref);
+            ControlFlow::Continue(())
+        });
+        ret
+    }
+    pub fn forall_globals(
+        &self,
+        has_extern: bool,
+        f: impl FnMut(GlobalRef, &GlobalData) -> ControlFlow<()>,
+    ) {
+        let allocs = self.allocs.borrow();
+        let globals = self.globals.borrow();
+        let mut f = f;
+        for (_, &global) in globals.iter() {
+            if !has_extern && global.is_extern(&allocs) {
+                continue;
+            }
+            if let ControlFlow::Break(()) = f(global, global.to_data(&allocs.globals)) {
+                break;
+            }
+        }
     }
 }
 

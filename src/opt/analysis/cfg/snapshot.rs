@@ -6,10 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ir::{
-    block::BlockRef,
-    global::{GlobalData, GlobalRef},
-    module::Module,
+use crate::{
+    base::SlabRef,
+    ir::{BlockRef, GlobalData, GlobalRef, IRAllocs},
 };
 
 /// ## CFG Snapshot
@@ -118,44 +117,38 @@ impl CfgSnapshot {
         Self { nodes: Box::new([]), func, entry }
     }
 
-    pub fn new_from_func(module: &Module, func: GlobalRef) -> Self {
+    pub fn new(allocs: &IRAllocs, func: GlobalRef) -> Self {
         let (blocks_range, entry) = {
-            let func_data = module.get_global(func);
-            if let GlobalData::Func(f) = &*func_data {
-                match f.get_blocks() {
-                    Some(blocks) => (blocks.load_range(), f.get_entry()),
-                    None => panic!("Function has no blocks"),
-                }
-            } else {
-                panic!("Expected function");
+            let func_data = func.to_data(&allocs.globals);
+            let GlobalData::Func(f) = &*func_data else {
+                panic!("Expected a function");
+            };
+            match f.get_body() {
+                Some(blocks) => (blocks.load_range(), f.get_entry()),
+                None => panic!("Function has no blocks"),
             }
         };
 
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_jt = module.borrow_jt_alloc();
-        let alloc_block = &alloc_value.blocks;
-        let alloc_inst = &alloc_value.insts;
-
         // Get successors and predecessors of each block.
-        let mut succ_map: BTreeMap<BlockRef, Vec<BlockRef>> = BTreeMap::new();
+        let mut succ_map: BTreeMap<BlockRef, BTreeSet<BlockRef>> = BTreeMap::new();
         let mut pred_map: BTreeMap<BlockRef, BTreeSet<BlockRef>> = BTreeMap::new();
 
-        for (blockref, block) in blocks_range.view(alloc_block) {
-            let terminator = block
-                .get_terminator_subref(module)
-                .expect("Block has no terminator");
-            let succ_vec = terminator.collect_jump_blocks(alloc_inst, &alloc_jt);
-            for succ in &succ_vec {
+        for (blockref, block) in blocks_range.view(&allocs.blocks) {
+            let successors = block.get_successors(&allocs.insts);
+            let succs = succ_map.entry(blockref).or_insert_with(BTreeSet::new);
+            for jt in &successors {
+                let to = jt.get_block();
+                succs.insert(to);
                 pred_map
-                    .entry(*succ)
+                    .entry(to)
                     .or_insert_with(BTreeSet::new)
                     .insert(blockref);
             }
-            succ_map.insert(blockref, succ_vec);
         }
 
         // Collect predecessors and successors of each block into nodes.
         // The collected vector is sorted by `BlockRef` handle number naturally.
+
         let mut nodes = Vec::with_capacity(succ_map.len());
         for (blockref, succ_vec) in succ_map {
             let mut prev_set = Vec::with_capacity(pred_map.len());

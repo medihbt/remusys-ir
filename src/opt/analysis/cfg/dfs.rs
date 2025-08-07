@@ -1,12 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    base::INullableValue,
-    ir::{
-        block::BlockRef,
-        global::{GlobalData, GlobalRef},
-        module::Module,
-    },
+    base::{INullableValue, SlabRef},
+    ir::{BlockRef, GlobalData, GlobalRef, IRAllocs},
     opt::util::DfsOrder,
 };
 
@@ -99,24 +95,23 @@ impl CfgDfsSeq {
     }
 
     pub fn new_from_func(
-        module: &Module,
+        allocs: &IRAllocs,
         func: GlobalRef,
         order: DfsOrder,
     ) -> Result<Self, String> {
         let mut cfg_dfs_seq = Self::new_empty(order);
-        cfg_dfs_seq.build_from_func(module, func)?;
+        cfg_dfs_seq.build(allocs, func)?;
         Ok(cfg_dfs_seq)
     }
 
-    pub fn build_from_func(&mut self, module: &Module, func: GlobalRef) -> Result<(), String> {
+    pub fn build(&mut self, allocs: &IRAllocs, func: GlobalRef) -> Result<(), String> {
         let (nblocks, entry) = {
-            let func_data = module.get_global(func);
-            let func_data = match &*func_data {
-                GlobalData::Func(f) => f,
-                _ => return Err("Expected function".into()),
+            let func = func.to_data(&allocs.globals);
+            let GlobalData::Func(func) = &*func else {
+                return Err("Expected a function".into());
             };
-            match func_data.get_blocks() {
-                Some(blocks) => (blocks.len(), func_data.get_entry()),
+            match func.get_body() {
+                Some(blocks) => (blocks.len(), func.get_entry()),
                 None => return Err("Function has no blocks".into()),
             }
         };
@@ -127,7 +122,7 @@ impl CfgDfsSeq {
         match self.order.get_first_step() {
             DfsOrder::Pre => {
                 Self::build_pre_order(
-                    module,
+                    allocs,
                     entry,
                     BlockRef::new_null(),
                     usize::MAX,
@@ -137,7 +132,7 @@ impl CfgDfsSeq {
             }
             DfsOrder::Post => {
                 Self::build_post_order(
-                    module,
+                    allocs,
                     entry,
                     BlockRef::new_null(),
                     &mut blocks_seq,
@@ -155,7 +150,7 @@ impl CfgDfsSeq {
     }
 
     fn build_pre_order(
-        module: &Module,
+        allocs: &IRAllocs,
         block: BlockRef,
         parent: BlockRef,
         parent_dfn: usize,
@@ -165,23 +160,19 @@ impl CfgDfsSeq {
         if dfn_map.contains_key(&block) {
             return;
         }
-        let terminator = {
-            let block_data = module.get_block(block);
-            block_data
-                .get_terminator_subref(module)
-                .expect("Block should have a terminator")
-        };
+        let terminator = block.to_data(&allocs.blocks).get_terminator(&allocs.insts);
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
         node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn });
 
-        for succ in terminator.collect_jump_blocks_from_module(module) {
-            Self::build_pre_order(module, succ, block, dfn, node_seq, dfn_map);
+        for jt in &terminator.get_jts(&allocs.insts) {
+            let succ_block = jt.get_block();
+            Self::build_pre_order(allocs, succ_block, block, dfn, node_seq, dfn_map);
         }
     }
 
     fn build_post_order(
-        module: &Module,
+        allocs: &IRAllocs,
         block: BlockRef,
         parent: BlockRef,
         node_seq: &mut Vec<CfgDfsNode>,
@@ -191,15 +182,11 @@ impl CfgDfsSeq {
             return None;
         }
         dfn_map.insert(block, usize::MAX);
-        let terminator = {
-            let block_data = module.get_block(block);
-            block_data
-                .get_terminator_subref(module)
-                .expect("Block should have a terminator")
-        };
+        let terminator = block.to_data(&allocs.blocks).get_terminator(&allocs.insts);
         let mut succ_dfns = Vec::new();
-        for succ in terminator.collect_jump_blocks_from_module(module) {
-            let succ_dfn = match Self::build_post_order(module, succ, block, node_seq, dfn_map) {
+        for succ in &terminator.get_jts(&allocs.insts) {
+            let succ = succ.get_block();
+            let succ_dfn = match Self::build_post_order(allocs, succ, block, node_seq, dfn_map) {
                 Some(dfn) => dfn,
                 None => continue,
             };

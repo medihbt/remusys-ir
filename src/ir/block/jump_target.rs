@@ -1,6 +1,6 @@
 use std::{
     cell::{Cell, Ref, RefCell},
-    ops::{Index, Range},
+    ops::{Deref, Index, Range},
     rc::{Rc, Weak},
 };
 
@@ -179,6 +179,26 @@ impl<'a> IntoIterator for &'a JumpTargets<'_> {
     }
 }
 
+impl<'a> Deref for JumpTargets<'a> {
+    type Target = [Rc<JumpTarget>];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            JumpTargets::Fixed(slice) => slice,
+            JumpTargets::AsRef(vec) => vec.as_slice(),
+        }
+    }
+}
+
+impl<'a> JumpTargets<'a> {
+    pub fn as_slice(&self) -> &[Rc<JumpTarget>] {
+        match self {
+            JumpTargets::Fixed(slice) => slice,
+            JumpTargets::AsRef(vec) => vec.as_slice(),
+        }
+    }
+}
+
 /// 终结指令的 trait，提供跳转目标管理功能
 ///
 /// 终结指令是基本块的最后一条指令，负责控制流的转移。
@@ -239,7 +259,7 @@ pub trait ITerminatorInst: ISubInst {
 
 pub trait ITerminatorRef: ISubInstRef<InstDataT: ITerminatorInst> {
     fn read_jts<T>(self, alloc: &Slab<InstData>, reader: impl FnOnce(&[Rc<JumpTarget>]) -> T) -> T {
-        let inst = self.to_data(alloc);
+        let inst = self.to_inst(alloc);
         inst.read_jts(reader)
     }
 
@@ -247,7 +267,7 @@ pub trait ITerminatorRef: ISubInstRef<InstDataT: ITerminatorInst> {
     where
         <Self as ISubInstRef>::InstDataT: 'a,
     {
-        self.to_data_mut(alloc).jts_mut()
+        self.to_inst_mut(alloc).jts_mut()
     }
 }
 
@@ -272,7 +292,7 @@ impl TerminatorRef {
     }
 
     pub fn try_from_instref(inst: InstRef, alloc: &Slab<InstData>) -> Option<Self> {
-        match inst.to_data(alloc) {
+        match inst.to_inst(alloc) {
             InstData::Ret(_) => Some(TerminatorRef::Ret(RetRef::from_raw_nocheck(inst))),
             InstData::Jump(_) => Some(TerminatorRef::Jump(JumpRef::from_raw_nocheck(inst))),
             InstData::Br(_) => Some(TerminatorRef::Br(BrRef::from_raw_nocheck(inst))),
@@ -291,19 +311,19 @@ impl TerminatorRef {
     pub fn get_jts(self, alloc: &Slab<InstData>) -> JumpTargets {
         match self {
             TerminatorRef::Unreachable(_) => JumpTargets::Fixed(&[]),
-            TerminatorRef::Ret(ret) => ret.to_data(alloc).get_jts(),
-            TerminatorRef::Jump(jump) => jump.to_data(alloc).get_jts(),
-            TerminatorRef::Br(br) => br.to_data(alloc).get_jts(),
-            TerminatorRef::Switch(switch) => switch.to_data(alloc).get_jts(),
+            TerminatorRef::Ret(ret) => ret.to_inst(alloc).get_jts(),
+            TerminatorRef::Jump(jump) => jump.to_inst(alloc).get_jts(),
+            TerminatorRef::Br(br) => br.to_inst(alloc).get_jts(),
+            TerminatorRef::Switch(switch) => switch.to_inst(alloc).get_jts(),
         }
     }
     pub fn jts_mut(self, alloc: &mut Slab<InstData>) -> &mut [Rc<JumpTarget>] {
         match self {
             TerminatorRef::Unreachable(_) => panic!("Unreachable does not have jump targets"),
-            TerminatorRef::Ret(ret) => ret.to_data_mut(alloc).jts_mut(),
-            TerminatorRef::Jump(jump) => jump.to_data_mut(alloc).jts_mut(),
-            TerminatorRef::Br(br) => br.to_data_mut(alloc).jts_mut(),
-            TerminatorRef::Switch(switch) => switch.to_data_mut(alloc).jts_mut(),
+            TerminatorRef::Ret(ret) => ret.to_inst_mut(alloc).jts_mut(),
+            TerminatorRef::Jump(jump) => jump.to_inst_mut(alloc).jts_mut(),
+            TerminatorRef::Br(br) => br.to_inst_mut(alloc).jts_mut(),
+            TerminatorRef::Switch(switch) => switch.to_inst_mut(alloc).jts_mut(),
         }
     }
 
@@ -314,10 +334,10 @@ impl TerminatorRef {
     ) -> T {
         match self {
             TerminatorRef::Unreachable(_) => reader(&[]),
-            TerminatorRef::Ret(ret) => ret.to_data(alloc).read_jts(reader),
-            TerminatorRef::Jump(jump) => jump.to_data(alloc).read_jts(reader),
-            TerminatorRef::Br(br) => br.to_data(alloc).read_jts(reader),
-            TerminatorRef::Switch(switch) => switch.to_data(alloc).read_jts(reader),
+            TerminatorRef::Ret(ret) => ret.to_inst(alloc).read_jts(reader),
+            TerminatorRef::Jump(jump) => jump.to_inst(alloc).read_jts(reader),
+            TerminatorRef::Br(br) => br.to_inst(alloc).read_jts(reader),
+            TerminatorRef::Switch(switch) => switch.to_inst(alloc).read_jts(reader),
         }
     }
 
@@ -328,9 +348,9 @@ impl TerminatorRef {
     pub fn dedep_dump_blocks(self, alloc: &Slab<InstData>, sorted: bool) -> Vec<BlockRef> {
         match self {
             TerminatorRef::Unreachable(_) | TerminatorRef::Ret(_) => vec![],
-            TerminatorRef::Jump(jump) => jump.to_data(alloc).dedep_dump_blocks(sorted),
-            TerminatorRef::Br(br) => br.to_data(alloc).dedep_dump_blocks(sorted),
-            TerminatorRef::Switch(switch) => switch.to_data(alloc).dedep_dump_blocks(sorted),
+            TerminatorRef::Jump(jump) => jump.to_inst(alloc).dedep_dump_blocks(sorted),
+            TerminatorRef::Br(br) => br.to_inst(alloc).dedep_dump_blocks(sorted),
+            TerminatorRef::Switch(switch) => switch.to_inst(alloc).dedep_dump_blocks(sorted),
         }
     }
 }

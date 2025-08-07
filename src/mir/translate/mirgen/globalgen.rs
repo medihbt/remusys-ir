@@ -1,13 +1,12 @@
-use std::{fmt::Debug, rc::Rc};
+use std::{fmt::Debug, ops::ControlFlow, rc::Rc};
 
 use log::debug;
 
 use crate::{
     base::SlabRef,
     ir::{
-        PtrStorage,
-        global::{GlobalData, GlobalRef, func::FuncStorage},
-        module::Module as IRModule,
+        FuncStorage, GlobalData, GlobalKind, GlobalRef, ISubGlobal, ISubValueSSA,
+        Module as IRModule, PtrStorage, ValueSSA,
     },
     mir::{
         module::{
@@ -66,50 +65,61 @@ impl GlobalStatistics {
         let mut global_vars = Vec::new();
         let mut global_zero_inits = Vec::new();
 
-        // Make it mutable, since we'll reuse its storage.
-        let mut all_globals = ir_module.dump_globals(false);
-
-        for &gref in &all_globals {
-            let global = ir_module.get_global(gref);
-            let global = &*global;
-            let name = global.get_name();
-            match global {
-                GlobalData::Var(var) => {
-                    if var.is_extern() {
-                        debug!("Discovered extern variable: {gref:?} name {name}");
+        ir_module.forall_globals(true, |gref, gdata| {
+            let allocs = ir_module.allocs.borrow();
+            let name = gdata.get_name();
+            match gdata {
+                GlobalData::Var(var) => match var.get_kind() {
+                    GlobalKind::ExternVar | GlobalKind::ExternConst => {
+                        debug!("Discovered extern constant | var: {gref:?} name {name}");
                         extern_vars.push(gref);
-                        continue;
                     }
-                    if var.is_readonly() {
+                    GlobalKind::Var => {
+                        let init = var.get_init();
+                        assert!(
+                            init != ValueSSA::None,
+                            "Global variable {gref:?} has no initializer"
+                        );
+                        if init.is_zero(&allocs) {
+                            debug!("Discovered global zero-init variable: {gref:?} name {name}",);
+                            global_zero_inits.push(gref);
+                        } else {
+                            debug!("Discovered global variable: {gref:?} name {name}");
+                            global_vars.push(gref);
+                        }
+                    }
+                    GlobalKind::Const => {
                         debug!("Discovered global constant: {gref:?} name {name}");
                         global_consts.push(gref);
-                        continue;
                     }
-                    let init = match var.get_init() {
-                        None => panic!("Has handled above"),
-                        Some(init) => init,
-                    };
-                    if init.binary_is_zero(ir_module) {
-                        debug!("Discovered global 0-init variable: {gref:?} name {name}");
-                        global_zero_inits.push(gref);
-                    } else {
-                        debug!("Discovered global variable: {gref:?} name {name}");
-                        global_vars.push(gref);
-                    }
-                }
-                GlobalData::Func(func_data) => {
-                    if func_data.is_extern() {
+                    _ => unreachable!("Unexpected global kind: {:?}", var.get_kind()),
+                },
+                GlobalData::Func(func) => match func.get_kind() {
+                    GlobalKind::ExternFunc => {
                         debug!("Discovered extern function: {gref:?} name {name}");
                         extern_funcs.push(gref);
-                    } else {
+                    }
+                    GlobalKind::Func => {
                         debug!("Discovered function: {gref:?} name {name}");
                         funcs.push(gref);
                     }
-                }
-                GlobalData::Alias(_) => todo!("I'm too lazy to handle alias global data"),
+                    _ => unreachable!("Unexpected global kind: {:?}", func.get_kind()),
+                },
             }
-        }
+            ControlFlow::Continue(())
+        });
 
+        // Make it mutable, since we'll reuse its storage.
+        let mut all_globals = Vec::with_capacity(
+            extern_vars.len()
+                + extern_funcs.len()
+                + funcs.len()
+                + global_consts.len()
+                + global_vars.len()
+                + global_zero_inits.len(),
+        );
+
+        // Fill it with all globals in the order of their categories.
         all_globals.clear();
         all_globals.extend(extern_vars.into_iter());
 
@@ -181,25 +191,23 @@ impl MirGlobalItems {
         let mut all_globals = Vec::with_capacity(statistics.all_globals.len());
         let mut funcs = Vec::with_capacity(statistics.funcs().len());
         let mut extern_funcs = Vec::with_capacity(statistics.extern_funcs().len());
+        let allocs = ir_module.borrow_allocs();
 
         for &gref in statistics.extern_vars() {
-            let global = ir_module.get_global(gref);
+            let global = gref.to_data(&allocs.globals);
             let name = global.get_name().to_string();
             let ty = global.get_stored_pointee_type();
+            debug!("Translating extern variable: {gref:?} name {name}");
             let section = if global.is_readonly() { Section::RoData } else { Section::Data };
-            debug!("Translating extern variable: {gref:?} name {name} section {section:?}");
             let (mir_ref, _) = mir_builder.extern_variable(name, section, ty, &ir_module.type_ctx);
             all_globals.push((gref, mir_ref));
         }
 
         for &gref in statistics.extern_funcs() {
-            let global = ir_module.get_global(gref);
-            let global = &*global;
-            let name = global.get_name().to_string();
-            let funcdef = match global {
-                GlobalData::Func(func) => func,
-                _ => panic!("Expected a function type for extern function, got {global:?}"),
+            let GlobalData::Func(funcdef) = gref.to_data(&allocs.globals) else {
+                panic!("Expected a function type for extern function, got {gref:?}");
             };
+            let name = funcdef.get_name().to_string();
             let func_ty = funcdef.get_stored_func_type();
             let (mir_ref, _) = mir_builder.extern_func(name.clone(), func_ty, &ir_module.type_ctx);
             debug!("Translating extern function: {gref:?} name {name}");
@@ -212,13 +220,10 @@ impl MirGlobalItems {
         }
 
         for &gref in statistics.funcs() {
-            let global = ir_module.get_global(gref);
-            let global = &*global;
-            let name = global.get_name().to_string();
-            let funcdef = match global {
-                GlobalData::Func(func) => func,
-                _ => panic!("Expected a function type for MIR function, got {global:?}"),
+            let GlobalData::Func(funcdef) = gref.to_data(&allocs.globals) else {
+                panic!("Expected a function type for MIR function, got {gref:?}");
             };
+            let name = funcdef.get_name().to_string();
             let func_ty = funcdef.get_stored_func_type();
             debug!("Translating function: {gref:?} name {name}");
             let mir_func = MirFunc::new_define(
@@ -284,26 +289,20 @@ impl MirGlobalItems {
         section: Section,
         category: &str,
     ) {
-        let global = ir_module.get_global(gref);
-        let name = global.get_name();
+        let allocs = ir_module.borrow_allocs();
+        let GlobalData::Var(global) = gref.to_data(&allocs.globals) else {
+            let name = gref.to_data(&allocs.globals).get_name();
+            panic!("Expected a global variable, got {gref:?} name {name}");
+        };
+        let name = global.get_name().to_string();
         debug!("trnslating {category} reference {gref:?} name {name} section {section:?}");
-        let global = match &*global {
-            GlobalData::Var(var) => var,
-            GlobalData::Func(_) => {
-                panic!("Expected a global constant, got function {name}")
-            }
-            GlobalData::Alias(_) => {
-                panic!("Expected a global constant, got alias {name}")
-            }
-        };
-        let initval = match global.get_init() {
-            Some(init) => init,
-            None => panic!("{category} {name} has no initializer"),
-        };
+        let initval = global.get_init();
+        assert!(
+            initval != ValueSSA::None,
+            "{category} {name} has no initializer"
+        );
         let mut data_gen = DataGen::new();
-        let alloc_value = ir_module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.exprs;
-        match data_gen.add_ir_value(initval, &ir_module.type_ctx, alloc_expr) {
+        match data_gen.add_ir_value(initval, &ir_module.type_ctx, &allocs.exprs) {
             Ok(()) => {}
             Err(e) => {
                 panic!("Failed to add IR value for global constant {name}: {e}");
@@ -373,8 +372,9 @@ impl std::fmt::Debug for MirGlobalMapFormatter<'_> {
         }
         fn get_alls(globals: &[(GlobalRef, MirGlobalRef)], ir_module: &IRModule) -> Vec<String> {
             let mut global_names = Vec::with_capacity(globals.len());
+            let allocs = ir_module.borrow_allocs();
             for (gref, mir_ref) in globals {
-                let ir_name = ir_module.get_global(*gref).get_name().to_string();
+                let ir_name = gref.get_name_from_alloc(&allocs.globals);
                 let mir_idx = mir_ref.get_handle();
                 let ir_idx = gref.get_handle();
                 global_names.push(format!("ir {ir_idx} -> mir {mir_idx}: {ir_name}"));

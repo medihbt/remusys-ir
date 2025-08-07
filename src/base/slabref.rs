@@ -18,10 +18,16 @@ pub trait SlabRef: Clone + Eq + INullableValue + std::fmt::Debug {
         slab.get_mut(self.get_handle())
     }
     fn to_data<'a>(&self, slab: &'a Slab<Self::RefObject>) -> &'a Self::RefObject {
+        if self.is_null() {
+            panic!("Cannot convert null reference to data");
+        }
         slab.get(self.get_handle())
             .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }
     fn to_data_mut<'a>(&self, slab: &'a mut Slab<Self::RefObject>) -> &'a mut Self::RefObject {
+        if self.is_null() {
+            panic!("Cannot convert null reference to data");
+        }
         slab.get_mut(self.get_handle())
             .expect(format!("Invalid reference {} (Use after free?)", self.get_handle()).as_str())
     }

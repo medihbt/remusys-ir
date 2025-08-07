@@ -12,14 +12,12 @@
 
 use crate::{
     ir::{
-        ValueSSA,
-        block::BlockRef,
-        global::GlobalRef,
-        inst::{InstData, PhiOpRef, PhiOperand},
-        module::Module,
+        BlockRef, GlobalRef, InstData, Module, ValueSSA,
+        inst::{ISubInstRef, PhiRef},
     },
     opt::analysis::cfg::snapshot::CfgSnapshot,
 };
+use std::ops::ControlFlow;
 
 #[derive(Debug, Clone)]
 pub struct CopyInstNode {
@@ -28,7 +26,7 @@ pub struct CopyInstNode {
     /// The basic block where the `copy` instruction should be inserted at.
     pub bb_from: BlockRef,
     /// The `phi` instruction that should be replaced with a `copy` instruction.
-    pub phi: PhiOpRef,
+    pub phi: PhiRef,
     /// The basic block where the `phi` node is located.
     pub bb_to: BlockRef,
 }
@@ -55,8 +53,7 @@ impl CopyMap {
         let ret = self.find_copies(bb);
         assert!(
             !ret.is_empty(),
-            "No copy instructions found for block {:?}",
-            bb
+            "No copy instructions found for block {bb:?}"
         );
         ret
     }
@@ -75,20 +72,21 @@ impl CopyMap {
 
     pub fn from_module(ir_module: &Module) -> Self {
         let mut ret = Self { insts: Vec::new() };
-        for func_ref in ir_module.dump_funcs(true) {
-            ret.add_from_func(func_ref, ir_module);
-        }
+        ir_module.forall_funcs(false, |fref, _| {
+            ret.add_from_func(fref.0, ir_module);
+            ControlFlow::Continue(())
+        });
         ret.insts.sort_by_key(|node| node.bb_from);
         ret
     }
     pub fn new_and_cfg(ir_module: &Module) -> (Self, Vec<CfgSnapshot>) {
         let mut ret = Self { insts: Vec::new() };
-        let funcs = ir_module.dump_funcs(true);
-        let mut cfg_snapshots = Vec::with_capacity(funcs.len());
-        for func_ref in funcs {
-            let cfg_snapshot = ret.add_from_func(func_ref, ir_module);
+        let mut cfg_snapshots = Vec::new();
+        ir_module.forall_funcs(false, |fref, _| {
+            let cfg_snapshot = ret.add_from_func(fref.0, ir_module);
             cfg_snapshots.push(cfg_snapshot);
-        }
+            ControlFlow::Continue(())
+        });
         ret.insts.sort_by_key(|node| node.bb_from);
         cfg_snapshots.sort_by_key(|snap| snap.func);
         (ret, cfg_snapshots)
@@ -97,26 +95,19 @@ impl CopyMap {
     fn add_from_func(&mut self, func_ref: GlobalRef, ir_module: &Module) -> CfgSnapshot {
         // Create a new snapshot of the CFG for the function.
         // Snapshot time: After the critical edge elimination pass; all critical edges are broken.
-        let cfg_snapshot = CfgSnapshot::new_from_func(ir_module, func_ref);
+        let allocs = ir_module.borrow_allocs();
+        let cfg_snapshot = CfgSnapshot::new(&allocs, func_ref);
 
-        let alloc_value = ir_module.borrow_value_alloc();
-        let alloc_inst = &alloc_value.insts;
-        let alloc_use = ir_module.borrow_use_alloc();
         for node in cfg_snapshot.nodes.iter() {
             let bb = node.block;
-            let insts = ir_module.get_block(bb).instructions.load_range();
-            for (instref, inst) in insts.view(alloc_inst) {
-                let phi = match inst {
-                    InstData::Phi(_, phi) => phi,
-                    _ => break,
-                };
-                for PhiOperand { from_bb, from_bb_use: _, from_value_use } in &*phi.get_from_all() {
-                    let from_value = from_value_use.get_operand(&alloc_use);
+            for (iref, inst) in bb.view_insts(&allocs) {
+                let InstData::Phi(phi) = inst else { break };
+                for (from, bb_from) in phi {
                     self.insts.push(CopyInstNode {
-                        bb_to: bb,
-                        bb_from: *from_bb,
-                        phi: PhiOpRef::from_inst_raw(instref),
-                        from: from_value,
+                        bb_from,
+                        bb_to: node.block,
+                        phi: PhiRef::from_raw_nocheck(iref),
+                        from,
                     });
                 }
             }
