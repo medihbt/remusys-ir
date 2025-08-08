@@ -97,6 +97,20 @@ impl Array {
         }
         writer.write_str("]")
     }
+
+    pub fn new<'a>(arrty: ArrayTypeRef, elems: impl IntoIterator<Item = &'a ValueSSA>) -> Self {
+        Self {
+            arrty,
+            elems: elems.into_iter().cloned().collect(),
+            users: UserList::new_empty(),
+        }
+    }
+    pub fn from_vec(arrty: ArrayTypeRef, elems: Vec<ValueSSA>) -> Self {
+        Self { arrty, elems, users: UserList::new_empty() }
+    }
+    pub fn from_slice(arrty: ArrayTypeRef, elems: &[ValueSSA]) -> Self {
+        Self { arrty, elems: elems.to_vec(), users: UserList::new_empty() }
+    }
 }
 
 #[derive(Debug)]
@@ -170,6 +184,20 @@ impl Struct {
             writer.write_operand(elem)?;
         }
         if is_packed { writer.write_str("}>") } else { writer.write_str("}") }
+    }
+
+    pub fn new<'a>(structty: ValTypeID, elems: impl IntoIterator<Item = &'a ValueSSA>) -> Self {
+        Self {
+            structty,
+            elems: elems.into_iter().cloned().collect(),
+            users: UserList::new_empty(),
+        }
+    }
+    pub fn from_vec(structty: ValTypeID, elems: Vec<ValueSSA>) -> Self {
+        Self { structty, elems, users: UserList::new_empty() }
+    }
+    pub fn from_slice(structty: ValTypeID, elems: &[ValueSSA]) -> Self {
+        Self { structty, elems: elems.to_vec(), users: UserList::new_empty() }
     }
 }
 
