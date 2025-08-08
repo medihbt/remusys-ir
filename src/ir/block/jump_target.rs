@@ -9,8 +9,8 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, IWeakListNode, SlabRef, WeakList},
     ir::{
-        BlockData, BlockRef, ISubInst, InstData, InstRef,
-        inst::{Br, BrRef, ISubInstRef, Jump, JumpRef, RetRef, Switch, SwitchRef},
+        BlockData, BlockRef, FuncRef, IRAllocs, ISubInst, InstData, InstRef, Use, UseKind,
+        inst::{Br, BrRef, ISubInstRef, Jump, JumpRef, PhiRef, RetRef, Switch, SwitchRef},
     },
 };
 
@@ -69,6 +69,11 @@ impl IWeakListNode for JumpTarget {
     fn is_sentinel(&self) -> bool {
         self.kind == JumpTargetKind::None
     }
+
+    /// 当目标基本块析构时通知到该 JumpTarget 边, 主动清理引用关系.
+    fn on_list_finalize(&self) {
+        self.block.set(BlockRef::new_null());
+    }
 }
 
 impl Drop for JumpTarget {
@@ -96,13 +101,28 @@ impl JumpTarget {
     }
 
     /// 获取产生此跳转的终结指令引用
-    pub fn get_terminator(&self) -> InstRef {
+    pub fn get_terminator_inst(&self) -> InstRef {
         self.terminator.get()
+    }
+
+    /// 获取产生此跳转的终结指令的强类型引用
+    pub fn get_terminator(&self) -> TerminatorRef {
+        let inst = self.terminator.get();
+        use JumpTargetKind::*;
+        match self.kind {
+            Jump => TerminatorRef::Jump(JumpRef::from_raw_nocheck(inst)),
+            BrTrue | BrFalse => TerminatorRef::Br(BrRef::from_raw_nocheck(inst)),
+            SwitchDefault | SwitchCase(_) => {
+                TerminatorRef::Switch(SwitchRef::from_raw_nocheck(inst))
+            }
+            None => unreachable!("Sentinel JumpTarget has no terminator"),
+        }
     }
 
     /// 设置产生此跳转的终结指令
     ///
-    /// # 参数
+    /// ### 参数
+    ///
     /// - `terminator`: 终结指令的引用
     pub fn set_terminator(&self, terminator: InstRef) {
         self.terminator.set(terminator);
@@ -131,6 +151,15 @@ impl JumpTarget {
         if block.is_nonnull() {
             block.to_data(alloc).preds.push_back(Rc::downgrade(self));
         }
+    }
+
+    /// 自己是不是关键边
+    pub fn is_critical_edge(&self, allocs: &IRAllocs) -> bool {
+        let from_inst = self.get_terminator();
+        let to_block = self.get_block();
+        let has_multiple_succs = from_inst.has_multiple_blocks(&allocs.insts);
+        let has_multiple_preds = to_block.to_data(&allocs.blocks).has_multiple_preds();
+        has_multiple_succs && has_multiple_preds
     }
 }
 
@@ -255,6 +284,20 @@ pub trait ITerminatorInst: ISubInst {
             }
         })
     }
+
+    /// 检查当前基本块是否有多个后继基本块. 重边要合并以后再计算.
+    fn has_multiple_blocks(&self) -> bool {
+        let mut first = None;
+        for jt in &self.get_jts() {
+            let block = jt.block.get();
+            match first {
+                None => first = Some(block),
+                Some(b) if b != block => return true,
+                _ => continue,
+            }
+        }
+        false
+    }
 }
 
 pub trait ITerminatorRef: ISubInstRef<InstDataT: ITerminatorInst> {
@@ -268,6 +311,10 @@ pub trait ITerminatorRef: ISubInstRef<InstDataT: ITerminatorInst> {
         <Self as ISubInstRef>::InstDataT: 'a,
     {
         self.to_inst_mut(alloc).jts_mut()
+    }
+
+    fn has_multiple_blocks(self, allocs: &Slab<InstData>) -> bool {
+        self.to_inst(allocs).has_multiple_blocks()
     }
 }
 
@@ -353,6 +400,15 @@ impl TerminatorRef {
             TerminatorRef::Switch(switch) => switch.to_inst(alloc).dedep_dump_blocks(sorted),
         }
     }
+
+    pub fn has_multiple_blocks(self, allocs: &Slab<InstData>) -> bool {
+        match self {
+            TerminatorRef::Unreachable(_) | TerminatorRef::Ret(_) => false,
+            TerminatorRef::Jump(jump) => jump.to_inst(allocs).has_multiple_blocks(),
+            TerminatorRef::Br(br) => br.to_inst(allocs).has_multiple_blocks(),
+            TerminatorRef::Switch(switch) => switch.to_inst(allocs).has_multiple_blocks(),
+        }
+    }
 }
 
 pub enum TerminatorDataRef<'a> {
@@ -435,5 +491,140 @@ mod collect_jump_blocks_dedup {
             }
         }
         blocks.into_iter().collect()
+    }
+}
+
+pub struct JumpTargetSplitter<'a> {
+    allocs: &'a mut IRAllocs,
+    old_jt: &'a Rc<JumpTarget>,
+}
+
+impl<'a> JumpTargetSplitter<'a> {
+    pub fn new(allocs: &'a mut IRAllocs, old_jt: &'a Rc<JumpTarget>) -> Self {
+        Self { allocs, old_jt }
+    }
+
+    /// 执行拆分操作, 返回新插入的基本块引用.
+    ///
+    /// 拆分完毕后这个结构体就没什么用了, 这里直接把它消费掉.
+    pub fn split(mut self) -> BlockRef {
+        let to_block = self.old_jt.get_block();
+        assert!(
+            to_block.is_nonnull(),
+            "Cannot split a JumpTarget with null block"
+        );
+        let new_block = self.create_block_to_next(to_block);
+
+        // 更新旧 JumpTarget 的目标为新基本块, 这样就完成了从旧基本块到新基本块的跳转.
+        self.old_jt.set_block(&self.allocs.blocks, new_block);
+
+        // 更新关联的 Phi 节点，让它们指向新基本块
+        let pred_terminator = self.old_jt.get_terminator();
+        let pred_bb = pred_terminator.get_inst().get_parent(self.allocs);
+        let pred_users = pred_bb.users(self.allocs);
+
+        // 检查是不是只有这一个 JumpTarget 指向这个基本块. 如果不是的话就需要拷贝而不是移动.
+        let only_one_jt = {
+            let mut count = 0;
+            for jt in &pred_terminator.get_jts(&self.allocs.insts) {
+                if jt.get_block() == to_block {
+                    count += 1;
+                }
+                if count > 1 {
+                    break;
+                }
+            }
+            debug_assert!(
+                count >= 1,
+                "Terminator must have at least one JumpTarget to the block"
+            );
+            count == 1
+        };
+
+        self.redirect_phi_uses(new_block, pred_users, only_one_jt);
+
+        new_block
+    }
+
+    /// 创建一个新的基本块, 插入函数体设置跳转到下一个基本块
+    fn create_block_to_next(&mut self, to_block: BlockRef) -> BlockRef {
+        let new_block = BlockData::empty_from_alloc(&mut self.allocs.insts);
+        let jump_inst = {
+            let jump = Jump::new(&self.allocs.blocks, to_block);
+            InstRef::from_alloc(&mut self.allocs.insts, jump.into_ir())
+        };
+        // 设置新基本块的终结指令为 Jump
+        new_block.set_terminator_with_allocs(&self.allocs, jump_inst);
+        let new_block = BlockRef::from_allocs(self.allocs, new_block);
+
+        // 取函数, 稍后要把新基本块插入到函数中.
+        let parent_func = {
+            let parent_func = to_block.to_data(&self.allocs.blocks).get_parent_func();
+            assert!(
+                parent_func.is_nonnull(),
+                "Cannot split JumpTarget without a parent function"
+            );
+            FuncRef(parent_func)
+        };
+
+        // 具体的插入位置是: 该 JumpTarget 的前驱基本块的后面.
+        let pred_block = self.old_jt.get_terminator_inst().get_parent(&self.allocs);
+        assert!(
+            pred_block.is_nonnull(),
+            "Cannot split JumpTarget without a predecessor block"
+        );
+
+        // 将新基本块插入到前驱基本块的后面
+        let Some(body) = parent_func.get_body(&self.allocs.globals) else {
+            unreachable!("Function {parent_func:?} without body cannot have critical edges");
+        };
+        body.node_add_next(&self.allocs.blocks, pred_block, new_block)
+            .expect("Failed to insert new block after predecessor block");
+        new_block
+    }
+
+    fn redirect_phi_uses(
+        &self,
+        new_block: BlockRef,
+        pred_users: &WeakList<Use>,
+        only_one_jt: bool,
+    ) {
+        if only_one_jt {
+            // 只有这一个 JumpTarget 指向这个基本块, 需要直接移动相关的 Use.
+            // 方式 1：先移动 Use 再调用 redirect_income（有些绕圈但正确）
+            // 方式 2: 直接调用 redirect_income_operand_only (更直接，但有些危险)
+            pred_users.move_to_if(
+                new_block.users(self.allocs),
+                |u| matches!(u.kind.get(), UseKind::PhiIncomingBlock(_)),
+                |u| {
+                    let phi = PhiRef::from_raw_nocheck(u.inst.get());
+                    // 更新 Phi 节点的前驱基本块引用
+                    // 这里使用方式 2: 直接调用 redirect_income_operand_only
+                    unsafe {
+                        phi.to_inst(&self.allocs.insts)
+                            .redirect_income_operand_only(u, new_block)
+                            .expect("Failed to redirect Phi income to new block");
+                    }
+                },
+            );
+        } else {
+            // 有多个 JumpTarget 指向这个基本块, 需要拷贝相关的 Use.
+            // 保持原有的 use-def 关系不变，为新基本块创建新的传入值
+            for u in pred_users.iter() {
+                let UseKind::PhiIncomingBlock(val_idx) = u.kind.get() else {
+                    continue;
+                };
+                let phi = PhiRef::from_raw_nocheck(u.inst.get());
+                let phi = phi.to_inst(&self.allocs.insts);
+
+                // 安全地获取对应的传入值
+                // 索引越界说明 Phi 节点内部一致性被破坏
+                let income_val = phi.get_operands()[val_idx as usize].get_operand();
+
+                // 为新基本块创建新的传入值，不影响原有的 use-def 关系
+                phi.set_income(self.allocs, new_block, income_val)
+                    .expect("Failed to add new incoming to Phi");
+            }
+        }
     }
 }

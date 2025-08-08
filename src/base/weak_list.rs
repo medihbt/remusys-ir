@@ -67,6 +67,10 @@ pub trait IWeakListNode: Sized {
         next.upgrade().map(|n| n.set_prev(prev.clone()));
         self.set_prev_next(Weak::new(), Weak::new());
     }
+
+    /// 当链表析构时通知到该结点, 该结点应该怎么做.
+    /// 该函数调用时, 结点已经从链表中移除, 但仍然存在于内存中.
+    fn on_list_finalize(&self);
 }
 
 pub struct WeakList<T: IWeakListNode> {
@@ -76,6 +80,25 @@ pub struct WeakList<T: IWeakListNode> {
 impl<T: IWeakListNode + Debug> Debug for WeakList<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_list().entries(self.into_iter()).finish()
+    }
+}
+
+impl<T: IWeakListNode> Drop for WeakList<T> {
+    fn drop(&mut self) {
+        // 在链表析构时通知所有节点
+        let mut current = self.sential.get_next();
+        let sential_weak = Rc::downgrade(&self.sential);
+        while !current.ptr_eq(&sential_weak) {
+            let Some(current_strong) = current.upgrade() else {
+                panic!("Found a non-existing node in WeakList during drop");
+            };
+            let next = current_strong.get_next(); // 提前获取下一个节点
+            // 从链表中移除当前节点
+            current_strong.detach();
+            // 调用节点的析构通知
+            current_strong.on_list_finalize();
+            current = next;
+        }
     }
 }
 
@@ -97,6 +120,12 @@ impl<T: IWeakListNode> WeakList<T> {
         let prev = self.sential.get_prev();
         let weak_sential = Rc::downgrade(&self.sential);
         next.ptr_eq(&prev) && !next.ptr_eq(&weak_sential)
+    }
+    pub fn is_multiple(&self) -> bool {
+        let next = self.sential.get_next();
+        let prev = self.sential.get_prev();
+        let weak_sential = Rc::downgrade(&self.sential);
+        !next.ptr_eq(&prev) && !next.ptr_eq(&weak_sential)
     }
 
     pub fn iter(&self) -> WeakListIter<T> {

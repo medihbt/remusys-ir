@@ -371,6 +371,10 @@ impl ITraceableValue for FuncArg {
     fn users(&self) -> &UserList {
         &self.users
     }
+
+    fn has_single_reference_semantics(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -466,5 +470,9 @@ impl FuncRef {
     }
     pub fn args<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a [FuncArg] {
         self.to_data(alloc).args.as_ref()
+    }
+
+    pub fn get_body(self, alloc: &Slab<GlobalData>) -> Option<&SlabRefList<BlockRef>> {
+        self.to_data(alloc).get_body()
     }
 }

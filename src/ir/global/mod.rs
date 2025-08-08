@@ -142,6 +142,10 @@ impl ITraceableValue for GlobalData {
             GlobalData::Func(func) => &func.common.users,
         }
     }
+
+    fn has_single_reference_semantics(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

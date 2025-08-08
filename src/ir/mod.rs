@@ -18,7 +18,7 @@ pub use self::{
         BlockData, BlockDataInner, BlockRef,
         jump_target::{
             ITerminatorInst, ITerminatorRef, JumpTarget, JumpTargetKind, PredList,
-            TerminatorDataRef, TerminatorRef,
+            TerminatorDataRef, TerminatorRef, JumpTargetSplitter
         },
     },
     cmp_cond::CmpCond,

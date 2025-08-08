@@ -272,6 +272,10 @@ impl ITraceableValue for InstData {
     fn users(&self) -> &UserList {
         &self.get_common().users
     }
+
+    fn has_single_reference_semantics(&self) -> bool {
+        true
+    }
 }
 
 impl InstData {

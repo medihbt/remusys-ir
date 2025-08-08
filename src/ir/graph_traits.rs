@@ -36,7 +36,7 @@ impl IRGraphEdge for JumpTarget {
     type TargetVertexT = BlockRef;
 
     fn get_source_holder(&self) -> TerminatorRef {
-        let inst = self.get_terminator();
+        let inst = self.get_terminator_inst();
         match self.kind {
             JumpTargetKind::None => TerminatorRef::Unreachable(inst),
             JumpTargetKind::Jump => TerminatorRef::Jump(JumpRef::from_raw_nocheck(inst)),

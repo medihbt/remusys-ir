@@ -100,6 +100,11 @@ impl IWeakListNode for Use {
     fn is_sentinel(&self) -> bool {
         self.kind.get() == UseKind::GuideNode
     }
+
+    /// 操作数被销毁时触发该函数, 主动清理引用关系.
+    fn on_list_finalize(&self) {
+        self.operand.set(ValueSSA::None);
+    }
 }
 
 pub type UserList = WeakList<Use>;
@@ -108,10 +113,12 @@ pub type UserIter = WeakListIter<Use>;
 pub trait ITraceableValue {
     /// 这个 Value 的用户列表.
     ///
-    /// 注意, 只有当 Value 具有引用唯一性时, 这个列表才能反映
-    /// 该 Value 的所有使用者. 对于 `ConstExpr` 等不可变值,
-    /// 使用者将分散在多个实例的不同 `UserList` 中.
+    /// 注意, 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者. 
+    /// 对于 `ConstExpr` 等不可变值, 使用者将分散在多个实例的不同 `UserList` 中.
     fn users(&self) -> &UserList;
+
+    /// 这个 Value 是否具有引用唯一性.
+    fn has_single_reference_semantics(&self) -> bool;
 
     fn add_user(&self, use_ref: Weak<Use>) {
         let user_list = self.users();
@@ -126,6 +133,34 @@ pub trait ITraceableValue {
     }
     fn user_count(&self) -> usize {
         self.users().len()
+    }
+
+    /// 检查是否有多个不同的用户指令使用了该值
+    /// 
+    /// ### 返回
+    /// 
+    /// - `true` - 如果有多个不同的用户指令
+    /// - `false` - 如果没有用户或只有一个用户指令
+    /// 
+    /// ### 注意
+    /// 
+    /// * 即使一个指令多次使用了该值 (例如作为多个操作数), 只要该指令是唯一的用户，
+    ///   仍然返回 `false`.
+    /// * 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者.
+    ///   对于 `ConstExpr` 等不可变值, 使用者可能分散在多个实例的不同 `UserList` 中,
+    ///   该函数可能导致结果误报.
+    fn has_multiple_users(&self) -> bool {
+        let users = self.users();
+        let mut first_user: Option<InstRef> = None;
+        for user_use in users.iter() {
+            let user = user_use.inst.get();
+            match first_user {
+                None => first_user = Some(user),
+                Some(existing_user) if existing_user != user => return true,
+                Some(_) => continue,
+            }
+        }
+        false
     }
 }
 

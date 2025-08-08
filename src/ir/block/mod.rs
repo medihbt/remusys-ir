@@ -4,8 +4,8 @@ use crate::{
         SlabListRange, SlabListView, SlabRef, SlabRefList,
     },
     ir::{
-        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstCommon,
-        InstData, InstRef, JumpTarget, Module, PredList, TerminatorRef, UserList, ValueSSA,
+        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstData, InstRef,
+        JumpTarget, Module, PredList, TerminatorRef, UserList, ValueSSA,
         block::jump_target::JumpTargets,
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
@@ -69,6 +69,10 @@ impl SlabListNode for BlockData {
 impl ITraceableValue for BlockData {
     fn users(&self) -> &UserList {
         &self.users
+    }
+
+    fn has_single_reference_semantics(&self) -> bool {
+        true
     }
 }
 
@@ -386,6 +390,133 @@ impl BlockData {
 
     pub fn is_empty(&self) -> bool {
         !self.insts.is_valid() || self.insts.is_empty()
+    }
+
+    /// 检查基本块是否有多个前驱基本块
+    ///
+    /// 此方法遍历所有前驱跳转目标，统计来自不同基本块的前驱数量。
+    /// 如果存在来自不同基本块的前驱，则认为有多个前驱。
+    ///
+    /// 因为 Remusys IR 中一个基本块有且只有一个终结指令, 所以这等价于
+    /// 检查是否有多个不同的终结指令指向当前基本块.
+    ///
+    /// ### 参数
+    /// - `alloc`: 指令分配器，用于获取终结指令的父基本块
+    ///
+    /// ### 返回
+    /// - `true`: 如果基本块有来自多个不同基本块的前驱
+    /// - `false`: 如果基本块无前驱或所有前驱都来自同一个基本块
+    ///
+    /// ### 注意
+    /// 即使一个基本块通过多条边指向当前基本块（重边），只要这些边都来自
+    /// 同一个基本块，仍然认为只有一个前驱基本块。
+    pub fn has_multiple_preds(&self) -> bool {
+        let mut first_pred: Option<TerminatorRef> = None;
+
+        for pred_jt in self.preds.iter() {
+            let pred_inst = pred_jt.get_terminator();
+
+            match first_pred {
+                // 记录第一个前驱基本块
+                None => first_pred = Some(pred_inst),
+                Some(existing_pred) if existing_pred != pred_inst => {
+                    // 发现来自不同基本块的前驱，确认有多个前驱
+                    return true;
+                }
+                // 来自同一个基本块的重边，继续检查
+                Some(_) => continue,
+            }
+        }
+
+        // 没有发现来自不同基本块的前驱
+        // 这意味着要么没有前驱，要么所有前驱都来自同一个基本块
+        false
+    }
+
+    /// 统计基本块的前驱终结指令数量
+    ///
+    /// 此方法统计有多少个不同的终结指令指向当前基本块。
+    /// 由于每个基本块最多只有一个终结指令，这等价于统计前驱基本块数量。
+    ///
+    /// ### 参数
+    /// 无需参数，直接从前驱列表获取信息
+    ///
+    /// ### 返回
+    /// 不同前驱终结指令的数量
+    ///
+    /// ### 示例
+    ///
+    /// 假设基本块 A 的 switch 指令有两个 case 指向基本块 C
+    /// 基本块 B 的 jump 指令指向基本块 C  
+    /// 则 C.count_pred_terminators() 返回 2（A 的 switch 和 B 的 jump）
+    pub fn count_pred_terminators(&self) -> usize {
+        use std::collections::HashSet;
+        let mut pred_terminators = HashSet::new();
+        for pred_jt in self.preds.iter() {
+            let pred_inst = pred_jt.get_terminator_inst();
+            pred_terminators.insert(pred_inst); // 使用底层的InstRef
+        }
+        pred_terminators.len()
+    }
+
+    /// 检查基本块是否有多个后继基本块
+    ///
+    /// 此方法检查终结指令是否指向多个不同的基本块。
+    ///
+    /// ### 参数
+    /// - `alloc`: 指令分配器，用于获取终结指令信息
+    ///
+    /// ### 返回
+    /// - `true`: 如果基本块有多个不同的后继基本块
+    /// - `false`: 如果基本块无后继或只有一个后继基本块
+    pub fn has_multiple_succs(&self, alloc: &Slab<InstData>) -> bool {
+        let mut first_succ: Option<BlockRef> = None;
+
+        for succ_jt in &self.get_successors(alloc) {
+            let succ_block = succ_jt.get_block();
+
+            match first_succ {
+                // 记录第一个后继基本块
+                None => first_succ = Some(succ_block),
+                Some(existing_succ) if existing_succ != succ_block => {
+                    // 发现不同的后继基本块，确认有多个后继
+                    return true;
+                }
+                // 指向同一个基本块的重边，继续检查
+                Some(_) => continue,
+            }
+        }
+        false // 要么所有后继都指向同一个基本块, 要么没有后继
+    }
+
+    /// 统计基本块的后继基本块数量
+    ///
+    /// 此方法统计有多少个不同的基本块作为当前基本块的后继。
+    /// 指向同一个基本块的多条边只计算一次。
+    ///
+    /// # 参数
+    /// - `alloc`: 指令分配器，用于获取终结指令信息
+    ///
+    /// # 返回
+    /// 不同后继基本块的数量
+    pub fn count_succ_blocks(&self, alloc: &Slab<InstData>) -> usize {
+        use std::collections::HashSet;
+
+        if !self.has_terminator(alloc) {
+            return 0;
+        }
+
+        let successors = self.get_successors(alloc);
+        let mut succ_blocks = HashSet::new();
+
+        for i in 0..successors.len() {
+            let target_block = successors[i].get_block();
+            if !target_block.is_null() {
+                succ_blocks.insert(target_block);
+            }
+        }
+
+        succ_blocks.len()
     }
 
     pub fn build_add_phi(&self, alloc: &Slab<InstData>, phi: PhiRef) {

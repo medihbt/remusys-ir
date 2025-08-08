@@ -18,6 +18,10 @@ impl ITraceableValue for ConstExprData {
             ConstExprData::Struct(data) => &data.users,
         }
     }
+
+    fn has_single_reference_semantics(&self) -> bool {
+        false
+    }
 }
 
 impl ConstExprData {
