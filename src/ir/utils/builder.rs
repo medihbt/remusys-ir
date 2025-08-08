@@ -512,14 +512,12 @@ impl IRBuilder {
                 let phi_inst = PhiRef::from_inst(u.inst.get(), &allocs.insts);
                 let phi_operands = phi_inst.to_inst(&allocs.insts).get_operands();
                 let phi_value_use = &phi_operands[value_use_index as usize];
-                let UseKind::PhiIncomingValue(_, block_idx) = phi_value_use.kind.get() else {
+                let UseKind::PhiIncomingValue(block_idx) = phi_value_use.kind.get() else {
                     panic!("PHI inst structure broken");
                 };
                 // 维护互引用关系: Value 边应当持有对 Block 的引用 -- 包括所指代的 block reference 和
                 // PHI 指令中的索引.
-                phi_value_use
-                    .kind
-                    .set(UseKind::PhiIncomingValue(new_block, block_idx));
+                phi_value_use.kind.set(UseKind::PhiIncomingValue(block_idx));
             },
         )
     }

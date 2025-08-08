@@ -8,8 +8,8 @@ use log::debug;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        BlockRef, GlobalRef, IRValueNumberMap, InstData, InstKind as InstDataKind, InstRef,
-        Module as IRModule, NumberOption,
+        BlockRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, InstData,
+        InstKind as InstDataKind, InstRef, Module as IRModule, NumberOption, inst::ISubInstRef,
     },
     mir::{
         inst::MirInstRef,
@@ -79,7 +79,6 @@ pub struct InstTranslateInfo {
 #[derive(Debug, Clone, Copy)]
 struct AllocaInfo {
     pub ir: InstRef,
-    pub _align_log2: u8,
     pub pointee_ty: ValTypeID,
 }
 
@@ -141,7 +140,27 @@ impl MirTranslateCtx {
 
         // Step 1.3 dump 出所有指令, 并为函数确定参数布局和栈布局
         let allocas = self.dump_insts_and_layout(&mut block_map);
+
         // Step 1.4 为每个指令分配虚拟寄存器
+        let vregs = self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func);
+
+        // Step 1.5 翻译每个基本块的指令
+        let (operand_map, inst_template) =
+            OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs, block_map);
+        let numbers = IRValueNumberMap::new(
+            &self.ir_module.borrow_allocs(),
+            cfg.func,
+            NumberOption::ignore_all(),
+        );
+        let entry_block = operand_map.blocks[0].mir;
+        let mut mir_builder = MirBuilder::new(&mut self.mir_module);
+        mir_builder.set_focus(MirFocus::Block(Rc::clone(mir_func), entry_block));
+        for inst in inst_template {
+            mir_builder.add_inst(inst);
+        }
+        for i in 0..operand_map.blocks.len() {
+            self.inst_dispatch_for_one_mir_block(&operand_map, i, &numbers);
+        }
         /////// //// 重构后整个 RDFG 系统都不存在了, 这里要重写一些逻辑.
         // let vregs = {
         //     self.ir_module
@@ -251,31 +270,22 @@ impl MirTranslateCtx {
     fn dump_insts_and_layout(&mut self, block_map: &mut [MirBlockInfo]) -> Vec<AllocaInfo> {
         let mut allocas = Vec::new();
         for MirBlockInfo { ir, insts, .. } in block_map {
-            let (insts_in_block, len) = self
-                .ir_module
-                .get_block(*ir)
-                .instructions
-                .load_range_and_length();
+            let (insts_in_block, len) = ir.insts(&self.ir_module).load_range_and_length();
             insts.reserve(len);
 
-            let alloc_value = self.ir_module.borrow_value_alloc();
-            let alloc_inst = &alloc_value.insts;
-
-            for (ir, inst) in insts_in_block.view(alloc_inst) {
-                if let InstData::Alloca(_, a) = inst {
-                    allocas.push(AllocaInfo {
-                        ir,
-                        _align_log2: a.align_log2,
-                        pointee_ty: a.pointee_ty,
-                    });
+            let allocs = self.ir_module.borrow_allocs();
+            for (iref, inst) in insts_in_block.view(&allocs.insts) {
+                if let InstData::Alloca(a) = inst {
+                    allocas.push(AllocaInfo { ir: iref, pointee_ty: a.pointee_ty });
                 }
-                let ty = inst.get_value_type();
-                let kind = inst.get_kind();
+                let ty = inst.get_valtype();
+                let kind = inst.get_opcode().get_kind();
+
                 type K = InstDataKind;
                 if matches!(kind, K::ListGuideNode | K::PhiInstEnd | K::Intrin) {
-                    continue; // 跳过不需要翻译的指令
+                    continue; // Skip instructions that do not need translation
                 }
-                insts.push(InstTranslateInfo { ir, ty, kind });
+                insts.push(InstTranslateInfo { ir: iref, ty, kind });
             }
         }
         allocas
@@ -303,8 +313,9 @@ impl MirTranslateCtx {
                 type K = InstDataKind;
                 debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
 
-                if !self.ir_module.inst_has_user(*ir).unwrap_or(false) {
-                    // 如果指令没有用户, 则分配寄存器或存储空间, 而是把它标记为 "wasted".
+                let allocs = self.ir_module.borrow_allocs();
+                if ir.to_data(&allocs.insts).has_users() {
+                    // 如果指令有用户, 则分配寄存器或存储空间.
                     vregs.push((*ir, InstRetval::Wasted));
                     continue;
                 }
@@ -418,7 +429,7 @@ impl MirTranslateCtx {
         for phi_copy in self.copy_map.find_copies(ir_block) {
             let phi_copy = phi_copy.clone();
             let phi_reg = operand_map
-                .find_operand_for_inst(phi_copy.phi.into())
+                .find_operand_for_inst(phi_copy.phi.into_raw())
                 .expect("Phi register not found");
             let InstRetval::Reg(phi_reg) = phi_reg else {
                 panic!("Expected a register for phi copy, found: {phi_reg:?}");

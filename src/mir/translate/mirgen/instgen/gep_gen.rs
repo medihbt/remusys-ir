@@ -1,9 +1,8 @@
 use crate::{
     base::SlabRef,
     ir::{
-        ValueSSA,
-        inst::{InstData, InstRef, IrGEPOffset, IrGEPOffsetIter, UseData},
-        module::Module,
+        IRAllocs, ValueSSA,
+        inst::{InstData, InstRef, IrGEPOffset},
     },
     mir::{
         inst::{
@@ -15,19 +14,18 @@ use crate::{
         operand::{IMirSubOperand, reg::GPR64},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
+    typing::context::TypeContext,
 };
-use slab::Slab;
 use std::collections::VecDeque;
 
 /// 生成 MIR GEP 指令
 pub(super) fn dispatch_gep(
-    ir_module: &Module,
+    type_ctx: &TypeContext,
+    allocs: &IRAllocs,
     operand_map: &OperandMap,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
-    alloc_inst: &Slab<InstData>,
-    alloc_use: &Slab<UseData>,
 ) {
     // 准备 MIR GEP 的目标寄存器
     let dst = match operand_map.find_operand_for_inst(ir_ref) {
@@ -38,15 +36,14 @@ pub(super) fn dispatch_gep(
         Some(InstRetval::Wasted) => return, // No destination to generate
         None => panic!("No operand found for GEP instruction: {ir_ref:?}"),
     };
+    let alloc_inst = &allocs.insts;
 
     // 获取 GEP 的基地址和偏移量迭代器
-    let (base_ptr, offset_iter) = match ir_ref.to_data(alloc_inst) {
-        InstData::IndexPtr(_, gep) => (
-            gep.base_ptr.get_operand(&alloc_use),
-            IrGEPOffsetIter::from_module(gep, ir_module),
-        ),
-        _ => panic!("Invalid GEP instruction type"),
+    let InstData::GEP(gep) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected GEP instruction");
     };
+    let base_ptr = gep.get_base();
+    let offset_iter = gep.offset_iter(type_ctx, allocs);
 
     // 解包基地址
     let base_mir = translate_base_ptr(operand_map, base_ptr);

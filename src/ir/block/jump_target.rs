@@ -9,7 +9,8 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, IWeakListNode, SlabRef, WeakList},
     ir::{
-        BlockData, BlockRef, FuncRef, IRAllocs, ISubInst, InstData, InstRef, Use, UseKind,
+        BlockData, BlockRef, FuncRef, IRAllocs, ISubInst, ISubValueSSA, InstData, InstRef, Use,
+        UseKind,
         inst::{Br, BrRef, ISubInstRef, Jump, JumpRef, PhiRef, RetRef, Switch, SwitchRef},
     },
 };
@@ -554,7 +555,9 @@ impl<'a> JumpTargetSplitter<'a> {
             InstRef::from_alloc(&mut self.allocs.insts, jump.into_ir())
         };
         // 设置新基本块的终结指令为 Jump
-        new_block.set_terminator_with_allocs(&self.allocs, jump_inst);
+        new_block
+            .set_terminator_with_allocs(&self.allocs, jump_inst)
+            .expect("Failed to set terminator for new block");
         let new_block = BlockRef::from_allocs(self.allocs, new_block);
 
         // 取函数, 稍后要把新基本块插入到函数中.
@@ -596,31 +599,17 @@ impl<'a> JumpTargetSplitter<'a> {
             pred_users.move_to_if(
                 new_block.users(self.allocs),
                 |u| matches!(u.kind.get(), UseKind::PhiIncomingBlock(_)),
-                |u| {
-                    let phi = PhiRef::from_raw_nocheck(u.inst.get());
-                    // 更新 Phi 节点的前驱基本块引用
-                    // 这里使用方式 2: 直接调用 redirect_income_operand_only
-                    unsafe {
-                        phi.to_inst(&self.allocs.insts)
-                            .redirect_income_operand_only(u, new_block)
-                            .expect("Failed to redirect Phi income to new block");
-                    }
-                },
+                |u| u.operand.set(new_block.into_ir()),
             );
         } else {
             // 有多个 JumpTarget 指向这个基本块, 需要拷贝相关的 Use.
             // 保持原有的 use-def 关系不变，为新基本块创建新的传入值
             for u in pred_users.iter() {
-                let UseKind::PhiIncomingBlock(val_idx) = u.kind.get() else {
+                let UseKind::PhiIncomingBlock(group_idx) = u.kind.get() else {
                     continue;
                 };
-                let phi = PhiRef::from_raw_nocheck(u.inst.get());
-                let phi = phi.to_inst(&self.allocs.insts);
-
-                // 安全地获取对应的传入值
-                // 索引越界说明 Phi 节点内部一致性被破坏
-                let income_val = phi.get_operands()[val_idx as usize].get_operand();
-
+                let phi = PhiRef(u.inst.get()).to_inst(&self.allocs.insts);
+                let income_val = phi.income_value_at(group_idx as usize);
                 // 为新基本块创建新的传入值，不影响原有的 use-def 关系
                 phi.set_income(self.allocs, new_block, income_val)
                     .expect("Failed to add new incoming to Phi");

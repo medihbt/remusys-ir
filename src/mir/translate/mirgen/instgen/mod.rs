@@ -1,10 +1,8 @@
 use crate::{
     base::SlabRef,
     ir::{
-        ValueSSA,
-        inst::{CmpOp, InstData, InstDataKind, InstRef, UseData},
-        module::Module,
-        util::numbering::IRValueNumberMap,
+        IRValueNumberMap, ISubInst, InstKind, Module, ValueSSA,
+        inst::{CmpOp, InstData, InstRef},
     },
     mir::{
         inst::{
@@ -25,7 +23,7 @@ use crate::{
 };
 use core::panic;
 use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 mod binary_gen;
 mod call_gen;
@@ -60,7 +58,7 @@ impl InstDispatchState {
 
 #[derive(Debug, Clone)]
 pub enum InstDispatchError {
-    ShouldNotTranslate(InstRef, InstDataKind),
+    ShouldNotTranslate(InstRef, InstKind),
     Unknown,
 }
 
@@ -75,72 +73,47 @@ pub fn dispatch_inst(
 ) -> Result<(), InstDispatchError> {
     let ir_ref = inst_info.ir;
     let kind = inst_info.kind;
-
     let number = numbers.inst_get_number(ir_ref);
 
-    let alloc_value = ir_module.borrow_value_alloc();
-    let alloc_inst = &alloc_value.insts;
-    let alloc_use = ir_module.borrow_use_alloc();
-    let alloc_jt = ir_module.borrow_jt_alloc();
+    let allocs = ir_module.borrow_allocs();
+    let alloc_inst = &allocs.insts;
     match kind {
-        InstDataKind::ListGuideNode
-        | InstDataKind::PhiInstEnd
-        | InstDataKind::Phi
-        | InstDataKind::Unreachable => {
+        InstKind::ListGuideNode | InstKind::PhiInstEnd | InstKind::Phi | InstKind::Unreachable => {
             return Err(InstDispatchError::ShouldNotTranslate(ir_ref, kind));
         }
-        InstDataKind::Ret => {
-            dispatch_mir_return(operand_map, out_insts, ir_ref, alloc_inst, alloc_use);
+        InstKind::Ret => {
+            dispatch_mir_return(operand_map, out_insts, ir_ref, alloc_inst);
         }
-        InstDataKind::Jump => {
-            jumps_gen::dispatch_jump(operand_map, out_insts, ir_ref, alloc_inst, alloc_jt)
-        }
-        InstDataKind::Br => jumps_gen::dispatch_br(
-            state,
-            operand_map,
-            out_insts,
-            ir_ref,
-            alloc_inst,
-            alloc_use,
-            alloc_jt,
-        ),
-        InstDataKind::Switch => todo!("Implement switch instruction handling"),
-        InstDataKind::Alloca => {
+        InstKind::Jump => jumps_gen::dispatch_jump(operand_map, out_insts, ir_ref, alloc_inst),
+        InstKind::Br => jumps_gen::dispatch_br(state, operand_map, out_insts, ir_ref, alloc_inst),
+        InstKind::Switch => todo!("Implement switch instruction handling"),
+        InstKind::Alloca => {
             // Alloca instructions are not translated to MIR directly,
         }
-        InstDataKind::Load => {
-            load_store_gen::dispatch_load(
-                operand_map,
-                ir_ref,
-                vreg_alloc,
-                alloc_inst,
-                alloc_use,
-                out_insts,
-            );
+        InstKind::Load => {
+            load_store_gen::dispatch_load(operand_map, ir_ref, vreg_alloc, alloc_inst, out_insts);
         }
-        InstDataKind::Store => {
+        InstKind::Store => {
             if let Some(value) = load_store_gen::generate_store_inst(
                 operand_map,
                 vreg_alloc,
                 out_insts,
                 ir_ref,
                 alloc_inst,
-                alloc_use,
             ) {
                 return value;
             }
         }
-        InstDataKind::Select => todo!("Implement select instruction handling"),
-        InstDataKind::BinOp => binary_gen::dispatch_binaries(
+        InstKind::Select => todo!("Implement select instruction handling"),
+        InstKind::BinOp => binary_gen::dispatch_binaries(
             operand_map,
             ir_module,
             vreg_alloc,
             out_insts,
             ir_ref,
             alloc_inst,
-            alloc_use,
         ),
-        InstDataKind::Cmp => cmp_gen::dispatch_cmp(
+        InstKind::Cmp => cmp_gen::dispatch_cmp(
             ir_module,
             operand_map,
             state,
@@ -148,36 +121,33 @@ pub fn dispatch_inst(
             out_insts,
             ir_ref,
             alloc_inst,
-            alloc_use,
         ),
-        InstDataKind::Cast => {
+        InstKind::Cast => {
             if let Some(value) = cast_gen::dispatch_casts(
-                ir_module,
+                &ir_module.type_ctx,
+                &allocs,
                 operand_map,
                 vreg_alloc,
                 out_insts,
                 ir_ref,
-                alloc_inst,
-                alloc_use,
                 state.last_pstate_modifier.map(|(ref_inst, _)| ref_inst),
             ) {
                 return value;
             }
         }
-        InstDataKind::IndexPtr => gep_gen::dispatch_gep(
-            ir_module,
+        InstKind::IndexPtr => gep_gen::dispatch_gep(
+            &ir_module.type_ctx,
+            &allocs,
             operand_map,
             vreg_alloc,
             out_insts,
             ir_ref,
-            alloc_inst,
-            &alloc_use,
         ),
-        InstDataKind::Call => {
+        InstKind::Call => {
             state.has_call = true;
-            call_gen::dispatch_call(ir_ref, operand_map, out_insts, alloc_inst, &alloc_use)
+            call_gen::dispatch_call(ir_ref, operand_map, out_insts, alloc_inst)
         }
-        InstDataKind::Intrin => {
+        InstKind::Intrin => {
             todo!("Intrinsics not implemented in IR. Do this until IR supports intrinsics")
         }
     };
@@ -233,7 +203,7 @@ fn ir_inst_is_cmp(inst: InstRef, alloc_inst: &Slab<InstData>) -> bool {
 }
 fn ir_inst_as_cmp<'a>(inst: InstRef, alloc_inst: &'a Slab<InstData>) -> Option<&'a CmpOp> {
     match inst.to_data(alloc_inst) {
-        InstData::Cmp(_, cmp_op) => Some(cmp_op),
+        InstData::Cmp(cmp_op) => Some(cmp_op),
         _ => None,
     }
 }
@@ -255,14 +225,13 @@ fn dispatch_mir_return(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (ir_return, has_retval) = match ir_ref.to_data(alloc_inst) {
-        InstData::Ret(c, r) => (r, !matches!(c.ret_type, ValTypeID::Void)),
-        _ => panic!("Expected Ret instruction"),
+    let InstData::Ret(ir_return) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected Ret instruction");
     };
+    let has_retval = !matches!(ir_return.get_valtype(), ValTypeID::Void);
     let mir_ret = if has_retval {
-        let retval_ir = ir_return.retval.get_operand(&alloc_use);
+        let retval_ir = ir_return.get_retval();
         if ir_value_is_cmp(retval_ir, alloc_inst) {
             todo!("Handle return of comparison values");
         } else {

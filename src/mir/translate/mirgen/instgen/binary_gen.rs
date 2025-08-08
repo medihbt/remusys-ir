@@ -1,23 +1,20 @@
 use crate::{
-    base::SlabRef,
+    base::{APInt, SlabRef},
     ir::{
-        ValueSSA,
-        constant::data::ConstData,
-        inst::{InstData, InstRef, UseData},
-        module::Module,
-        opcode::Opcode as O,
+        ConstData, ISubInst, Module, Opcode as O, ValueSSA,
+        inst::{InstData, InstRef},
     },
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
         module::vreg_alloc::VirtRegAlloc,
-        operand::{IMirSubOperand, imm::ImmCalc, imm_traits, reg::*},
+        operand::{IMirSubOperand, imm::ImmCalc, reg::*},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
     typing::{context::TypeContext, id::ValTypeID},
 };
 use log::debug;
 use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 type BinLHS = crate::mir::translate::mirgen::operandgen::DispatchedReg;
 
@@ -28,14 +25,13 @@ pub(super) fn dispatch_binaries(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (opcode, inst) = match ir_ref.to_data(alloc_inst) {
-        InstData::BinOp(c, b) => (c.opcode, b),
-        _ => panic!("Expected BinOp instruction"),
+    let InstData::BinOp(inst) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected BinOp instruction");
     };
-    let lhs_ir = inst.lhs.get_operand(&alloc_use);
-    let rhs_ir = inst.rhs.get_operand(&alloc_use);
+    let opcode = inst.get_opcode();
+    let lhs_ir = inst.get_lhs();
+    let rhs_ir = inst.get_rhs();
 
     let res = operand_map
         .find_operand_for_inst(ir_ref)
@@ -383,8 +379,8 @@ impl<'a> BinGenContext<'a> {
             ConstData::Zero(ValTypeID::Int(bits)) if *bits <= 64 => Some(ImmCalc(0)),
             ConstData::PtrNull(_) => Some(ImmCalc(0)),
             ConstData::Int(bits, value) if *bits <= 64 => {
-                let value = ConstData::iconst_value_get_real_signed(*bits, *value) as u64;
-                if imm_traits::is_calc_imm(value) { Some(ImmCalc(value as u32)) } else { None }
+                let value = APInt::new(*value, *bits).as_signed() as u64;
+                ImmCalc::try_new(value)
             }
             _ => None,
         }

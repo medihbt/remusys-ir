@@ -1,8 +1,8 @@
 use crate::{
     base::APInt,
     ir::{
-        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef,
-        Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
+        ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData,
+        InstRef, Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
     typing::{context::TypeContext, id::ValTypeID, types::StructTypeRef},
@@ -277,6 +277,23 @@ impl IndexPtr {
             .expect("Index out of bounds")
             .set_operand(allocs, value);
     }
+
+    pub fn index_iter<'a>(
+        &'a self,
+        type_ctx: &'a TypeContext,
+        allocs: &'a IRAllocs,
+    ) -> GEPIndexIter<'a> {
+        let indexer = GEPTypeIndexer::new_initial(type_ctx, allocs, self.first_unpacked_ty);
+        GEPIndexIter::new(indexer, self.index_uses())
+    }
+
+    pub fn offset_iter<'a>(
+        &'a self,
+        type_ctx: &'a TypeContext,
+        allocs: &'a IRAllocs,
+    ) -> IrGEPOffsetIter<'a> {
+        IrGEPOffsetIter::new(self.index_iter(type_ctx, allocs))
+    }
 }
 
 /// GEP 指令的类型状态, 用于跟踪索引操作的类型变化.
@@ -495,5 +512,109 @@ impl ISubInstRef for GEPRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IrGEPOffset {
+    /// Immediate offset
+    Imm(i64),
+    /// (func, arg_index, weight)
+    Arg(FuncRef, u32, u64),
+    /// (inst, weight)
+    Inst(InstRef, u64),
+}
+
+pub struct IrGEPOffsetIter<'a> {
+    index_iter: GEPIndexIter<'a>,
+    last_ty: Option<ValTypeID>,
+}
+
+impl<'a> IrGEPOffsetIter<'a> {
+    pub fn new(index_iter: GEPIndexIter<'a>) -> Self {
+        Self { index_iter, last_ty: None }
+    }
+
+    fn locate_array(type_ctx: &TypeContext, index: ValueSSA, elemty: ValTypeID) -> IrGEPOffset {
+        let elemty_size = elemty.get_instance_size_unwrap(type_ctx);
+        let elemty_align = elemty.get_align(type_ctx);
+        let weight = elemty_size.next_multiple_of(elemty_align) as i64;
+        match index {
+            ValueSSA::ConstData(data) => {
+                use ConstData::*;
+                let value = match data {
+                    Zero(_) | PtrNull(_) => 0,
+                    Int(bits, value) => APInt::new(value, bits).as_signed() as i64 * weight,
+                    _ => panic!("Unsupported index value for GEP offset: {index:?}"),
+                };
+                IrGEPOffset::Imm(value)
+            }
+            ValueSSA::FuncArg(f, idx) => IrGEPOffset::Arg(FuncRef(f), idx, weight as u64),
+            ValueSSA::Inst(inst_ref) => IrGEPOffset::Inst(inst_ref, weight as u64),
+            _ => {
+                panic!("Unsupported index value for GEP offset: {index:?}");
+            }
+        }
+    }
+
+    fn locate_struct(
+        type_ctx: &TypeContext,
+        sty: StructTypeRef,
+        index: ValueSSA,
+        elemty: ValTypeID,
+    ) -> IrGEPOffset {
+        let Some(cdata) = ConstData::try_from_ir(&index) else {
+            panic!("Struct index must be a constant value but got {index:?}");
+        };
+        let index = match cdata {
+            ConstData::PtrNull(_) | ConstData::Zero(_) => 0,
+            ConstData::Int(bits, value) => APInt::new(*value, *bits).as_signed() as usize,
+            _ => {
+                panic!("Expected an integer constant for struct index but got {cdata:?}");
+            }
+        };
+        let nfields = sty.get_nelements(type_ctx);
+        debug_assert!(
+            index < nfields,
+            "Struct index out of bounds: {index} for struct with {nfields} fields"
+        );
+        debug_assert_eq!(
+            Some(elemty),
+            sty.get_element_type(type_ctx, index),
+            "Struct index type mismatch"
+        );
+        let offset = sty.offset_unwrap(type_ctx, index);
+        IrGEPOffset::Imm(offset as i64)
+    }
+}
+
+impl<'a> Iterator for IrGEPOffsetIter<'a> {
+    type Item = IrGEPOffset;
+
+    fn next(&mut self) -> Option<IrGEPOffset> {
+        let (index, elemty) = self.index_iter.next()?;
+        let type_ctx = self.index_iter.indexer.type_ctx;
+        let Some(last_ty) = self.last_ty else {
+            // 处理第一个索引
+            self.last_ty = Some(elemty);
+            let off = Self::locate_array(type_ctx, index, elemty);
+            return Some(off);
+        };
+
+        // 处理后续索引
+        let offset = match last_ty {
+            ValTypeID::Array(_) => Self::locate_array(type_ctx, index, elemty),
+            ValTypeID::Struct(sty) => Self::locate_struct(type_ctx, sty, index, elemty),
+            ValTypeID::StructAlias(sa) => {
+                let sty = sa.get_aliasee(type_ctx);
+                Self::locate_struct(type_ctx, sty, index, elemty)
+            }
+            _ => {
+                let name = last_ty.get_display_name(type_ctx);
+                panic!("Cannot unpack GEP type {name} with index {index:?}");
+            }
+        };
+        self.last_ty = Some(elemty);
+        Some(offset)
     }
 }

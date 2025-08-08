@@ -1,11 +1,7 @@
 use super::InstDispatchError;
 use crate::{
     base::SlabRef,
-    ir::{
-        ValueSSA,
-        constant::data::ConstData,
-        inst::{InstData, InstRef, UseData},
-    },
+    ir::{ConstData, InstData, InstRef, ValueSSA},
     mir::{
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
         module::{MirGlobalRef, vreg_alloc::VirtRegAlloc},
@@ -23,7 +19,7 @@ use crate::{
 use core::panic;
 use log::debug;
 use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy)]
 enum StrDest {
@@ -95,16 +91,15 @@ pub(super) fn generate_store_inst(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<'_, Slab<UseData>>,
 ) -> Option<Result<(), InstDispatchError>> {
-    let InstData::Store(_, store) = ir_ref.to_data(alloc_inst) else {
+    let InstData::Store(store) = ir_ref.to_data(alloc_inst) else {
         panic!("Expected Store instruction");
     };
 
-    let src_ir = store.source.get_operand(&alloc_use);
+    let src_ir = store.get_source();
     let src_mir = StrSrc::from_valuessa(operand_map, &src_ir);
 
-    let dst_ir = store.target.get_operand(&alloc_use);
+    let dst_ir = store.get_target();
     let dst_mir = match operand_map.find_operand_no_constdata(&dst_ir) {
         Ok(MirOperand::GPReg(gpreg)) => StrDest::G64(GPR64::from_real(gpreg)),
         Ok(MirOperand::Global(globl)) => StrDest::Global(globl),
@@ -223,13 +218,12 @@ pub(super) fn dispatch_load(
     ir_ref: InstRef,
     vreg_alloc: &mut VirtRegAlloc,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
     out_insts: &mut VecDeque<MirInst>,
 ) {
-    let InstData::Load(_, load) = ir_ref.to_data(alloc_inst) else {
+    let InstData::Load(load) = ir_ref.to_data(alloc_inst) else {
         panic!("Expected Load instruction");
     };
-    let src_ir = load.source.get_operand(&alloc_use);
+    let src_ir = load.get_source();
     let src_mir = operand_map
         .find_operand_no_constdata(&src_ir)
         .expect("Failed to find source operand for load");

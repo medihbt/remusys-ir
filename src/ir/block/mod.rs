@@ -8,7 +8,7 @@ use crate::{
         JumpTarget, Module, PredList, TerminatorRef, UserList, ValueSSA,
         block::jump_target::JumpTargets,
         global::GlobalRef,
-        inst::{BrRef, ISubInstRef, InstError, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
+        inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
     },
     typing::id::ValTypeID,
 };
@@ -241,6 +241,19 @@ impl BlockData {
     pub fn new_return_zero_from_mut_module(module: &mut Module, ret_ty: ValTypeID) -> Self {
         let alloc = module.allocs.get_mut();
         Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
+    }
+
+    /// 创建一个跳转到指定基本块的指令
+    pub fn new_jump_to(allocs: &mut IRAllocs, target: BlockRef) -> Self {
+        let ret = BlockData::empty_from_alloc(&mut allocs.insts);
+        let jump_inst = {
+            let jump = Jump::new(&allocs.blocks, target);
+            InstRef::from_alloc(&mut allocs.insts, jump.into_ir())
+        };
+        ret.insts
+            .push_back_ref(&mut allocs.insts, jump_inst)
+            .expect("Failed to push jump inst");
+        ret
     }
 }
 
@@ -692,6 +705,11 @@ impl BlockRef {
 
     pub fn new_return_zero(allocs: &mut IRAllocs, ret_ty: ValTypeID) -> Self {
         let data = BlockData::new_return_zero_from_alloc(&mut allocs.insts, ret_ty);
+        BlockRef::from_allocs(allocs, data)
+    }
+
+    pub fn new_jump_to(allocs: &mut IRAllocs, target: BlockRef) -> Self {
+        let data = BlockData::new_jump_to(allocs, target);
         BlockRef::from_allocs(allocs, data)
     }
 

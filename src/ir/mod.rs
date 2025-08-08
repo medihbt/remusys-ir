@@ -1,5 +1,13 @@
-use crate::{base::APInt, typing::id::ValTypeID};
-use std::{fmt::Debug, hash::Hash, num::NonZero};
+use crate::{
+    base::{APInt, SlabRef},
+    typing::id::ValTypeID,
+};
+use std::{
+    fmt::Debug,
+    hash::Hash,
+    num::NonZero,
+    rc::{Rc, Weak},
+};
 
 mod block;
 mod cmp_cond;
@@ -17,8 +25,8 @@ pub use self::{
     block::{
         BlockData, BlockDataInner, BlockRef,
         jump_target::{
-            ITerminatorInst, ITerminatorRef, JumpTarget, JumpTargetKind, PredList,
-            TerminatorDataRef, TerminatorRef, JumpTargetSplitter
+            ITerminatorInst, ITerminatorRef, JumpTarget, JumpTargetKind, JumpTargetSplitter,
+            PredList, TerminatorDataRef, TerminatorRef,
         },
     },
     cmp_cond::CmpCond,
@@ -147,6 +155,60 @@ impl TryInto<APInt> for ValueSSA {
                 self,
                 ValueSSA::ConstData(ConstData::Int(0, 0)),
             )),
+        }
+    }
+}
+
+impl ValueSSA {
+    /// 检查该 Value 是否能被追踪
+    pub fn partial_traceable(&self) -> bool {
+        !matches!(self, Self::None | Self::ConstData(_))
+    }
+
+    /// 检查该 Value 是否可以获得完整的使用者信息.
+    pub fn traceable(&self) -> bool {
+        use ValueSSA::*;
+        matches!(self, FuncArg(..) | Block(_) | Inst(_) | Global(_))
+    }
+
+    /// 获取该 Value 的使用者列表
+    pub fn users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        match self {
+            ValueSSA::FuncArg(func, id) => {
+                let users = FuncArgRef(func, id as usize).get_users(&allocs.globals);
+                Some(users)
+            }
+            ValueSSA::Block(block) => Some(&block.to_data(&allocs.blocks).users()),
+            ValueSSA::Inst(inst_ref) => Some(inst_ref.to_data(&allocs.insts).users()),
+            ValueSSA::Global(global) => Some(global.to_data(&allocs.globals).users()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn add_user_rc(self, allocs: &IRAllocs, user: &Rc<Use>) -> bool {
+        self.add_user(allocs, Rc::downgrade(user))
+    }
+    pub(crate) fn add_user(self, allocs: &IRAllocs, user: Weak<Use>) -> bool {
+        match self {
+            ValueSSA::FuncArg(func, id) => {
+                FuncArgRef(func, id as usize)
+                    .to_data(&allocs.globals)
+                    .add_user(user);
+                true
+            }
+            ValueSSA::Block(block) => {
+                block.to_data(&allocs.blocks).add_user(user);
+                true
+            }
+            ValueSSA::Inst(inst_ref) => {
+                inst_ref.to_data(&allocs.insts).add_user(user);
+                true
+            }
+            ValueSSA::Global(global) => {
+                global.to_data(&allocs.globals).add_user(user);
+                true
+            }
+            _ => false,
         }
     }
 }

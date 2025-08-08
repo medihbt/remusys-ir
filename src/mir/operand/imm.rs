@@ -291,6 +291,17 @@ impl Debug for ImmCalc {
     }
 }
 
+impl TryFrom<u64> for ImmCalc {
+    type Error = &'static str;
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        if imm_traits::is_calc_imm(value) {
+            Ok(Self(value as u32))
+        } else {
+            Err("Invalid immediate value for Calc kind")
+        }
+    }
+}
+
 impl ImmCalc {
     pub fn new(value: u32) -> Self {
         if imm_traits::is_calc_imm(value as u64) {

@@ -1,10 +1,6 @@
 use crate::{
     base::SlabRef,
-    ir::{
-        ValueSSA,
-        block::jump_target::JumpTargetData,
-        inst::{CmpOp, InstData, InstRef, UseData},
-    },
+    ir::{InstData, InstRef, ValueSSA, inst::CmpOp},
     mir::{
         inst::{
             IMirSubInst,
@@ -22,7 +18,7 @@ use crate::{
     },
 };
 use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 use super::{InstDispatchState, ir_value_as_cmp};
 
@@ -31,13 +27,11 @@ pub(super) fn dispatch_jump(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_jt: Ref<'_, Slab<crate::ir::block::jump_target::JumpTargetData>>,
 ) {
-    let jump = match ir_ref.to_data(alloc_inst) {
-        InstData::Jump(_, j) => j,
-        _ => panic!("Expected Jump instruction"),
+    let InstData::Jump(jump) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected Jump instruction");
     };
-    let target_ir = jump.get_block(&alloc_jt);
+    let target_ir = jump.get_target();
     let target_mir = operand_map
         .find_operand_for_block(target_ir)
         .expect("Failed to find target block");
@@ -51,16 +45,13 @@ pub(crate) fn dispatch_br(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
-    alloc_jt: Ref<Slab<JumpTargetData>>,
 ) {
-    let br_inst = match ir_ref.to_data(alloc_inst) {
-        InstData::Br(_, b) => b,
-        _ => panic!("Expected Br instruction"),
+    let InstData::Br(br_inst) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected Br instruction");
     };
-    let cond_ir = br_inst.get_cond(&alloc_use);
-    let true_ir = br_inst.if_true.get_block(&alloc_jt);
-    let false_ir = br_inst.if_false.get_block(&alloc_jt);
+    let cond_ir = br_inst.get_cond();
+    let true_ir = br_inst.get_if_true();
+    let false_ir = br_inst.get_if_false();
     let true_mir = operand_map
         .find_operand_for_block(true_ir)
         .expect("Failed to find true block");

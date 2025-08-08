@@ -1,14 +1,11 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     rc::Rc,
 };
 
 use crate::{
-    base::{INullableValue, SlabRef},
-    ir::{
-        BlockData, BlockRef, FuncRef, IRAllocs, InstData, JumpTarget, JumpTargetSplitter, Module,
-        inst::Jump,
-    },
+    base::SlabRef,
+    ir::{BlockData, BlockRef, FuncRef, IRAllocs, JumpTarget, Module, UseKind, ValueSSA},
 };
 
 /// 消除 IR 模块中所有函数的关键边
@@ -40,12 +37,7 @@ pub fn break_critical_edges(ir_module: &Module) {
 
     let mut critical_edges = VecDeque::new();
     for &func in funcs.iter() {
-        find_critical_edges_for_func(func, &allocs, &mut critical_edges);
-        while let Some(edge) = critical_edges.pop_front() {
-            // 这里不用 split, 而是直接创建新的中间基本块
-            // 并将所有相关的 JumpTarget 重定向到这个新块。
-            todo!("Handle critical edge from {:?} to {:?}", edge.from, edge.to);
-        }
+        find_critical_edges_for_func(func, &mut allocs, &mut critical_edges);
     }
 }
 
@@ -58,7 +50,7 @@ struct CriticalEdge {
 
 fn find_critical_edges_for_func(
     func: FuncRef,
-    allocs: &IRAllocs,
+    allocs: &mut IRAllocs,
     critical_edges: &mut VecDeque<CriticalEdge>,
 ) {
     let func_data = func.to_data(&allocs.globals);
@@ -67,6 +59,20 @@ fn find_critical_edges_for_func(
     };
     for (bref, bb) in body.view(&allocs.blocks) {
         find_critical_edges_for_block(bref, bb, allocs, critical_edges);
+    }
+
+    while let Some(edge) = critical_edges.pop_front() {
+        // 这里不用 split, 而是直接创建新的中间基本块
+        // 并将所有相关的 JumpTarget 重定向到这个新块。
+        let mid_bb = BlockRef::new_jump_to(allocs, edge.to);
+        for jt in edge.jts {
+            jt.set_block(&allocs.blocks, mid_bb);
+        }
+        edge.from.users(allocs).move_to_if(
+            mid_bb.users(allocs),
+            |u| matches!(u.kind.get(), UseKind::PhiIncomingBlock(_)),
+            |u| u.operand.set(ValueSSA::Block(mid_bb)),
+        );
     }
 }
 

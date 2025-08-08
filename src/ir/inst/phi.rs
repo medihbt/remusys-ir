@@ -8,7 +8,6 @@ use crate::{
 };
 use std::{
     cell::{Ref, RefCell},
-    collections::BTreeMap,
     rc::Rc,
 };
 
@@ -50,9 +49,7 @@ pub struct PhiNode {
     /// 指令的公共数据（操作码、类型、用户列表等）
     common: InstCommon,
     /// 操作数列表：包含值和基本块的 Use 引用，按 [value, block, value, block, ...] 的模式排列
-    operands: RefCell<Vec<Rc<Use>>>,
-    /// 前驱基本块到操作数索引的映射：BlockRef -> (value_index, block_index)
-    incoming_map: RefCell<BTreeMap<BlockRef, (usize, usize)>>,
+    incomes: RefCell<Vec<[Rc<Use>; 2]>>,
 }
 
 impl ISubInst for PhiNode {
@@ -62,8 +59,7 @@ impl ISubInst for PhiNode {
         }
         Self {
             common: InstCommon::new(opcode, ValTypeID::Void),
-            operands: RefCell::new(Vec::new()),
-            incoming_map: RefCell::new(BTreeMap::new()),
+            incomes: RefCell::new(Vec::new()),
         }
     }
 
@@ -91,11 +87,13 @@ impl ISubInst for PhiNode {
     }
 
     fn get_operands(&self) -> InstOperands {
-        InstOperands::InRef(self.operands.borrow())
+        let operands = self.incomes.borrow();
+        let operands = Ref::map(operands, |ops| ops.as_flattened());
+        InstOperands::InRef(operands)
     }
 
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        self.operands.get_mut().as_mut_slice()
+        self.incomes.get_mut().as_flattened_mut()
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
@@ -112,31 +110,24 @@ impl ISubInst for PhiNode {
         write!(writer, "%{} = {} ", id, opcode)?;
         writer.write_type(self.common.ret_type)?;
 
-        // 如果没有 incoming values，输出有效的空 phi
-        let incoming_map = self.incoming_map.borrow();
-        if incoming_map.is_empty() {
-            return Ok(());
-        }
-
         // 写入所有 incoming values: [ <value>, %<label> ], ...
-        let operands = self.operands.borrow();
-        for (i, (&block, &(value_idx, _))) in incoming_map.iter().enumerate() {
+        let incomes = self.incoming_uses();
+        for (i, [uval, ublk]) in incomes.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
-            writer.write_str(" [ ")?;
+            writer.write_str("[ ")?;
 
             // 写入值
-            let incoming_val = operands[value_idx].get_operand();
+            let incoming_val = uval.get_operand();
             writer.write_operand(incoming_val)?;
 
             // 写入来源基本块
             writer.write_str(", ")?;
-            writer.write_operand(block)?;
+            writer.write_operand(ublk.get_operand())?;
 
             writer.write_str(" ]")?;
         }
-
         Ok(())
     }
 }
@@ -145,32 +136,60 @@ impl PhiNode {
     pub fn new(ret_type: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Phi, ret_type),
-            operands: RefCell::new(Vec::new()),
-            incoming_map: RefCell::new(BTreeMap::new()),
+            incomes: RefCell::new(Vec::new()),
         }
     }
 
-    pub fn get_income_index(&self, block: BlockRef) -> Option<(usize, usize)> {
-        self.incoming_map.borrow().get(&block).cloned()
+    pub fn incoming_uses(&self) -> Ref<[[Rc<Use>; 2]]> {
+        Ref::map(self.incomes.borrow(), |ops| ops.as_slice())
     }
-    pub fn get_income_uses(&self, block: BlockRef) -> Option<(Rc<Use>, Rc<Use>)> {
-        self.get_income_index(block)
-            .and_then(|(val_idx, block_idx)| {
-                let ops = self.operands.borrow();
-                Some((ops.get(val_idx)?.clone(), ops.get(block_idx)?.clone()))
-            })
+    pub fn locate_income_group(&self, block: BlockRef) -> Option<usize> {
+        for (index, [_, blk]) in self.incoming_uses().iter().enumerate() {
+            if blk.get_operand() == ValueSSA::Block(block) {
+                return Some(index);
+            }
+        }
+        None
+    }
+    pub fn locate_incomes(&self, block: BlockRef) -> Option<(usize, usize)> {
+        self.locate_income_group(block)
+            .map(|index| (index * 2, index * 2 + 1))
+    }
+    pub fn find_income(&self, block: BlockRef) -> Option<Ref<[Rc<Use>; 2]>> {
+        self.locate_income_group(block)
+            .map(|index| Ref::map(self.incomes.borrow(), |ops| &ops[index]))
+    }
+    pub fn has_income(&self, block: BlockRef) -> bool {
+        self.locate_income_group(block).is_some()
     }
     pub fn get_income_block_use(&self, block: BlockRef) -> Option<Rc<Use>> {
-        self.get_income_index(block)
-            .and_then(|(_, block_idx)| self.operands.borrow().get(block_idx).cloned())
+        self.find_income(block).and_then(|income| {
+            let [_, block_use] = &*income;
+            Some(block_use.clone())
+        })
     }
     pub fn get_income_value_use(&self, block: BlockRef) -> Option<Rc<Use>> {
-        self.get_income_index(block)
-            .and_then(|(val_idx, _)| self.operands.borrow().get(val_idx).cloned())
+        self.find_income(block).and_then(|income| {
+            let [value_use, _] = &*income;
+            Some(value_use.clone())
+        })
     }
     pub fn get_income_value(&self, block: BlockRef) -> Option<ValueSSA> {
-        self.get_income_value_use(block)
-            .map(|use_ref| use_ref.get_operand())
+        self.locate_income_group(block).map(|index| {
+            let ops = self.incomes.borrow();
+            ops[index][0].get_operand()
+        })
+    }
+
+    pub fn income_block_at(&self, index: usize) -> BlockRef {
+        let income = self.incoming_uses();
+        let [_, ublk] = &income[index];
+        *BlockRef::from_ir(&ublk.get_operand())
+    }
+    pub fn income_value_at(&self, index: usize) -> ValueSSA {
+        let income = self.incoming_uses();
+        let [uval, _] = &income[index];
+        uval.get_operand()
     }
 
     pub fn set_existing_income(
@@ -179,16 +198,15 @@ impl PhiNode {
         block: BlockRef,
         value: ValueSSA,
     ) -> Result<(), PhiError> {
-        let (val_idx, _) = self
-            .get_income_index(block)
-            .ok_or(PhiError::IncomeBBNotFound(block))?;
-        let mut ops = self.operands.borrow_mut();
-        if let Some(use_ref) = ops.get_mut(val_idx) {
-            use_ref.set_operand(allocs, value);
-            Ok(())
-        } else {
-            Err(PhiError::IncomeBBNotFound(block))
+        let Some(group) = self.find_income(block) else {
+            return Err(PhiError::IncomeBBNotFound(block));
+        };
+        let [value_use, block_use] = &*group;
+        if block_use.get_operand() != ValueSSA::Block(block) {
+            return Err(PhiError::InvalidUseType);
         }
+        value_use.set_operand(allocs, value);
+        Ok(())
     }
 
     /// 为指定前驱基本块设置一个传入值, 如果该基本块已经存在传入值则覆盖.
@@ -205,25 +223,19 @@ impl PhiNode {
             Err(e) => return Err(e),
         };
 
-        let mut operands = self.operands.borrow_mut();
-        let income_val_idx = operands.len();
-        let income_block_idx = income_val_idx + 1;
+        let mut operands = self.incomes.borrow_mut();
+        let group_index = operands.len();
 
-        // 构建互引用关系: PhiIncomingValue 里存的是对应的基本块索引, PhiIncomingBlock 里存的是对应的值索引
-        // 这样设计是为了方便在删除某个前驱基本块时, 可以通过值索引快速找到对应的值 Use
-        // 而不需要遍历所有的 Use 列表。
-        let value_use = Use::new(UseKind::PhiIncomingValue(block, income_block_idx as u32));
-        let block_use = Use::new(UseKind::PhiIncomingBlock(income_val_idx as u32));
+        // 构建新的操作数对：使用组索引来标识配对关系
+        // group_index 用于在删除时快速定位配对的操作数
+        let value_use = Use::new(UseKind::PhiIncomingValue(group_index as u32));
+        let block_use = Use::new(UseKind::PhiIncomingBlock(group_index as u32));
 
         value_use.set_operand(allocs, value);
         block_use.set_operand(allocs, ValueSSA::Block(block));
 
-        operands.push(value_use);
-        operands.push(block_use);
-
-        self.incoming_map
-            .borrow_mut()
-            .insert(block, (income_val_idx, income_block_idx));
+        // 将新的操作数对添加到操作数列表中
+        operands.push([value_use, block_use]);
 
         Ok(())
     }
@@ -231,52 +243,29 @@ impl PhiNode {
     /// 移除指定前驱基本块的传入值, 如果该基本块不存在传入值则返回错误.
     /// 移除时会保持操作数列表的紧凑性, 通过与末尾元素交换并弹出末尾元素来实现.
     /// 这种方式会改变被交换元素的索引, 因此需要更新它们的 UseKind 以反映新的索引.
-    /// 同时也需要更新 incoming_map 中的索引映射.
     pub fn remove_income(&self, block: BlockRef) -> Result<(), PhiError> {
-        let Some((val_idx, block_idx)) = self.get_income_index(block) else {
+        let Some(group_index) = self.locate_income_group(block) else {
             return Err(PhiError::IncomeBBNotFound(block));
         };
 
-        let mut ops = self.operands.borrow_mut();
-        let len = ops.len();
+        let mut incomes = self.incomes.borrow_mut();
 
-        if block_idx == len - 1 {
-            debug_assert_eq!(
-                val_idx,
-                len - 2,
-                "Incoming value Use should be arranged before block Use"
-            );
-            ops.pop();
-            ops.pop();
-            let mut map = self.incoming_map.borrow_mut();
-            map.remove(&block);
-        } else {
-            // Swap with the back and pop
+        // 清理操作数, 同时解除掉相关的 Use 关系.
+        // 由于 UserList 良好的性质, 这里不需要借助 IRAllocs.
+        let [val, blk] = &incomes[group_index];
+        val.clean_operand();
+        blk.clean_operand();
 
-            let back_block_use = ops.pop().unwrap();
-            let back_value_use = ops.pop().unwrap();
-
-            // 修复互引用关系: 这两个 Use 会被替换到被删除的 Use 位置, 需要更新它们的索引信息.
-            // back_block_use 里存的是对应的值索引, back_value_use 里存的是对应的基本块索引
-            let back_block = *BlockRef::from_ir(&back_block_use.get_operand());
-            back_block_use
-                .kind
-                .set(UseKind::PhiIncomingBlock(val_idx as u32));
-            back_value_use
-                .kind
-                .set(UseKind::PhiIncomingValue(back_block, block_idx as u32));
-
-            ops[val_idx] = back_value_use;
-            ops[block_idx] = back_block_use;
-
-            drop(ops);
-
-            // Update the map
-
-            let mut map = self.incoming_map.borrow_mut();
-            map.remove(&block);
-            map.insert(back_block, (val_idx, block_idx));
+        if group_index != incomes.len() - 1 {
+            let back_index = incomes.len() - 1;
+            incomes.swap(group_index, back_index);
+            // 更新被移动到 group_index 位置的操作数的 UseKind
+            let [uval, ublk] = &incomes[group_index];
+            let _moved_block = *BlockRef::from_ir(&ublk.get_operand());
+            uval.kind.set(UseKind::PhiIncomingValue(group_index as u32));
+            ublk.kind.set(UseKind::PhiIncomingBlock(group_index as u32));
         }
+        incomes.pop();
         Ok(())
     }
 
@@ -300,7 +289,7 @@ impl PhiNode {
     /// 1. 检查新基本块是否已存在，避免重复添加
     /// 2. 验证传入的 Use 引用类型，确保是基本块引用而非值引用
     /// 3. 从 `incoming_map` 中移除旧基本块的映射关系
-    /// 4. 更新对应的 `PhiIncomingValue` 的 UseKind，将其关联的基本块改为新基本块
+    /// 4. 更新对应的 `PhiIncomingValue` 的 UseKind，将其组索引更新
     /// 5. 更新基本块操作数的实际值，指向新基本块
     /// 6. 在 `incoming_map` 中插入新的映射关系
     ///
@@ -339,6 +328,7 @@ impl PhiNode {
     /// ### 返回值
     /// - `Ok(())`: 重定向成功
     /// - `Err(PhiError::*)`: 各种验证失败
+    #[allow(dead_code)]
     pub(crate) unsafe fn redirect_income_operand_only(
         &self,
         income_bb_use: &Rc<Use>,
@@ -354,50 +344,28 @@ impl PhiNode {
         new_block: BlockRef,
     ) -> Result<(), PhiError> {
         // 检查新基本块是否已经存在于 Phi 节点中. 每个前驱基本块在 Phi 节点中只能有一个对应的传入值
-        if self.incoming_map.borrow().contains_key(&new_block) {
+        // 就算 redirect_income 是为了合并两个分支也不行, 因为这时两个 income value 有冲突, PhiNode
+        // 自身无法解决.
+        if self.has_income(new_block) {
             return Err(PhiError::DuplicatedIncomeBB(new_block));
         }
 
         // 验证传入的 Use 引用类型
-        let UseKind::PhiIncomingBlock(use_value_idx) = income_bb_use.kind.get() else {
+        let UseKind::PhiIncomingBlock(group_idx) = income_bb_use.kind.get() else {
             return Err(PhiError::InvalidUseType);
         };
 
-        // 提取旧基本块并从映射中原子性移除
-        let old_block = *BlockRef::from_ir(&income_bb_use.get_operand());
-        let mut income_map = self.incoming_map.borrow_mut();
-        let Some((val_idx, bb_idx)) = income_map.remove(&old_block) else {
-            return Err(PhiError::IncomeBBNotFound(old_block));
-        };
+        // 更新对应的 UseKind, 将其关联的基本块从 old_block 改为 new_block
+        let incomes = self.incoming_uses();
+        let [_, ublk] = &incomes[group_idx as usize];
 
-        // 内部一致性检查：UseKind 中存储的值索引应该与映射中的一致
-        debug_assert_eq!(
-            val_idx, use_value_idx as usize,
-            "Use index mismatch in PhiNode redirect_income"
-        );
-
-        // 获取操作数列表进行后续修改
-        let operands = self.operands.borrow();
-
-        // 内部一致性检查：确保传入的 Use 引用确实是映射中对应的那个
+        // 验证传入的 Use 引用确实是我们找到的那个
         debug_assert!(
-            Rc::ptr_eq(&operands[bb_idx], income_bb_use),
-            "Use reference mismatch in PhiNode redirect_income"
+            Rc::ptr_eq(ublk, income_bb_use),
+            "income_bb_use should match the block use at group_idx"
         );
-
-        // 更新对应的 PhiIncomingValue 的 UseKind, 将其关联的基本块从 old_block 改为 new_block
-        let value_use = &operands[val_idx];
-        debug_assert_eq!(
-            value_use.kind.get(),
-            UseKind::PhiIncomingValue(old_block, bb_idx as u32),
-            "Value use kind mismatch in PhiNode redirect_income"
-        );
-        value_use
-            .kind
-            .set(UseKind::PhiIncomingValue(new_block, bb_idx as u32));
 
         // 更新基本块操作数的实际值，将基本块引用从 old_block 改为 new_block
-        // income_bb_use.set_operand(allocs, ValueSSA::Block(new_block));
         match action {
             RedirectAction::Full(allocs) => {
                 // 注意：即使 income_bb_use 已经被预先移动到 new_block 的 UserList 中，
@@ -413,8 +381,6 @@ impl PhiNode {
             }
         }
 
-        // 在映射中插入新的基本块映射关系, 索引保持不变，只是基本块引用发生变化
-        income_map.insert(new_block, (val_idx, bb_idx));
         Ok(())
     }
 }
@@ -425,7 +391,7 @@ enum RedirectAction<'a> {
 }
 
 pub struct PhiIncomeIter<'a> {
-    operands: Ref<'a, [Rc<Use>]>,
+    operands: Ref<'a, [[Rc<Use>; 2]]>,
     index: usize,
 }
 
@@ -434,19 +400,18 @@ impl<'a> Iterator for PhiIncomeIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.operands.len() {
-            return None;
+            return None; // No more operands
         }
-        let value_use = &self.operands[self.index];
-        let block_use = &self.operands[self.index + 1];
-        self.index += 2;
-
-        let value = value_use.get_operand();
-        let block = *BlockRef::from_ir(&block_use.get_operand());
-        Some((value, block))
+        let [value_use, block_use] = &self.operands[self.index];
+        self.index += 1; // Move to the next pair
+        Some((
+            value_use.get_operand(),
+            *BlockRef::from_ir(&block_use.get_operand()),
+        ))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = (self.operands.len() - self.index) / 2;
+        let remaining = self.operands.len() - self.index;
         (remaining, Some(remaining))
     }
 }
@@ -456,14 +421,14 @@ impl<'a> IntoIterator for &'a PhiNode {
     type IntoIter = PhiIncomeIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let operands = self.operands.borrow();
+        let operands = self.incomes.borrow();
         let operands = Ref::map(operands, |ops| ops.as_slice());
         PhiIncomeIter { operands, index: 0 }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PhiRef(InstRef);
+pub struct PhiRef(pub InstRef);
 
 impl ISubInstRef for PhiRef {
     type InstDataT = PhiNode;

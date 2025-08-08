@@ -1,10 +1,6 @@
 use crate::{
     base::SlabRef,
-    ir::{
-        ValueSSA,
-        constant::data::ConstData,
-        inst::{InstData, InstRef, UseData, UseRef},
-    },
+    ir::{ConstData, ISubInst, InstData, InstRef, Use, ValueSSA},
     mir::{
         inst::{IMirSubInst, inst::MirInst, mirops::MirCall},
         operand::{
@@ -17,28 +13,27 @@ use crate::{
     typing::id::ValTypeID,
 };
 use slab::Slab;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, rc::Rc};
 
 pub(super) fn dispatch_call(
     ir_ref: InstRef,
     operand_map: &OperandMap,
     out_insts: &mut VecDeque<MirInst>,
     alloc_inst: &Slab<InstData>,
-    alloc_use: &Slab<UseData>,
 ) {
-    let InstData::Call(c, call) = ir_ref.to_data(alloc_inst) else {
+    let InstData::Call(call) = ir_ref.to_data(alloc_inst) else {
         panic!("Expected call inst");
     };
     let (callee_func, callee_mir) = {
-        let ValueSSA::Global(callee_ir) = call.callee.get_operand(alloc_use) else {
+        let ValueSSA::Global(callee_ir) = call.get_callee() else {
             panic!("Expected global function reference");
         };
         operand_map
             .find_function(callee_ir)
             .expect("Failed to find function for call instruction")
     };
-    let args = prepare_call_args(&call.args, alloc_use, operand_map);
-    let ret_reg = if c.ret_type == ValTypeID::Void {
+    let args = prepare_call_args(&call.args(), operand_map);
+    let ret_reg = if call.get_valtype() == ValTypeID::Void {
         None
     } else {
         operand_map
@@ -60,14 +55,10 @@ pub(super) fn dispatch_call(
     out_insts.push_back(call_inst.into_mir());
 }
 
-fn prepare_call_args(
-    args: &[UseRef],
-    alloc_use: &Slab<UseData>,
-    operand_map: &OperandMap,
-) -> Vec<MirOperand> {
+fn prepare_call_args(args: &[Rc<Use>], operand_map: &OperandMap) -> Vec<MirOperand> {
     let mut ret = Vec::with_capacity(args.len());
     for arg in args {
-        let arg = arg.get_operand(alloc_use);
+        let arg = arg.get_operand();
         let arg_mir = match arg {
             ValueSSA::ConstData(data) => call_arg_from_constdata(data),
             ValueSSA::FuncArg(_, arg_id) => operand_map

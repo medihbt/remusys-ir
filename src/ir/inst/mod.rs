@@ -13,7 +13,7 @@ use slab::Slab;
 use std::{
     cell::{Cell, Ref},
     fmt::Debug,
-    ops::Index,
+    ops::Deref,
     rc::Rc,
 };
 
@@ -41,7 +41,7 @@ pub use self::{
     call::{CallOp, CallOpRef},
     cast::{CastOp, CastOpRef},
     cmp::{CmpOp, CmpOpRef},
-    gep::{GEPIndexIter, GEPTypeIndexer, GEPTypeState, IndexPtr},
+    gep::{GEPIndexIter, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset, IrGEPOffsetIter},
     jump::{Jump, JumpRef},
     load::{LoadInstRef, LoadOp},
     phi::{PhiError, PhiNode, PhiRef},
@@ -294,26 +294,14 @@ impl InstData {
 #[derive(Debug)]
 pub enum InstOperands<'a> {
     Fixed(&'a [Rc<Use>]),
-    InRef(Ref<'a, Vec<Rc<Use>>>),
+    InRef(Ref<'a, [Rc<Use>]>),
+    Phi(Ref<'a, Vec<[Rc<Use>; 2]>>),
 }
 
-impl Index<usize> for InstOperands<'_> {
-    type Output = Rc<Use>;
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            InstOperands::Fixed(ops) => &ops[index],
-            InstOperands::InRef(ops_ref) => &ops_ref[index],
-        }
-    }
-}
-
-impl Index<std::ops::Range<usize>> for InstOperands<'_> {
-    type Output = [Rc<Use>];
-    fn index(&self, index: std::ops::Range<usize>) -> &Self::Output {
-        match self {
-            InstOperands::Fixed(ops) => &ops[index],
-            InstOperands::InRef(ops_ref) => &ops_ref[index],
-        }
+impl Deref for InstOperands<'_> {
+    type Target = [Rc<Use>];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
     }
 }
 
@@ -322,9 +310,16 @@ impl<'ops: 'inst, 'inst> IntoIterator for &'ops InstOperands<'inst> {
     type IntoIter = std::slice::Iter<'ops, Rc<Use>>;
 
     fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+impl<'a> InstOperands<'a> {
+    pub fn as_slice(&self) -> &[Rc<Use>] {
         match self {
-            InstOperands::Fixed(ops) => ops.iter(),
-            InstOperands::InRef(ops_ref) => ops_ref.iter(),
+            InstOperands::Fixed(ops) => ops,
+            InstOperands::InRef(ops_ref) => ops_ref.deref(),
+            InstOperands::Phi(ops_ref) => ops_ref.deref().as_flattened(),
         }
     }
 }
@@ -370,10 +365,7 @@ pub trait ISubInst: Debug {
     fn get_operands(&self) -> InstOperands;
     fn operands_mut(&mut self) -> &mut [Rc<Use>];
     fn get_use_at(&self, index: usize) -> Option<Rc<Use>> {
-        match self.get_operands() {
-            InstOperands::Fixed(ops) => ops.get(index).cloned(),
-            InstOperands::InRef(ops_ref) => ops_ref.get(index).cloned(),
-        }
+        self.get_operands().as_slice().get(index).cloned()
     }
     fn get_operand(&self, index: usize) -> ValueSSA {
         self.get_use_at(index)
