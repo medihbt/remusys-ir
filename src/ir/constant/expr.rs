@@ -88,11 +88,20 @@ impl Array {
         if self.is_zero(&writer.allocs) {
             return write!(writer.output.borrow_mut(), "zeroinitializer");
         }
+        let elemty = self.arrty.get_element_type(&writer.type_ctx);
         writer.write_str("[")?;
         for (i, &elem) in self.elems.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
+            debug_assert_eq!(
+                elemty,
+                elem.get_valtype(&writer.allocs),
+                "Element type mismatch",
+            );
+            // 写入元素类型和操作数
+            writer.write_type(elemty)?;
+            writer.write_str(" ")?;
             writer.write_operand(elem)?;
         }
         writer.write_str("]")
@@ -177,10 +186,26 @@ impl Struct {
         } else {
             writer.write_str("{")?;
         }
+
+        let sty = match self.structty {
+            ValTypeID::Struct(structty) => structty,
+            ValTypeID::StructAlias(sa) => sa.get_aliasee(&writer.type_ctx),
+            _ => panic!("Expected struct type but got {:?}", self.structty),
+        };
         for (i, &elem) in self.elems.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
+            let elemty = sty
+                .get_element_type(writer.type_ctx, i)
+                .expect("Element type not found");
+            debug_assert_eq!(
+                elemty,
+                elem.get_valtype(&writer.allocs),
+                "Element type mismatch",
+            );
+            writer.write_type(elemty)?;
+            writer.write_str(" ")?;
             writer.write_operand(elem)?;
         }
         if is_packed { writer.write_str("}>") } else { writer.write_str("}") }
@@ -197,7 +222,11 @@ impl Struct {
         Self { structty, elems, users: UserList::new_empty() }
     }
     pub fn from_slice(structty: ValTypeID, elems: &[ValueSSA]) -> Self {
-        Self { structty, elems: elems.to_vec(), users: UserList::new_empty() }
+        Self {
+            structty,
+            elems: elems.to_vec(),
+            users: UserList::new_empty(),
+        }
     }
 }
 

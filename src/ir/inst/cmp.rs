@@ -31,6 +31,8 @@ pub struct CmpOp {
     operands: [Rc<Use>; 2],
     /// 比较条件
     pub cond: CmpCond,
+    /// 比较对象类型
+    pub operand_ty: ValTypeID,
 }
 
 impl ISubInst for CmpOp {
@@ -42,6 +44,7 @@ impl ISubInst for CmpOp {
             common: InstCommon::new(opcode, ValTypeID::new_boolean()),
             operands: [Use::new(UseKind::CmpLhs), Use::new(UseKind::CmpRhs)],
             cond: CmpCond::NEVER,
+            operand_ty: ValTypeID::Void, // 初始类型为 Void
         }
     }
     fn try_from_ir(inst: &InstData) -> Option<&Self> {
@@ -76,8 +79,8 @@ impl ISubInst for CmpOp {
         };
         let opcode = self.get_opcode().get_name();
         let cond = self.cond;
-        write!(writer, "{id} = {opcode} {cond} ")?;
-        writer.write_type(self.get_valtype())?;
+        write!(writer, "%{id} = {opcode} {cond} ")?;
+        writer.write_type(self.operand_ty)?;
         writer.write_str(" ")?;
         writer.write_operand(self.get_lhs())?;
         writer.write_str(", ")?;
@@ -94,14 +97,20 @@ impl CmpOp {
     ///
     /// # Panics
     /// 如果 opcode 不是比较指令类型则 panic
-    pub fn new_raw(opcode: Opcode, cond: CmpCond) -> Self {
+    pub fn new_raw(opcode: Opcode, cond: CmpCond, ty: ValTypeID) -> Self {
         if opcode.get_kind() != InstKind::Cmp {
             panic!("Tried to create a CmpOp with non-Cmp opcode");
         }
+        let cond = match opcode {
+            Opcode::Icmp => cond.switch_to_int(),
+            Opcode::Fcmp => cond.switch_to_float(),
+            _ => panic!("Unsupported opcode for comparison: {opcode:?}"),
+        };
         Self {
             common: InstCommon::new(opcode, ValTypeID::new_boolean()),
             operands: [Use::new(UseKind::CmpLhs), Use::new(UseKind::CmpRhs)],
             cond,
+            operand_ty: ty,
         }
     }
 
@@ -117,7 +126,7 @@ impl CmpOp {
     /// # Panics
     /// 如果 opcode 不是比较指令类型则 panic
     pub fn new(allocs: &IRAllocs, cond: CmpCond, lhs: ValueSSA, rhs: ValueSSA) -> Self {
-        let ty = {
+        let ty: ValTypeID = {
             let lty = lhs.get_valtype(allocs);
             let rty = rhs.get_valtype(allocs);
             assert_eq!(
@@ -131,7 +140,7 @@ impl CmpOp {
             ValTypeID::Float(_) => Opcode::Fcmp,
             _ => panic!("Unsupported type for comparison: {ty:?}"),
         };
-        let cmp = Self::new_raw(opcode, cond);
+        let cmp = Self::new_raw(opcode, cond, ty);
         cmp.set_lhs(allocs, lhs);
         cmp.set_rhs(allocs, rhs);
         cmp

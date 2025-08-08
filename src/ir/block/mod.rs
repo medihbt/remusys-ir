@@ -654,7 +654,7 @@ impl ISubValueSSA for BlockRef {
         let number = writer.borrow_numbers().block_get_number(*self);
         if let Some(number) = number {
             writer.wrap_indent();
-            write!(writer.output.borrow_mut(), "%{number}:")?;
+            write!(writer.output.borrow_mut(), "{number}:")?;
         }
         writer.inc_indent();
         let alloc_block = &writer.allocs.blocks;

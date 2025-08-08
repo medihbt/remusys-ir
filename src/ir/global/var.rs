@@ -5,6 +5,16 @@ use crate::{
 };
 use std::cell::Cell;
 
+/// 全局变量
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// @var_name = external constant <type>, align <align> ; 外部常量
+/// @var_name = extern global <type>, align <align> ; 外部变量
+/// @var_name = dso_local global <type> <initval>, align <align> ; 全局变量
+/// @var_name = dso_local constant <type> <initval>, align <align> ; 全局常量
+/// ```
 #[derive(Debug)]
 pub struct Var {
     pub common: GlobalDataCommon,
@@ -62,14 +72,12 @@ impl ISubGlobal for Var {
         )?;
         writer.write_type(self.common.content_ty)?;
 
-        if let ValueSSA::None = self.get_init() {
-            writeln!(writer, "; no initial value")?;
-        } else {
-            write!(writer, "= ")?;
+        if let ValueSSA::None = self.get_init() {} else {
+            write!(writer, " ")?;
             self.get_init().fmt_ir(writer)?;
-            writeln!(writer)?;
         }
-        Ok(())
+
+        write!(writer, ", align {}", self.common.content_align)
     }
 }
 

@@ -91,8 +91,7 @@ impl ISubInst for IndexPtr {
             use std::io::{Error, ErrorKind::InvalidInput};
             return Err(Error::new(InvalidInput, "ID must be provided for GEPop"));
         };
-        let opcode = self.get_opcode().get_name();
-        write!(writer, "%{id} = getelementptr inbounds {opcode} ")?;
+        write!(writer, "%{id} = getelementptr inbounds ")?;
         writer.write_type(self.first_unpacked_ty)?;
         writer.write_str(", ptr")?;
         writer.write_operand(self.get_base())?;
