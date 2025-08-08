@@ -61,6 +61,8 @@ impl ISubGlobal for GlobalData {
     }
 
     fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_ref(self_ref, "Global");
+        writer.write_users(self.users());
         match self {
             GlobalData::Var(var) => var.fmt_ir(self_ref, writer),
             GlobalData::Func(func) => func.fmt_ir(self_ref, writer),

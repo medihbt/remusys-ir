@@ -232,6 +232,8 @@ impl ISubInst for InstData {
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        writer.write_ref(self.get_self_ref(), "Inst");
+        writer.write_users(self.users());
         match self {
             InstData::ListGuideNode(_) => Ok(()),
             InstData::PhiInstEnd(_) => writer.write_str("; Phi Inst End Node"),

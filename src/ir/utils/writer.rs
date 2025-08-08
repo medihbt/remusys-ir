@@ -1,5 +1,9 @@
 use crate::{
-    ir::{GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module, ValueSSA},
+    base::SlabRef,
+    ir::{
+        GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module, PredList,
+        UserList, ValueSSA,
+    },
     typing::{context::TypeContext, id::ValTypeID},
 };
 use std::{
@@ -15,6 +19,7 @@ pub fn write_ir_module(module: &Module, output: &mut dyn Write) {
 
 pub struct IRWriter<'a> {
     pub output: RefCell<&'a mut dyn Write>,
+    pub option: IRWriterOption,
     pub type_ctx: &'a TypeContext,
     pub allocs: IRAllocsRef<'a>,
     pub indent_level: Cell<usize>,
@@ -39,7 +44,7 @@ impl<'a> Write for IRWriter<'a> {
 }
 
 impl<'a> IRWriter<'a> {
-    pub fn new(
+    pub fn new_loud(
         output: &'a mut dyn Write,
         type_ctx: &'a TypeContext,
         allocs: IRAllocsRef<'a>,
@@ -47,6 +52,7 @@ impl<'a> IRWriter<'a> {
     ) -> Self {
         Self {
             output: RefCell::new(output),
+            option: IRWriterOption { show_slabref: true, show_users: true, show_preds: true },
             type_ctx,
             allocs,
             indent_level: Cell::new(0),
@@ -57,12 +63,19 @@ impl<'a> IRWriter<'a> {
     }
 
     pub fn from_module(output: &'a mut dyn Write, module: &'a Module) -> Self {
-        Self::new(
+        Self::new_loud(
             output,
             &module.type_ctx,
             IRAllocsRef::Dyn(module.allocs.borrow()),
             module.globals.borrow().iter().map(|(_, &gref)| gref),
         )
+    }
+
+    pub fn from_module_quiet(output: &'a mut dyn Write, module: &'a Module) -> Self {
+        let mut writer = Self::from_module(output, module);
+        writer.option =
+            IRWriterOption { show_slabref: false, show_users: false, show_preds: false };
+        writer
     }
 
     pub fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
@@ -117,12 +130,20 @@ impl<'a> IRWriter<'a> {
             ValueSSA::ConstExpr(expr) => expr.fmt_ir(self),
             ValueSSA::FuncArg(_, id) => write!(self, "%{id}"),
             ValueSSA::Block(block_ref) => {
-                let id = self.borrow_numbers().block_get_number(block_ref).unwrap();
-                write!(self, "%{id}")
+                let id = self.borrow_numbers().block_get_number(block_ref);
+                if let Some(id) = id {
+                    write!(self, "%{id}")
+                } else {
+                    write!(self, "%UnnamedBlock({})", block_ref.get_handle())
+                }
             }
             ValueSSA::Inst(inst_ref) => {
-                let id = self.borrow_numbers().inst_get_number(inst_ref).unwrap();
-                write!(self, "%{id}")
+                let id = self.borrow_numbers().inst_get_number(inst_ref);
+                if let Some(id) = id {
+                    write!(self, "%{id}")
+                } else {
+                    write!(self, "%UnnamedInst({})", inst_ref.get_handle())
+                }
             }
             ValueSSA::Global(global_ref) => {
                 let name = global_ref.get_name_from_alloc(&self.allocs.globals);
@@ -175,4 +196,51 @@ impl<'a> IRWriter<'a> {
             self.wrap_indent();
         }
     }
+
+    pub fn write_users(&self, users: &UserList) {
+        if !self.option.show_users || users.is_empty() {
+            return;
+        }
+        self.write_str("; Users: [ ").unwrap();
+        for (i, user) in users.iter().enumerate() {
+            if i > 0 {
+                self.write_str(", ").unwrap();
+            }
+            write!(self, "({:?}, ", user.kind.get()).unwrap();
+            self.write_operand(user.inst.get()).unwrap();
+            self.write_str(")").unwrap();
+        }
+        self.write_str(" ]").unwrap();
+        self.wrap_indent();
+    }
+    pub fn write_ref(&self, value: impl SlabRef, kind: &str) {
+        if !self.option.show_slabref {
+            return;
+        }
+        write!(self, "; {kind}({})", value.get_handle()).unwrap();
+        self.wrap_indent();
+    }
+    pub fn write_pred(&self, preds: &PredList) {
+        if !self.option.show_preds || preds.is_empty() {
+            return;
+        }
+        self.write_str("; Preds: [ ").unwrap();
+        for (i, pred) in preds.iter().enumerate() {
+            if i > 0 {
+                self.write_str(", ").unwrap();
+            }
+            write!(self, "({:?}, ", pred.kind).unwrap();
+            self.write_operand(pred.get_terminator_inst().get_parent(&self.allocs))
+                .unwrap();
+            self.write_str(")").unwrap();
+        }
+        self.write_str(" ]").unwrap();
+        self.wrap_indent();
+    }
+}
+
+pub struct IRWriterOption {
+    pub show_slabref: bool,
+    pub show_users: bool,
+    pub show_preds: bool,
 }

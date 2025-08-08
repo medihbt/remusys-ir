@@ -54,7 +54,7 @@ pub use self::{
             IRBuilderFocusCheckOption,
         },
         numbering::{IRValueNumberMap, NumberOption},
-        writer::{IRWriter, write_ir_module},
+        writer::{IRWriter, IRWriterOption, write_ir_module},
     },
 };
 
