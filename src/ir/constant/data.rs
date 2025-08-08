@@ -117,6 +117,23 @@ impl ISubValueSSA for ConstData {
     }
 }
 
+impl From<APInt> for ConstData {
+    fn from(value: APInt) -> Self {
+        ConstData::Int(value.bits(), value.as_unsigned())
+    }
+}
+
+impl From<f64> for ConstData {
+    fn from(value: f64) -> Self {
+        ConstData::Float(FloatTypeKind::Ieee64, value)
+    }
+}
+
+impl From<f32> for ConstData {
+    fn from(value: f32) -> Self {
+        ConstData::Float(FloatTypeKind::Ieee32, value as f64)
+    }
+}
 impl ConstData {
     pub fn get_valtype_noalloc(&self) -> ValTypeID {
         match self {
