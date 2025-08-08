@@ -1,230 +1,55 @@
 use crate::{
     base::{
         INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        SlabListRange, SlabRef, SlabRefList,
+        SlabListRes, SlabRef,
     },
-    impl_slabref,
-    ir::block::jump_target::JumpTargetData,
+    ir::{
+        BlockRef, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, Opcode, Use, UserList,
+        ValueSSA, ValueSSAError,
+    },
     typing::{TypeMismatchError, id::ValTypeID},
 };
 use slab::Slab;
-use std::cell::{Cell, Ref};
-
-use super::{
-    ValueSSA, ValueSSAError,
-    block::BlockRef,
-    module::{Module, rcfg::RcfgAlloc, rdfg::RdfgAlloc},
-    opcode::Opcode,
+use std::{
+    cell::{Cell, Ref},
+    fmt::Debug,
+    ops::Deref,
+    rc::Rc,
 };
+
+pub(crate) mod usedef;
 
 mod alloca;
 mod binop;
-mod callop;
+mod br;
+mod call;
 mod cast;
-mod checking;
 mod cmp;
 mod gep;
-mod load_store;
+mod jump;
+mod load;
 mod phi;
+mod ret;
 mod select;
-mod terminator;
-mod usedef;
-mod visitor;
+mod store;
+mod switch;
 
-pub use {
-    alloca::Alloca,
-    binop::BinOp,
-    callop::CallOp,
-    cast::{CastError, CastOp},
-    cmp::CmpOp,
-    gep::{IndexChainNode, IndexPtrOp, IrGEPOffset, IrGEPOffsetIter},
-    load_store::{LoadOp, StoreOp},
-    phi::{PhiErr, PhiOp, PhiOpRef, PhiOperand},
-    select::SelectOp,
-    terminator::{Br, Jump, JumpCommon, Ret, Switch, TerminatorInst, TerminatorInstRef},
-    usedef::{UseData, UseKind, UseRef},
-    visitor::IInstVisitor,
+pub use self::{
+    alloca::{Alloca, AllocaRef},
+    binop::{BinOp, BinOpRef},
+    br::{Br, BrRef},
+    call::{CallOp, CallOpRef},
+    cast::{CastOp, CastOpRef},
+    cmp::{CmpOp, CmpOpRef},
+    gep::{GEPIndexIter, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset, IrGEPOffsetIter},
+    jump::{Jump, JumpRef},
+    load::{LoadInstRef, LoadOp},
+    phi::{PhiError, PhiNode, PhiRef},
+    ret::{Ret, RetRef},
+    select::{SelectOp, SelectOpRef},
+    store::{StoreOp, StoreOpRef},
+    switch::{Switch, SwitchRef},
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InstRef(usize);
-
-impl InstRef {
-    pub fn get_valtype(&self, alloc: &Slab<InstData>) -> ValTypeID {
-        self.to_data(alloc).get_value_type()
-    }
-    pub fn get_valtype_from_module(&self, module: &Module) -> ValTypeID {
-        self.get_valtype(&module.borrow_value_alloc().insts)
-    }
-
-    pub fn from_allocs(
-        alloc_inst: &mut Slab<InstData>,
-        alloc_use: &Slab<UseData>,
-        alloc_jt: &Slab<JumpTargetData>,
-        mut data: InstData,
-    ) -> Self {
-        let ret = Self::from_handle(alloc_inst.vacant_key());
-        data.common_mut().map(|c| c.self_ref = ret);
-        data._inst_init_self_reference(ret, alloc_use);
-
-        match &data {
-            InstData::Br(_, br) => br._jt_init_set_self_reference(ret, alloc_jt),
-            InstData::Switch(_, sw) => sw._jt_init_set_self_reference(ret, alloc_jt),
-            InstData::Jump(_, jump) => jump._jt_init_set_self_reference(ret, alloc_jt),
-            _ => {}
-        }
-        alloc_inst.insert(data);
-        ret
-    }
-}
-
-impl_slabref!(InstRef, InstData);
-impl SlabListNodeRef for InstRef {
-    fn on_node_push_next(
-        curr: Self,
-        next: Self,
-        alloc: &Slab<InstData>,
-    ) -> Result<(), SlabListError> {
-        let curr_data = curr.to_data(alloc);
-        curr._node_attach_modify_parent(curr_data, next, alloc)
-    }
-
-    fn on_node_push_prev(
-        curr: Self,
-        prev: Self,
-        alloc: &Slab<Self::RefObject>,
-    ) -> Result<(), SlabListError> {
-        let curr_data = curr.to_data(alloc);
-        curr._node_attach_modify_parent(curr_data, prev, alloc)
-    }
-
-    fn on_node_unplug(curr: Self, alloc: &Slab<Self::RefObject>) -> Result<(), SlabListError> {
-        let curr_data = curr.to_data(alloc);
-        curr._node_detach_clean_parent(curr_data)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum InstDataKind {
-    /// Instruction list guide node containing a simple header and parent block.
-    /// The guide node will be always attached to a block, so its parent block
-    /// will be initialized when the block is allocated on `module.inner._alloc_block`.
-    ListGuideNode,
-    PhiInstEnd,
-
-    // Terminator instructions. These instructions are put at the end of a block and
-    // transfer control to another block or return from a function.
-    Unreachable,
-    Ret,
-    Jump,
-    Br,
-    Switch,
-
-    // Non-terminator instructions. These instructions are put in the middle of a block
-    // and do not transfer control to another block or return from a function.
-    Phi,
-    Alloca,
-    Load,
-    Store,
-    Select,
-    BinOp,
-    Cmp,
-    Cast,
-    IndexPtr,
-    Call,
-    Intrin,
-}
-
-pub enum InstData {
-    /// Instruction list guide node containing a simple header and parent block.
-    /// The guide node will be always attached to a block, so its parent block
-    /// will be initialized when the block is allocated on `module.inner._alloc_block`.
-    ListGuideNode(Cell<SlabListNodeHead>, Cell<BlockRef>),
-    PhiInstEnd(InstDataCommon),
-
-    // Terminator instructions. These instructions are put at the end of a block and
-    // transfer control to another block or return from a function.
-    /// Mark this block as unreachable.
-    Unreachable(InstDataCommon),
-
-    /// Return from a function, sometimes with a value.
-    Ret(InstDataCommon, terminator::Ret),
-
-    /// Jump to another block unconditionally.
-    Jump(InstDataCommon, terminator::Jump),
-
-    /// Branch to one of two blocks based on a condition.
-    Br(InstDataCommon, terminator::Br),
-
-    /// Switch to one of multiple blocks based on a value.
-    Switch(InstDataCommon, terminator::Switch),
-
-    // Non-terminator instructions. These instructions are put in the middle of a block
-    // and do not transfer control to another block or return from a function.
-    /// PHI Node. This instruction is used to select a value based on the control flow.
-    Phi(InstDataCommon, phi::PhiOp),
-
-    /// Alloca: Allocate memory for a variable.
-    Alloca(InstDataCommon, alloca::Alloca),
-
-    /// Load a value from memory.
-    Load(InstDataCommon, load_store::LoadOp),
-
-    /// Store a value to memory.
-    Store(InstDataCommon, load_store::StoreOp),
-
-    /// Select a value from two options based on a condition.
-    Select(InstDataCommon, select::SelectOp),
-
-    /// Binary operations (add, sub, mul, div, etc.).
-    BinOp(InstDataCommon, binop::BinOp),
-
-    /// Compare two values and produce a boolean result.
-    Cmp(InstDataCommon, cmp::CmpOp),
-
-    /// Cast a value from one type to another.
-    Cast(InstDataCommon, cast::CastOp),
-
-    /// Adjusts a pointer to an array or structure to the right position by indices.
-    IndexPtr(InstDataCommon, gep::IndexPtrOp),
-
-    /// Call a function and get the result.
-    Call(InstDataCommon, callop::CallOp),
-
-    /// Call an intrinsic function and get the result.
-    Intrin(InstDataCommon),
-}
-
-pub struct InstDataCommon {
-    pub inner: Cell<InstDataInner>,
-    pub opcode: Opcode,
-    pub operands: SlabRefList<UseRef>,
-    pub ret_type: ValTypeID,
-    pub self_ref: InstRef,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct InstDataInner {
-    pub(super) _node_head: SlabListNodeHead,
-
-    /// ## Parent Basic Block
-    ///
-    /// `None` if this instruction is not attached to any block, and `null` if
-    /// this instruction is attached to a block that is not allocated to the module.
-    ///
-    /// ### Why use `Option`
-    ///
-    /// Sometimes we need to insert an instruction into a block that is not
-    /// allocated to the module yet. Since the block has no ID, the `_parent_bb`
-    /// is `null` instead of `None`.
-    ///
-    /// If we use `BlockRef` here, it is impossible to distinguish between the case
-    /// above and the case where the instruction is not attached to any block.
-    /// The checker may return an error unexpectedly.
-    ///
-    /// So we use `Option<BlockRef>`.
-    pub(super) _parent_bb: Option<BlockRef>,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub enum InstError {
@@ -235,7 +60,7 @@ pub enum InstError {
     OperandError(ValueSSAError),
     OperandNotComptimeConst(ValueSSA),
 
-    InvalidCast(cast::CastError),
+    InvalidCast,
     InvalidArgumentCount(usize, usize),
     DividedByZero,
 
@@ -245,478 +70,533 @@ pub enum InstError {
     ReplicatedTerminator(InstRef, InstRef),
 }
 
-trait InstDataUnique: Sized {
-    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>);
+#[derive(Debug)]
+pub enum InstData {
+    /// 指令链表的首尾引导结点, 不参与语义表达.
+    ListGuideNode(InstCommon),
 
-    fn check_operands(&self, common: &InstDataCommon, module: &Module) -> Result<(), InstError>;
+    /// 表示指令链表 “Phi 指令” 部分结束的结点, 不参与语义表达.
+    PhiInstEnd(InstCommon),
+
+    /// 表示 “所在基本块不可达”, 封死整个基本块的控制流.
+    Unreachable(InstCommon),
+
+    /// 终止函数控制流并返回一个值.
+    Ret(Ret),
+
+    /// 无条件跳转到指定基本块.
+    Jump(Jump),
+
+    /// 条件分支指令, 根据条件跳转到不同的基本块.
+    Br(Br),
+
+    /// Switch 语句, 根据条件跳转到不同的 case 分支.
+    Switch(Switch),
+
+    /// 在栈上分配一段固定大小的内存.
+    Alloca(Alloca),
+
+    /// 二元操作
+    BinOp(BinOp),
+
+    /// 函数调用指令
+    Call(CallOp),
+
+    /// 类型转换指令
+    Cast(CastOp),
+
+    /// Phi 指令, 根据前驱基本块选择一个值.
+    Phi(PhiNode),
+
+    /// 比较两个值的关系, 产生一个布尔值.
+    Cmp(CmpOp),
+
+    /// 根据索引计算指针偏移, 用于数组或结构体访问.
+    GEP(IndexPtr),
+
+    /// 选择指令, 根据条件选择两个值中的一个.
+    Select(SelectOp),
+
+    /// 加载内存中的值到寄存器.
+    Load(LoadOp),
+
+    /// 存储寄存器中的值到内存.
+    Store(StoreOp),
 }
 
-impl InstDataInner {
-    fn insert_node_head(mut self, node_head: SlabListNodeHead) -> Self {
-        self._node_head = node_head;
+impl ISubInst for InstData {
+    fn new_empty(_: Opcode) -> Self {
+        InstData::ListGuideNode(InstCommon::new_empty())
+    }
+
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        Some(inst)
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        Some(inst)
+    }
+    fn into_ir(self) -> InstData {
         self
     }
-    pub(super) fn insert_parent_bb(mut self, parent_bb: Option<BlockRef>) -> Self {
-        self._parent_bb = parent_bb;
-        self
+
+    fn get_common(&self) -> &InstCommon {
+        match self {
+            InstData::ListGuideNode(common) => common,
+            InstData::PhiInstEnd(common) => common,
+            InstData::Unreachable(common) => common,
+            InstData::Ret(ret) => ret.get_common(),
+            InstData::Jump(jump) => jump.get_common(),
+            InstData::Br(br) => br.get_common(),
+            InstData::Switch(switch) => switch.get_common(),
+            InstData::Alloca(alloca) => alloca.get_common(),
+            InstData::BinOp(binop) => binop.get_common(),
+            InstData::Call(call) => call.get_common(),
+            InstData::Cast(cast_op) => cast_op.get_common(),
+            InstData::Phi(phi) => phi.get_common(),
+            InstData::Cmp(cmp_op) => cmp_op.get_common(),
+            InstData::GEP(gep) => gep.get_common(),
+            InstData::Select(select_op) => select_op.get_common(),
+            InstData::Load(load) => load.get_common(),
+            InstData::Store(store) => store.get_common(),
+        }
     }
-    pub(super) fn assign_to(&self, cell: &Cell<InstDataInner>) {
-        cell.set(*self);
+    fn common_mut(&mut self) -> &mut InstCommon {
+        match self {
+            InstData::ListGuideNode(common) => common,
+            InstData::PhiInstEnd(common) => common,
+            InstData::Unreachable(common) => common,
+            InstData::Ret(ret) => ret.common_mut(),
+            InstData::Jump(jump) => jump.common_mut(),
+            InstData::Br(br) => br.common_mut(),
+            InstData::Switch(switch) => switch.common_mut(),
+            InstData::Alloca(alloca) => alloca.common_mut(),
+            InstData::BinOp(binop) => binop.common_mut(),
+            InstData::Call(call) => call.common_mut(),
+            InstData::Cast(cast_op) => cast_op.common_mut(),
+            InstData::Phi(phi) => phi.common_mut(),
+            InstData::Cmp(cmp_op) => cmp_op.common_mut(),
+            InstData::GEP(gep) => gep.common_mut(),
+            InstData::Select(select_op) => select_op.common_mut(),
+            InstData::Load(load) => load.common_mut(),
+            InstData::Store(store) => store.common_mut(),
+        }
+    }
+
+    fn get_operands(&self) -> InstOperands {
+        match self {
+            InstData::ListGuideNode(_) => InstOperands::Fixed(&[]),
+            InstData::PhiInstEnd(_) => InstOperands::Fixed(&[]),
+            InstData::Unreachable(_) => InstOperands::Fixed(&[]),
+            InstData::Ret(ret) => ret.get_operands(),
+            InstData::Jump(_) => InstOperands::Fixed(&[]),
+            InstData::Br(br) => br.get_operands(),
+            InstData::Switch(switch) => switch.get_operands(),
+            InstData::Alloca(_) => InstOperands::Fixed(&[]),
+            InstData::BinOp(binop) => binop.get_operands(),
+            InstData::Call(call) => call.get_operands(),
+            InstData::Cast(cast_op) => cast_op.get_operands(),
+            InstData::Phi(phi) => phi.get_operands(),
+            InstData::Cmp(cmp_op) => cmp_op.get_operands(),
+            InstData::GEP(gep) => gep.get_operands(),
+            InstData::Select(select_op) => select_op.get_operands(),
+            InstData::Load(load) => load.get_operands(),
+            InstData::Store(store) => store.get_operands(),
+        }
+    }
+
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        match self {
+            InstData::ListGuideNode(_) => &mut [],
+            InstData::PhiInstEnd(_) => &mut [],
+            InstData::Unreachable(_) => &mut [],
+            InstData::Ret(ret) => ret.operands_mut(),
+            InstData::Jump(_) => &mut [],
+            InstData::Br(br) => br.operands_mut(),
+            InstData::Switch(switch) => switch.operands_mut(),
+            InstData::Alloca(_) => &mut [],
+            InstData::BinOp(binop) => binop.operands_mut(),
+            InstData::Call(call) => call.operands_mut(),
+            InstData::Cast(cast_op) => cast_op.operands_mut(),
+            InstData::Phi(phi) => phi.operands_mut(),
+            InstData::Cmp(cmp_op) => cmp_op.operands_mut(),
+            InstData::GEP(gep) => gep.operands_mut(),
+            InstData::Select(select_op) => select_op.operands_mut(),
+            InstData::Load(load) => load.operands_mut(),
+            InstData::Store(store) => store.operands_mut(),
+        }
+    }
+
+    fn is_terminator(&self) -> bool {
+        use InstData::*;
+        matches!(self, Unreachable(_) | Ret(_) | Jump(_) | Br(_) | Switch(_))
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        match self {
+            InstData::ListGuideNode(_) => Ok(()),
+            InstData::PhiInstEnd(_) => writer.write_str("; Phi Inst End Node"),
+            InstData::Unreachable(_) => writer.write_str("unreachable"),
+            InstData::Ret(inst) => inst.fmt_ir(id, writer),
+            InstData::Jump(inst) => inst.fmt_ir(id, writer),
+            InstData::Br(inst) => inst.fmt_ir(id, writer),
+            InstData::Switch(inst) => inst.fmt_ir(id, writer),
+            InstData::Alloca(inst) => inst.fmt_ir(id, writer),
+            InstData::BinOp(inst) => inst.fmt_ir(id, writer),
+            InstData::Call(inst) => inst.fmt_ir(id, writer),
+            InstData::Cast(inst) => inst.fmt_ir(id, writer),
+            InstData::Phi(inst) => inst.fmt_ir(id, writer),
+            InstData::Cmp(inst) => inst.fmt_ir(id, writer),
+            InstData::GEP(inst) => inst.fmt_ir(id, writer),
+            InstData::Select(inst) => inst.fmt_ir(id, writer),
+            InstData::Load(inst) => inst.fmt_ir(id, writer),
+            InstData::Store(inst) => inst.fmt_ir(id, writer),
+        }
     }
 }
 
 impl SlabListNode for InstData {
     fn new_guide() -> Self {
-        Self::ListGuideNode(
-            Cell::new(SlabListNodeHead::new()),
-            Cell::new(BlockRef::new_null()),
-        )
+        InstData::ListGuideNode(InstCommon::new_empty())
     }
-
     fn load_node_head(&self) -> SlabListNodeHead {
-        match self {
-            Self::ListGuideNode(cell, _) => cell.get(),
-            _ => self.get_common_unwrap().inner.get()._node_head,
-        }
+        self.get_common().inner.get().node_head
+    }
+    fn store_node_head(&self, node_head: SlabListNodeHead) {
+        let mut inner = self.get_common().inner.get();
+        inner.node_head = node_head;
+        self.get_common().inner.set(inner);
+    }
+}
+
+impl ITraceableValue for InstData {
+    fn users(&self) -> &UserList {
+        &self.get_common().users
     }
 
-    fn store_node_head(&self, node_head: SlabListNodeHead) {
-        match self {
-            Self::ListGuideNode(cell, _) => cell.set(node_head),
-            _ => self
-                .get_common_unwrap()
-                .inner
-                .get()
-                .insert_node_head(node_head)
-                .assign_to(&self.get_common_unwrap().inner),
-        }
+    fn has_single_reference_semantics(&self) -> bool {
+        true
     }
 }
 
 impl InstData {
-    pub fn new_unreachable(alloc_use: &mut Slab<UseData>) -> Self {
-        Self::Unreachable(InstDataCommon::new(
-            Opcode::Unreachable,
-            ValTypeID::Void,
-            alloc_use,
-        ))
-    }
-    pub fn new_phi_end() -> Self {
-        let common = InstDataCommon {
-            inner: Cell::new(InstDataInner {
-                _node_head: SlabListNodeHead::new(),
-                _parent_bb: None,
-            }),
-            opcode: Opcode::None,
-            operands: SlabRefList::new_guide(),
-            ret_type: ValTypeID::Void,
-            self_ref: InstRef::new_null(),
-        };
-        Self::PhiInstEnd(common)
-    }
-
-    pub fn get_common_unwrap(&self) -> &InstDataCommon {
-        self.get_common().expect("Guide Node has no common data")
-    }
-    pub fn get_common(&self) -> Option<&InstDataCommon> {
-        match self {
-            Self::ListGuideNode(..) => None,
-            Self::PhiInstEnd(common) => Some(common),
-            Self::Unreachable(common) => Some(common),
-            Self::Ret(common, ..) => Some(common),
-            Self::Jump(common, ..) => Some(common),
-            Self::Br(common, ..) => Some(common),
-            Self::Switch(common, ..) => Some(common),
-            Self::Phi(common, ..) => Some(common),
-            Self::Alloca(common, ..) => Some(common),
-            Self::Load(common, ..) => Some(common),
-            Self::Store(common, ..) => Some(common),
-            Self::Select(common, ..) => Some(common),
-            Self::BinOp(common, ..) => Some(common),
-            Self::Cmp(common, ..) => Some(common),
-            Self::Cast(common, ..) => Some(common),
-            Self::IndexPtr(common, ..) => Some(common),
-            Self::Call(common, ..) => Some(common),
-            Self::Intrin(common) => Some(common),
-        }
-    }
-    pub(super) fn common_mut(&mut self) -> Option<&mut InstDataCommon> {
-        match self {
-            Self::ListGuideNode(..) => None,
-            Self::PhiInstEnd(common) => Some(common),
-            Self::Unreachable(common) => Some(common),
-            Self::Ret(common, ..) => Some(common),
-            Self::Jump(common, ..) => Some(common),
-            Self::Br(common, ..) => Some(common),
-            Self::Switch(common, ..) => Some(common),
-            Self::Phi(common, ..) => Some(common),
-            Self::Alloca(common, ..) => Some(common),
-            Self::Load(common, ..) => Some(common),
-            Self::Store(common, ..) => Some(common),
-            Self::Select(common, ..) => Some(common),
-            Self::BinOp(common, ..) => Some(common),
-            Self::Cmp(common, ..) => Some(common),
-            Self::Cast(common, ..) => Some(common),
-            Self::IndexPtr(common, ..) => Some(common),
-            Self::Call(common, ..) => Some(common),
-            Self::Intrin(common, ..) => Some(common),
-        }
-    }
     pub fn is_guide_node(&self) -> bool {
-        matches!(self, Self::ListGuideNode(..) | Self::PhiInstEnd(..))
-    }
-    pub fn is_valid(&self) -> bool {
-        !self.is_guide_node()
-    }
-    pub fn get_opcode(&self) -> Opcode {
-        self.get_common_unwrap().opcode
-    }
-    pub fn get_value_type(&self) -> ValTypeID {
-        self.get_common_unwrap().ret_type.clone()
+        matches!(self, InstData::ListGuideNode(_) | InstData::PhiInstEnd(_))
     }
 
-    pub fn get_parent_bb(&self) -> Option<BlockRef> {
+    pub fn new_unreachable() -> Self {
+        InstData::Unreachable(InstCommon::new(Opcode::Unreachable, ValTypeID::Void))
+    }
+    pub fn new_phi_inst_end() -> Self {
+        InstData::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
+    }
+}
+
+#[derive(Debug)]
+pub enum InstOperands<'a> {
+    Fixed(&'a [Rc<Use>]),
+    InRef(Ref<'a, [Rc<Use>]>),
+    Phi(Ref<'a, Vec<[Rc<Use>; 2]>>),
+}
+
+impl Deref for InstOperands<'_> {
+    type Target = [Rc<Use>];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<'ops: 'inst, 'inst> IntoIterator for &'ops InstOperands<'inst> {
+    type Item = &'ops Rc<Use>;
+    type IntoIter = std::slice::Iter<'ops, Rc<Use>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
+impl<'a> InstOperands<'a> {
+    pub fn as_slice(&self) -> &[Rc<Use>] {
         match self {
-            // List guide node is always attached to a block,
-            // so there is no possibility of `None`.
-            Self::ListGuideNode(_, parent) => Some(parent.get()),
-
-            // For other instructions, the parent block may be `None` or `null`.
-            _ => self.get_common_unwrap().inner.get()._parent_bb,
-        }
-    }
-    pub fn set_parent_bb(&self, parent_bb: Option<BlockRef>) {
-        match self {
-            Self::ListGuideNode(..) => panic!("Inst guide node parent is immutable"),
-            _ => self
-                .get_common_unwrap()
-                .inner
-                .get()
-                .insert_parent_bb(parent_bb)
-                .assign_to(&self.get_common_unwrap().inner),
-        }
-    }
-    pub fn is_attached(&self) -> bool {
-        self.get_parent_bb().is_some()
-    }
-
-    /// Checks if this instruction ends a control flow.
-    pub fn is_terminator(&self) -> bool {
-        matches!(
-            self,
-            Self::Unreachable(..)
-                | Self::Ret(..)
-                | Self::Jump(..)
-                | Self::Br(..)
-                | Self::Switch(..)
-        )
-    }
-
-    pub(super) fn check_operands(&self, module: &Module) -> Result<(), InstError> {
-        match self {
-            InstData::ListGuideNode(..)
-            | InstData::PhiInstEnd(..)
-            | InstData::Unreachable(..)
-            | InstData::Jump(..) => Ok(()),
-            InstData::Ret(c, r) => r.check_operands(c, module),
-            InstData::Br(c, b) => b.check_operands(c, module),
-            InstData::Switch(c, s) => s.check_operands(c, module),
-            InstData::Phi(c, phi) => phi.check_operands(c, module),
-            InstData::Alloca(c, alloca) => alloca.check_operands(c, module),
-            InstData::Load(c, ldr) => ldr.check_operands(c, module),
-            InstData::Store(c, str) => str.check_operands(c, module),
-            InstData::Select(c, s) => s.check_operands(c, module),
-            InstData::BinOp(c, b) => b.check_operands(c, module),
-            InstData::Cmp(c, cmp) => cmp.check_operands(c, module),
-            InstData::Cast(c, cast) => cast.check_operands(c, module),
-            InstData::IndexPtr(c, gep) => gep.check_operands(c, module),
-            InstData::Call(c, call) => call.check_operands(c, module),
-            InstData::Intrin(..) => todo!("Intrin not implemented and maybe will be removed"),
-        }
-    }
-    pub(super) fn _inst_init_self_reference(
-        &mut self,
-        self_ref: InstRef,
-        alloc_use: &Slab<UseData>,
-    ) {
-        let common = match self.common_mut() {
-            Some(common) => common,
-            None => return,
-        };
-
-        common.self_ref = self_ref;
-        let mut opref = common.operands._head;
-        while opref.is_nonnull() {
-            opref.to_data(alloc_use)._user.set(self_ref);
-            opref = match opref.get_next_ref(alloc_use) {
-                Some(next) => next,
-                None => break,
-            };
-        }
-    }
-
-    pub fn as_terminator(&self) -> Option<(&InstDataCommon, &dyn terminator::TerminatorInst)> {
-        match self {
-            Self::Unreachable(_) => None,
-            Self::Ret(common, ret) => Some((common, ret)),
-            Self::Jump(common, jump) => Some((common, jump)),
-            Self::Br(common, br) => Some((common, br)),
-            Self::Switch(common, switch) => Some((common, switch)),
-            _ => None,
-        }
-    }
-    pub fn load_operand_range(&self) -> Option<SlabListRange<UseRef>> {
-        self.load_operand_range_and_node_count()
-            .map(|(range, _)| range)
-    }
-    pub fn load_operand_range_and_node_count(&self) -> Option<(SlabListRange<UseRef>, usize)> {
-        match self {
-            Self::ListGuideNode(..)
-            | Self::PhiInstEnd(..)
-            | Self::Unreachable(..)
-            | Self::Jump(..) => None,
-            _ => Some(
-                self.get_common_unwrap()
-                    .operands
-                    .load_range_and_full_node_count(),
-            ),
-        }
-    }
-
-    pub(super) fn on_gc_cleanup(
-        &self,
-        rcfg: &Option<Ref<RcfgAlloc>>,
-        rdfg: &Option<Ref<RdfgAlloc>>,
-        alloc_use: &Slab<UseData>,
-        alloc_jt: &Slab<super::block::jump_target::JumpTargetData>,
-    ) {
-        // Clean up operands.
-        if let Some(common) = self.get_common() {
-            let operands = &common.operands;
-            if !operands.is_valid() || operands.is_empty() {
-                return;
-            }
-            for (use_ref, use_data) in operands.view(alloc_use) {
-                if let Some(rdfg) = rdfg {
-                    use_data.set_operand_with_rdfg(use_ref, &rdfg, ValueSSA::new_null());
-                } else {
-                    use_data.set_operand_nordfg(ValueSSA::new_null());
-                }
-            }
-        }
-
-        // Clean up jump targets.
-        let jts = match self {
-            Self::Jump(_, j) => j.get_jump_targets(),
-            Self::Br(_, b) => b.get_jump_targets(),
-            Self::Switch(_, s) => s.get_jump_targets(),
-            _ => None,
-        };
-
-        if let Some(jts) = jts {
-            for (jt_ref, jt_data) in jts.view(alloc_jt) {
-                if let Some(rcfg) = rcfg {
-                    jt_data.set_block_with_rcfg(jt_ref, &rcfg, BlockRef::new_null());
-                } else {
-                    jt_data.set_block_norcfg(BlockRef::new_null());
-                }
-            }
-        }
-
-        // Clean up the instruction itself.
-        // However, there is nothing special to do here.
-    }
-
-    pub fn get_kind(&self) -> InstDataKind {
-        match self {
-            Self::ListGuideNode(..) => InstDataKind::ListGuideNode,
-            Self::PhiInstEnd(_) => InstDataKind::PhiInstEnd,
-            Self::Unreachable(_) => InstDataKind::Unreachable,
-            Self::Ret(_, _) => InstDataKind::Ret,
-            Self::Jump(_, _) => InstDataKind::Jump,
-            Self::Br(_, _) => InstDataKind::Br,
-            Self::Switch(_, _) => InstDataKind::Switch,
-            Self::Phi(_, _) => InstDataKind::Phi,
-            Self::Alloca(_, _) => InstDataKind::Alloca,
-            Self::Load(_, _) => InstDataKind::Load,
-            Self::Store(_, _) => InstDataKind::Store,
-            Self::Select(_, _) => InstDataKind::Select,
-            Self::BinOp(_, _) => InstDataKind::BinOp,
-            Self::Cmp(_, _) => InstDataKind::Cmp,
-            Self::Cast(_, _) => InstDataKind::Cast,
-            Self::IndexPtr(_, _) => InstDataKind::IndexPtr,
-            Self::Call(_, _) => InstDataKind::Call,
-            Self::Intrin(_) => InstDataKind::Intrin,
+            InstOperands::Fixed(ops) => ops,
+            InstOperands::InRef(ops_ref) => ops_ref.deref(),
+            InstOperands::Phi(ops_ref) => ops_ref.deref().as_flattened(),
         }
     }
 }
 
-impl InstDataCommon {
-    pub fn new(opcode: Opcode, ret_type: ValTypeID, alloc_use: &mut Slab<UseData>) -> Self {
-        Self {
-            inner: Cell::new(InstDataInner {
-                _node_head: SlabListNodeHead::new(),
-                _parent_bb: None,
-            }),
-            opcode,
-            operands: SlabRefList::from_slab(alloc_use),
-            ret_type,
-            self_ref: InstRef::new_null(),
+pub trait ISubInst: Debug {
+    fn new_empty(opcode: Opcode) -> Self;
+
+    fn try_from_ir(inst: &InstData) -> Option<&Self>;
+    fn from_ir(inst: &InstData) -> &Self {
+        Self::try_from_ir(inst).expect("Expected a valid instruction data")
+    }
+
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self>;
+    fn from_ir_mut(inst: &mut InstData) -> &mut Self {
+        Self::try_from_ir_mut(inst).expect("Expected a valid instruction data")
+    }
+
+    fn into_ir(self) -> InstData;
+
+    fn get_common(&self) -> &InstCommon;
+    fn common_mut(&mut self) -> &mut InstCommon;
+
+    fn get_opcode(&self) -> Opcode {
+        self.get_common().opcode
+    }
+    fn get_self_ref(&self) -> InstRef {
+        self.get_common().self_ref
+    }
+    fn get_parent_bb(&self) -> BlockRef {
+        self.get_common().inner.get().parent_bb
+    }
+    fn set_parent_bb(&self, parent: BlockRef) {
+        let mut inner = self.get_common().inner.get();
+        inner.parent_bb = parent;
+        self.get_common().inner.set(inner);
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        self.get_common().ret_type
+    }
+
+    fn is_terminator(&self) -> bool;
+
+    fn get_operands(&self) -> InstOperands;
+    fn operands_mut(&mut self) -> &mut [Rc<Use>];
+    fn get_use_at(&self, index: usize) -> Option<Rc<Use>> {
+        self.get_operands().as_slice().get(index).cloned()
+    }
+    fn get_operand(&self, index: usize) -> ValueSSA {
+        self.get_use_at(index)
+            .map_or(ValueSSA::None, |use_ref| use_ref.get_operand())
+    }
+
+    fn get_prev(&self) -> InstRef {
+        InstRef::from_handle(self.get_common().inner.get().node_head.prev)
+    }
+    fn get_next(&self) -> InstRef {
+        InstRef::from_handle(self.get_common().inner.get().node_head.next)
+    }
+
+    fn init_self_reference(&mut self, self_ref: InstRef) {
+        self.common_mut().self_ref = self_ref;
+        for user in &self.get_common().users {
+            user.operand.set(ValueSSA::Inst(self_ref));
+        }
+        for operand in self.operands_mut() {
+            operand.inst.set(self_ref);
         }
     }
 
-    fn add_use(&self, alloc_use: &mut Slab<UseData>, use_data: UseData) -> UseRef {
-        let use_ref = alloc_use.insert(use_data);
-        self.operands
-            .push_back_ref(alloc_use, UseRef::from_handle(use_ref))
-            .expect("Failed to add use reference to instruction");
-        UseRef::from_handle(use_ref)
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()>;
+}
+
+#[derive(Debug)]
+pub struct InstCommon {
+    pub inner: Cell<InstInner>,
+    pub users: UserList,
+    pub opcode: Opcode,
+    pub self_ref: InstRef,
+    pub ret_type: ValTypeID,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InstInner {
+    pub node_head: SlabListNodeHead,
+    pub parent_bb: BlockRef,
+}
+
+impl InstCommon {
+    pub fn new_empty() -> Self {
+        Self {
+            inner: Cell::new(InstInner {
+                node_head: SlabListNodeHead::new(),
+                parent_bb: BlockRef::new_null(),
+            }),
+            users: UserList::new_empty(),
+            self_ref: InstRef::new_null(),
+            opcode: Opcode::GuideNode,
+            ret_type: ValTypeID::Void,
+        }
     }
-    fn alloc_use(&self, alloc_use: &mut Slab<UseData>, kind: UseKind) -> UseRef {
-        self.add_use(
-            alloc_use,
-            UseData::new(kind, self.self_ref, ValueSSA::new_null()),
-        )
+    pub fn new(opcode: Opcode, ret_type: ValTypeID) -> Self {
+        Self {
+            inner: Cell::new(InstInner {
+                node_head: SlabListNodeHead::new(),
+                parent_bb: BlockRef::new_null(),
+            }),
+            users: UserList::new_empty(),
+            self_ref: InstRef::new_null(),
+            opcode,
+            ret_type,
+        }
     }
 
-    fn remove_use(&self, alloc_use: &Slab<UseData>, use_ref: UseRef) {
-        self.operands
-            .unplug_node(alloc_use, use_ref)
-            .expect("Failed to remove use reference from instruction");
+    pub fn get_parent(&self) -> BlockRef {
+        self.inner.get().parent_bb
+    }
+    pub fn set_parent(&self, parent: BlockRef) {
+        let mut inner = self.inner.get();
+        inner.parent_bb = parent;
+        self.inner.set(inner);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InstRef(usize);
+
+impl SlabRef for InstRef {
+    type RefObject = InstData;
+    fn from_handle(handle: usize) -> Self {
+        InstRef(handle)
+    }
+    fn get_handle(&self) -> usize {
+        self.0
+    }
+}
+
+impl SlabListNodeRef for InstRef {
+    fn on_node_push_next(curr: Self, next: Self, alloc: &Slab<InstData>) -> SlabListRes {
+        curr.node_attach_set_parent(next, alloc)
+    }
+    fn on_node_push_prev(curr: Self, prev: Self, alloc: &Slab<InstData>) -> SlabListRes {
+        curr.node_attach_set_parent(prev, alloc)
+    }
+    fn on_node_unplug(curr: Self, alloc: &Slab<InstData>) -> SlabListRes {
+        curr.to_inst(alloc).set_parent_bb(BlockRef::new_null());
+        Ok(())
+    }
+}
+
+impl ISubValueSSA for InstRef {
+    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+        match value {
+            ValueSSA::Inst(inst) => Some(inst),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::Inst(self)
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
+        self.to_inst(&allocs.insts).get_common().ret_type
+    }
+
+    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
+        None
+    }
+
+    fn is_zero(&self, _: &IRAllocs) -> bool {
+        false
+    }
+
+    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        let id = writer.borrow_numbers().inst_get_number(*self);
+        self.to_data(&writer.allocs.insts).fmt_ir(id, writer)
     }
 }
 
 impl InstRef {
-    fn _node_attach_modify_parent(
-        self,
-        self_data: &InstData,
-        next: InstRef,
-        alloc_inst: &Slab<InstData>,
-    ) -> Result<(), SlabListError> {
-        let curr_parent = match self_data.get_parent_bb() {
-            Some(p) => p,
-            None => return Err(SlabListError::SelfNotInList(self.get_handle())),
-        };
-        let next_data = next.to_data(alloc_inst);
-        if let Some(_) = next_data.get_parent_bb() {
-            return Err(SlabListError::PluggedItemAttached(next.get_handle()));
+    fn node_attach_set_parent(self, to_attach: Self, alloc: &Slab<InstData>) -> SlabListRes {
+        let parent = self.to_inst(alloc).get_parent_bb();
+        // 这里就不处理 parent == null 的情况了.
+        // 当基本块对象刚刚构造、还没放到堆上时, parent 就可能是 null. 此时也有可能会 push 一些指令上去.
+        let data = to_attach.to_inst(alloc);
+        if data.get_parent_bb().is_nonnull() {
+            return Err(SlabListError::PluggedItemAttached(to_attach.get_handle()));
         }
-        next_data.set_parent_bb(Some(curr_parent));
+        data.set_parent_bb(parent);
         Ok(())
     }
-    fn _node_detach_clean_parent(self, self_data: &InstData) -> Result<(), SlabListError> {
-        match self_data.get_parent_bb() {
-            Some(_) => {
-                self_data.set_parent_bb(None);
-                Ok(())
-            }
-            None => Err(SlabListError::UnpluggedItemAttached(self.get_handle())),
+
+    pub fn from_alloc(alloc: &mut Slab<InstData>, mut data: InstData) -> Self {
+        let ret = Self::from_handle(alloc.vacant_key());
+        data.init_self_reference(ret);
+        alloc.insert(data);
+        ret
+    }
+
+    /// 如果自己在指令列表里, 就把自己移除掉.
+    pub fn detach_self(self, allocs: &IRAllocs) -> Result<(), InstError> {
+        let (parent, opcode) = {
+            let data = self.to_inst(&allocs.insts);
+            (data.get_parent_bb(), data.get_opcode())
+        };
+        if parent.is_null() {
+            log::debug!("Trying to unplug an instruction {self:?} (opcode {opcode:?}) NOT in list");
+            return Err(InstError::SelfNotAttached(self));
         }
-    }
-
-    pub fn get_parent_from_alloc(self, alloc_inst: &Slab<InstData>) -> Option<BlockRef> {
-        self.to_data(alloc_inst).get_parent_bb()
-    }
-    pub fn get_parent(self, module: &Module) -> Option<BlockRef> {
-        module.get_inst(self).get_parent_bb()
-    }
-
-    pub fn add_next_inst(&self, module: &Module, next: InstRef) -> Result<(), InstError> {
-        let self_data = module.get_inst(*self);
-        let parent = match self_data.get_parent_bb() {
-            Some(p) => p,
-            None => {
-                return Err(InstError::ListError(SlabListError::SelfNotInList(
-                    self.get_handle(),
-                )));
-            }
-        };
-        module
-            .get_block(parent)
-            .instructions
-            .node_add_next(&module.borrow_value_alloc().insts, *self, next)
-            .map_err(InstError::ListError)
-    }
-    pub fn add_prev_inst(&self, module: &Module, prev: InstRef) -> Result<(), InstError> {
-        let self_data = module.get_inst(*self);
-        let parent = match self_data.get_parent_bb() {
-            Some(p) => p,
-            None => {
-                return Err(InstError::ListError(SlabListError::SelfNotInList(
-                    self.get_handle(),
-                )));
-            }
-        };
-        module
-            .get_block(parent)
-            .instructions
-            .node_add_prev(&module.borrow_value_alloc().insts, *self, prev)
-            .map_err(InstError::ListError)
-    }
-    pub fn detach_self(&self, module: &Module) -> Result<(), InstError> {
-        let self_data = module.get_inst(*self);
-        let parent = match self_data.get_parent_bb() {
-            Some(p) => p,
-            None => {
-                return Err(InstError::ListError(SlabListError::SelfNotInList(
-                    self.get_handle(),
-                )));
-            }
-        };
-        module
-            .get_block(parent)
-            .instructions
-            .unplug_node(&module.borrow_value_alloc().insts, *self)
+        parent
+            .insts_from_alloc(&allocs.blocks)
+            .unplug_node(&allocs.insts, self)
             .map_err(InstError::ListError)
     }
 
-    /// Finalize the instruction by removing all operands and jump targets.
-    pub fn finalize_with_module(&self, module: &Module) {
-        let alloc_value = module.borrow_value_alloc();
-        let use_alloc = module.borrow_use_alloc();
-        let self_data = self.to_data(&alloc_value.insts);
+    pub fn get_parent(self, allocs: &IRAllocs) -> BlockRef {
+        self.to_inst(&allocs.insts).get_parent_bb()
+    }
+    pub fn get_parent_from_alloc(self, alloc: &Slab<InstData>) -> BlockRef {
+        self.to_inst(alloc).get_parent_bb()
+    }
+    pub fn get_parent_with_module(self, module: &Module) -> BlockRef {
+        let alloc = module.allocs.borrow();
+        self.to_inst(&alloc.insts).get_parent_bb()
+    }
+}
 
-        // Clean up jump targets of the terminators.
-        let (operands_range, len) = match self_data {
-            InstData::Jump(_, jump) => {
-                jump.set_block(module, BlockRef::new_null());
-                return;
-            }
-            InstData::Br(_, br) => {
-                br.if_true.set_block(module, BlockRef::new_null());
-                br.if_false.set_block(module, BlockRef::new_null());
-                br.set_cond(module, ValueSSA::new_null());
-                return;
-            }
-            InstData::Switch(_, switch) => {
-                switch.set_cond(module, ValueSSA::new_null());
-                switch.set_default(module, BlockRef::new_null());
-                for (_, pred) in &*switch.borrow_cases() {
-                    pred.set_block(module, BlockRef::new_null());
-                }
-                return;
-            }
-            InstData::Unreachable(..) | InstData::PhiInstEnd(..) | InstData::ListGuideNode(..) => {
-                return;
-            }
-            _ => self_data
-                .get_common_unwrap()
-                .operands
-                .load_range_and_length(),
-        };
+pub trait ISubInstRef: Sized {
+    type InstDataT: ISubInst;
 
-        if len == 0 {
-            return;
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self;
+    fn into_raw(self) -> InstRef;
+
+    fn try_from_inst(inst: InstRef, alloc: &Slab<InstData>) -> Option<Self> {
+        let inst_data = inst.to_inst(alloc);
+        match Self::InstDataT::try_from_ir(inst_data) {
+            Some(_) => Some(Self::from_raw_nocheck(inst)),
+            None => None,
         }
+    }
+    fn from_inst(inst: InstRef, alloc: &Slab<InstData>) -> Self {
+        Self::try_from_inst(inst, alloc).expect("Expected a valid instruction reference")
+    }
 
-        // Clean up operands of the instruction.
-        for (useref, data) in operands_range.view(&use_alloc) {
-            let operand = data.get_operand();
-            data.set_operand_nordfg(ValueSSA::new_null());
-            if operand.is_null() {
-                continue;
-            }
-            module.operand_del_use(operand, useref).unwrap();
-        }
+    fn as_inst(self, alloc: &Slab<InstData>) -> Option<&Self::InstDataT> {
+        self.into_raw()
+            .as_data(alloc)
+            .and_then(|data| Self::InstDataT::try_from_ir(data))
+    }
+    fn as_inst_mut(self, alloc: &mut Slab<InstData>) -> Option<&mut Self::InstDataT> {
+        self.into_raw()
+            .as_data_mut(alloc)
+            .and_then(|data| Self::InstDataT::try_from_ir_mut(data))
+    }
+    fn to_inst(self, alloc: &Slab<InstData>) -> &Self::InstDataT {
+        self.as_inst(alloc)
+            .expect("Expected a valid instruction data reference")
+    }
+    fn to_inst_mut(self, alloc: &mut Slab<InstData>) -> &mut Self::InstDataT {
+        self.as_inst_mut(alloc)
+            .expect("Expected a valid instruction data reference")
+    }
+
+    fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {
+        self.to_inst(alloc).get_common().opcode
+    }
+    fn get_valtype(self, alloc: &IRAllocs) -> ValTypeID {
+        self.to_inst(&alloc.insts).get_common().ret_type
+    }
+}
+
+impl ISubInstRef for InstRef {
+    type InstDataT = InstData;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        inst_ref
+    }
+    fn into_raw(self) -> InstRef {
+        self
     }
 }

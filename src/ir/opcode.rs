@@ -16,10 +16,9 @@ pub enum Opcode {
     Call, DynCall, Phi,
     Icmp, Fcmp,
     ConstArray, ConstStruct, ConstVec, ConstPtrNull,
-    Intrin, ReservedCnt,
+    Intrin, GuideNode, PhiEnd, ReservedCnt,
 }
 
-#[rustfmt::skip]
 impl Opcode {
     pub fn is_shift_op(self) -> bool {
         matches!(self, Opcode::Shl | Opcode::Lshr | Opcode::Ashr)
@@ -28,25 +27,84 @@ impl Opcode {
         matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor)
     }
     pub fn is_int_op(self) -> bool {
-        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+        matches!(
+            self,
+            Opcode::BitAnd
+                | Opcode::BitOr
+                | Opcode::BitXor
+                | Opcode::Add
+                | Opcode::Sub
+                | Opcode::Mul
+                | Opcode::Sdiv
+                | Opcode::Udiv
+                | Opcode::Srem
+                | Opcode::Urem
+        )
     }
     pub fn is_float_op(self) -> bool {
-        matches!(self, Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem)
+        matches!(
+            self,
+            Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem
+        )
     }
     pub fn is_binary_op(self) -> bool {
-        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem)
+        matches!(
+            self,
+            Opcode::BitAnd
+                | Opcode::BitOr
+                | Opcode::BitXor
+                | Opcode::Add
+                | Opcode::Sub
+                | Opcode::Mul
+                | Opcode::Sdiv
+                | Opcode::Udiv
+                | Opcode::Srem
+                | Opcode::Urem
+        )
     }
     pub fn is_divrem_op(self) -> bool {
-        matches!(self, Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::Frem | Opcode::Fdiv)
+        matches!(
+            self,
+            Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::Frem | Opcode::Fdiv
+        )
     }
     pub fn is_constexpr_op(self) -> bool {
-        matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor | Opcode::Add | Opcode::Sub | Opcode::Mul | Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem | Opcode::IndexExtract | Opcode::IndexInsert | Opcode::IndexPtr | Opcode::IndexOffsetOf)
+        matches!(
+            self,
+            Opcode::BitAnd
+                | Opcode::BitOr
+                | Opcode::BitXor
+                | Opcode::Add
+                | Opcode::Sub
+                | Opcode::Mul
+                | Opcode::Sdiv
+                | Opcode::Udiv
+                | Opcode::Srem
+                | Opcode::Urem
+                | Opcode::IndexExtract
+                | Opcode::IndexInsert
+                | Opcode::IndexPtr
+                | Opcode::IndexOffsetOf
+        )
     }
     pub fn is_inst_op(self) -> bool {
-        !matches!(self, Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec)
+        !matches!(
+            self,
+            Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec
+        )
     }
     pub fn is_cast_op(self) -> bool {
-        matches!(self, Opcode::Sitofp | Opcode::Uitofp | Opcode::Fptosi | Opcode::Zext | Opcode::Sext | Opcode::Trunc | Opcode::Fpext | Opcode::Fptrunc)
+        matches!(
+            self,
+            Opcode::Sitofp
+                | Opcode::Uitofp
+                | Opcode::Fptosi
+                | Opcode::Zext
+                | Opcode::Sext
+                | Opcode::Trunc
+                | Opcode::Fpext
+                | Opcode::Fptrunc
+        )
     }
 
     pub fn get_name(self) -> &'static str {
@@ -63,6 +121,84 @@ impl Opcode {
             m.insert(name, unsafe { std::mem::transmute(i as u8) });
         }
         m
+    }
+
+    pub fn get_kind(self) -> InstKind {
+        match self {
+            // Guide node
+            Opcode::GuideNode => InstKind::ListGuideNode,
+            Opcode::PhiEnd => InstKind::PhiInstEnd,
+
+            // Phi instruction
+            Opcode::Phi => InstKind::Phi,
+
+            // Terminator instructions
+            Opcode::Unreachable => InstKind::Unreachable,
+            Opcode::Ret => InstKind::Ret,
+            Opcode::Jmp => InstKind::Jump,
+            Opcode::Br => InstKind::Br,
+            Opcode::Switch => InstKind::Switch,
+
+            // Memory operations
+            Opcode::Alloca | Opcode::DynAlloca => InstKind::Alloca,
+            Opcode::Load => InstKind::Load,
+            Opcode::Store => InstKind::Store,
+
+            // Selection and indexing
+            Opcode::Select => InstKind::Select,
+            Opcode::IndexPtr | Opcode::IndexExtract | Opcode::IndexInsert => InstKind::IndexPtr,
+
+            // Function calls
+            Opcode::Call | Opcode::DynCall => InstKind::Call,
+            Opcode::Intrin => InstKind::Intrin,
+
+            // Binary operations (arithmetic and logical)
+            Opcode::BitAnd
+            | Opcode::BitOr
+            | Opcode::BitXor
+            | Opcode::Shl
+            | Opcode::Lshr
+            | Opcode::Ashr
+            | Opcode::Add
+            | Opcode::Sub
+            | Opcode::Mul
+            | Opcode::Sdiv
+            | Opcode::Udiv
+            | Opcode::Srem
+            | Opcode::Urem
+            | Opcode::Fadd
+            | Opcode::Fsub
+            | Opcode::Fmul
+            | Opcode::Fdiv
+            | Opcode::Frem => InstKind::BinOp,
+
+            // Comparison operations
+            Opcode::Icmp | Opcode::Fcmp => InstKind::Cmp,
+
+            // Cast operations
+            Opcode::Sitofp
+            | Opcode::Uitofp
+            | Opcode::Fptosi
+            | Opcode::Zext
+            | Opcode::Sext
+            | Opcode::Trunc
+            | Opcode::Fpext
+            | Opcode::Fptrunc
+            | Opcode::Bitcast
+            | Opcode::IntToPtr
+            | Opcode::PtrToInt => InstKind::Cast,
+
+            // Special cases for undefined or reserved opcodes
+            Opcode::None => panic!("Opcode::None does not have a kind"),
+            Opcode::ReservedCnt => panic!("Opcode::ReservedCnt does not have a kind"),
+
+            // Constant expressions - these might need special handling
+            // For now, treating them as binary operations since they can appear in constant expressions
+            Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec | Opcode::ConstPtrNull => {
+                panic!("Constant opcodes should not be used in instructions")
+            }
+            Opcode::IndexOffsetOf => InstKind::IndexPtr,
+        }
     }
 }
 impl ToString for Opcode {
@@ -101,9 +237,40 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "icmp", "fcmp",
     "constarray", "conststruct", "constvec",
     "constptrnull",
-    "intrin"
+    "intrin", "guide-node", "phi-end",
 ];
 
 lazy_static::lazy_static! {
     static ref OPCODE_NAME_MAP: HashMap<&'static str, Opcode> = Opcode::init_name_map();
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum InstKind {
+    /// Instruction list guide node containing a simple header and parent block.
+    /// The guide node will be always attached to a block, so its parent block
+    /// will be initialized when the block is allocated on `module.inner._alloc_block`.
+    ListGuideNode,
+    PhiInstEnd,
+
+    // Terminator instructions. These instructions are put at the end of a block and
+    // transfer control to another block or return from a function.
+    Unreachable,
+    Ret,
+    Jump,
+    Br,
+    Switch,
+
+    // Non-terminator instructions. These instructions are put in the middle of a block
+    // and do not transfer control to another block or return from a function.
+    Phi,
+    Alloca,
+    Load,
+    Store,
+    Select,
+    BinOp,
+    Cmp,
+    Cast,
+    IndexPtr,
+    Call,
+    Intrin,
 }

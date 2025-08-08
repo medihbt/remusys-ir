@@ -1,337 +1,280 @@
-use std::{
-    cell::{Cell, Ref},
-    num::NonZero,
-};
-
-use func::FuncData;
 use slab::Slab;
 
 use crate::{
-    base::{INullableValue, SlabListNode, SlabRef},
-    impl_slabref,
-    ir::global::func::FuncStorage,
+    base::{INullableValue, SlabRef},
+    ir::{
+        IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, PtrStorage, UserList, ValueSSA,
+        Var, global::func::Func,
+    },
     typing::id::ValTypeID,
 };
+use std::{cell::Ref, num::NonZero, ops::ControlFlow};
 
-use super::{
-    PtrStorage, ValueSSA,
-    block::{BlockData, BlockRef},
-    module::Module,
-};
-
-pub mod func;
-pub mod intrin;
+pub(super) mod func;
+pub(super) mod var;
 
 #[derive(Debug)]
 pub enum GlobalData {
-    Alias(Alias),
     Var(Var),
-    Func(FuncData),
+    Func(Func),
+}
+
+impl ISubGlobal for GlobalData {
+    fn from_ir(data: &GlobalData) -> Option<&Self> {
+        Some(data)
+    }
+    fn into_ir(self) -> GlobalData {
+        self
+    }
+    fn get_common(&self) -> &GlobalDataCommon {
+        match self {
+            GlobalData::Var(var) => &var.common,
+            GlobalData::Func(func) => &func.common,
+        }
+    }
+    fn common_mut(&mut self) -> &mut GlobalDataCommon {
+        match self {
+            GlobalData::Var(var) => &mut var.common,
+            GlobalData::Func(func) => &mut func.common,
+        }
+    }
+
+    fn get_kind(&self) -> GlobalKind {
+        match self {
+            GlobalData::Var(var) => var.get_kind(),
+            GlobalData::Func(func) => func.get_kind(),
+        }
+    }
+
+    fn is_readonly(&self) -> bool {
+        match self {
+            GlobalData::Var(var) => var.is_readonly(),
+            GlobalData::Func(_) => true, // Functions are considered read-only in this context
+        }
+    }
+
+    fn is_extern(&self) -> bool {
+        match self {
+            GlobalData::Var(var) => var.is_extern(),
+            GlobalData::Func(func) => func.is_extern(),
+        }
+    }
+
+    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
+        match self {
+            GlobalData::Var(var) => var.fmt_ir(self_ref, writer),
+            GlobalData::Func(func) => func.fmt_ir(self_ref, writer),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct GlobalDataCommon {
     pub name: String,
     pub content_ty: ValTypeID,
-    pub self_ref: Cell<GlobalRef>,
+    pub content_align: usize,
+    pub self_ref: GlobalRef,
+    pub users: UserList,
 }
 
-#[derive(Debug)]
-pub struct Alias {
-    pub common: GlobalDataCommon,
-    pub target: Cell<GlobalRef>,
+pub trait ISubGlobal {
+    fn from_ir(data: &GlobalData) -> Option<&Self>;
+    fn into_ir(self) -> GlobalData;
+
+    fn get_common(&self) -> &GlobalDataCommon;
+    fn common_mut(&mut self) -> &mut GlobalDataCommon;
+
+    fn get_kind(&self) -> GlobalKind;
+
+    /// 判断该全局量是否为外部符号.
+    fn is_extern(&self) -> bool;
+
+    /// 该全局变量所示的 ELF 段是否只读.
+    /// 只读的全局量不允许被修改, 但可以被读取.
+    fn is_readonly(&self) -> bool;
+
+    fn get_name(&self) -> &str {
+        &self.get_common().name
+    }
+
+    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()>;
 }
 
-#[derive(Debug)]
-pub struct Var {
-    pub common: GlobalDataCommon,
-    pub inner: Cell<VarInner>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct VarInner {
-    pub readonly: bool,
-    pub align_log2: u8,
-    pub init: ValueSSA,
-}
-
-impl Var {
-    pub fn is_extern(&self) -> bool {
-        self.inner.get().init.is_null()
-    }
-    pub fn get_init(&self) -> Option<ValueSSA> {
-        self.inner.get().init.to_option()
-    }
-    pub fn set_init(&self, init: ValueSSA) {
-        let mut inner = self.inner.get();
-        inner.init = init;
-        self.inner.set(inner);
-    }
-    pub fn is_readonly(&self) -> bool {
-        self.inner.get().readonly
-    }
-    pub fn set_readonly(&self, readonly: bool) {
-        let mut inner = self.inner.get();
-        inner.readonly = readonly;
-        self.inner.set(inner);
-    }
-    pub fn get_stored_pointee_align(&self) -> usize {
-        1 << self.inner.get().align_log2
-    }
-    pub fn set_stored_pointee_align(&self, align: u64) {
-        if align.is_power_of_two() {
-            let mut inner = self.inner.get();
-            inner.align_log2 = align.trailing_zeros() as u8;
-            self.inner.set(inner);
-        } else {
-            panic!("Align {} NOT power of 2", align)
-        }
-    }
-
-    pub fn get_stored_pointee_type(&self) -> ValTypeID {
-        self.common.content_ty.clone()
-    }
-
-    pub fn get_name(&self) -> &str {
-        self.common.name.as_str()
-    }
-}
-
-impl PtrStorage for GlobalData {
+impl<T: ISubGlobal> PtrStorage for T {
     fn get_stored_pointee_type(&self) -> ValTypeID {
-        self.get_common().content_ty.clone()
+        self.get_common().content_ty
+    }
+    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
+        NonZero::new(self.get_common().content_align)
+    }
+}
+
+impl GlobalDataCommon {
+    pub fn new(name: String, content_ty: ValTypeID, content_align: usize) -> Self {
+        debug_assert!(
+            content_align.is_power_of_two(),
+            "Content alignment must be a power of two buf got {content_align}"
+        );
+        GlobalDataCommon {
+            name,
+            content_ty,
+            content_align,
+            self_ref: GlobalRef::new_null(),
+            users: UserList::new_empty(),
+        }
     }
 
-    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
-        match self {
-            GlobalData::Alias(_) => None,
-            GlobalData::Func(_) => None,
-            GlobalData::Var(v) => NonZero::new(v.get_stored_pointee_align()),
+    pub fn new_empty() -> Self {
+        GlobalDataCommon {
+            name: String::new(),
+            content_ty: ValTypeID::Void,
+            content_align: 0,
+            self_ref: GlobalRef::new_null(),
+            users: UserList::new_empty(),
         }
     }
 }
-impl GlobalData {
-    pub fn get_common(&self) -> &GlobalDataCommon {
+
+impl ITraceableValue for GlobalData {
+    fn users(&self) -> &UserList {
         match self {
-            GlobalData::Alias(alias) => &alias.common,
-            GlobalData::Var(var) => &var.common,
-            GlobalData::Func(func) => &func._common,
-        }
-    }
-    pub fn common_mut(&mut self) -> &mut GlobalDataCommon {
-        match self {
-            GlobalData::Alias(alias) => &mut alias.common,
-            GlobalData::Var(var) => &mut var.common,
-            GlobalData::Func(func) => &mut func._common,
-        }
-    }
-    pub fn get_name(&self) -> &str {
-        self.get_common().name.as_str()
-    }
-
-    pub fn is_readonly(&self) -> bool {
-        match self {
-            GlobalData::Alias(_) => todo!("Alias is not readonly"),
-            GlobalData::Var(var) => var.is_readonly(),
-            GlobalData::Func(_) => true,
+            GlobalData::Var(var) => &var.common.users,
+            GlobalData::Func(func) => &func.common.users,
         }
     }
 
-    pub fn new_variable(
-        name: String,
-        is_const: bool,
-        content_ty: ValTypeID,
-        init: ValueSSA,
-    ) -> Self {
-        GlobalData::Var(Var {
-            common: GlobalDataCommon {
-                name,
-                content_ty,
-                self_ref: Cell::new(GlobalRef::new_null()),
-            },
-            inner: Cell::new(VarInner { readonly: is_const, align_log2: 3, init }),
-        })
-    }
-    pub fn new_alias(name: String, content_ty: ValTypeID, target: GlobalRef) -> Self {
-        GlobalData::Alias(Alias {
-            common: GlobalDataCommon {
-                name,
-                content_ty,
-                self_ref: Cell::new(GlobalRef::new_null()),
-            },
-            target: Cell::new(target),
-        })
-    }
-
-    pub(super) fn _init_set_self_reference(&self, alloc_bb: &Slab<BlockData>, self_ref: GlobalRef) {
-        self.get_common().self_ref.set(self_ref);
-        let GlobalData::Func(func) = self else {
-            return;
-        };
-
-        if let Some(body) = func._body.borrow().as_ref() {
-            let mut curr_node = body.body._head;
-            while curr_node.is_nonnull() {
-                let bb = curr_node.to_data(alloc_bb);
-                bb._inner
-                    .get()
-                    .insert_parent_func(self_ref)
-                    .assign_to(&bb._inner);
-                curr_node = BlockRef::from_handle(bb.load_node_head().next);
-            }
-        }
+    fn has_single_reference_semantics(&self) -> bool {
+        true
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalRef(usize);
-impl_slabref!(GlobalRef, GlobalData);
 
-impl GlobalRef {
-    fn from_alloc_raw(alloc_global: &mut Slab<GlobalData>, data: GlobalData) -> Self {
-        let handle = alloc_global.vacant_key();
-        let ret = GlobalRef(handle);
-        data.get_common().self_ref.set(ret);
-        alloc_global.insert(data);
-        ret
+impl SlabRef for GlobalRef {
+    type RefObject = GlobalData;
+    fn from_handle(handle: usize) -> Self {
+        GlobalRef(handle)
     }
-    pub fn var_from_alloc(alloc: &mut Slab<GlobalData>, var: Var) -> Self {
-        Self::from_alloc_raw(alloc, GlobalData::Var(var))
-    }
-    pub fn alias_from_alloc(alloc: &mut Slab<GlobalData>, alias: Alias) -> Self {
-        Self::from_alloc_raw(alloc, GlobalData::Alias(alias))
-    }
-    pub fn func_from_allocs(
-        alloc_global: &mut Slab<GlobalData>,
-        alloc_block: &Slab<BlockData>,
-        mut data: FuncData,
-    ) -> Self {
-        let ret = GlobalRef(alloc_global.vacant_key());
-        data._common.self_ref.set(ret);
-
-        let Some(body) = data._body.get_mut() else {
-            alloc_global.insert(GlobalData::Func(data));
-            return ret;
-        };
-
-        body.func = ret;
-        let mut curr_node = body.body._head;
-        while curr_node.is_nonnull() {
-            let bb = curr_node.to_data(alloc_block);
-            bb.set_parent_func(ret);
-            let Some(next) = bb.get_next() else { break };
-            curr_node = BlockRef::from_handle(next);
-        }
-
-        alloc_global.insert(GlobalData::Func(data));
-        ret
-    }
-    pub fn from_allocs(
-        alloc_global: &mut Slab<GlobalData>,
-        alloc_block: &Slab<BlockData>,
-        data: GlobalData,
-    ) -> Self {
-        match data {
-            GlobalData::Alias(alias) => Self::alias_from_alloc(alloc_global, alias),
-            GlobalData::Var(var) => Self::var_from_alloc(alloc_global, var),
-            GlobalData::Func(func) => Self::func_from_allocs(alloc_global, alloc_block, func),
-        }
-    }
-
-    /// 把自己注册到模块中
-    /// 这会把自己注册到全局量表中，并且如果 RDFG 启用了, 就注册到 RDFG 中，维护 RDFG 的一致性
-    pub fn register_to_mut_module(self, module: &mut Module) {
-        let allocs = module._alloc_value.get_mut();
-        let maybe_functy = match self.to_data(&allocs.globals) {
-            GlobalData::Func(f) => Some(f.get_stored_func_type()),
-            _ => None,
-        };
-
-        // 若 RDFG 启用了, 就注册到 RDFG 中，维护 RDFG 的一致性
-        if let Some(rdfg) = module._rdfg_alloc.get_mut() {
-            let type_ctx = module.type_ctx.clone();
-            rdfg.alloc_node(ValueSSA::Global(self), maybe_functy, &type_ctx)
-                .expect("Failed to register global to RDFG");
-        }
-
-        // 把自己注册到全局量表中
-        let name = self.get_name_with_alloc(&allocs.globals);
-        module.global_defs.get_mut().insert(name.into(), self);
-    }
-
-    pub fn register_to_module(self, module: &Module) {
-        let allocs = module.borrow_value_alloc();
-        let maybe_func = match self.to_data(&allocs.globals) {
-            GlobalData::Func(f) => Some(f.get_stored_func_type()),
-            _ => None,
-        };
-
-        // 若 RDFG 启用了, 就注册到 RDFG 中，维护 RDFG 的一致性
-        if let Some(mut rdfg) = module.borrow_rdfg_alloc_mut() {
-            rdfg.alloc_node(ValueSSA::Global(self), maybe_func, &module.type_ctx)
-                .expect("Failed to register global to RDFG");
-        }
-
-        // 把自己注册到全局量表中
-        let name = self.get_name_with_alloc(&allocs.globals);
-        module.global_defs.borrow_mut().insert(name.into(), self);
-    }
-
-    pub fn from_mut_module(module: &mut Module, data: GlobalData) -> Self {
-        let ret = {
-            let allocs = module._alloc_value.get_mut();
-            Self::from_allocs(&mut allocs.globals, &allocs.blocks, data)
-        };
-        ret.register_to_mut_module(module);
-        ret
-    }
-
-    pub fn from_module(module: &Module, data: GlobalData) -> Self {
-        let ret = {
-            let mut allocs = module.borrow_value_alloc_mut();
-            let allocs = &mut *allocs;
-            Self::from_allocs(&mut allocs.globals, &allocs.blocks, data)
-        };
-        ret.register_to_module(module);
-        ret
-    }
-
-    pub fn get_name_with_alloc<'a>(self, slab: &'a Slab<GlobalData>) -> &'a str {
-        self.to_data(slab).get_name()
-    }
-    pub fn get_name_with_module<'a>(self, module: &'a Module) -> Ref<'a, str> {
-        Ref::map(module.get_global(self), |g| g.get_name())
-    }
-
-    pub fn is_extern(self, alloc_global: &Slab<GlobalData>) -> bool {
-        match self.to_data(alloc_global) {
-            GlobalData::Alias(_) => false,
-            GlobalData::Var(gvar) => gvar.is_extern(),
-            GlobalData::Func(f) => f.is_extern(),
-        }
-    }
-    pub fn is_extern_with_module(self, module: &Module) -> bool {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_global = &alloc_value.globals;
-        self.is_extern(alloc_global)
+    fn get_handle(&self) -> usize {
+        self.0
     }
 }
 
-pub trait IGlobalObjectVisitor {
-    fn read_global_variable(&self, global_ref: GlobalRef, gvar: &Var);
-    fn read_global_alias(&self, global_ref: GlobalRef, galias: &Alias);
-    fn read_func(&self, global_ref: GlobalRef, gfunc: &func::FuncData);
+impl ISubValueSSA for GlobalRef {
+    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+        if let ValueSSA::Global(gref) = value { Some(gref) } else { None }
+    }
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::Global(self)
+    }
+    fn is_zero(&self, _: &IRAllocs) -> bool {
+        false
+    }
+    fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
+        ValTypeID::Ptr
+    }
+    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
+        Some(ValTypeID::Ptr)
+    }
+    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+        self.to_data(&writer.allocs.globals).fmt_ir(*self, writer)
+    }
+}
 
-    fn global_object_visitor_dispatch(
-        &self,
-        global_ref: GlobalRef,
-        alloc_global: &Slab<GlobalData>,
-    ) {
-        let global_data = global_ref.to_data(alloc_global);
-        match global_data {
-            GlobalData::Alias(galias) => self.read_global_alias(global_ref, galias),
-            GlobalData::Var(gvar) => self.read_global_variable(global_ref, gvar),
-            GlobalData::Func(gfunc) => self.read_func(global_ref, gfunc),
+impl GlobalRef {
+    pub fn from_allocs(allocs: &mut IRAllocs, mut data: GlobalData) -> Self {
+        let ret = Self::from_handle(allocs.globals.vacant_key());
+        data.common_mut().self_ref = ret;
+        for user in data.users() {
+            user.operand.set(ValueSSA::Global(ret));
+        }
+        let GlobalData::Func(func) = &mut data else {
+            allocs.globals.insert(data);
+            return ret;
+        };
+        if let Some(body) = func.get_body() {
+            body.forall_nodes(&allocs.blocks, |_, block| {
+                block.set_parent_func(ret);
+                ControlFlow::Continue(())
+            });
+        }
+        allocs.globals.insert(data);
+        return ret;
+    }
+    pub fn from_module(module: &Module, data: GlobalData) -> Self {
+        let mut allocs = module.allocs.borrow_mut();
+        Self::from_allocs(&mut allocs, data)
+    }
+    pub fn from_mut_module(module: &mut Module, data: GlobalData) -> Self {
+        let allocs = module.allocs.get_mut();
+        Self::from_allocs(allocs, data)
+    }
+
+    /// Registers this global reference to the module's symbol table.
+    pub fn register_to_symtab(self, module: &Module) {
+        let name = self.get_name(module).to_string();
+        module.globals.borrow_mut().insert(name, self);
+    }
+
+    pub fn get_name_from_alloc<'a>(self, alloc: &'a Slab<GlobalData>) -> &'a str {
+        self.to_data(alloc).get_name()
+    }
+    pub fn get_name<'a>(self, module: &'a Module) -> Ref<'a, str> {
+        let allocs = module.allocs.borrow();
+        Ref::map(allocs, |allocs| self.get_name_from_alloc(&allocs.globals))
+    }
+    pub fn get_name_from_mut_module<'a>(self, module: &'a mut Module) -> &'a str {
+        let alloc = module.allocs.get_mut();
+        self.get_name_from_alloc(&alloc.globals)
+    }
+
+    pub fn get_content_type_from_alloc(self, alloc: &Slab<GlobalData>) -> ValTypeID {
+        self.to_data(alloc).get_common().content_ty
+    }
+    pub fn get_content_type(self, module: &Module) -> ValTypeID {
+        let allocs = module.allocs.borrow();
+        self.get_content_type_from_alloc(&allocs.globals)
+    }
+    pub fn get_content_type_from_mut_module(self, module: &mut Module) -> ValTypeID {
+        let alloc = module.allocs.get_mut();
+        self.get_content_type_from_alloc(&alloc.globals)
+    }
+
+    pub fn is_extern(self, allocs: &IRAllocs) -> bool {
+        self.to_data(&allocs.globals).is_extern()
+    }
+    pub fn is_extern_from_alloc(self, alloc: &Slab<GlobalData>) -> bool {
+        self.to_data(alloc).is_extern()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlobalKind {
+    ExternVar,
+    ExternConst,
+    Var,
+    Const,
+    ExternFunc,
+    Func,
+}
+
+impl GlobalKind {
+    pub fn from_global(gref: GlobalRef, allocs: &IRAllocs) -> Self {
+        Self::from_data(gref.to_data(&allocs.globals))
+    }
+    pub fn from_data(data: &GlobalData) -> Self {
+        data.get_kind()
+    }
+
+    pub fn get_ir_prefix(self) -> &'static str {
+        match self {
+            GlobalKind::ExternVar => "external global",
+            GlobalKind::ExternConst => "external constant",
+            GlobalKind::Var => "dso_local global",
+            GlobalKind::Const => "dso_local constant",
+            GlobalKind::ExternFunc => "declare",
+            GlobalKind::Func => "define",
         }
     }
 }

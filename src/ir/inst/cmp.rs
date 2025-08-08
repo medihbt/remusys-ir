@@ -1,86 +1,216 @@
-//! Compare instructions.
-
-use slab::Slab;
-
 use crate::{
-    base::INullableValue,
-    ir::{ValueSSA, cmp_cond::CmpCond, module::Module, opcode::Opcode},
-    typing::{TypeMismatchError, id::ValTypeID},
+    ir::{
+        CmpCond, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind,
+        InstRef, Opcode, Use, UseKind, ValueSSA,
+        inst::{ISubInstRef, InstOperands},
+    },
+    typing::id::ValTypeID,
 };
+use std::rc::Rc;
 
-use super::{
-    InstDataCommon, InstDataUnique, InstError,
-    checking::check_operand_type_match,
-    usedef::{UseData, UseKind, UseRef},
-};
-
+/// 比较指令
+///
+/// 执行两个操作数的比较运算，根据比较条件返回布尔值结果。
+/// 支持整数、浮点数等类型的各种比较操作（相等、大于、小于等）。
+///
+/// ### LLVM IR 语法
+///
+/// ```llvm
+/// %<result> = <op> <cond> <type> <lhs>, <rhs>
+/// ```
+///
+/// ### 操作数布局
+/// - `operands[0]`: 左操作数 (LHS)
+/// - `operands[1]`: 右操作数 (RHS)
+///
+/// ### 返回类型
+/// 固定返回布尔类型 (`ValTypeID::new_boolean()`)
+#[derive(Debug)]
 pub struct CmpOp {
-    pub lhs: UseRef,
-    pub rhs: UseRef,
-    pub cmp_ty: ValTypeID,
+    common: InstCommon,
+    operands: [Rc<Use>; 2],
+    /// 比较条件
     pub cond: CmpCond,
+    /// 比较对象类型
+    pub operand_ty: ValTypeID,
 }
 
-impl InstDataUnique for CmpOp {
-    fn build_operands(&mut self, common: &mut InstDataCommon, alloc_use: &mut Slab<UseData>) {
-        self.lhs = common.alloc_use(alloc_use, UseKind::CmpLhs);
-        self.rhs = common.alloc_use(alloc_use, UseKind::CmpRhs);
+impl ISubInst for CmpOp {
+    fn new_empty(opcode: Opcode) -> Self {
+        if opcode.get_kind() != InstKind::Cmp {
+            panic!("Tried to create a CmpOp with non-Cmp opcode");
+        }
+        Self {
+            common: InstCommon::new(opcode, ValTypeID::new_boolean()),
+            operands: [Use::new(UseKind::CmpLhs), Use::new(UseKind::CmpRhs)],
+            cond: CmpCond::NEVER,
+            operand_ty: ValTypeID::Void, // 初始类型为 Void
+        }
+    }
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        if let InstData::Cmp(cmp) = inst { Some(cmp) } else { None }
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        if let InstData::Cmp(cmp) = inst { Some(cmp) } else { None }
+    }
+    fn into_ir(self) -> InstData {
+        InstData::Cmp(self)
+    }
+    fn get_common(&self) -> &InstCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut InstCommon {
+        &mut self.common
+    }
+    fn is_terminator(&self) -> bool {
+        false
+    }
+    fn get_operands(&self) -> InstOperands {
+        InstOperands::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
     }
 
-    fn check_operands(&self, _: &InstDataCommon, module: &Module) -> Result<(), InstError> {
-        let alloc_use = module.borrow_use_alloc();
-        let lhs = self.lhs.get_operand(&alloc_use);
-        let rhs = self.rhs.get_operand(&alloc_use);
-
-        check_operand_type_match(self.cmp_ty, lhs, module)?;
-        check_operand_type_match(self.cmp_ty, rhs, module)
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else {
+            use std::io::{Error, ErrorKind::InvalidInput};
+            return Err(Error::new(InvalidInput, "ID must be provided for CmpOp"));
+        };
+        let opcode = self.get_opcode().get_name();
+        let cond = self.cond;
+        write!(writer, "%{id} = {opcode} {cond} ")?;
+        writer.write_type(self.operand_ty)?;
+        writer.write_str(" ")?;
+        writer.write_operand(self.get_lhs())?;
+        writer.write_str(", ")?;
+        writer.write_operand(self.get_rhs())
     }
 }
 
 impl CmpOp {
-    pub fn new_raw(
-        cmp_ty: ValTypeID,
-        cond: CmpCond,
-        mut_module: &Module,
-    ) -> Result<(InstDataCommon, Self), InstError> {
-        let (cond, opcode) = match cmp_ty {
-            ValTypeID::Int(_) => (cond.switch_to_int(), Opcode::Icmp),
-            ValTypeID::Float(_) => (cond.switch_to_float(), Opcode::Fcmp),
-            _ => {
-                return Err(InstError::OperandTypeMismatch(
-                    TypeMismatchError::NotPrimitive(cmp_ty),
-                    ValueSSA::None,
-                ));
-            }
+    /// 创建一个未初始化操作数的比较指令
+    ///
+    /// # 参数
+    /// - `opcode`: 指令操作码，必须是比较类型
+    /// - `cond`: 比较条件
+    ///
+    /// # Panics
+    /// 如果 opcode 不是比较指令类型则 panic
+    pub fn new_raw(opcode: Opcode, cond: CmpCond, ty: ValTypeID) -> Self {
+        if opcode.get_kind() != InstKind::Cmp {
+            panic!("Tried to create a CmpOp with non-Cmp opcode");
+        }
+        let cond = match opcode {
+            Opcode::Icmp => cond.switch_to_int(),
+            Opcode::Fcmp => cond.switch_to_float(),
+            _ => panic!("Unsupported opcode for comparison: {opcode:?}"),
         };
-        let mut common = InstDataCommon::new(
-            opcode,
-            ValTypeID::new_boolean(),
-            &mut mut_module.borrow_use_alloc_mut(),
-        );
-        let mut ret = Self {
-            lhs: UseRef::new_null(),
-            rhs: UseRef::new_null(),
-            cmp_ty,
+        Self {
+            common: InstCommon::new(opcode, ValTypeID::new_boolean()),
+            operands: [Use::new(UseKind::CmpLhs), Use::new(UseKind::CmpRhs)],
             cond,
-        };
-        ret.build_operands(&mut common, &mut mut_module.borrow_use_alloc_mut());
-        Ok((common, ret))
+            operand_ty: ty,
+        }
     }
 
-    pub fn new_with_operands(
-        mut_module: &Module,
-        cond: CmpCond,
-        lhs: ValueSSA,
-        rhs: ValueSSA,
-    ) -> Result<(InstDataCommon, Self), InstError> {
-        let cmp_ty = lhs.get_value_type(&mut_module);
-        check_operand_type_match(cmp_ty, rhs, mut_module)?;
-        Self::new_raw(cmp_ty, cond, &mut_module).map(|(common, cmp)| {
-            let alloc = mut_module.borrow_use_alloc();
-            cmp.lhs.set_operand_nordfg(&alloc, lhs);
-            cmp.rhs.set_operand_nordfg(&alloc, rhs);
-            (common, cmp)
-        })
+    /// 创建一个完全初始化的比较指令
+    ///
+    /// # 参数
+    /// - `allocs`: IR 分配器，用于建立 Use-Def 关系
+    /// - `opcode`: 指令操作码，必须是比较类型
+    /// - `cond`: 比较条件
+    /// - `lhs`: 左操作数
+    /// - `rhs`: 右操作数
+    ///
+    /// # Panics
+    /// 如果 opcode 不是比较指令类型则 panic
+    pub fn new(allocs: &IRAllocs, cond: CmpCond, lhs: ValueSSA, rhs: ValueSSA) -> Self {
+        let ty: ValTypeID = {
+            let lty = lhs.get_valtype(allocs);
+            let rty = rhs.get_valtype(allocs);
+            assert_eq!(
+                lty, rty,
+                "Left and right operands must have the same type for comparison"
+            );
+            lty
+        };
+        let opcode = match ty {
+            ValTypeID::Ptr | ValTypeID::Int(_) => Opcode::Icmp,
+            ValTypeID::Float(_) => Opcode::Fcmp,
+            _ => panic!("Unsupported type for comparison: {ty:?}"),
+        };
+        let cmp = Self::new_raw(opcode, cond, ty);
+        cmp.set_lhs(allocs, lhs);
+        cmp.set_rhs(allocs, rhs);
+        cmp
+    }
+
+    /// 获取左操作数的 Use 引用
+    ///
+    /// # 返回
+    /// 左操作数的 Use 对象引用，用于 Use-Def 链分析
+    pub fn lhs_use(&self) -> &Rc<Use> {
+        &self.operands[0]
+    }
+
+    /// 获取右操作数的 Use 引用
+    ///
+    /// # 返回
+    /// 右操作数的 Use 对象引用，用于 Use-Def 链分析
+    pub fn rhs_use(&self) -> &Rc<Use> {
+        &self.operands[1]
+    }
+
+    /// 获取左操作数的值
+    ///
+    /// # 返回
+    /// 左操作数的 SSA 值
+    pub fn get_lhs(&self) -> ValueSSA {
+        self.lhs_use().get_operand()
+    }
+
+    /// 设置左操作数的值
+    ///
+    /// # 参数
+    /// - `allocs`: IR 分配器，用于维护 Use-Def 关系
+    /// - `value`: 新的左操作数值
+    pub fn set_lhs(&self, allocs: &IRAllocs, value: ValueSSA) {
+        self.lhs_use().set_operand(allocs, value);
+    }
+
+    /// 获取右操作数的值
+    ///
+    /// # 返回
+    /// 右操作数的 SSA 值
+    pub fn get_rhs(&self) -> ValueSSA {
+        self.rhs_use().get_operand()
+    }
+
+    /// 设置右操作数的值
+    ///
+    /// # 参数
+    /// - `allocs`: IR 分配器，用于维护 Use-Def 关系
+    /// - `value`: 新的右操作数值
+    pub fn set_rhs(&self, allocs: &IRAllocs, value: ValueSSA) {
+        self.rhs_use().set_operand(allocs, value);
+    }
+}
+
+/// 比较指令的强类型引用
+///
+/// 包装 `InstRef` 提供类型安全的比较指令引用，
+/// 确保引用指向的确实是比较指令而非其他类型的指令。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CmpOpRef(InstRef);
+
+impl ISubInstRef for CmpOpRef {
+    type InstDataT = CmpOp;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        CmpOpRef(inst_ref)
+    }
+    fn into_raw(self) -> InstRef {
+        self.0
     }
 }

@@ -1,163 +1,12 @@
-use std::cell::{Cell, Ref};
-
-use slab::Slab;
-
-use crate::{
-    base::{
-        INullableValue, SlabListError, SlabListNode, SlabListNodeHead, SlabListNodeRef, SlabRef,
-    },
-    impl_slabref,
-    ir::{
-        ValueSSA,
-        block::BlockRef,
-        module::{Module, ModuleError, rdfg::RdfgAlloc},
-    },
+use std::{
+    cell::{Cell, RefCell},
+    rc::{Rc, Weak},
 };
 
-use super::InstRef;
-
-pub struct UseData {
-    pub(crate) _node_head: Cell<SlabListNodeHead>,
-    pub(crate) _operand: Cell<ValueSSA>,
-    pub(crate) _user: Cell<InstRef>,
-    pub kind: Cell<UseKind>,
-}
-
-impl SlabListNode for UseData {
-    fn new_guide() -> Self {
-        Self {
-            _node_head: Cell::new(SlabListNodeHead::new()),
-            _user: Cell::new(InstRef::new_null()),
-            _operand: Cell::new(ValueSSA::None),
-            kind: Cell::new(UseKind::GuideNode),
-        }
-    }
-
-    fn load_node_head(&self) -> SlabListNodeHead {
-        self._node_head.get()
-    }
-
-    fn store_node_head(&self, node_head: SlabListNodeHead) {
-        self._node_head.set(node_head);
-    }
-}
-
-impl UseData {
-    pub fn new(kind: UseKind, parent: InstRef, operand: ValueSSA) -> Self {
-        Self {
-            _node_head: Cell::new(SlabListNodeHead::new()),
-            _user: Cell::new(parent),
-            _operand: Cell::new(operand),
-            kind: Cell::new(kind),
-        }
-    }
-
-    pub fn get_user(&self) -> InstRef {
-        self._user.get()
-    }
-
-    pub fn get_operand(&self) -> ValueSSA {
-        self._operand.get()
-    }
-
-    pub fn set_operand_nordfg(&self, operand: ValueSSA) {
-        self._operand.set(operand);
-    }
-    pub fn set_operand_with_rdfg(&self, selfref: UseRef, rdfg: &RdfgAlloc, operand: ValueSSA) {
-        let old_value = self._operand.get();
-        if old_value == operand {
-            return;
-        }
-        self._operand.set(operand);
-
-        if old_value.is_nonnull() {
-            match rdfg.get_node(old_value) {
-                Ok(node) => node.remove_user_use(selfref),
-                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
-                Err(x) => panic!("Unexpected error: {:?}", x),
-            };
-        }
-        if operand.is_nonnull() {
-            match rdfg.get_node(operand) {
-                Ok(node) => node.add_user_use(selfref),
-                Err(ModuleError::DfgOperandNotReferece(_)) => { /* ignore */ }
-                Err(x) => panic!("Unexpected error: {:?}", x),
-            };
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct UseRef(usize);
-impl_slabref!(UseRef, UseData);
-impl SlabListNodeRef for UseRef {
-    fn on_node_push_next(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
-        Ok(())
-    }
-
-    fn on_node_push_prev(_: Self, _: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
-        Ok(())
-    }
-
-    fn on_node_unplug(_: Self, _: &Slab<UseData>) -> Result<(), SlabListError> {
-        Ok(())
-    }
-}
-
-impl UseRef {
-    pub fn get_user(&self, alloc: &Slab<UseData>) -> InstRef {
-        self.to_data(alloc).get_user()
-    }
-
-    /// Get the operand of this use reference.
-    pub fn get_operand(&self, alloc: &Slab<UseData>) -> ValueSSA {
-        self.to_data(alloc).get_operand()
-    }
-
-    /// Set the operand of this use reference regardless of the def-use graph.
-    /// This method does not update the def-use graph.
-    pub fn set_operand_nordfg(&self, alloc: &Slab<UseData>, operand: ValueSSA) {
-        self.to_data(alloc).set_operand_nordfg(operand);
-    }
-
-    /// Set the operand of this use reference and update the def-use graph.
-    pub fn set_operand(&self, module: &Module, operand: ValueSSA) {
-        // Update the operand of this use reference.
-        let use_alloc = module.borrow_use_alloc();
-        let self_data = self.to_data(&*use_alloc);
-        let old_value = self_data.get_operand();
-        if old_value == operand {
-            return;
-        }
-        self_data.set_operand_nordfg(operand);
-
-        // Now update the def-use reverse graph (RDFG).
-        if !old_value.is_none() {
-            Self::_handle_setop_err(module.operand_del_use(old_value, self.clone()));
-        }
-        if !operand.is_none() {
-            Self::_handle_setop_err(module.operand_add_use(operand, self.clone()));
-        }
-    }
-
-    pub fn kind<'a>(self, alloc: &'a Slab<UseData>) -> &'a Cell<UseKind> {
-        &self.to_data(alloc).kind
-    }
-    pub fn kind_by_module<'a>(self, module: &'a Module) -> Ref<'a, Cell<UseKind>> {
-        let use_alloc = module.borrow_use_alloc();
-        Ref::map(use_alloc, |alloc| &self.to_data(alloc).kind)
-    }
-
-    fn _handle_setop_err(res: Result<(), ModuleError>) {
-        match res {
-            Ok(_) => { /* Successfully inserted or deleted the use reference. */ }
-            Err(ModuleError::DfgOperandNotReferece(..)) | Err(ModuleError::RDFGNotEnabled) => {
-                /* Normal cases where the value is not a reference type or the RDFG is not enabled. */
-            }
-            _ => panic!(),
-        }
-    }
-}
+use crate::{
+    base::{INullableValue, IWeakListNode, WeakList, WeakListIter},
+    ir::{IRAllocs, ISubValueSSA, InstRef, ValueSSA},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UseKind {
@@ -165,21 +14,167 @@ pub enum UseKind {
     BinOpLhs,
     BinOpRhs,
     CallOpCallee,
-    CallOpArg(usize),
+    CallOpArg(u32),
     CastOpFrom,
     CmpLhs,
     CmpRhs,
     GepBase,
-    GepIndex(usize),
+    GepIndex(u32),
     LoadSource,
     StoreSource,
     StoreTarget,
-    PhiIncomingBlock(UseRef),
-    PhiIncomingValue { from_bb: BlockRef, from_bb_use: UseRef },
+
+    /// PHI 指令的 incoming block. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    ///
+    /// 语义变更: 原本存储的是对应 Value 的索引, 现在统一存储组号.
+    PhiIncomingBlock(u32),
+
+    /// PHI 指令的 incoming SSA 值. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    ///
+    /// 语义变更: 原本存储的是对应 Block 的索引, 现在统一存储组号.
+    PhiIncomingValue(u32),
+
     SelectCond,
-    SelectTrueVal,
-    SelectFalseVal,
+    SelectTrue,
+    SelectFalse,
     BranchCond,
     SwitchCond,
     RetValue,
+}
+
+#[derive(Debug, Clone)]
+pub struct Use {
+    head: RefCell<(Weak<Use>, Weak<Use>)>,
+    pub kind: Cell<UseKind>,
+    pub inst: Cell<InstRef>,
+    pub operand: Cell<ValueSSA>,
+}
+
+impl Use {
+    pub fn get_operand(&self) -> ValueSSA {
+        self.operand.get()
+    }
+
+    pub fn set_operand<T: ISubValueSSA>(self: &Rc<Self>, allocs: &IRAllocs, operand: T) {
+        self.do_set_operand(allocs, operand.into_ir());
+    }
+    fn do_set_operand(self: &Rc<Self>, allocs: &IRAllocs, operand: ValueSSA) {
+        let old_operand = self.operand.get();
+        if old_operand == operand {
+            return; // No change
+        }
+        self.detach();
+        self.operand.set(operand);
+        operand.add_user_rc(allocs, self);
+    }
+
+    /// Detach this Use from its current instruction and remove the operand.
+    pub fn clean_operand(self: &Rc<Self>) {
+        if self.operand.get() == ValueSSA::None {
+            return; // Already cleaned
+        }
+        self.operand.set(ValueSSA::None);
+        self.detach();
+    }
+
+    pub fn new(kind: UseKind) -> Rc<Self> {
+        Rc::new(Use {
+            head: RefCell::new((Weak::new(), Weak::new())),
+            kind: Cell::new(kind),
+            inst: Cell::new(InstRef::new_null()),
+            operand: Cell::new(ValueSSA::None),
+        })
+    }
+}
+
+impl IWeakListNode for Use {
+    fn load_head(&self) -> (Weak<Self>, Weak<Self>) {
+        self.head.borrow().clone()
+    }
+
+    fn store_head(&self, head: (Weak<Self>, Weak<Self>)) {
+        *self.head.borrow_mut() = head;
+    }
+
+    fn new_sentinel() -> Rc<Self> {
+        Rc::new(Use {
+            head: RefCell::new((Weak::new(), Weak::new())),
+            kind: Cell::new(UseKind::GuideNode),
+            inst: Cell::new(InstRef::new_null()),
+            operand: Cell::new(ValueSSA::None),
+        })
+    }
+
+    fn is_sentinel(&self) -> bool {
+        self.kind.get() == UseKind::GuideNode
+    }
+
+    /// 操作数被销毁时触发该函数, 主动清理引用关系.
+    fn on_list_finalize(&self) {
+        self.operand.set(ValueSSA::None);
+    }
+}
+
+pub type UserList = WeakList<Use>;
+pub type UserIter = WeakListIter<Use>;
+
+pub trait ITraceableValue {
+    /// 这个 Value 的用户列表.
+    ///
+    /// 注意, 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者.
+    /// 对于 `ConstExpr` 等不可变值, 使用者将分散在多个实例的不同 `UserList` 中.
+    fn users(&self) -> &UserList;
+
+    /// 这个 Value 是否具有引用唯一性.
+    fn has_single_reference_semantics(&self) -> bool;
+
+    fn add_user(&self, use_ref: Weak<Use>) {
+        let user_list = self.users();
+        user_list.push_back(use_ref);
+    }
+
+    fn has_users(&self) -> bool {
+        !self.users().is_empty()
+    }
+    fn has_single_user(&self) -> bool {
+        self.users().is_single()
+    }
+    fn user_count(&self) -> usize {
+        self.users().len()
+    }
+
+    /// 检查是否有多个不同的用户指令使用了该值
+    ///
+    /// ### 返回
+    ///
+    /// - `true` - 如果有多个不同的用户指令
+    /// - `false` - 如果没有用户或只有一个用户指令
+    ///
+    /// ### 注意
+    ///
+    /// * 即使一个指令多次使用了该值 (例如作为多个操作数), 只要该指令是唯一的用户，
+    ///   仍然返回 `false`.
+    /// * 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者.
+    ///   对于 `ConstExpr` 等不可变值, 使用者可能分散在多个实例的不同 `UserList` 中,
+    ///   该函数可能导致结果误报.
+    fn has_multiple_users(&self) -> bool {
+        let users = self.users();
+        let mut first_user: Option<InstRef> = None;
+        for user_use in users.iter() {
+            let user = user_use.inst.get();
+            match first_user {
+                None => first_user = Some(user),
+                Some(existing_user) if existing_user != user => return true,
+                Some(_) => continue,
+            }
+        }
+        false
+    }
+}
+
+impl Drop for Use {
+    /// 当 Use 被销毁时，自动将其从所属的用户列表中移除
+    fn drop(&mut self) {
+        self.detach();
+    }
 }

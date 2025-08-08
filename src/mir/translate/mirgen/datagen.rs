@@ -2,14 +2,7 @@ use slab::Slab;
 
 use crate::{
     base::SlabRef,
-    ir::{
-        ValueSSA,
-        constant::{
-            data::ConstData,
-            expr::{ConstExprData, ConstExprRef},
-        },
-        module::Module,
-    },
+    ir::{ConstData, ConstExprData, ConstExprRef, Module, ValueSSA},
     mir::module::global::{MirGlobalData, Section},
     typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
@@ -93,14 +86,7 @@ impl DataUnit {
                 let size_bytes = ty
                     .get_instance_size(type_ctx)
                     .expect("Type must have a defined size");
-                let align = ty
-                    .get_instance_align(type_ctx)
-                    .expect("Type must have a defined alignment");
-                let unit_bytes_log2 = if align.is_power_of_two() {
-                    align.trailing_zeros() as u8
-                } else {
-                    panic!("Alignment {} is not a power of two", align);
-                };
+                let unit_bytes_log2 = ty.get_align_log2(type_ctx);
                 let count = size_bytes >> unit_bytes_log2;
                 Self::from_zeroes(unit_bytes_log2, count)
             }
@@ -222,10 +208,9 @@ impl DataGen {
         }
     }
     pub fn add_ir_expr_from_module(&mut self, expr: ConstExprRef, module: &Module) {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_expr = &alloc_value.exprs;
+        let allocs = module.borrow_allocs();
         let type_ctx = &*module.type_ctx;
-        self.add_ir_expr(expr, type_ctx, alloc_expr);
+        self.add_ir_expr(expr, type_ctx, &allocs.exprs);
     }
     fn add_aggr(
         &mut self,

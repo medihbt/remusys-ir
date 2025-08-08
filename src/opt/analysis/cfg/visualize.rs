@@ -7,34 +7,27 @@ use std::collections::BTreeMap;
 
 use crate::{
     base::SlabRef,
-    ir::{
-        global::{GlobalData, GlobalRef},
-        module::Module,
-        util::numbering::{IRValueNumberMap, NumberOption},
-    },
+    ir::{GlobalData, GlobalRef, IRValueNumberMap, ISubGlobal, Module, NumberOption},
 };
 
 pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io::Write) {
-    let func_data = module.get_global(func);
-    let func_data = match &*func_data {
-        GlobalData::Func(f) => f,
-        _ => panic!("Expected a function"),
+    let allocs = module.allocs.borrow();
+    let GlobalData::Func(func_data) = func.to_data(&allocs.globals) else {
+        panic!("Expected a function");
     };
-    let blocks_range = match func_data.get_blocks() {
+    let blocks_range = match func_data.get_body() {
         Some(b) => b.load_range(),
         None => panic!("Function has no blocks"),
     };
-    let value_number = IRValueNumberMap::from_func(module, func, NumberOption::ignore_all());
+    let value_number = IRValueNumberMap::new(&allocs, func, NumberOption::ignore_all());
 
     writer
         .write_fmt(format_args!("digraph \"{}\" {{\n", func_data.get_name()))
         .unwrap();
 
-    let alloc_value = module.borrow_value_alloc();
-    let alloc_block = &alloc_value.blocks;
     let mut cfg_edges = Vec::new();
     let mut block_order_map = BTreeMap::new();
-    for (order, (block_ref, block)) in blocks_range.view(alloc_block).into_iter().enumerate() {
+    for (order, (block_ref, block)) in blocks_range.view(&allocs.blocks).into_iter().enumerate() {
         let block_id = value_number.block_get_number(block_ref).unwrap();
         block_order_map.insert(block_ref, order);
         writer
@@ -45,8 +38,9 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
                 block_ref.get_handle()
             ))
             .unwrap();
-        let terminator = block.get_terminator_subref(module).unwrap();
-        for succ in terminator.collect_jump_blocks_from_module(module) {
+        let terminator = block.get_terminator(&allocs.insts);
+        for succ in &terminator.get_jts(&allocs.insts) {
+            let succ = succ.get_block();
             cfg_edges.push((block_ref, succ));
         }
     }

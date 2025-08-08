@@ -272,17 +272,8 @@ impl MirStackLayout {
         type_ctx: &TypeContext,
         vreg_alloc: &mut VirtRegAlloc,
     ) -> &mut MirStackItem {
-        let size = irtype.get_instance_size(type_ctx);
-        let align = irtype.get_instance_align(type_ctx);
-
-        let (size, align_log2) = match (size, align) {
-            (Some(size), Some(align)) if align.is_power_of_two() => {
-                (size, align.trailing_zeros() as u8)
-            }
-            _ => panic!(
-                "Invalid size or alignment for type `{irtype:?}`: size={size:?}, align={align:?}",
-            ),
-        };
+        let size = irtype.get_instance_size_unwrap(type_ctx);
+        let align_log2 = irtype.get_align_log2(type_ctx);
         self.add_variable_item(irtype, vreg_alloc, size, align_log2)
     }
 

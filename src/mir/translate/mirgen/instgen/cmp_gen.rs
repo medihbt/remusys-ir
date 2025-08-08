@@ -1,10 +1,6 @@
 use crate::{
     base::{INullableValue, SlabRef},
-    ir::{
-        inst::{InstData, InstRef, UseData},
-        module::Module,
-        opcode::Opcode,
-    },
+    ir::{ISubInst, InstData, InstRef, Module, Opcode},
     mir::{
         inst::{IMirSubInst, MirInstRef, impls::*, inst::MirInst, opcode::MirOP},
         module::vreg_alloc::VirtRegAlloc,
@@ -16,7 +12,7 @@ use crate::{
     },
 };
 use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 pub(super) fn dispatch_cmp(
     ir_module: &Module,
@@ -26,14 +22,13 @@ pub(super) fn dispatch_cmp(
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
     alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
 ) {
-    let (opcode, inst) = match ir_ref.to_data(alloc_inst) {
-        InstData::Cmp(c, b) => (c.opcode, b),
-        _ => panic!("Expected Cmp instruction"),
+    let InstData::Cmp(inst) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected Cmp instruction");
     };
-    let lhs_ir = inst.lhs.get_operand(&alloc_use);
-    let rhs_ir = inst.rhs.get_operand(&alloc_use);
+    let opcode = inst.get_opcode();
+    let lhs_ir = inst.get_lhs();
+    let rhs_ir = inst.get_rhs();
     let type_ctx = &ir_module.type_ctx;
     let lhs_mir =
         DispatchedReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &lhs_ir, true)

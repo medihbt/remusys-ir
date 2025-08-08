@@ -97,7 +97,7 @@ impl ArrayTypeRef {
         let elem_size = self.get_elem_size(type_ctx);
         let elem_align = self
             .get_element_type(type_ctx)
-            .get_instance_align(type_ctx)
+            .try_get_instance_align(type_ctx)
             .unwrap();
         elem_size.next_multiple_of(elem_align)
     }
@@ -168,7 +168,7 @@ impl StructTypeData {
         for id in old_top..index {
             let elem_size = self.elemty[id].get_instance_size_unwrap(type_ctx);
             if !self.packed {
-                let elem_align = self.elemty[id].get_instance_align(type_ctx).unwrap();
+                let elem_align = self.elemty[id].try_get_instance_align(type_ctx).unwrap();
                 debug_assert!(
                     elem_align.is_power_of_two(),
                     "Element alignment must be a power of two"
@@ -193,7 +193,7 @@ impl StructTypeData {
         let align = self
             .elemty
             .iter()
-            .map(|ty| ty.get_instance_align(type_ctx).unwrap())
+            .map(|ty| ty.try_get_instance_align(type_ctx).unwrap())
             .max()
             .unwrap_or(1);
         self._align_cache.set(align);
@@ -266,6 +266,10 @@ impl StructTypeRef {
     }
     pub fn get_instance_align(&self, type_ctx: &TypeContext) -> usize {
         self.read_data_ref(type_ctx, |s| s.get_instance_align(type_ctx))
+    }
+
+    pub fn is_packed(&self, type_ctx: &TypeContext) -> bool {
+        self.read_data_ref(type_ctx, |s| s.packed)
     }
 
     pub fn iter_offsets<'a>(self, type_ctx: &'a TypeContext) -> StructOffsetIter<'a> {

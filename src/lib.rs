@@ -6,9 +6,8 @@ pub mod base;
 pub mod ir;
 pub mod mir;
 pub mod opt;
+pub mod testing;
 pub mod typing;
-
-mod testing;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = env!("CARGO_PKG_NAME");

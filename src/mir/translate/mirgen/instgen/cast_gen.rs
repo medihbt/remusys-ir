@@ -2,11 +2,8 @@ use super::InstDispatchError;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        ValueSSA,
-        constant::data::ConstData,
-        inst::{CmpOp, InstData, InstRef, UseData},
-        module::Module,
-        opcode::Opcode,
+        ConstData, IRAllocs, ISubInst, ISubValueSSA, Opcode, ValueSSA,
+        inst::{CmpOp, InstData, InstRef},
     },
     mir::{
         inst::{IMirSubInst, cond::MirCondFlag, impls::*, inst::MirInst, opcode::MirOP},
@@ -21,19 +18,17 @@ use crate::{
             operandgen::{DispatchedReg, InstRetval, OperandMap},
         },
     },
-    typing::{id::ValTypeID, types::FloatTypeKind},
+    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
 };
-use slab::Slab;
-use std::{cell::Ref, collections::VecDeque};
+use std::collections::VecDeque;
 
 pub(super) fn dispatch_casts(
-    ir_module: &Module,
+    type_ctx: &TypeContext,
+    allocs: &IRAllocs,
     operand_map: &OperandMap,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
     ir_ref: InstRef,
-    alloc_inst: &Slab<InstData>,
-    alloc_use: Ref<Slab<UseData>>,
     last_pstate_modifier: Option<InstRef>,
 ) -> Option<Result<(), InstDispatchError>> {
     use DispatchedReg::*;
@@ -44,12 +39,14 @@ pub(super) fn dispatch_casts(
             _ => panic!("Invalid types for integer cast: {src_ty:?} to {dst_ty:?}"),
         }
     }
-    let (opcode, dst_ty, inst) = match ir_ref.to_data(alloc_inst) {
-        InstData::Cast(c, i) => (c.opcode, c.ret_type, i),
-        _ => panic!("Expected Cast instruction"),
+    let alloc_inst = &allocs.insts;
+    let InstData::Cast(inst) = ir_ref.to_data(alloc_inst) else {
+        panic!("Expected Cast instruction");
     };
-    let src_ir = inst.from_op.get_operand(&alloc_use);
-    let src_ty = src_ir.get_value_type(ir_module);
+    let opcode = inst.get_opcode();
+    let dst_ty = inst.get_valtype();
+    let src_ir = inst.get_from();
+    let src_ty = src_ir.get_valtype(allocs);
     if src_ty == dst_ty {
         return Some(Ok(())); // No cast needed if types match
     }
@@ -68,19 +65,13 @@ pub(super) fn dispatch_casts(
             _ => unreachable!("Expected source operand to be an instruction"),
         };
         if InstRef::from_option(last_pstate_modifier) == cmp_ref {
-            return dispach_cast_cmp_to_int(ir_module, vreg_alloc, out_insts, dst_mir, cmp);
+            return dispach_cast_cmp_to_int(type_ctx, vreg_alloc, out_insts, dst_mir, cmp);
         }
     }
 
-    let src_mir = DispatchedReg::from_valuessa(
-        operand_map,
-        &ir_module.type_ctx,
-        vreg_alloc,
-        out_insts,
-        &src_ir,
-        true,
-    )
-    .expect("Failed to convert source operand to MIR");
+    let src_mir =
+        DispatchedReg::from_valuessa(operand_map, type_ctx, vreg_alloc, out_insts, &src_ir, true)
+            .expect("Failed to convert source operand to MIR");
     let castinst = match opcode {
         Opcode::Zext => match (dst_mir, src_mir) {
             (G32(_), G32(_)) | (G32(_), G64(_)) | (G64(_), G64(_)) => {
@@ -167,7 +158,7 @@ pub(super) fn dispatch_casts(
 }
 
 fn dispach_cast_cmp_to_int(
-    ir_module: &Module,
+    type_ctx: &TypeContext,
     vreg_alloc: &mut VirtRegAlloc,
     out_insts: &mut VecDeque<MirInst>,
     dst_mir: DispatchedReg,
@@ -181,7 +172,7 @@ fn dispach_cast_cmp_to_int(
         F32(fpr32) => {
             let rn = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee32, 0.0),
-                &ir_module.type_ctx,
+                type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
@@ -191,7 +182,7 @@ fn dispach_cast_cmp_to_int(
             };
             let rm = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee32, 1.0),
-                &ir_module.type_ctx,
+                type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
@@ -212,7 +203,7 @@ fn dispach_cast_cmp_to_int(
         F64(fpr64) => {
             let rn = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee64, 0.0),
-                &ir_module.type_ctx,
+                type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,
@@ -222,7 +213,7 @@ fn dispach_cast_cmp_to_int(
             };
             let rm = match DispatchedReg::from_constdata(
                 &ConstData::Float(FloatTypeKind::Ieee64, 1.0),
-                &ir_module.type_ctx,
+                type_ctx,
                 vreg_alloc,
                 out_insts,
                 true,

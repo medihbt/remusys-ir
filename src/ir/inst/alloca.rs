@@ -1,30 +1,80 @@
-use std::num::NonZero;
+use std::{num::NonZero, rc::Rc};
 
-use super::{InstDataCommon, InstDataUnique, InstError, usedef::UseData};
 use crate::{
-    ir::{PtrStorage, module::Module, opcode::Opcode},
+    ir::{
+        IRWriter, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrStorage, Use,
+        inst::{ISubInstRef, InstOperands},
+    },
     typing::id::ValTypeID,
 };
-use slab::Slab;
 
-/// Allocate a piece of fixed-size memory on the stack.
-/// The allocation returns a pointer to the allocated memory, which is
-/// the only mutable part in the IR system.
+/// 在栈上分配一段固定大小的内存. 这个指令的特殊之处在于, 该指令分配得到的内存
+/// 在函数内全局有效、全局存活, 直到函数返回或被销毁.
 ///
-/// To keep it simple, Remusys does not support `VLA`-like stack
-/// allocation, or `alloca()` function. If required, Remusys will
-/// introduce `DynAlloca` and `DynDropAlloca` unary instruction
-/// to handle dynamic stack allocation.
+/// 想要分配动态大小的栈内存或者控制分配内存的生命周期, 请使用 `DynAlloca` 指令.
+/// 只不过时间实在来不及了, `DynAlloca` 在此版本中不实现.
+///
+/// * 操作数布局: 没有操作数.
+///
+/// ### 语法
+///
+/// ```llvm
+/// %<result> = alloca <pointee_ty>, align <alignment>
+/// ```
+#[derive(Debug)]
 pub struct Alloca {
+    common: InstCommon,
+    /// 指向分配内存的类型. 如果要一次分配多个同类型的元素, 请使用
+    /// 对应的数组类型填充 `pointee_ty`.
     pub pointee_ty: ValTypeID,
+    /// 对齐方式的对数
     pub align_log2: u8,
 }
 
-impl InstDataUnique for Alloca {
-    fn build_operands(&mut self, _: &mut InstDataCommon, _: &mut Slab<UseData>) {}
-    fn check_operands(&self, _: &InstDataCommon, _: &Module) -> Result<(), InstError> {
-        /* No operand */
-        Ok(())
+impl ISubInst for Alloca {
+    fn new_empty(_: Opcode) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Alloca, ValTypeID::Ptr),
+            pointee_ty: ValTypeID::Void,
+            align_log2: 0,
+        }
+    }
+    fn try_from_ir(inst: &InstData) -> Option<&Self> {
+        match inst {
+            InstData::Alloca(alloca) => Some(alloca),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
+        match inst {
+            InstData::Alloca(alloca) => Some(alloca),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstData {
+        InstData::Alloca(self)
+    }
+    fn get_common(&self) -> &InstCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut InstCommon {
+        &mut self.common
+    }
+    fn is_terminator(&self) -> bool {
+        false
+    }
+    fn get_operands(&self) -> InstOperands {
+        InstOperands::Fixed(&[])
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut []
+    }
+
+    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
+        let Some(id) = id else { panic!("Tried to format an Alloca without an ID") };
+        write!(writer, "%{} = alloca ", id)?;
+        writer.write_type(self.pointee_ty)?;
+        write!(writer, ", align {}", 1usize << self.align_log2)
     }
 }
 
@@ -33,26 +83,30 @@ impl PtrStorage for Alloca {
         self.pointee_ty
     }
     fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
-        NonZero::new(1 << self.align_log2)
+        NonZero::new(1usize << self.align_log2)
     }
 }
 
 impl Alloca {
-    pub fn from_alloc_use(
-        alloc_use: &mut Slab<UseData>,
-        pointee_ty: ValTypeID,
-        align_log2: u8,
-    ) -> (Self, InstDataCommon) {
-        let mut inst = Self { pointee_ty, align_log2 };
-        let mut common = InstDataCommon::new(Opcode::Alloca, ValTypeID::Ptr, alloc_use);
-        inst.build_operands(&mut common, alloc_use);
-        (inst, common)
+    /// 创建一个新的 Alloca 指令, 分配指定类型的内存.
+    pub fn new(pointee_ty: ValTypeID, align_log2: u8) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Alloca, ValTypeID::Ptr),
+            pointee_ty,
+            align_log2,
+        }
     }
-    pub fn from_module(
-        module: &Module,
-        pointee_ty: ValTypeID,
-        align_log2: u8,
-    ) -> (Self, InstDataCommon) {
-        Self::from_alloc_use(&mut module.borrow_use_alloc_mut(), pointee_ty, align_log2)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AllocaRef(InstRef);
+
+impl ISubInstRef for AllocaRef {
+    type InstDataT = Alloca;
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        Self(inst_ref)
+    }
+    fn into_raw(self) -> InstRef {
+        self.0
     }
 }

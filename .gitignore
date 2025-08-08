@@ -38,3 +38,5 @@ Thumbs.db
 /target
 /remusys_mir_instdef/target
 Cargo.lock
+
+*-old

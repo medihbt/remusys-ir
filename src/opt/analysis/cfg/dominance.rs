@@ -6,12 +6,7 @@ use super::{
 };
 use crate::{
     base::{DSU, INullableValue, SlabListNodeRef},
-    ir::{
-        block::BlockRef,
-        inst::{InstData, InstRef},
-        module::Module,
-        util::numbering::IRValueNumberMap,
-    },
+    ir::{BlockRef, IRAllocs, IRValueNumberMap, InstData, InstRef},
     opt::util::DfsOrder,
 };
 use slab::Slab;
@@ -124,8 +119,8 @@ impl DominatorTree {
         false
     }
 
-    pub fn inst_dominates_block(&self, module: &Module, inst: InstRef, block: BlockRef) -> bool {
-        let inst_block = inst.get_parent(module).unwrap();
+    pub fn inst_dominates_block(&self, allocs: &IRAllocs, inst: InstRef, block: BlockRef) -> bool {
+        let inst_block = inst.get_parent(allocs).unwrap();
         if inst_block == block {
             return true;
         }
@@ -144,14 +139,14 @@ impl DominatorTree {
         return self.block_dominates_block(inst_block, block);
     }
 
-    pub fn inst_dominates_inst(&self, module: &Module, inst1: InstRef, inst2: InstRef) -> bool {
+    pub fn inst_dominates_inst(&self, allocs: &IRAllocs, inst1: InstRef, inst2: InstRef) -> bool {
         if inst1 == inst2 {
             return true;
         }
-        let inst1_block = inst1.get_parent(module).unwrap();
-        let inst2_block = inst2.get_parent(module).unwrap();
+        let inst1_block = inst1.get_parent(allocs).unwrap();
+        let inst2_block = inst2.get_parent(allocs).unwrap();
         if inst1_block == inst2_block {
-            return inst1.comes_before_node(inst2, &module.borrow_value_alloc().insts);
+            return inst1.comes_before_node(inst2, &allocs.insts);
         }
         return self.block_dominates_block(inst1_block, inst2_block);
     }

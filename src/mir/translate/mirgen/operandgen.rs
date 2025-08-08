@@ -1,7 +1,8 @@
 use std::{collections::VecDeque, rc::Rc};
 
 use crate::{
-    ir::{ValueSSA, block::BlockRef, constant::data::ConstData, global::GlobalRef, inst::InstRef},
+    base::APInt,
+    ir::{BlockRef, ConstData, GlobalRef, ValueSSA, inst::InstRef},
     mir::{
         fmt::FuncFormatContext,
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
@@ -307,7 +308,7 @@ impl DispatchedReg {
                 let value = if *bits == 1 {
                     *value as u64
                 } else {
-                    ConstData::iconst_value_get_real_signed(*bits, *value) as u64
+                    APInt::new(*value, *bits).as_signed() as u64
                 };
                 DispatchedReg::G64(Self::make_ldr_for_imm64(value, alloc_reg, out_insts))
             }

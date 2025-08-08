@@ -20,6 +20,18 @@ pub enum ValTypeID {
     Func(FuncTypeRef),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValTypeIDClass {
+    Void,
+    Ptr,
+    Int,
+    Float,
+    Array,
+    Struct,
+    StructAlias,
+    Func,
+}
+
 impl Debug for ValTypeID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -36,7 +48,7 @@ impl Debug for ValTypeID {
 }
 
 impl ValTypeID {
-    pub fn new_boolean() -> Self {
+    pub const fn new_boolean() -> Self {
         Self::Int(1)
     }
     pub fn int_get_binary_bits(&self) -> u8 {
@@ -73,7 +85,7 @@ impl ValTypeID {
             .expect("ValTypeID must have a valid instance size")
     }
 
-    pub fn get_instance_align(&self, type_ctx: &TypeContext) -> Option<usize> {
+    pub fn try_get_instance_align(&self, type_ctx: &TypeContext) -> Option<usize> {
         match self {
             ValTypeID::Ptr => Some(type_ctx.platform_policy.ptr_nbits / 8),
             ValTypeID::Int(binbits) => {
@@ -84,14 +96,29 @@ impl ValTypeID {
                 FloatTypeKind::Ieee32 => Some(4),
                 FloatTypeKind::Ieee64 => Some(8),
             },
-            ValTypeID::Array(arr) => arr.get_element_type(type_ctx).get_instance_align(type_ctx),
+            ValTypeID::Array(arr) => arr
+                .get_element_type(type_ctx)
+                .try_get_instance_align(type_ctx),
             ValTypeID::Struct(st) => Some(st.get_instance_align(type_ctx)),
             ValTypeID::StructAlias(sa) => {
                 let sty = sa.get_aliasee(type_ctx);
-                ValTypeID::Struct(sty).get_instance_align(type_ctx)
+                ValTypeID::Struct(sty).try_get_instance_align(type_ctx)
             }
             ValTypeID::Void | ValTypeID::Func(_) => None,
         }
+    }
+    pub fn get_align(&self, type_ctx: &TypeContext) -> usize {
+        self.try_get_instance_align(type_ctx)
+            .expect("ValType ID should have a valid align")
+    }
+    pub fn try_get_align_log2(&self, type_ctx: &TypeContext) -> Option<u8> {
+        self.try_get_instance_align(type_ctx).and_then(|align| {
+            if align.is_power_of_two() { Some(align.trailing_zeros() as u8) } else { None }
+        })
+    }
+    pub fn get_align_log2(&self, type_ctx: &TypeContext) -> u8 {
+        self.try_get_align_log2(type_ctx)
+            .expect("ValTypeID must have a valid alignment")
     }
 
     pub fn makes_instance(&self) -> bool {

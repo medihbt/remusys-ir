@@ -1,14 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    base::INullableValue,
-    ir::{
-        ValueSSA,
-        block::BlockRef,
-        global::{GlobalData, GlobalRef, func::FuncStorage},
-        inst::InstRef,
-        module::Module,
-    },
+    base::{INullableValue, SlabRef},
+    ir::{BlockRef, Func, GlobalRef, IRAllocs, ISubGlobal, ISubInst, InstRef, Module, ValueSSA},
     typing::id::ValTypeID,
 };
 
@@ -30,31 +24,23 @@ impl IRValueNumberMap {
             func: GlobalRef::new_null(),
         }
     }
-    pub fn from_func(module: &Module, func: GlobalRef, option: NumberOption) -> Self {
-        let alloc_value = module.borrow_value_alloc();
-        let alloc_block = &alloc_value.blocks;
-        let alloc_inst = &alloc_value.insts;
-
+    pub fn new(allocs: &IRAllocs, func: GlobalRef, option: NumberOption) -> Self {
         let mut inst_map = BTreeMap::new();
         let mut block_map = BTreeMap::new();
 
-        let func_data = module.get_global(func);
-        let func_data = match &*func_data {
-            GlobalData::Func(f) => f,
-            _ => panic!("Expected a function"),
-        };
+        let func_data = Func::from_ir(func.to_data(&allocs.globals)).expect("Expected a function");
 
-        let blocks_range = match func_data.get_blocks() {
+        let blocks_range = match func_data.get_body() {
             Some(b) => b.load_range(),
             None => panic!("Function has no blocks"),
         };
-        let mut curr_number = func_data.get_nargs(&module.type_ctx);
-        for (block_ref, block) in blocks_range.view(alloc_block) {
+        let mut curr_number = func_data.get_nargs();
+        for (block_ref, block) in blocks_range.view(&allocs.blocks) {
             block_map.insert(block_ref, curr_number);
             curr_number += 1;
 
-            for (inst_ref, inst) in block.instructions.view(alloc_inst) {
-                if (option.ignore_void && matches!(inst.get_value_type(), ValTypeID::Void))
+            for (inst_ref, inst) in block.insts.view(&allocs.insts) {
+                if (option.ignore_void && matches!(inst.get_valtype(), ValTypeID::Void))
                     || (option.ignore_terminator && inst.is_terminator())
                     || (option.ignore_guide && inst.is_guide_node())
                 {
@@ -80,6 +66,13 @@ impl IRValueNumberMap {
             block_map: block_map_vec.into_boxed_slice(),
             func,
         }
+    }
+
+    pub fn from_module(module: &Module, func: GlobalRef, option: NumberOption) -> Self {
+        Self::new(&module.borrow_allocs(), func, option)
+    }
+    pub fn from_mut_module(module: &mut Module, func: GlobalRef, option: NumberOption) -> Self {
+        Self::new(module.allocs_mut(), func, option)
     }
 }
 
