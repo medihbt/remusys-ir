@@ -5,7 +5,7 @@ use slab::Slab;
 use crate::{
     ir::{
         BlockData, BlockRef, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef,
-        JumpTarget, JumpTargetKind, Opcode, Use, ValueSSA,
+        JumpTarget, JumpTargetKind, Opcode, Use,
         block::jump_target::JumpTargets,
         inst::{ISubInstRef, InstOperands},
     },
@@ -64,13 +64,7 @@ impl ISubInst for Jump {
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {
-        self.common_mut().self_ref = self_ref;
-        for user in &self.get_common().users {
-            user.operand.set(ValueSSA::Inst(self_ref));
-        }
-        for operand in self.operands_mut() {
-            operand.inst.set(self_ref);
-        }
+        InstData::basic_init_self_reference(self_ref, self);
         for jt in &self.target {
             jt.terminator.set(self_ref);
         }
@@ -79,6 +73,14 @@ impl ISubInst for Jump {
     fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
         writer.write_str("br label ")?;
         writer.write_operand(self.get_target())
+    }
+
+    fn cleanup(&self) {
+        InstData::basic_cleanup(self);
+        // 清理跳转目标
+        for jt in &self.target {
+            jt.clean_block();
+        }
     }
 }
 

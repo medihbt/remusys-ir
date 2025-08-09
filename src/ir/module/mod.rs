@@ -152,6 +152,7 @@ impl IRAllocs {
 
 pub enum IRAllocsRef<'a> {
     Fix(&'a IRAllocs),
+    Mut(&'a mut IRAllocs),
     Dyn(Ref<'a, IRAllocs>),
 }
 
@@ -159,6 +160,7 @@ impl<'a> IRAllocsRef<'a> {
     pub fn get(&self) -> &IRAllocs {
         match self {
             IRAllocsRef::Fix(x) => *x,
+            IRAllocsRef::Mut(x) => x,
             IRAllocsRef::Dyn(x) => &*x,
         }
     }

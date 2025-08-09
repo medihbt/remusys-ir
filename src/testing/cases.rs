@@ -127,12 +127,6 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let load_20 = builder
         .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
         .unwrap();
-    // match &*builder.module.get_inst(ret_inst) {
-    //     InstData::Ret(_, ret) => ret
-    //         .retval
-    //         .set_operand(&builder.module, ValueSSA::Inst(load_20)),
-    //     _ => unreachable!(),
-    // }
 
     // set up the while block
     builder.set_focus(IRBuilderFocus::Block(while_block_5));
@@ -225,6 +219,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .add_store_inst(ValueSSA::Inst(alloca_c_1), APInt::new(168, 32).into(), 4)
         .unwrap();
     builder.focus_set_jump_to(while_block_5).unwrap();
+    // builder.module.gc_mark_sweep_mut([]);
     builder
 }
 
@@ -238,6 +233,11 @@ pub fn create_module_builder(name: &str) -> IRBuilder {
 #[allow(unused)]
 pub fn write_ir_to_file(module: &Module, filename: &str) {
     let filepath = format!("target/{}.ll", filename);
-    let mut file = std::fs::File::create(&filepath).unwrap();
+    let mut file = match std::fs::File::create(&filepath) {
+        Ok(f) => f,
+        Err(e) => {
+            panic!("Failed to create file {filepath}: {e}")
+        }
+    };
     write_ir_module(module, &mut file);
 }

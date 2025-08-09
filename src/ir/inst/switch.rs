@@ -100,15 +100,9 @@ impl ISubInst for Switch {
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {
-        self.common_mut().self_ref = self_ref;
-        for user in &self.get_common().users {
-            user.operand.set(ValueSSA::Inst(self_ref));
-        }
-        for operand in self.operands_mut() {
-            operand.inst.set(self_ref);
-        }
+        InstData::basic_init_self_reference(self_ref, self);
         // 设置所有跳转目标的终结指令引用
-        for jt in &*self.targets.borrow() {
+        for jt in &self.get_jts() {
             jt.terminator.set(self_ref);
         }
     }
@@ -143,6 +137,14 @@ impl ISubInst for Switch {
         writer.wrap_indent();
         // 结束 case 列表
         write!(writer, "]")
+    }
+
+    fn cleanup(&self) {
+        InstData::basic_cleanup(self);
+        // 清理跳转目标
+        for jt in &*self.targets.borrow() {
+            jt.clean_block();
+        }
     }
 }
 

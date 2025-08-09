@@ -1,7 +1,8 @@
 use crate::mir::{
     fmt::FuncFormatContext,
     operand::{
-        imm_traits::{self, fp8aarch_to_fp32, fp8aarch_to_fp64}, IMirSubOperand, MirOperand
+        IMirSubOperand, MirOperand,
+        imm_traits::{self, fp8aarch_to_fp32, fp8aarch_to_fp64},
     },
 };
 use std::fmt::Debug;
@@ -1398,7 +1399,7 @@ impl IMirSubOperand for ImmFMov64 {
 
 #[cfg(test)]
 mod testing {
-    use crate::mir::operand::{imm::ImmFMov32, IMirSubOperand};
+    use crate::mir::operand::{IMirSubOperand, imm::ImmFMov32};
 
     #[test]
     fn test_imm_fmov32() {

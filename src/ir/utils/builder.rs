@@ -2,7 +2,8 @@ use crate::{
     base::{INullableValue, SlabListError, SlabListRange, SlabRef},
     ir::{
         BlockData, BlockRef, CmpCond, Func, FuncRef, GlobalRef, IRAllocs, ISubGlobal, ISubInst,
-        ISubValueSSA, ITraceableValue, InstData, InstRef, Module, Opcode, UseKind, ValueSSA, Var,
+        ISubValueSSA, ITraceableValue, InstData, InstRef, ManagedInst, Module, Opcode, UseKind,
+        ValueSSA, Var,
         inst::{
             Alloca, BinOp, Br, CallOp, CastOp, CmpOp, ISubInstRef, IndexPtr, InstError, Jump,
             LoadOp, PhiNode, PhiRef, Ret, SelectOp, StoreOp, Switch,
@@ -82,7 +83,7 @@ pub enum IRBuilderError {
 }
 
 type InstBuildRes = Result<InstRef, IRBuilderError>;
-type TermiBuildRes = Result<(InstRef, InstRef), IRBuilderError>;
+type TermiBuildRes<'a> = Result<(ManagedInst<'a>, InstRef), IRBuilderError>;
 
 impl IRBuilder {
     pub fn new(module: Module) -> Self {
@@ -439,12 +440,13 @@ impl IRBuilder {
             return Err(IRBuilderError::BlockHasNoTerminator(curr_bb));
         }
 
+        let old_terminator = old_terminator.release();
         let allocs = self.allocs_mut();
         let alloc_block = &allocs.blocks;
-        let alloc_inst = &allocs.insts;
+
         new_block
             .to_data(alloc_block)
-            .set_terminator_with_alloc(alloc_inst, old_terminator)
+            .set_terminator_with_allocs(&allocs, old_terminator)
             .map_err(Self::map_inst_error)?;
 
         // Now we need to update the PHI nodes in the successors of the original block.
@@ -797,29 +799,19 @@ impl IRBuilder {
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    fn focus_replace_terminator_with(&mut self, terminator: InstData) -> TermiBuildRes {
+    fn focus_replace_terminator_with<'a>(&'a mut self, terminator: InstData) -> TermiBuildRes<'a> {
         if self.focus.block.is_null() {
             return Err(IRBuilderError::NullFocus);
         }
-        let old_terminator = {
-            let focus_block = self.focus.block;
-            let allocs = self.allocs_mut();
-            let old_terminator = focus_block
-                .to_data(&allocs.blocks)
-                .try_get_terminator(&allocs.insts);
-            match old_terminator {
-                Ok(termi) => termi.get_inst(),
-                Err(_) => InstRef::new_null(),
-            }
-        };
         // Replace the current terminator with the new one.
         let new_terminator = InstRef::from_alloc(&mut self.allocs_mut().insts, terminator);
 
         let focus_block = self.focus.block;
         let allocs = self.allocs_mut();
-        focus_block
+
+        let old_terminator = focus_block
             .to_data(&allocs.blocks)
-            .set_terminator_with_alloc(&allocs.insts, new_terminator)
+            .set_terminator_with_allocs(allocs, new_terminator)
             .map_err(Self::map_inst_error)?;
         Ok((old_terminator, new_terminator))
     }

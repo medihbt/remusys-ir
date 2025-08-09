@@ -4,8 +4,8 @@ use crate::{
         SlabListRes, SlabRef,
     },
     ir::{
-        BlockRef, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, Opcode, Use, UserList,
-        ValueSSA, ValueSSAError,
+        BlockRef, IRAllocs, IRAllocsRef, IRWriter, ISubValueSSA, ITraceableValue, ManagedInst,
+        Module, Opcode, Use, UserList, ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, id::ValTypeID},
 };
@@ -254,6 +254,55 @@ impl ISubInst for InstData {
             InstData::Store(inst) => inst.fmt_ir(id, writer),
         }
     }
+
+    fn init_self_reference(&mut self, self_ref: InstRef) {
+        match self {
+            InstData::ListGuideNode(i) => i.self_ref = self_ref,
+            InstData::PhiInstEnd(i) => i.self_ref = self_ref,
+            InstData::Unreachable(i) => i.self_ref = self_ref,
+            InstData::Ret(ret) => ret.init_self_reference(self_ref),
+            InstData::Jump(jump) => jump.init_self_reference(self_ref),
+            InstData::Br(br) => br.init_self_reference(self_ref),
+            InstData::Switch(switch) => switch.init_self_reference(self_ref),
+            InstData::Alloca(alloca) => alloca.init_self_reference(self_ref),
+            InstData::BinOp(binop) => binop.init_self_reference(self_ref),
+            InstData::Call(call) => call.init_self_reference(self_ref),
+            InstData::Cast(cast_op) => cast_op.init_self_reference(self_ref),
+            InstData::Phi(phi) => phi.init_self_reference(self_ref),
+            InstData::Cmp(cmp_op) => cmp_op.init_self_reference(self_ref),
+            InstData::GEP(gep) => gep.init_self_reference(self_ref),
+            InstData::Select(select_op) => select_op.init_self_reference(self_ref),
+            InstData::Load(load) => load.init_self_reference(self_ref),
+            InstData::Store(store) => store.init_self_reference(self_ref),
+        }
+    }
+
+    fn cleanup(&self) {
+        match self {
+            InstData::ListGuideNode(_) => {}
+            InstData::PhiInstEnd(_) => {}
+            InstData::Unreachable(_) => {}
+            InstData::Ret(ret) => ret.cleanup(),
+            InstData::Jump(jump) => jump.cleanup(),
+            InstData::Br(br) => br.cleanup(),
+            InstData::Switch(switch) => switch.cleanup(),
+            InstData::Alloca(alloca) => alloca.cleanup(),
+            InstData::BinOp(binop) => binop.cleanup(),
+            InstData::Call(call) => call.cleanup(),
+            InstData::Cast(cast_op) => cast_op.cleanup(),
+            InstData::Phi(phi) => phi.cleanup(),
+            InstData::Cmp(cmp_op) => cmp_op.cleanup(),
+            InstData::GEP(gep) => gep.cleanup(),
+            InstData::Select(select_op) => select_op.cleanup(),
+            InstData::Load(load) => load.cleanup(),
+            InstData::Store(store) => store.cleanup(),
+        }
+        log::debug!(
+            "InstData cleanup: opcode {:?} ref {:?}",
+            self.get_opcode(),
+            self.get_self_ref()
+        );
+    }
 }
 
 impl SlabListNode for InstData {
@@ -291,6 +340,25 @@ impl InstData {
     pub fn new_phi_inst_end() -> Self {
         InstData::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
     }
+
+    fn basic_cleanup(inst: &impl ISubInst) {
+        // 清理指令的用户列表
+        inst.get_common().users.clear();
+        // 清空所有操作数的引用
+        for operand in &inst.get_operands() {
+            operand.clean_operand();
+        }
+    }
+
+    fn basic_init_self_reference(self_ref: InstRef, inst: &mut impl ISubInst) {
+        inst.common_mut().self_ref = self_ref;
+        for user in &inst.get_common().users {
+            user.operand.set(ValueSSA::Inst(self_ref));
+        }
+        for operand in inst.operands_mut() {
+            operand.inst.set(self_ref);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -326,7 +394,7 @@ impl<'a> InstOperands<'a> {
     }
 }
 
-pub trait ISubInst: Debug {
+pub trait ISubInst: Debug + Sized {
     fn new_empty(opcode: Opcode) -> Self;
 
     fn try_from_ir(inst: &InstData) -> Option<&Self>;
@@ -382,16 +450,16 @@ pub trait ISubInst: Debug {
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {
-        self.common_mut().self_ref = self_ref;
-        for user in &self.get_common().users {
-            user.operand.set(ValueSSA::Inst(self_ref));
-        }
-        for operand in self.operands_mut() {
-            operand.inst.set(self_ref);
-        }
+        InstData::basic_init_self_reference(self_ref, self);
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()>;
+
+    /// 清空所有与自身有关的引用, 用于 RAII 风格的清理.
+    /// 注意: 这不会从基本块中移除自己.
+    fn cleanup(&self) {
+        InstData::basic_cleanup(self);
+    }
 }
 
 #[derive(Debug)]
@@ -521,7 +589,7 @@ impl InstRef {
     }
 
     /// 如果自己在指令列表里, 就把自己移除掉.
-    pub fn detach_self(self, allocs: &IRAllocs) -> Result<(), InstError> {
+    pub fn detach_self(self, allocs: &IRAllocs) -> Result<ManagedInst, InstError> {
         let (parent, opcode) = {
             let data = self.to_inst(&allocs.insts);
             (data.get_parent_bb(), data.get_opcode())
@@ -533,7 +601,8 @@ impl InstRef {
         parent
             .insts_from_alloc(&allocs.blocks)
             .unplug_node(&allocs.insts, self)
-            .map_err(InstError::ListError)
+            .map_err(InstError::ListError)?;
+        Ok(ManagedInst::new(self, IRAllocsRef::Fix(allocs)))
     }
 
     pub fn get_parent(self, allocs: &IRAllocs) -> BlockRef {
@@ -548,7 +617,7 @@ impl InstRef {
     }
 }
 
-pub trait ISubInstRef: Sized {
+pub trait ISubInstRef: Sized + Clone {
     type InstDataT: ISubInst;
 
     fn from_raw_nocheck(inst_ref: InstRef) -> Self;
@@ -576,12 +645,18 @@ pub trait ISubInstRef: Sized {
             .and_then(|data| Self::InstDataT::try_from_ir_mut(data))
     }
     fn to_inst(self, alloc: &Slab<InstData>) -> &Self::InstDataT {
-        self.as_inst(alloc)
-            .expect("Expected a valid instruction data reference")
+        let Some(data) = self.clone().as_inst(alloc) else {
+            let raw = self.into_raw();
+            panic!("Expected a valid instruction data reference for {raw:?}");
+        };
+        data
     }
     fn to_inst_mut(self, alloc: &mut Slab<InstData>) -> &mut Self::InstDataT {
-        self.as_inst_mut(alloc)
-            .expect("Expected a valid instruction data reference")
+        let Some(data) = self.clone().as_inst_mut(alloc) else {
+            let raw = self.into_raw();
+            panic!("Expected a valid instruction data reference for {raw:?}");
+        };
+        data
     }
 
     fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {

@@ -314,11 +314,11 @@ impl MirTranslateCtx {
                 debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
 
                 let allocs = self.ir_module.borrow_allocs();
-                if ir.to_data(&allocs.insts).has_users() {
-                    // 如果指令有用户, 则分配寄存器或存储空间.
+                if !ir.to_data(&allocs.insts).has_users() {
                     vregs.push((*ir, InstRetval::Wasted));
                     continue;
                 }
+                // 如果指令有用户, 则分配寄存器或存储空间.
 
                 match kind {
                     K::ListGuideNode | K::PhiInstEnd | K::Unreachable => {

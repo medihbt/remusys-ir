@@ -154,6 +154,15 @@ impl JumpTarget {
         }
     }
 
+    /// 从前驱基本块的前驱列表中移除自己
+    pub fn clean_block(&self) {
+        if self.block.get().is_null() {
+            return; // No block to clean
+        }
+        self.detach();
+        self.block.set(BlockRef::new_null());
+    }
+
     /// 自己是不是关键边
     pub fn is_critical_edge(&self, allocs: &IRAllocs) -> bool {
         let from_inst = self.get_terminator();

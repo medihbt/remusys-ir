@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, rc::Rc};
+use std::{collections::VecDeque, fmt::Debug, rc::Rc};
 
 use crate::{
     base::APInt,
@@ -46,6 +46,17 @@ pub enum OperandMapError {
     IsUnsupported(ValueSSA),
     IsNotFound(ValueSSA),
     ResultWasted(InstRef),
+}
+
+impl<'a> Debug for OperandMap<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OperandMap")
+            .field("args", &self.args)
+            .field("func", &self.func.get_name())
+            .field("globals", &self.globals)
+            .field("insts", &self.insts)
+            .finish()
+    }
 }
 
 impl<'a> OperandMap<'a> {
@@ -131,6 +142,7 @@ impl<'a> OperandMap<'a> {
         drop(inner);
 
         let ret = Self { args, func, globals, insts, blocks };
+        log::debug!("Operand map for function: {:#?}", ret);
         (ret, args_builder_template)
     }
 

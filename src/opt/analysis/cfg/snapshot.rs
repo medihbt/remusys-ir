@@ -146,6 +146,9 @@ impl CfgSnapshot {
             }
         }
 
+        log::debug!("succs: {:?}", succ_map);
+        log::debug!("preds: {:?}", pred_map);
+
         // Collect predecessors and successors of each block into nodes.
         // The collected vector is sorted by `BlockRef` handle number naturally.
 

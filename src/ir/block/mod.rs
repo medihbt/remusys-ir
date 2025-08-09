@@ -5,7 +5,7 @@ use crate::{
     },
     ir::{
         ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstData, InstRef,
-        JumpTarget, Module, PredList, TerminatorRef, UserList, ValueSSA,
+        JumpTarget, ManagedInst, Module, PredList, TerminatorRef, UserList, ValueSSA,
         block::jump_target::JumpTargets,
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
@@ -354,7 +354,7 @@ impl BlockData {
         self.insts.is_valid() && self.try_get_terminator(alloc).is_ok()
     }
 
-    pub fn set_terminator_with_alloc(
+    fn set_terminator_with_alloc(
         &self,
         alloc: &Slab<InstData>,
         terminator: InstRef,
@@ -378,12 +378,13 @@ impl BlockData {
             .map_err(InstError::ListError)?;
         Ok(ret)
     }
-    pub fn set_terminator_with_allocs(
+    pub fn set_terminator_with_allocs<'a>(
         &self,
-        allocs: &IRAllocs,
+        allocs: &'a IRAllocs,
         terminator: InstRef,
-    ) -> Result<Option<InstRef>, InstError> {
-        self.set_terminator_with_alloc(&allocs.insts, terminator)
+    ) -> Result<ManagedInst<'a>, InstError> {
+        let old = self.set_terminator_with_alloc(&allocs.insts, terminator)?;
+        Ok(ManagedInst::from_allocs(InstRef::from_option(old), allocs))
     }
 
     pub fn get_successors<'a>(&self, alloc: &'a Slab<InstData>) -> JumpTargets<'a> {

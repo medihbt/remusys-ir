@@ -74,13 +74,7 @@ impl ISubInst for Br {
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {
-        self.common_mut().self_ref = self_ref;
-        for user in &self.get_common().users {
-            user.operand.set(ValueSSA::Inst(self_ref));
-        }
-        for operand in self.operands_mut() {
-            operand.inst.set(self_ref);
-        }
+        InstData::basic_init_self_reference(self_ref, self);
         for jt in &self.targets {
             jt.terminator.set(self_ref);
         }
@@ -93,6 +87,14 @@ impl ISubInst for Br {
         writer.write_operand(self.get_if_true())?;
         write!(writer, ", label ")?;
         writer.write_operand(self.get_if_false())
+    }
+
+    fn cleanup(&self) {
+        InstData::basic_cleanup(self);
+        // 清理跳转目标
+        for jt in &self.targets {
+            jt.clean_block();
+        }
     }
 }
 

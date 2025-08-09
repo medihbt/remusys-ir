@@ -475,4 +475,7 @@ impl FuncRef {
     pub fn get_body(self, alloc: &Slab<GlobalData>) -> Option<&SlabRefList<BlockRef>> {
         self.to_data(alloc).get_body()
     }
+    pub fn body_unwrap(self, alloc: &Slab<GlobalData>) -> &SlabRefList<BlockRef> {
+        self.get_body(alloc).expect("Expected a function body")
+    }
 }

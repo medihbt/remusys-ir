@@ -13,6 +13,7 @@ mod block;
 mod cmp_cond;
 mod constant;
 mod global;
+mod managed;
 mod module;
 mod opcode;
 mod utils;
@@ -43,6 +44,7 @@ pub use self::{
         ISubInst, InstCommon, InstData, InstInner, InstRef,
         usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
     },
+    managed::{IManagedIRValue, IRManaged, ManagedInst},
     module::{
         IRAllocs, IRAllocsRef, Module,
         gc::{IRLiveValueSet, IRValueMarker},

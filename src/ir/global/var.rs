@@ -72,7 +72,8 @@ impl ISubGlobal for Var {
         )?;
         writer.write_type(self.common.content_ty)?;
 
-        if let ValueSSA::None = self.get_init() {} else {
+        if let ValueSSA::None = self.get_init() {
+        } else {
             write!(writer, " ")?;
             self.get_init().fmt_ir(writer)?;
         }

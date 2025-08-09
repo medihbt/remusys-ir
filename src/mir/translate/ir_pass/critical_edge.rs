@@ -64,7 +64,13 @@ fn find_critical_edges_for_func(
     while let Some(edge) = critical_edges.pop_front() {
         // 这里不用 split, 而是直接创建新的中间基本块
         // 并将所有相关的 JumpTarget 重定向到这个新块。
-        let mid_bb = BlockRef::new_jump_to(allocs, edge.to);
+        let mid_bb = {
+            let mid_bb = BlockRef::new_jump_to(allocs, edge.to);
+            func.body_unwrap(&allocs.globals)
+                .node_add_prev(&allocs.blocks, edge.to, mid_bb)
+                .expect("Failed to add new block");
+            mid_bb
+        };
         for jt in edge.jts {
             jt.set_block(&allocs.blocks, mid_bb);
         }

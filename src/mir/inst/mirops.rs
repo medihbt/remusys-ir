@@ -81,9 +81,9 @@ impl IMirSubInst for MirReturn {
 }
 
 pub use super::comment::{MirComment, MirCommentedInst};
+pub use super::func_prologue::MirFuncPrologue;
 pub use super::gep::MirGEP;
 pub use super::mir_call::MirCall;
 pub use super::reg_restore::{MirRestoreHostRegs, MirRestoreRegs};
 pub use super::reg_save::MirSaveRegs;
 pub use super::switch::MirSwitch;
-pub use super::func_prologue::MirFuncPrologue;
