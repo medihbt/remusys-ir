@@ -10,7 +10,7 @@ pub enum ConstData {
     Undef(ValTypeID),
     Zero(ValTypeID),
     PtrNull(ValTypeID),
-    Int(u8, u128),
+    Int(APInt),
     Float(FloatTypeKind, f64),
 }
 
@@ -22,7 +22,7 @@ impl PartialEq for ConstData {
             (Undef(l0), Undef(r0)) => l0 == r0,
             (Zero(l0), Zero(r0)) => l0 == r0,
             (PtrNull(l0), PtrNull(r0)) => l0 == r0,
-            (Int(l0, l1), Int(r0, r1)) => l0 == r0 && l1 == r1,
+            (Int(l), Int(r)) => l == r,
             (Float(Ieee32, l1), Float(Ieee32, r1)) => {
                 (*l1 as f32).to_bits() == (*r1 as f32).to_bits()
             }
@@ -43,10 +43,7 @@ impl Hash for ConstData {
             Undef(ty) => ty.hash(state),
             Zero(ty) => ty.hash(state),
             PtrNull(ty) => ty.hash(state),
-            Int(bits, value) => {
-                bits.hash(state);
-                value.hash(state);
-            }
+            Int(apint) => apint.hash(state),
             Float(Ieee32, value) => {
                 (*value as f32).to_bits().hash(state);
             }
@@ -77,7 +74,7 @@ impl ISubValueSSA for ConstData {
             ConstData::Undef(ty) => ty,
             ConstData::Zero(ty) => ty,
             ConstData::PtrNull(_) => ValTypeID::Ptr,
-            ConstData::Int(bits, _) => ValTypeID::Int(bits),
+            ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(kind),
         }
     }
@@ -103,9 +100,8 @@ impl ISubValueSSA for ConstData {
                 _ => panic!("Unsupported type {ty:?} for zero constant"),
             },
             ConstData::PtrNull(_) => writer.write_str("null"),
-            ConstData::Int(bit, val) => {
-                let val = APInt::new(*val, *bit).as_signed();
-                write!(writer.output.borrow_mut(), "{val}")
+            ConstData::Int(apint) => {
+                write!(writer.output.borrow_mut(), "{}", apint.as_signed())
             }
             ConstData::Float(FloatTypeKind::Ieee32, fp) => {
                 write!(writer.output.borrow_mut(), "{:.20e}", *fp as f32)
@@ -119,7 +115,7 @@ impl ISubValueSSA for ConstData {
 
 impl From<APInt> for ConstData {
     fn from(value: APInt) -> Self {
-        ConstData::Int(value.bits(), value.as_unsigned())
+        ConstData::Int(value)
     }
 }
 
@@ -140,7 +136,7 @@ impl ConstData {
             ConstData::Undef(ty) => *ty,
             ConstData::Zero(ty) => *ty,
             ConstData::PtrNull(_) => ValTypeID::Ptr,
-            ConstData::Int(bits, _) => ValTypeID::Int(*bits),
+            ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(*kind),
         }
     }
@@ -149,7 +145,8 @@ impl ConstData {
         use ConstData::*;
         use FloatTypeKind::*;
         match self {
-            Zero(_) | PtrNull(_) | Int(_, 0) => true,
+            Zero(_) | PtrNull(_) => true,
+            Int(x) => *x == 0, 
             Float(Ieee32, f) => (*f as f32).to_bits() == 0,
             Float(Ieee64, f) => (*f as f64).to_bits() == 0,
             _ => false,
@@ -158,7 +155,7 @@ impl ConstData {
 
     pub fn as_apint(&self) -> Option<APInt> {
         match self {
-            ConstData::Int(bits, value) => Some(APInt::new(*value, *bits)),
+            ConstData::Int(apint) => Some(*apint),
             _ => None,
         }
     }

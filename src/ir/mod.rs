@@ -1,6 +1,6 @@
 use crate::{
     base::{APInt, SlabRef},
-    typing::id::ValTypeID,
+    typing::{id::ValTypeID, types::FloatTypeKind},
 };
 use std::{
     fmt::Debug,
@@ -36,7 +36,7 @@ pub use self::{
         expr::{Array, ConstExprData, ConstExprRef, Struct},
     },
     global::{
-        GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal,
+        GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal, Linkage,
         func::{Func, FuncArg, FuncArgRef, FuncRef, FuncStorage, FuncUser},
         var::{Var, VarInner},
     },
@@ -56,7 +56,7 @@ pub use self::{
             IRBuilderFocusCheckOption,
         },
         numbering::{IRValueNumberMap, NumberOption},
-        writer::{IRWriter, IRWriterOption, write_ir_module},
+        writer::{IRWriter, IRWriterOption, write_ir_module, write_ir_module_quiet},
     },
 };
 
@@ -137,7 +137,19 @@ impl ISubValueSSA for ValueSSA {
 
 impl From<APInt> for ValueSSA {
     fn from(value: APInt) -> Self {
-        ValueSSA::ConstData(ConstData::Int(value.bits(), value.as_unsigned()))
+        ValueSSA::ConstData(ConstData::Int(value))
+    }
+}
+
+impl From<f32> for ValueSSA {
+    fn from(value: f32) -> Self {
+        ValueSSA::ConstData(ConstData::Float(FloatTypeKind::Ieee32, value as f64))
+    }
+}
+
+impl From<f64> for ValueSSA {
+    fn from(value: f64) -> Self {
+        ValueSSA::ConstData(ConstData::Float(FloatTypeKind::Ieee64, value))
     }
 }
 
@@ -150,12 +162,12 @@ impl TryInto<APInt> for ValueSSA {
                 Some(apint) => Ok(apint),
                 None => Err(ValueSSAError::KindNotMatch(
                     self,
-                    ValueSSA::ConstData(ConstData::Int(0, 0)),
+                    ValueSSA::ConstData(ConstData::Int(0.into())),
                 )),
             },
             _ => Err(ValueSSAError::KindNotMatch(
                 self,
-                ValueSSA::ConstData(ConstData::Int(0, 0)),
+                ValueSSA::ConstData(ConstData::Int(0.into())),
             )),
         }
     }
@@ -171,6 +183,15 @@ impl ValueSSA {
     pub fn traceable(&self) -> bool {
         use ValueSSA::*;
         matches!(self, FuncArg(..) | Block(_) | Inst(_) | Global(_))
+    }
+
+    /// 从整数值创建一个 ValueSSA
+    pub fn from_int<T: Into<APInt>>(value: T) -> Self {
+        ValueSSA::ConstData(ConstData::Int(value.into()))
+    }
+
+    pub fn as_int(self) -> Option<APInt> {
+        self.try_into().ok()
     }
 
     /// 获取该 Value 的使用者列表

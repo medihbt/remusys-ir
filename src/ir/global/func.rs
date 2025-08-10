@@ -5,7 +5,8 @@ use crate::{
     ir::{
         BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs,
         IRValueNumberMap, IRWriter, ISubValueSSA, ITraceableValue, Module, NumberOption,
-        PtrStorage, PtrUser, UserList, ValueSSA, global::ISubGlobal,
+        PtrStorage, PtrUser, UserList, ValueSSA,
+        global::{ISubGlobal, Linkage},
     },
     typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
 };
@@ -106,13 +107,30 @@ impl ISubGlobal for Func {
         true
     }
     fn is_extern(&self) -> bool {
-        !self.body.is_valid()
+        if !self.body.is_valid() {
+            true
+        } else if self.common.linkage.get() == Linkage::Extern {
+            self.common.linkage.set(Linkage::DSOLocal);
+            false
+        } else {
+            false
+        }
+    }
+    fn set_linkage(&self, linkage: Linkage) {
+        if linkage == Linkage::Extern && !self.is_extern() {
+            panic!("Cannot set linkage to Extern for a defined function");
+        }
+        self.common.linkage.set(linkage);
     }
     fn get_kind(&self) -> GlobalKind {
         if self.is_extern() { GlobalKind::ExternFunc } else { GlobalKind::Func }
     }
+    fn get_linkage(&self) -> Linkage {
+        if self.is_extern() { Linkage::Extern } else { self.common.linkage.get() }
+    }
 
     fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
+        let _guard = writer.stat.hold_curr_func(FuncRef(self_ref));
         self.fmt_header(writer)?;
         if self.is_extern() {
             write!(writer, "; external function")?;
@@ -129,26 +147,33 @@ impl ISubGlobal for Func {
         for (block_ref, _) in self.body.view(&writer.allocs.blocks) {
             block_ref.fmt_ir(writer)?;
         }
-        write!(writer, "}}")
+        write!(writer, "}}")?;
+        Ok(())
     }
 }
 
 impl Func {
     fn fmt_header(&self, writer: &IRWriter) -> std::io::Result<()> {
-        let storage = if self.is_extern() { "declare" } else { "define" };
-        write!(writer, "{storage} dso_local ")?;
+        write!(
+            writer,
+            "{} ",
+            self.get_kind().get_ir_prefix(self.get_linkage())
+        )?;
         writer.write_type(self.return_type)?;
         write!(writer, " @{}", self.common.name)?;
-        self.fmt_args(writer)
+        self.fmt_args(!self.is_extern(), writer)
     }
 
-    fn fmt_args(&self, writer: &IRWriter) -> std::io::Result<()> {
+    fn fmt_args(&self, writes_id: bool, writer: &IRWriter) -> std::io::Result<()> {
         writer.write_str("(")?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
                 writer.write_str(", ")?;
             }
             writer.write_type(arg.ty)?;
+            if writes_id {
+                write!(writer, " %{}", arg.index)?;
+            }
         }
         if self.is_vararg(&writer.type_ctx) {
             if !self.args.is_empty() {
@@ -209,6 +234,7 @@ impl Func {
             self.is_extern(),
             "Function must be extern to define with unreachable"
         );
+        self.common.linkage.set(Linkage::DSOLocal);
 
         // 将函数体设置为一个空的基本块列表
         self.body = SlabRefList::from_slab(&mut allocs.blocks);

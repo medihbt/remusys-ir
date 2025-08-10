@@ -2,7 +2,7 @@ use slab::Slab;
 use std::ops::Deref;
 
 use crate::{
-    base::SlabRef,
+    base::{INullableValue, SlabRef},
     ir::{IRAllocs, IRAllocsRef, ISubInst, ISubValueSSA, InstData, InstRef, Module},
 };
 
@@ -11,6 +11,9 @@ pub trait IManagedIRValue: ISubValueSSA + SlabRef {
 
     /// 获取当前值的分配器
     fn select_alloc(allocs: &IRAllocs) -> &Slab<Self::RefObject>;
+
+    /// 获取当前值的分配器 (可变版本)
+    fn select_alloc_mut(allocs: &mut IRAllocs) -> &mut Slab<Self::RefObject>;
 }
 
 pub struct IRManaged<'a, T: IManagedIRValue> {
@@ -26,6 +29,10 @@ impl<'a, T: IManagedIRValue> Drop for IRManaged<'a, T> {
             return;
         }
         self.val.defer_cleanup_self(&self.allocs);
+
+        if let IRAllocsRef::Mut(allocs) = &mut self.allocs {
+            T::select_alloc_mut(allocs).remove(self.val.get_handle());
+        }
     }
 }
 
@@ -67,8 +74,18 @@ impl<'a, T: IManagedIRValue> IRManaged<'a, T> {
 impl IManagedIRValue for InstRef {
     fn defer_cleanup_self(&self, allocs: &IRAllocs) {
         self.to_data(&allocs.insts).cleanup();
+        // 把自己从基本块中删除
+        let parent = self.get_parent_from_alloc(&allocs.insts);
+        if parent.is_nonnull() {
+            parent.insts_from_alloc(&allocs.blocks)
+                .unplug_node(&allocs.insts, *self)
+                .expect("Failed to unplug instruction from block");
+        }
     }
     fn select_alloc(allocs: &IRAllocs) -> &Slab<InstData> {
         &allocs.insts
+    }
+    fn select_alloc_mut(allocs: &mut IRAllocs) -> &mut Slab<InstData> {
+        &mut allocs.insts
     }
 }

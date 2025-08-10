@@ -91,12 +91,12 @@ impl DataUnit {
                 Self::from_zeroes(unit_bytes_log2, count)
             }
             ConstData::PtrNull(_) => Self::DWord(0),
-            ConstData::Int(bits, value) => match bits {
-                8 => Self::Byte(value as u8),
-                16 => Self::Half(value as u16),
-                32 => Self::Word(value as u32),
-                64 => Self::DWord(value as u64),
-                _ => panic!("Unsupported integer bit width: {}", bits),
+            ConstData::Int(apint) => match apint.bits() {
+                8 => Self::Byte(apint.as_unsigned() as u8),
+                16 => Self::Half(apint.as_unsigned() as u16),
+                32 => Self::Word(apint.as_unsigned() as u32),
+                64 => Self::DWord(apint.as_unsigned() as u64),
+                _ => panic!("Unsupported integer bit width: {}", apint.bits()),
             },
             ConstData::Float(FloatTypeKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
             ConstData::Float(FloatTypeKind::Ieee64, x) => Self::DWord(x.to_bits()),
@@ -134,12 +134,12 @@ impl DataUnit {
                 }
             }
             ConstData::PtrNull(_) => Self::DWord(0),
-            ConstData::Int(bits, value) => match bits {
-                8 => Self::Byte(value as u8),
-                16 => Self::Half(value as u16),
-                32 => Self::Word(value as u32),
-                64 => Self::DWord(value as u64),
-                _ => panic!("Unsupported integer bit width: {}", bits),
+            ConstData::Int(apint) => match apint.bits() {
+                8 => Self::Byte(apint.as_unsigned() as u8),
+                16 => Self::Half(apint.as_unsigned() as u16),
+                32 => Self::Word(apint.as_unsigned() as u32),
+                64 => Self::DWord(apint.as_unsigned() as u64),
+                _ => panic!("Unsupported integer bit width: {}", apint.bits()),
             },
             ConstData::Float(FloatTypeKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
             ConstData::Float(FloatTypeKind::Ieee64, x) => Self::DWord(x.to_bits()),

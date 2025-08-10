@@ -1,8 +1,8 @@
 use crate::{
-    base::SlabRef,
+    base::{INullableValue, SlabRef},
     ir::{
-        GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module, PredList,
-        UserList, ValueSSA,
+        FuncRef, GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module,
+        PredList, UserList, ValueSSA,
     },
     typing::{context::TypeContext, id::ValTypeID},
 };
@@ -16,6 +16,34 @@ pub fn write_ir_module(module: &Module, output: &mut dyn Write) {
     let writer = IRWriter::from_module(output, module);
     writer.write_module()
 }
+pub fn write_ir_module_quiet(module: &Module, output: &mut dyn Write) {
+    let writer = IRWriter::from_module_quiet(output, module);
+    writer.write_module()
+}
+
+pub struct IRWriterStat {
+    pub curr_func: Cell<FuncRef>,
+}
+
+impl IRWriterStat {
+    pub fn new() -> Self {
+        Self { curr_func: Cell::new(FuncRef(GlobalRef::new_null())) }
+    }
+
+    pub fn hold_curr_func<'a>(&'a self, func_ref: FuncRef) -> impl Drop + 'a {
+        let prev_func = self.curr_func.replace(func_ref);
+        struct Guard<'a> {
+            stat: &'a IRWriterStat,
+            prev_func: FuncRef,
+        }
+        impl<'a> Drop for Guard<'a> {
+            fn drop(&mut self) {
+                self.stat.curr_func.set(self.prev_func);
+            }
+        }
+        Guard { stat: self, prev_func }
+    }
+}
 
 pub struct IRWriter<'a> {
     pub output: RefCell<&'a mut dyn Write>,
@@ -25,6 +53,7 @@ pub struct IRWriter<'a> {
     pub indent_level: Cell<usize>,
     pub numbering: RefCell<IRValueNumberMap>,
     pub globals: Vec<GlobalRef>,
+    pub stat: IRWriterStat,
     type_str_cache: RefCell<HashMap<ValTypeID, String>>,
 }
 
@@ -58,6 +87,7 @@ impl<'a> IRWriter<'a> {
             indent_level: Cell::new(0),
             numbering: RefCell::new(IRValueNumberMap::new_empty()),
             globals: globals.into_iter().collect(),
+            stat: IRWriterStat::new(),
             type_str_cache: RefCell::new(HashMap::new()),
         }
     }
@@ -128,7 +158,14 @@ impl<'a> IRWriter<'a> {
             ValueSSA::None => write!(self.output.borrow_mut(), "none"),
             ValueSSA::ConstData(data) => data.fmt_ir(self),
             ValueSSA::ConstExpr(expr) => expr.fmt_ir(self),
-            ValueSSA::FuncArg(_, id) => write!(self, "%{id}"),
+            ValueSSA::FuncArg(gref, id) => {
+                assert_eq!(
+                    self.stat.curr_func.get().0,
+                    gref,
+                    "FuncArg can only be used in its own function"
+                );
+                write!(self, "%{id}")
+            }
             ValueSSA::Block(block_ref) => {
                 let id = self.borrow_numbers().block_get_number(block_ref);
                 if let Some(id) = id {

@@ -1,6 +1,9 @@
 use super::GlobalDataCommon;
 use crate::{
-    ir::{GlobalData, GlobalKind, GlobalRef, IRWriter, ISubValueSSA, ValueSSA, global::ISubGlobal},
+    ir::{
+        GlobalData, GlobalKind, GlobalRef, IRWriter, ISubValueSSA, ValueSSA,
+        global::{ISubGlobal, Linkage},
+    },
     typing::id::ValTypeID,
 };
 use std::cell::Cell;
@@ -62,13 +65,22 @@ impl ISubGlobal for Var {
     fn is_extern(&self) -> bool {
         matches!(self.inner.get().init, ValueSSA::None)
     }
+    fn get_linkage(&self) -> Linkage {
+        if self.is_extern() { Linkage::Extern } else { self.common.linkage.get() }
+    }
+    fn set_linkage(&self, linkage: Linkage) {
+        self.common.linkage.set(linkage);
+        if linkage == Linkage::Extern {
+            self.set_init(ValueSSA::None);
+        }
+    }
 
     fn fmt_ir(&self, _: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         write!(
             writer,
             "@{} = {} ",
             self.common.name,
-            self.get_kind().get_ir_prefix()
+            self.get_kind().get_ir_prefix(self.get_linkage())
         )?;
         writer.write_type(self.common.content_ty)?;
 
@@ -96,6 +108,9 @@ impl Var {
         let mut inner = self.inner.get();
         inner.init = init;
         self.inner.set(inner);
+        if init != ValueSSA::None {
+            self.common.linkage.set(Linkage::DSOLocal);
+        }
     }
 
     pub fn new_extern(name: String, content_ty: ValTypeID, content_align: usize) -> Self {

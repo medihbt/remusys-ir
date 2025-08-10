@@ -1,8 +1,7 @@
 use std::{collections::VecDeque, fmt::Debug, rc::Rc};
 
 use crate::{
-    base::APInt,
-    ir::{BlockRef, ConstData, GlobalRef, ValueSSA, inst::InstRef},
+    ir::{BlockRef, ConstData, FuncRef, GlobalRef, ValueSSA, inst::InstRef},
     mir::{
         fmt::FuncFormatContext,
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
@@ -33,6 +32,7 @@ pub enum InstRetval {
 pub struct OperandMap<'a> {
     pub args: Vec<(u32, RegOperand)>,
     pub func: Rc<MirFunc>,
+    pub ir_func: FuncRef,
     pub globals: &'a MirGlobalItems,
     pub insts: Vec<(InstRef, InstRetval)>,
     pub blocks: Vec<MirBlockInfo>,
@@ -62,6 +62,7 @@ impl<'a> Debug for OperandMap<'a> {
 impl<'a> OperandMap<'a> {
     pub fn build_from_func(
         func: Rc<MirFunc>,
+        ir_func: FuncRef,
         globals: &'a MirGlobalItems,
         insts: Vec<(InstRef, InstRetval)>,
         blocks: Vec<MirBlockInfo>,
@@ -107,7 +108,7 @@ impl<'a> OperandMap<'a> {
         let mut inner = func.borrow_inner_mut();
         let MirFuncInner { stack_layout, vreg_alloc, .. } = &mut *inner;
         for spilled_arg in stack_layout.args.iter() {
-            eprintln!("arg id {arg_id}, spilled arg: {:?}", spilled_arg.irtype);
+            log::debug!("arg id {arg_id}, spilled arg: {:?}", spilled_arg.irtype);
             let arg_type = spilled_arg.irtype;
             let stackpos = spilled_arg.stackpos_reg;
             let (parg, ldr_inst) = match arg_type {
@@ -141,7 +142,7 @@ impl<'a> OperandMap<'a> {
         }
         drop(inner);
 
-        let ret = Self { args, func, globals, insts, blocks };
+        let ret = Self { args, ir_func, func, globals, insts, blocks };
         log::debug!("Operand map for function: {:#?}", ret);
         (ret, args_builder_template)
     }
@@ -176,10 +177,15 @@ impl<'a> OperandMap<'a> {
         operand: &ValueSSA,
     ) -> Result<MirOperand, OperandMapError> {
         match operand {
-            ValueSSA::FuncArg(_, n) => self
-                .find_operand_for_arg(*n)
-                .map(RegOperand::into)
-                .ok_or(OperandMapError::IsNotFound(operand.clone())),
+            ValueSSA::FuncArg(gref, n) => {
+                assert_eq!(
+                    self.ir_func.0, *gref,
+                    "FuncArg is live only in its own function"
+                );
+                self.find_operand_for_arg(*n)
+                    .map(RegOperand::into)
+                    .ok_or(OperandMapError::IsNotFound(operand.clone()))
+            }
             ValueSSA::Block(b) => self
                 .find_operand_for_block(*b)
                 .map(MirOperand::Label)
@@ -216,11 +222,13 @@ impl<'a> OperandMap<'a> {
                     _ => panic!("Unexpected type for zero constant: {ty:?}"),
                 },
                 ConstData::PtrNull(_) => Imm64::new_empty().into_mir(),
-                ConstData::Int(32, value) => Imm32(value as u32, ImmKind::Full).into_mir(),
-                ConstData::Int(64, value) => Imm64(value as u64, ImmKind::Full).into_mir(),
+                ConstData::Int(apint) => match (apint.bits(), apint.as_unsigned()) {
+                    (32, value) => Imm32(value as u32, ImmKind::Full).into_mir(),
+                    (64, value) => Imm64(value as u64, ImmKind::Full).into_mir(),
+                    _ => panic!("Unexpected APInt size: {}", apint.bits()),
+                },
                 ConstData::Float(FloatTypeKind::Ieee32, f) => MirOperand::F32(f as f32),
                 ConstData::Float(FloatTypeKind::Ieee64, f) => MirOperand::F64(f as f64),
-                _ => panic!("Unexpected constant data type for return value: {c:?}"),
             },
             Err(e) => panic!("Failed to find operand for return value: {e:?}"),
         }
@@ -298,32 +306,25 @@ impl DispatchedReg {
             ConstData::PtrNull(_) => {
                 DispatchedReg::G64(Self::make_ldr_for_imm64(0, alloc_reg, out_insts))
             }
-            ConstData::Int(64, value) => {
-                let value = *value as u64;
-                let reg = if value == 0 {
-                    GPR64::zr()
-                } else {
-                    Self::make_ldr_for_imm64(value, alloc_reg, out_insts)
-                };
-                DispatchedReg::G64(reg)
-            }
-            ConstData::Int(32, value) => {
-                let value = *value as u32;
-                let reg = if value == 0 {
-                    GPR32::zr()
-                } else {
-                    Self::make_ldr_for_imm32(value, alloc_reg, out_insts)
-                };
-                DispatchedReg::G32(reg)
-            }
-            ConstData::Int(bits, value) => {
-                let value = if *bits == 1 {
-                    *value as u64
-                } else {
-                    APInt::new(*value, *bits).as_signed() as u64
-                };
-                DispatchedReg::G64(Self::make_ldr_for_imm64(value, alloc_reg, out_insts))
-            }
+            ConstData::Int(apint) => match (apint.bits(), apint.as_unsigned()) {
+                (32, value) => {
+                    let reg = if value == 0 {
+                        GPR32::zr()
+                    } else {
+                        Self::make_ldr_for_imm32(value as u32, alloc_reg, out_insts)
+                    };
+                    DispatchedReg::G32(reg)
+                }
+                (64, value) => {
+                    let reg = if value == 0 {
+                        GPR64::zr()
+                    } else {
+                        Self::make_ldr_for_imm64(value as u64, alloc_reg, out_insts)
+                    };
+                    DispatchedReg::G64(reg)
+                }
+                _ => panic!("Unsupported APInt size: {}", apint.bits()),
+            },
             ConstData::Float(FloatTypeKind::Ieee32, f) => {
                 Self::f32const_to_reg(alloc_reg, out_insts, fpconst_force_float, *f as f32)
             }

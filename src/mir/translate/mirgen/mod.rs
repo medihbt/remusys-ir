@@ -8,7 +8,7 @@ use log::debug;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        BlockRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, InstData,
+        BlockRef, FuncRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, InstData,
         InstKind as InstDataKind, InstRef, Module as IRModule, NumberOption, inst::ISubInstRef,
     },
     mir::{
@@ -145,8 +145,13 @@ impl MirTranslateCtx {
         let vregs = self.allocate_storage_for_insts(&mut block_map, &allocas, mir_func);
 
         // Step 1.5 翻译每个基本块的指令
-        let (operand_map, inst_template) =
-            OperandMap::build_from_func(Rc::clone(mir_func), globals, vregs, block_map);
+        let (operand_map, inst_template) = OperandMap::build_from_func(
+            Rc::clone(mir_func),
+            FuncRef(cfg.func),
+            globals,
+            vregs,
+            block_map,
+        );
         let numbers = IRValueNumberMap::new(
             &self.ir_module.borrow_allocs(),
             cfg.func,

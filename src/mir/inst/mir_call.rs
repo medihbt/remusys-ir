@@ -259,11 +259,23 @@ impl MirCall {
         if sp_adjustment != 0 {
             let sp = GPR64::sp();
             // 如果这里崩溃了, 那就要处理参数数量太多导致需要额外计算的情况.
-            let sp_offset = ImmCalc::new(sp_adjustment as u32);
+            let sp_offset = ImmCalc::try_new(sp_adjustment as u32);
             // 将 SP 恢复到调用前的位置
-            out_actions.push_back(LowerInstAction::EndSubSP(
-                Bin64RC::new(MirOP::Add64I, sp, sp, sp_offset).into_mir(),
-            ));
+            if let Some(sp_offset) = sp_offset {
+                let restore_sp = Bin64RC::new(MirOP::Add64I, sp, sp, sp_offset).into_mir();
+                out_actions.push_back(LowerInstAction::EndSubSP(restore_sp));
+            } else {
+                // 这里先拿 X29 当牺牲品罢.
+                let reserve_reg = GPR64::new_raw(29);
+                let prepare_inst = LoadConst64::new(
+                    MirOP::LoadConst64,
+                    reserve_reg,
+                    Imm64::full(sp_adjustment as u64),
+                );
+                let restore_sp = Bin64R::new(MirOP::Add64R, sp, sp, reserve_reg, None);
+                out_actions.push_back(LowerInstAction::NOP(prepare_inst.into_mir()));
+                out_actions.push_back(LowerInstAction::EndSubSP(restore_sp.into_mir()));
+            }
         }
 
         // 恢复寄存器
@@ -433,10 +445,26 @@ impl MirCall {
             let sp = GPR64::sp();
             let sp_offset = callee_arg_section_size as u32;
             // 如果这里崩溃了, 那就要处理参数数量太多导致需要额外计算的情况.
-            let sp_offset_imm = ImmCalc::new(sp_offset);
+            let sp_offset_imm = ImmCalc::try_new(sp_offset);
             // 如果有参数需要 spill，则将栈指针向下移动
-            let reserve_sp = Bin64RC::new(MirOP::Sub64I, sp, sp, sp_offset_imm).into_mir();
-            out_actions.push_back(LowerInstAction::BeginSubSP(sp_offset, reserve_sp));
+            if let Some(sp_offset_imm) = sp_offset_imm {
+                let reserve_sp = Bin64RC::new(MirOP::Sub64I, sp, sp, sp_offset_imm).into_mir();
+                out_actions.push_back(LowerInstAction::BeginSubSP(sp_offset, reserve_sp));
+            } else {
+                // 这里先拿 X29 当牺牲品罢.
+                let reserve_reg = GPR64::new_raw(29);
+                let prepare_inst = LoadConst64::new(
+                    MirOP::LoadConst64,
+                    reserve_reg,
+                    Imm64::full(sp_offset as u64),
+                );
+                let reserve_sp = Bin64R::new(MirOP::Sub64R, sp, sp, reserve_reg, None);
+                out_actions.push_back(LowerInstAction::NOP(prepare_inst.into_mir()));
+                out_actions.push_back(LowerInstAction::BeginSubSP(
+                    sp_offset,
+                    reserve_sp.into_mir(),
+                ));
+            }
         }
 
         for src in self.args() {

@@ -1,8 +1,11 @@
-use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign};
+use std::ops::{
+    Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, DivAssign,
+    Mul, MulAssign, Not, Rem, RemAssign, Sub, SubAssign,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct APInt {
-    value: u128,
+    value: [u32; 4],
     bits: u8,
 }
 
@@ -10,33 +13,54 @@ impl APInt {
     pub fn new<T: IIntoU128>(value: T, bits: u8) -> Self {
         let value = value.into_u128();
         let bitmask = (1u128 << bits) - 1;
-        Self { value: value & bitmask, bits }
+        Self { value: Self::split_u128(value & bitmask), bits }
     }
     pub const fn new_full(value: u128, bits: u8) -> Self {
-        Self { value, bits }
+        let bitmask = (1u128 << bits) - 1;
+        Self { value: Self::split_u128(value & bitmask), bits }
     }
     pub const fn is_zero(&self) -> bool {
-        self.value == 0
+        self.value_raw() == 0
     }
     pub const fn is_nonzero(&self) -> bool {
-        self.value != 0
+        self.value_raw() != 0
+    }
+
+    const fn split_u128(x: u128) -> [u32; 4] {
+        [x as u32, (x >> 32) as u32, (x >> 64) as u32, (x >> 96) as u32]
+    }
+    const fn join_u128(parts: [u32; 4]) -> u128 {
+        let [p0, p1, p2, p3] = parts;
+        let p0 = p0 as u128;
+        let p1 = p1 as u128;
+        let p2 = p2 as u128;
+        let p3 = p3 as u128;
+        p0 | (p1 << 32) | (p2 << 64) | (p3 << 96)
+    }
+    const fn value_raw(&self) -> u128 {
+        Self::join_u128(self.value)
+    }
+    #[allow(dead_code)]
+    fn set_value_raw(&mut self, value: u128) {
+        self.value = Self::split_u128(value);
     }
 
     pub const fn as_unsigned(&self) -> u128 {
-        self.value
+        self.value_raw()
     }
     pub const fn as_signed(&self) -> i128 {
+        let value_raw = self.value_raw();
         match self.bits {
-            8 => self.value as i8 as i128,
-            16 => self.value as i16 as i128,
-            32 => self.value as i32 as i128,
-            64 => self.value as i64 as i128,
-            128 => self.value as i128,
+            8 => value_raw as i8 as i128,
+            16 => value_raw as i16 as i128,
+            32 => value_raw as i32 as i128,
+            64 => value_raw as i64 as i128,
+            128 => value_raw as i128,
             _ => {
-                if self.value & self.sign_bitmask() == 0 {
-                    self.value as i128
+                if value_raw & self.sign_bitmask() == 0 {
+                    value_raw as i128
                 } else {
-                    (self.value | self.signed_bitmask()) as i128
+                    (value_raw | self.signed_bitmask()) as i128
                 }
             }
         }
@@ -62,7 +86,7 @@ impl APInt {
     }
 
     pub fn zext_to(&self, bits: u8) -> Self {
-        Self::new(self.value, bits)
+        Self::new(self.value_raw(), bits)
     }
 
     pub fn sext_to(&self, bits: u8) -> Self {
@@ -121,6 +145,10 @@ impl APInt {
         let result = self.as_unsigned() % other.as_unsigned();
         Self::new(result, self.bits)
     }
+
+    pub fn is_boolean(&self) -> bool {
+        self.bits == 1
+    }
 }
 
 impl From<bool> for APInt {
@@ -160,7 +188,9 @@ impl Add<APInt> for APInt {
         if self.bits != other.bits {
             panic!("Cannot add APInts with different bit widths");
         }
-        Self::new(self.value.wrapping_add(other.value), self.bits)
+        let lval = self.value_raw();
+        let rval = other.value_raw();
+        Self::new(lval.wrapping_add(rval), self.bits)
     }
 }
 
@@ -177,7 +207,9 @@ impl Sub<APInt> for APInt {
         if self.bits != other.bits {
             panic!("Cannot subtract APInts with different bit widths");
         }
-        Self::new(self.value.wrapping_sub(other.value), self.bits)
+        let lval = self.value_raw();
+        let rval = other.value_raw();
+        Self::new(lval.wrapping_sub(rval), self.bits)
     }
 }
 
@@ -194,13 +226,84 @@ impl Mul<APInt> for APInt {
         if self.bits != other.bits {
             panic!("Cannot multiply APInts with different bit widths");
         }
-        Self::new(self.value.wrapping_mul(other.value), self.bits)
+        let lval = self.value_raw();
+        let rval = other.value_raw();
+        Self::new(lval.wrapping_mul(rval), self.bits)
     }
 }
 
 impl MulAssign<APInt> for APInt {
     fn mul_assign(&mut self, other: APInt) {
         *self = self.mul(other);
+    }
+}
+
+impl BitAnd<APInt> for APInt {
+    type Output = Self;
+
+    fn bitand(self, other: APInt) -> Self {
+        if self.bits != other.bits {
+            panic!("Cannot bitwise AND APInts with different bit widths");
+        }
+        let [l0, l1, l2, l3] = self.value;
+        let [r0, r1, r2, r3] = other.value;
+        let res = [l0 & r0, l1 & r1, l2 & r2, l3 & r3];
+        Self { value: res, bits: self.bits }
+    }
+}
+
+impl BitAndAssign<APInt> for APInt {
+    fn bitand_assign(&mut self, other: APInt) {
+        *self = self.bitand(other);
+    }
+}
+
+impl BitOr<APInt> for APInt {
+    type Output = Self;
+
+    fn bitor(self, other: APInt) -> Self {
+        if self.bits != other.bits {
+            panic!("Cannot bitwise OR APInts with different bit widths");
+        }
+        let [l0, l1, l2, l3] = self.value;
+        let [r0, r1, r2, r3] = other.value;
+        let res = [l0 | r0, l1 | r1, l2 | r2, l3 | r3];
+        Self { value: res, bits: self.bits }
+    }
+}
+
+impl BitOrAssign<APInt> for APInt {
+    fn bitor_assign(&mut self, other: APInt) {
+        *self = self.bitor(other);
+    }
+}
+
+impl BitXor<APInt> for APInt {
+    type Output = Self;
+
+    fn bitxor(self, other: APInt) -> Self {
+        if self.bits != other.bits {
+            panic!("Cannot bitwise XOR APInts with different bit widths");
+        }
+        let [l0, l1, l2, l3] = self.value;
+        let [r0, r1, r2, r3] = other.value;
+        let res = [l0 ^ r0, l1 ^ r1, l2 ^ r2, l3 ^ r3];
+        Self { value: res, bits: self.bits }
+    }
+}
+
+impl BitXorAssign<APInt> for APInt {
+    fn bitxor_assign(&mut self, other: APInt) {
+        *self = self.bitxor(other);
+    }
+}
+
+impl Not for APInt {
+    type Output = APInt;
+
+    fn not(self) -> Self {
+        let Self { value: [v0, v1, v2, v3], bits } = self;
+        Self { value: [!v0, !v1, !v2, !v3], bits }
     }
 }
 
@@ -351,6 +454,27 @@ macro_rules! impl_add_from_uints {
                     *self = self.urem(rhs);
                 }
             }
+
+            impl BitAnd<APInt> for $t {
+                type Output = APInt;
+
+                fn bitand(self, other: APInt) -> APInt {
+                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitand(rhs)
+                }
+            }
+
+            impl PartialEq<APInt> for $t {
+                fn eq(&self, other: &APInt) -> bool {
+                    other.as_unsigned() == (*self as u128)
+                }
+            }
+            impl PartialEq<$t> for APInt {
+                fn eq(&self, other: &$t) -> bool {
+                    self.as_unsigned() == *other as u128
+                }
+            }
         )+
     };
 }
@@ -463,6 +587,27 @@ macro_rules! impl_add_from_sints {
                 fn div_assign(&mut self, other: $t) {
                     let rhs = APInt::from(other).sext_to(self.bits);
                     *self = self.sdiv(rhs);
+                }
+            }
+
+            impl BitAnd<APInt> for $t {
+                type Output = APInt;
+
+                fn bitand(self, other: APInt) -> APInt {
+                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitand(rhs)
+                }
+            }
+
+            impl PartialEq<APInt> for $t {
+                fn eq(&self, other: &APInt) -> bool {
+                    other.as_signed() == (*self as i128)
+                }
+            }
+            impl PartialEq<$t> for APInt {
+                fn eq(&self, other: &$t) -> bool {
+                    self.as_signed() == *other as i128
                 }
             }
         )+

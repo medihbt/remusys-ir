@@ -1,7 +1,7 @@
 use crate::{
     base::SlabRef,
     ir::{
-        IRAllocs, ValueSSA,
+        IRAllocs, ISubValueSSA, ValueSSA,
         inst::{InstData, InstRef, IrGEPOffset},
     },
     mir::{
@@ -14,7 +14,7 @@ use crate::{
         operand::{IMirSubOperand, reg::GPR64},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
-    typing::context::TypeContext,
+    typing::{context::TypeContext, id::ValTypeID},
 };
 use std::collections::VecDeque;
 
@@ -43,6 +43,11 @@ pub(super) fn dispatch_gep(
         panic!("Expected GEP instruction");
     };
     let base_ptr = gep.get_base();
+    assert_eq!(
+        base_ptr.get_valtype(allocs),
+        ValTypeID::Ptr,
+        "Expected base pointer to be a pointer type"
+    );
     let offset_iter = gep.offset_iter(type_ctx, allocs);
 
     // 解包基地址
@@ -89,11 +94,17 @@ pub(super) fn dispatch_gep(
 
 fn translate_base_ptr(operand_map: &OperandMap, base_ptr: ValueSSA) -> MirGEPBase {
     match base_ptr {
-        ValueSSA::FuncArg(_, id) => {
+        ValueSSA::FuncArg(gref, id) => {
+            assert_eq!(
+                operand_map.ir_func.0, gref,
+                "FuncArg is live only in its function"
+            );
             let reg = operand_map.find_operand_for_arg(id).unwrap();
             match DispatchedReg::from_reg(reg) {
                 DispatchedReg::G64(gpr64) => MirGEPBase::Reg(gpr64),
-                _ => panic!("Expected a GPR64 register for GEP base pointer, found: {reg:?}"),
+                _ => panic!(
+                    "Expected a GPR64 register for GEP base pointer, found: {reg:?} on value {base_ptr:?}"
+                ),
             }
         }
         ValueSSA::Inst(inst) => match operand_map.find_operand_for_inst(inst) {

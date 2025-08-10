@@ -8,10 +8,21 @@ use crate::{
     },
     typing::id::ValTypeID,
 };
-use std::{cell::Ref, num::NonZero, ops::ControlFlow};
+use std::{
+    cell::{Cell, Ref},
+    num::NonZero,
+    ops::ControlFlow,
+};
 
 pub(super) mod func;
 pub(super) mod var;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Linkage {
+    Extern,
+    DSOLocal,
+    Private,
+}
 
 #[derive(Debug)]
 pub enum GlobalData {
@@ -60,6 +71,20 @@ impl ISubGlobal for GlobalData {
         }
     }
 
+    fn get_linkage(&self) -> Linkage {
+        match self {
+            GlobalData::Var(var) => var.get_linkage(),
+            GlobalData::Func(func) => func.get_linkage(),
+        }
+    }
+
+    fn set_linkage(&self, linkage: Linkage) {
+        match self {
+            GlobalData::Var(var) => var.set_linkage(linkage),
+            GlobalData::Func(func) => func.set_linkage(linkage),
+        }
+    }
+
     fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         writer.write_ref(self_ref, "Global");
         writer.write_users(self.users());
@@ -77,6 +102,7 @@ pub struct GlobalDataCommon {
     pub content_align: usize,
     pub self_ref: GlobalRef,
     pub users: UserList,
+    pub linkage: Cell<Linkage>,
 }
 
 pub trait ISubGlobal {
@@ -90,6 +116,12 @@ pub trait ISubGlobal {
 
     /// 判断该全局量是否为外部符号.
     fn is_extern(&self) -> bool;
+
+    /// 获取该全局量的链接属性.
+    fn get_linkage(&self) -> Linkage;
+
+    /// 设置该全局量的链接属性.
+    fn set_linkage(&self, linkage: Linkage);
 
     /// 该全局变量所示的 ELF 段是否只读.
     /// 只读的全局量不允许被修改, 但可以被读取.
@@ -123,6 +155,7 @@ impl GlobalDataCommon {
             content_align,
             self_ref: GlobalRef::new_null(),
             users: UserList::new_empty(),
+            linkage: Cell::new(Linkage::Extern),
         }
     }
 
@@ -133,6 +166,7 @@ impl GlobalDataCommon {
             content_align: 0,
             self_ref: GlobalRef::new_null(),
             users: UserList::new_empty(),
+            linkage: Cell::new(Linkage::Extern),
         }
     }
 }
@@ -269,14 +303,19 @@ impl GlobalKind {
         data.get_kind()
     }
 
-    pub fn get_ir_prefix(self) -> &'static str {
-        match self {
-            GlobalKind::ExternVar => "external global",
-            GlobalKind::ExternConst => "external constant",
-            GlobalKind::Var => "dso_local global",
-            GlobalKind::Const => "dso_local constant",
-            GlobalKind::ExternFunc => "declare",
-            GlobalKind::Func => "define",
+    pub fn get_ir_prefix(self, linkage: Linkage) -> &'static str {
+        use GlobalKind::*;
+        use Linkage::*;
+        match (self, linkage) {
+            (ExternVar, _) | (Var, Extern) => "external global",
+            (ExternConst, _) | (Const, Extern) => "external constant",
+            (Var, DSOLocal) => "dso_local global",
+            (Var, Private) => "private global",
+            (Const, DSOLocal) => "dso_local constant",
+            (Const, Private) => "private constant",
+            (ExternFunc, _) | (Func, Extern) => "declare",
+            (Func, DSOLocal) => "define dso_local",
+            (Func, Private) => "define internal",
         }
     }
 }

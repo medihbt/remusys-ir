@@ -93,9 +93,10 @@ fn find_critical_edges_for_block(
     }
     let mut succ_map: BTreeMap<BlockRef, Vec<Rc<JumpTarget>>> = BTreeMap::new();
     for jt in block.get_successors(&allocs.insts).iter() {
-        let succ_block = jt.get_block();
-        if succ_block.to_data(&allocs.blocks).has_multiple_preds() {
-            succ_map.entry(succ_block).or_default().push(Rc::clone(jt));
+        let succ_bref = jt.get_block();
+        let succ_block = succ_bref.to_data(&allocs.blocks);
+        if succ_block.has_multiple_preds() && succ_block.has_phi(&allocs.insts) {
+            succ_map.entry(succ_bref).or_default().push(Rc::clone(jt));
         }
     }
     for (succ_block, jump_targets) in succ_map {

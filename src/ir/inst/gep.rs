@@ -1,5 +1,4 @@
 use crate::{
-    base::APInt,
     ir::{
         ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData,
         InstRef, Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
@@ -93,12 +92,23 @@ impl ISubInst for IndexPtr {
         };
         write!(writer, "%{id} = getelementptr inbounds ")?;
         writer.write_type(self.first_unpacked_ty)?;
-        writer.write_str(", ptr")?;
+
+        assert_eq!(
+            self.get_base().get_valtype(&writer.allocs),
+            ValTypeID::Ptr,
+            "Base pointer must be a pointer type"
+        );
+        writer.write_str(", ptr ")?;
         writer.write_operand(self.get_base())?;
         for u in self.index_uses() {
             let index = u.get_operand();
             let index_ty = index.get_valtype(&writer.allocs);
             writer.write_str(", ")?;
+            assert!(
+                matches!(index_ty, ValTypeID::Int(_)),
+                "Index must be an integer type, got {:?}",
+                index_ty.get_display_name(writer.type_ctx)
+            );
             writer.write_type(index_ty)?;
             writer.write_str(" ")?;
             writer.write_operand(index)?;
@@ -361,7 +371,7 @@ impl<'a> GEPTypeIndexer<'a> {
             };
             let index = match cdata {
                 ConstData::PtrNull(_) | ConstData::Zero(_) => 0,
-                ConstData::Int(bits, value) => APInt::new(*value, *bits).as_signed() as isize,
+                ConstData::Int(apint) => apint.as_signed() as isize,
                 _ => {
                     panic!("Expected an integer constant for struct index but got {cdata:?}");
                 }
@@ -543,7 +553,7 @@ impl<'a> IrGEPOffsetIter<'a> {
                 use ConstData::*;
                 let value = match data {
                     Zero(_) | PtrNull(_) => 0,
-                    Int(bits, value) => APInt::new(value, bits).as_signed() as i64 * weight,
+                    Int(apint) => apint.as_signed() as i64 * weight,
                     _ => panic!("Unsupported index value for GEP offset: {index:?}"),
                 };
                 IrGEPOffset::Imm(value)
@@ -567,7 +577,7 @@ impl<'a> IrGEPOffsetIter<'a> {
         };
         let index = match cdata {
             ConstData::PtrNull(_) | ConstData::Zero(_) => 0,
-            ConstData::Int(bits, value) => APInt::new(*value, *bits).as_signed() as usize,
+            ConstData::Int(apint) => apint.as_signed() as usize,
             _ => {
                 panic!("Expected an integer constant for struct index but got {cdata:?}");
             }

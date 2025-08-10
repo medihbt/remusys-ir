@@ -6,7 +6,7 @@ use crate::{
     ir::{
         CmpCond, IRBuilder, IRBuilderFocus, Module, Opcode, ValueSSA,
         inst::{ISubInstRef, RetRef},
-        write_ir_module,
+        write_ir_module, write_ir_module_quiet,
     },
     typing::{
         context::{PlatformPolicy, TypeContext},
@@ -240,4 +240,15 @@ pub fn write_ir_to_file(module: &Module, filename: &str) {
         }
     };
     write_ir_module(module, &mut file);
+}
+
+pub fn write_ir_to_file_quiet(module: &Module, filename: &str) {
+    let filepath = format!("target/{}.ll", filename);
+    let mut file = match std::fs::File::create(&filepath) {
+        Ok(f) => f,
+        Err(e) => {
+            panic!("Failed to create file {filepath}: {e}")
+        }
+    };
+    write_ir_module_quiet(module, &mut file);
 }

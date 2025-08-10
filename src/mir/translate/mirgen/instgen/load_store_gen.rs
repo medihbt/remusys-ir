@@ -65,8 +65,13 @@ impl StrSrc {
         match data {
             ConstData::Zero(ty) => Self::zeroed(ty),
             ConstData::PtrNull(_) => Self::Imm64(Imm64::full(0)),
-            ConstData::Int(64, val) => Self::Imm64(Imm64::full(val as u64)),
-            ConstData::Int(32, val) => Self::Imm32(Imm32::full(val as u32)),
+            ConstData::Int(apint) => match (apint.bits(), apint.as_unsigned()) {
+                (32, 0) => Self::G32(GPR32::zr()),
+                (64, 0) => Self::G64(GPR64::zr()),
+                (32, x) => Self::Imm32(Imm32::full(x as u32)),
+                (64, x) => Self::Imm64(Imm64::full(x as u64)),
+                _ => panic!("Unsupported integer constant data: {apint:?}"),
+            },
             ConstData::Float(Ieee32, f) => Self::Imm32(Imm32::from_fp_bits(f as f32)),
             ConstData::Float(Ieee64, f) => Self::Imm64(Imm64::from_fp_bits(f)),
             _ => panic!("Unsupported constant data for store: {data:?}"),

@@ -1,5 +1,5 @@
 use crate::{
-    base::{APInt, SlabRef},
+    base::SlabRef,
     ir::{
         ConstData, ISubInst, Module, Opcode as O, ValueSSA,
         inst::{InstData, InstRef},
@@ -378,10 +378,7 @@ impl<'a> BinGenContext<'a> {
         match data {
             ConstData::Zero(ValTypeID::Int(bits)) if *bits <= 64 => Some(ImmCalc(0)),
             ConstData::PtrNull(_) => Some(ImmCalc(0)),
-            ConstData::Int(bits, value) if *bits <= 64 => {
-                let value = APInt::new(*value, *bits).as_signed() as u64;
-                ImmCalc::try_new(value)
-            }
+            ConstData::Int(apint) => ImmCalc::try_new(apint.as_signed() as u64),
             _ => None,
         }
     }
