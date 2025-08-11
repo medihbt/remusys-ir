@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{BlockRef, Func, GlobalRef, IRAllocs, ISubGlobal, ISubInst, InstRef, Module, ValueSSA},
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 
 pub struct IRValueNumberMap {

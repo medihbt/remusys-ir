@@ -1,19 +1,142 @@
-use context::TypeContext;
-use id::ValTypeID;
+use std::io::Write;
 
-pub mod context;
-pub mod id;
-pub mod types;
+mod alias;
+mod array;
+mod context;
+mod func;
+mod prim;
+mod structty;
+mod fmt {
+    use crate::typing::{TypeAllocs, TypeContext};
+    use std::{
+        cell::{Ref, RefCell},
+        io::Write,
+    };
 
-pub trait IValType {
-    fn get_instance_size(&self, type_ctx: &TypeContext) -> Option<usize>;
-    fn makes_instance(&self) -> bool;
+    pub struct TypeFormatter<'a, T: Write> {
+        pub output: RefCell<&'a mut T>,
+        pub tctx: &'a TypeContext,
+        pub allocs: Ref<'a, TypeAllocs>,
+    }
 
-    fn get_display_name(&self, type_ctx: &TypeContext) -> String;
+    impl<'a, T: Write> Write for TypeFormatter<'a, T> {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.output.get_mut().write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.output.get_mut().flush()
+        }
+        fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+            self.output.get_mut().write_fmt(fmt)
+        }
+        fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+            self.output.get_mut().write_all(buf)
+        }
+        fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+            self.output.get_mut().write_vectored(bufs)
+        }
+    }
 
-    fn deep_eq(&self, rhs: &Self) -> bool;
+    impl<'a, T: Write> TypeFormatter<'a, T> {
+        pub fn new(output: &'a mut T, tctx: &'a TypeContext) -> Self {
+            let allocs = tctx.allocs.borrow();
+            Self { output: RefCell::new(output), tctx, allocs }
+        }
 
-    fn gc_trace(&self, gather_func: impl Fn(ValTypeID));
+        pub fn write_str(&self, s: &str) -> std::io::Result<()> {
+            self.output.borrow_mut().write_all(s.as_bytes())
+        }
+        pub fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
+            self.output.borrow_mut().write(buf)
+        }
+        pub fn flush(&self) -> std::io::Result<()> {
+            self.output.borrow_mut().flush()
+        }
+        pub fn write_fmt(&self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+            self.output.borrow_mut().write_fmt(fmt)
+        }
+        pub fn write_all(&self, buf: &[u8]) -> std::io::Result<()> {
+            self.output.borrow_mut().write_all(buf)
+        }
+        pub fn write_vectored(&self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+            self.output.borrow_mut().write_vectored(bufs)
+        }
+    }
+}
+
+pub use self::{
+    alias::{StructAliasData, StructAliasRef},
+    array::{ArrayTypeData, ArrayTypeRef},
+    context::{ArchInfo, TypeAllocs, TypeContext},
+    fmt::TypeFormatter,
+    func::{FuncType, FuncTypeRef},
+    prim::{FPKind, IntType, PtrType},
+    structty::{StructOffsetIter, StructTypeData, StructTypeRef},
+};
+
+pub trait IValType: Sized + Clone + Copy {
+    fn try_from_ir(ty: ValTypeID) -> TypingRes<Self>;
+
+    fn from_ir(ty: ValTypeID) -> Self {
+        match Self::try_from_ir(ty) {
+            Ok(val) => val,
+            Err(err) => {
+                let thisname = std::any::type_name::<Self>();
+                panic!("Failed to convert {ty:?} to {thisname:?}: {err:?}")
+            }
+        }
+    }
+
+    fn into_ir(self) -> ValTypeID;
+
+    fn makes_instance(self) -> bool;
+
+    /// 这个类型的 class ID
+    fn class_id(self) -> ValTypeClass;
+
+    /// 序列化
+    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()>;
+    fn get_display_name(self, tctx: &TypeContext) -> String {
+        let mut buffer = Vec::new();
+        let formatter = TypeFormatter::new(&mut buffer, tctx);
+        self.serialize(&formatter)
+            .expect("Serialization to Vec<u8> should not fail");
+        drop(formatter);
+        String::from_utf8(buffer).expect("Type names should be valid UTF-8")
+    }
+
+    fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize>;
+    fn try_get_size(self, tctx: &TypeContext) -> Option<usize> {
+        self.try_get_size_full(&tctx.allocs.borrow(), tctx)
+    }
+    fn get_size(self, tctx: &TypeContext) -> usize {
+        self.try_get_size(tctx).expect("Failed to get size of type")
+    }
+
+    fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize>;
+    fn try_get_align(self, tctx: &TypeContext) -> Option<usize> {
+        self.try_get_align_full(&tctx.allocs.borrow(), tctx)
+    }
+    fn get_align(self, tctx: &TypeContext) -> usize {
+        self.try_get_align(tctx)
+            .expect("Failed to get align of type")
+    }
+    fn get_align_log2(self, tctx: &TypeContext) -> u8 {
+        self.get_align(tctx).ilog2() as u8
+    }
+
+    fn try_get_aligned_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
+        let size = self.try_get_size_full(alloc, tctx)?;
+        let align = self.try_get_align_full(alloc, tctx)?;
+        Some(size.next_multiple_of(align))
+    }
+    fn try_get_aligned_size(self, tctx: &TypeContext) -> Option<usize> {
+        self.try_get_aligned_size_full(&tctx.allocs.borrow(), tctx)
+    }
+    fn get_aligned_size(self, tctx: &TypeContext) -> usize {
+        self.try_get_aligned_size(tctx)
+            .expect("Failed to get aligned size of type")
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -21,124 +144,120 @@ pub enum TypeMismatchError {
     IDNotEqual(ValTypeID, ValTypeID),
     LayoutNotEqual(ValTypeID, ValTypeID),
     KindNotMatch(ValTypeID, ValTypeID),
+    NotClass(ValTypeID, ValTypeClass),
 
     NotAggregate(ValTypeID),
     NotPrimitive(ValTypeID),
 }
 
-#[cfg(test)]
-mod testing {
-    use super::{
-        context::{PlatformPolicy, TypeContext, binary_bits_to_bytes},
-        id::ValTypeID,
-        types::FloatTypeKind,
-    };
+pub type TypingRes<T = ()> = Result<T, TypeMismatchError>;
 
-    #[test]
-    fn test_void_ptr() {
-        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        let voidty = ValTypeID::Void;
-        let ptrty = ValTypeID::Ptr;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValTypeClass {
+    Void,
+    Ptr,
+    Int,
+    Float,
+    Array,
+    Struct,
+    StructAlias,
+    Func,
+    Compound,
+}
 
-        assert_eq!(voidty.get_display_name(&type_ctx), "void");
-        assert_eq!(ptrty.get_display_name(&type_ctx), "ptr");
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ValTypeID {
+    /// Uninhabited type
+    Void,
+
+    /// Opaque pointer type (without pointee type)
+    Ptr,
+
+    /// Binary Bits: 1..128
+    Int(u8),
+
+    /// Floating Type
+    Float(FPKind),
+
+    /// Array Type
+    Array(ArrayTypeRef),
+
+    /// Unnamed Structure Type
+    Struct(StructTypeRef),
+
+    /// Struct Alias Type
+    StructAlias(StructAliasRef),
+
+    /// Function type
+    Func(FuncTypeRef),
+}
+
+impl IValType for ValTypeID {
+    fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
+        Ok(ty)
     }
 
-    #[test]
-    fn test_primitive_types() {
-        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        for i in 1..u8::MAX {
-            let inty = ValTypeID::Int(i);
+    fn into_ir(self) -> ValTypeID {
+        self
+    }
 
-            assert_eq!(
-                inty.get_instance_size(&type_ctx),
-                Some(binary_bits_to_bytes(i as usize))
-            );
-            print!("{}, ", inty.get_display_name(&type_ctx));
+    fn makes_instance(self) -> bool {
+        !matches!(self, ValTypeID::Void)
+    }
+
+    fn class_id(self) -> ValTypeClass {
+        match self {
+            ValTypeID::Void => ValTypeClass::Void,
+            ValTypeID::Ptr => ValTypeClass::Ptr,
+            ValTypeID::Int(_) => ValTypeClass::Int,
+            ValTypeID::Float(_) => ValTypeClass::Float,
+            ValTypeID::Array(_) => ValTypeClass::Array,
+            ValTypeID::Struct(_) => ValTypeClass::Struct,
+            ValTypeID::StructAlias(_) => ValTypeClass::StructAlias,
+            ValTypeID::Func(_) => ValTypeClass::Func,
         }
-
-        assert_eq!(ValTypeID::Int(1), ValTypeID::new_boolean());
-
-        let f32ty = ValTypeID::Float(FloatTypeKind::Ieee32);
-        let f64ty = ValTypeID::Float(FloatTypeKind::Ieee64);
-
-        assert_eq!(f32ty.get_display_name(&type_ctx), "float");
-        assert_eq!(f64ty.get_display_name(&type_ctx), "double");
     }
 
-    #[test]
-    fn test_array_type() {
-        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        // Array type `[8 x i32]`
-        let arrty = type_ctx.make_array_type(8, ValTypeID::Int(32));
-        // Array type `[8 x i32]`
-        let arrty2 = type_ctx.make_array_type(8, ValTypeID::Int(32));
-        // Array type `[8 x i64]`
-        let arrty3 = type_ctx.make_array_type(8, ValTypeID::Int(64));
-
-        assert_eq!(
-            ValTypeID::Array(arrty).get_display_name(&type_ctx),
-            "[8 x i32]"
-        );
-        assert_eq!(arrty, arrty2);
-        assert_eq!(
-            ValTypeID::Array(arrty3).get_display_name(&type_ctx),
-            "[8 x i64]"
-        );
+    fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
+        match self {
+            ValTypeID::Void | ValTypeID::Func(_) => None,
+            ValTypeID::Ptr => PtrType.try_get_size_full(alloc, tctx),
+            ValTypeID::Int(bits) => IntType(bits).try_get_size_full(alloc, tctx),
+            ValTypeID::Float(fpkind) => fpkind.try_get_size_full(alloc, tctx),
+            ValTypeID::Array(arr) => arr.try_get_size_full(alloc, tctx),
+            ValTypeID::Struct(s) => s.try_get_size_full(alloc, tctx),
+            ValTypeID::StructAlias(a) => a.try_get_size_full(alloc, tctx),
+        }
     }
 
-    #[test]
-    fn test_struct_and_alias() {
-        /* Source code:
-           public struct Student {
-               public age: int;
-               public name: byte[16];
-           }
-        */
-        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        let student_struct = {
-            let name_type = type_ctx.make_array_type(16, ValTypeID::Int(8));
-            let age_type = ValTypeID::Int(32);
-            type_ctx.make_struct_type(&[age_type, ValTypeID::Array(name_type)])
-        };
-        let student_struct_alias =
-            type_ctx.make_struct_alias_lazy("Student".into(), student_struct);
-
-        assert_eq!(student_struct_alias.get_name(&type_ctx), "Student");
-        assert_eq!(
-            ValTypeID::StructAlias(student_struct_alias).get_display_name(&type_ctx),
-            "%Student"
-        );
-        assert_eq!(
-            ValTypeID::Struct(student_struct).get_display_name(&type_ctx),
-            "{i32, [16 x i8]}"
-        );
-        assert_eq!(student_struct_alias.get_aliasee(&type_ctx), student_struct);
+    fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
+        match self {
+            ValTypeID::Void | ValTypeID::Func(_) => None,
+            ValTypeID::Ptr => PtrType.try_get_align_full(alloc, tctx),
+            ValTypeID::Int(bits) => IntType(bits).try_get_align_full(alloc, tctx),
+            ValTypeID::Float(fpkind) => fpkind.try_get_align_full(alloc, tctx),
+            ValTypeID::Array(arr) => arr.try_get_align_full(alloc, tctx),
+            ValTypeID::Struct(s) => s.try_get_align_full(alloc, tctx),
+            ValTypeID::StructAlias(a) => a.try_get_align_full(alloc, tctx),
+        }
     }
 
-    #[test]
-    fn test_func_type() {
-        /* source code:
-           public extern func strlen(string: byte*): int;
-           public extern func foo();
-           public extern func printf(format: byte*, ...);
-        */
-        let type_ctx = TypeContext::new(PlatformPolicy::new_host());
-        let strlen_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32), false);
-        let foo_functype = type_ctx.make_func_type(&[], ValTypeID::Void, false);
-        let printf_functype = type_ctx.make_func_type(&[ValTypeID::Ptr], ValTypeID::Int(32), true);
+    fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+        match self {
+            ValTypeID::Void => f.write_str("void"),
+            ValTypeID::Ptr => f.write_str("ptr"),
+            ValTypeID::Int(bits) => write!(f, "i{}", bits),
+            ValTypeID::Float(fpkind) => fpkind.serialize(f),
+            ValTypeID::Array(a) => a.serialize(f),
+            ValTypeID::Struct(s) => s.serialize(f),
+            ValTypeID::StructAlias(sa) => sa.serialize(f),
+            ValTypeID::Func(func) => func.serialize(f),
+        }
+    }
+}
 
-        assert_eq!(
-            ValTypeID::Func(strlen_functype).get_display_name(&type_ctx),
-            "fn<(ptr):i32>"
-        );
-        assert_eq!(
-            ValTypeID::Func(foo_functype).get_display_name(&type_ctx),
-            "fn<():void>"
-        );
-        assert_eq!(
-            ValTypeID::Func(printf_functype).get_display_name(&type_ctx),
-            "fn<(ptr, ...):i32>"
-        );
+impl ValTypeID {
+    pub fn new_boolean() -> Self {
+        Self::Int(1) // 1 bit for boolean
     }
 }

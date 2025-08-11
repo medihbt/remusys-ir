@@ -11,7 +11,7 @@ use crate::{
         },
         operand::{IMirSubOperand, physreg_set::MirPhysRegSet, reg::*},
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{TypeContext, ValTypeID, FuncTypeRef},
 };
 use slab::Slab;
 use std::{
@@ -42,8 +42,8 @@ pub struct MirFuncInner {
 
 impl MirFunc {
     pub fn new_extern(name: String, func_ty: FuncTypeRef, type_ctx: &TypeContext) -> Self {
-        let arg_ir_types = func_ty.get_args(type_ctx).to_vec();
-        let ret_ir_type = func_ty.get_return_type(type_ctx);
+        let arg_ir_types = func_ty.args(type_ctx).to_vec();
+        let ret_ir_type = func_ty.ret_type(type_ctx);
         let mut vreg_alloc = VirtRegAlloc::new();
         let mut arg_regs = Vec::with_capacity(16.min(arg_ir_types.len()));
         let mut stack_layout = MirStackLayout::new();

@@ -1,12 +1,12 @@
 use crate::{
     ir::{IRAllocs, ISubValueSSA, ValueSSA},
-    typing::id::{ValTypeID, ValTypeIDClass},
+    typing::{ValTypeID, ValTypeClass},
 };
 
 #[derive(Debug, Clone)]
 pub enum ValueCheckError {
     TypeMismatch(ValTypeID, ValTypeID),
-    TypeNotClass(ValTypeID, ValTypeIDClass),
+    TypeNotClass(ValTypeID, ValTypeClass),
     InvalidValue(ValueSSA),
 }
 

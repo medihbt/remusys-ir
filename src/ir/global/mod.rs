@@ -6,7 +6,7 @@ use crate::{
         IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, PtrStorage, UserList, ValueSSA,
         Var, global::func::Func,
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use std::{
     cell::{Cell, Ref},

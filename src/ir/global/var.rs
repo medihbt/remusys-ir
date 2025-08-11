@@ -4,7 +4,7 @@ use crate::{
         GlobalData, GlobalKind, GlobalRef, IRWriter, ISubValueSSA, ValueSSA,
         global::{ISubGlobal, Linkage},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use std::cell::Cell;
 

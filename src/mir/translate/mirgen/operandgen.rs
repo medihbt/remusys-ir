@@ -20,7 +20,7 @@ use crate::{
         },
         translate::mirgen::{MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst},
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
+    typing::{FPKind, IValType, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,12 +124,12 @@ impl<'a> OperandMap<'a> {
                         LoadGr32Base::new(MirOP::LdrGr32Base, virt, stackpos, ImmLSP32(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
-                ValTypeID::Float(FloatTypeKind::Ieee32) => {
+                ValTypeID::Float(FPKind::Ieee32) => {
                     let virt = vreg_alloc.insert_fpr32(FPR32::new_empty());
                     let ldr_inst = LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLSP32(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
                 }
-                ValTypeID::Float(FloatTypeKind::Ieee64) => {
+                ValTypeID::Float(FPKind::Ieee64) => {
                     let virt = vreg_alloc.insert_fpr64(FPR64::new_empty());
                     let ldr_inst = LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLSP64(0));
                     (RegOperand::from(virt), ldr_inst.into_mir())
@@ -217,8 +217,8 @@ impl<'a> OperandMap<'a> {
                 ConstData::Zero(ty) => match ty {
                     ValTypeID::Ptr | ValTypeID::Int(64) => Imm64::new_empty().into_mir(),
                     ValTypeID::Int(32) => Imm32::new_empty().into_mir(),
-                    ValTypeID::Float(FloatTypeKind::Ieee32) => MirOperand::F32(0.0),
-                    ValTypeID::Float(FloatTypeKind::Ieee64) => MirOperand::F64(0.0),
+                    ValTypeID::Float(FPKind::Ieee32) => MirOperand::F32(0.0),
+                    ValTypeID::Float(FPKind::Ieee64) => MirOperand::F64(0.0),
                     _ => panic!("Unexpected type for zero constant: {ty:?}"),
                 },
                 ConstData::PtrNull(_) => Imm64::new_empty().into_mir(),
@@ -227,8 +227,8 @@ impl<'a> OperandMap<'a> {
                     (64, value) => Imm64(value as u64, ImmKind::Full).into_mir(),
                     _ => panic!("Unexpected APInt size: {}", apint.bits()),
                 },
-                ConstData::Float(FloatTypeKind::Ieee32, f) => MirOperand::F32(f as f32),
-                ConstData::Float(FloatTypeKind::Ieee64, f) => MirOperand::F64(f as f64),
+                ConstData::Float(FPKind::Ieee32, f) => MirOperand::F32(f as f32),
+                ConstData::Float(FPKind::Ieee64, f) => MirOperand::F64(f as f64),
             },
             Err(e) => panic!("Failed to find operand for return value: {e:?}"),
         }
@@ -269,9 +269,7 @@ impl DispatchedReg {
         match constdata {
             ConstData::Zero(ty) => {
                 fn get_zr_by_size(ty: &ValTypeID, type_ctx: &TypeContext) -> DispatchedReg {
-                    let ty_size = ty
-                        .get_instance_size(type_ctx)
-                        .expect("Failed to get type size");
+                    let ty_size = ty.get_size(type_ctx);
                     match ty_size {
                         4 => DispatchedReg::G32(GPR32::zr()),
                         8 => DispatchedReg::G64(GPR64::zr()),
@@ -280,7 +278,7 @@ impl DispatchedReg {
                 }
                 match ty {
                     ValTypeID::Ptr | ValTypeID::Int(_) => get_zr_by_size(ty, type_ctx),
-                    ValTypeID::Float(FloatTypeKind::Ieee32) => {
+                    ValTypeID::Float(FPKind::Ieee32) => {
                         let f32_reg =
                             alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
                         let f32_reg = FPR32::from_real(f32_reg);
@@ -290,7 +288,7 @@ impl DispatchedReg {
                         );
                         DispatchedReg::F32(f32_reg)
                     }
-                    ValTypeID::Float(FloatTypeKind::Ieee64) => {
+                    ValTypeID::Float(FPKind::Ieee64) => {
                         let f64_reg =
                             alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
                         let f64_reg = FPR64::from_real(f64_reg);
@@ -325,10 +323,10 @@ impl DispatchedReg {
                 }
                 _ => panic!("Unsupported APInt size: {}", apint.bits()),
             },
-            ConstData::Float(FloatTypeKind::Ieee32, f) => {
+            ConstData::Float(FPKind::Ieee32, f) => {
                 Self::f32const_to_reg(alloc_reg, out_insts, fpconst_force_float, *f as f32)
             }
-            ConstData::Float(FloatTypeKind::Ieee64, f) => {
+            ConstData::Float(FPKind::Ieee64, f) => {
                 Self::f64const_to_reg(alloc_reg, out_insts, fpconst_force_float, *f)
             }
             _ => panic!("Unsupported constant data for store: {constdata:?}"),

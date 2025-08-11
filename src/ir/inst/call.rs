@@ -5,7 +5,7 @@ use crate::{
         Opcode, PtrUser, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
 use std::{num::NonZero, rc::Rc};
 
@@ -114,10 +114,7 @@ impl ISubInst for CallOp {
                 writer.write_str(", ")?;
             }
             let type_ctx = writer.type_ctx;
-            let arg_ty = self
-                .callee_ty
-                .get_arg(type_ctx, index)
-                .expect("Argument index out of bounds");
+            let arg_ty = self.callee_ty.get_arg(type_ctx, index);
             writer.write_type(arg_ty)?;
             writer.write_str(" ")?;
             writer.write_operand(arg.get_operand())?;
@@ -145,7 +142,7 @@ impl CallOp {
             !func_ty.is_vararg(type_ctx),
             "Function type must not be vararg for fixed call"
         );
-        Self::new_raw_from_allocs(type_ctx, func_ty, func_ty.get_nargs(type_ctx))
+        Self::new_raw_from_allocs(type_ctx, func_ty, func_ty.nargs(type_ctx))
     }
 
     /// 从模块创建固定参数函数的调用指令
@@ -180,10 +177,10 @@ impl CallOp {
     pub fn new_raw_from_allocs(type_ctx: &TypeContext, func_ty: FuncTypeRef, nargs: usize) -> Self {
         Self::check_operand_count(type_ctx, func_ty, nargs);
         Self {
-            common: InstCommon::new(Opcode::Call, func_ty.get_return_type(type_ctx)),
+            common: InstCommon::new(Opcode::Call, func_ty.ret_type(type_ctx)),
             operands: Self::alloc_operands(nargs as u32),
             callee_ty: func_ty,
-            fixed_nargs: func_ty.get_nargs(type_ctx),
+            fixed_nargs: func_ty.nargs(type_ctx),
             is_vararg: func_ty.is_vararg(type_ctx),
         }
     }
@@ -199,7 +196,7 @@ impl CallOp {
 
     fn check_operand_count(type_ctx: &TypeContext, func_ty: FuncTypeRef, nargs: usize) {
         let is_vararg = func_ty.is_vararg(type_ctx);
-        let fixed_nargs = func_ty.get_nargs(type_ctx);
+        let fixed_nargs = func_ty.nargs(type_ctx);
 
         if is_vararg && nargs < fixed_nargs {
             panic!(

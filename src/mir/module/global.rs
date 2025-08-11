@@ -3,7 +3,7 @@ use std::cell::Cell;
 use crate::{
     base::INullableValue,
     mir::module::MirGlobalRef,
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{IValType, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

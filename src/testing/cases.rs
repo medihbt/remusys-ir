@@ -8,10 +8,7 @@ use crate::{
         inst::{ISubInstRef, RetRef},
         write_ir_module, write_ir_module_quiet,
     },
-    typing::{
-        context::{PlatformPolicy, TypeContext},
-        id::ValTypeID,
-    },
+    typing::{ArchInfo, FuncTypeRef, TypeContext, ValTypeID},
 };
 
 /// Test case 1: CFG example with a lot of branches.
@@ -89,9 +86,7 @@ use crate::{
 #[allow(unused)]
 pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let mut builder = create_module_builder("test_case_cfg_deep_while_br");
-    let ri32fty = builder
-        .get_type_ctx()
-        .make_func_type(&[], ValTypeID::Int(32), false);
+    let ri32fty = FuncTypeRef::new(builder.get_type_ctx(), ValTypeID::Int(32), false, []);
 
     let getint_func = builder.declare_function("getint", ri32fty).unwrap();
     let _main_func = builder
@@ -224,7 +219,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
 }
 
 pub fn create_module_builder(name: &str) -> IRBuilder {
-    let host_platform = PlatformPolicy::new_host();
+    let host_platform = ArchInfo::new_host();
     let type_ctx = TypeContext::new_rc(host_platform);
     let builder = IRBuilder::new(Module::new(name.into(), type_ctx));
     builder

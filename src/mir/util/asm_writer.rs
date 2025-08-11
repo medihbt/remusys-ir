@@ -161,11 +161,19 @@ impl<'a> AsmWriter<'a> {
         self.wrap_indent();
         write!(self, "{gvar_name}:").unwrap();
         self.inc_indent();
-        let mut size = 0;
-        for initval in &gvar.initval {
-            self.write_global_data(initval);
-            size += initval.data.len();
-        }
+
+        let size = if gvar.common.section == Section::Bss {
+            self.wrap_indent();
+            write!(self, ".zero {}", gvar.common.size).expect("Failed to write zero data");
+            gvar.common.size
+        } else {
+            let mut size = 0;
+            for initval in &gvar.initval {
+                self.write_global_data(initval);
+                size += initval.data.len();
+            }
+            size
+        };
         if matches!(gvar.common.linkage, Linkage::Extern | Linkage::Global) {
             // For extern/global variables, we need to write the size of the variable.
             self.wrap_indent();

@@ -7,7 +7,7 @@ use crate::{
         BlockRef, IRAllocs, IRAllocsRef, IRWriter, ISubValueSSA, ITraceableValue, ManagedInst,
         Module, Opcode, Use, UserList, ValueSSA, ValueSSAError,
     },
-    typing::{TypeMismatchError, id::ValTypeID},
+    typing::{TypeMismatchError, ValTypeID},
 };
 use slab::Slab;
 use std::{

@@ -4,7 +4,7 @@ use crate::{
     base::SlabRef,
     ir::{ConstData, ConstExprData, ConstExprRef, Module, ValueSSA},
     mir::module::global::{MirGlobalData, Section},
-    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
+    typing::{FPKind, IValType, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone)]
@@ -83,9 +83,7 @@ impl DataUnit {
     pub fn from_const_data(data: ConstData, type_ctx: &TypeContext) -> Self {
         match data {
             ConstData::Undef(ty) | ConstData::Zero(ty) => {
-                let size_bytes = ty
-                    .get_instance_size(type_ctx)
-                    .expect("Type must have a defined size");
+                let size_bytes = ty.get_size(type_ctx);
                 let unit_bytes_log2 = ty.get_align_log2(type_ctx);
                 let count = size_bytes >> unit_bytes_log2;
                 Self::from_zeroes(unit_bytes_log2, count)
@@ -98,8 +96,8 @@ impl DataUnit {
                 64 => Self::DWord(apint.as_unsigned() as u64),
                 _ => panic!("Unsupported integer bit width: {}", apint.bits()),
             },
-            ConstData::Float(FloatTypeKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
-            ConstData::Float(FloatTypeKind::Ieee64, x) => Self::DWord(x.to_bits()),
+            ConstData::Float(FPKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
+            ConstData::Float(FPKind::Ieee64, x) => Self::DWord(x.to_bits()),
         }
     }
 
@@ -116,8 +114,8 @@ impl DataUnit {
                         _ => panic!("Unsupported integer bit width: {}", bits),
                     },
                     ValTypeID::Float(fpkind) => match fpkind {
-                        FloatTypeKind::Ieee32 => 2,
-                        FloatTypeKind::Ieee64 => 3,
+                        FPKind::Ieee32 => 2,
+                        FPKind::Ieee64 => 3,
                     },
                     ValTypeID::Void
                     | ValTypeID::Array(_)
@@ -141,8 +139,8 @@ impl DataUnit {
                 64 => Self::DWord(apint.as_unsigned() as u64),
                 _ => panic!("Unsupported integer bit width: {}", apint.bits()),
             },
-            ConstData::Float(FloatTypeKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
-            ConstData::Float(FloatTypeKind::Ieee64, x) => Self::DWord(x.to_bits()),
+            ConstData::Float(FPKind::Ieee32, x) => Self::Word((x as f32).to_bits()),
+            ConstData::Float(FPKind::Ieee64, x) => Self::DWord(x.to_bits()),
         }
     }
 

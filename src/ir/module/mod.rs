@@ -4,7 +4,7 @@ use crate::{
         BlockData, ConstExprData, Func, FuncRef, GlobalData, GlobalRef, ISubGlobal, InstData,
         ValueSSA,
     },
-    typing::context::TypeContext,
+    typing::TypeContext,
 };
 use slab::Slab;
 use std::{

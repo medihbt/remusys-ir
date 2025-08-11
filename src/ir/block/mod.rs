@@ -10,7 +10,7 @@ use crate::{
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use slab::Slab;
 use std::{

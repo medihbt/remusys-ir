@@ -14,7 +14,7 @@ use crate::{
         operand::{IMirSubOperand, reg::GPR64},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{TypeContext, ValTypeID},
 };
 use std::collections::VecDeque;
 

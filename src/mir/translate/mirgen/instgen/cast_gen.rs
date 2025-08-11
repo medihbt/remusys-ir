@@ -18,7 +18,7 @@ use crate::{
             operandgen::{DispatchedReg, InstRetval, OperandMap},
         },
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
+    typing::{TypeContext, ValTypeID, FPKind},
 };
 use std::collections::VecDeque;
 
@@ -119,7 +119,7 @@ pub(super) fn dispatch_casts(
             Bin64RL::new(MirOP::And64I, dst, src, imm).into_mir()
         }
         Opcode::Fpext => {
-            // FP 寄存器的类型直接对应 FloatTypeKind 的几个变体, 不需要像 int
+            // FP 寄存器的类型直接对应 FPKind 的几个变体, 不需要像 int
             // 那样处理位宽
             match (dst_mir, src_mir) {
                 (F64(dst), F32(src)) => UnaryF64F32::new(MirOP::FCvt64F32, dst, src).into_mir(),
@@ -171,7 +171,7 @@ fn dispach_cast_cmp_to_int(
     let cset_inst = match dst_mir {
         F32(fpr32) => {
             let rn = match DispatchedReg::from_constdata(
-                &ConstData::Float(FloatTypeKind::Ieee32, 0.0),
+                &ConstData::Float(FPKind::Ieee32, 0.0),
                 type_ctx,
                 vreg_alloc,
                 out_insts,
@@ -181,7 +181,7 @@ fn dispach_cast_cmp_to_int(
                 _ => panic!("Expected source operand to be F32"),
             };
             let rm = match DispatchedReg::from_constdata(
-                &ConstData::Float(FloatTypeKind::Ieee32, 1.0),
+                &ConstData::Float(FPKind::Ieee32, 1.0),
                 type_ctx,
                 vreg_alloc,
                 out_insts,
@@ -202,7 +202,7 @@ fn dispach_cast_cmp_to_int(
         }
         F64(fpr64) => {
             let rn = match DispatchedReg::from_constdata(
-                &ConstData::Float(FloatTypeKind::Ieee64, 0.0),
+                &ConstData::Float(FPKind::Ieee64, 0.0),
                 type_ctx,
                 vreg_alloc,
                 out_insts,
@@ -212,7 +212,7 @@ fn dispach_cast_cmp_to_int(
                 _ => panic!("Expected source operand to be F64"),
             };
             let rm = match DispatchedReg::from_constdata(
-                &ConstData::Float(FloatTypeKind::Ieee64, 1.0),
+                &ConstData::Float(FPKind::Ieee64, 1.0),
                 type_ctx,
                 vreg_alloc,
                 out_insts,

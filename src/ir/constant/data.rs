@@ -1,7 +1,7 @@
 use crate::{
     base::APInt,
     ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
-    typing::{id::ValTypeID, types::FloatTypeKind},
+    typing::{ValTypeID, FPKind},
 };
 use std::hash::Hash;
 
@@ -11,12 +11,12 @@ pub enum ConstData {
     Zero(ValTypeID),
     PtrNull(ValTypeID),
     Int(APInt),
-    Float(FloatTypeKind, f64),
+    Float(FPKind, f64),
 }
 
 impl PartialEq for ConstData {
     fn eq(&self, other: &Self) -> bool {
-        use crate::typing::types::FloatTypeKind::*;
+        use crate::typing::FPKind::*;
         use ConstData::*;
         match (self, other) {
             (Undef(l0), Undef(r0)) => l0 == r0,
@@ -37,7 +37,7 @@ impl PartialEq for ConstData {
 impl Hash for ConstData {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
-        use crate::typing::types::FloatTypeKind::*;
+        use crate::typing::FPKind::*;
         use ConstData::*;
         match self {
             Undef(ty) => ty.hash(state),
@@ -103,10 +103,10 @@ impl ISubValueSSA for ConstData {
             ConstData::Int(apint) => {
                 write!(writer.output.borrow_mut(), "{}", apint.as_signed())
             }
-            ConstData::Float(FloatTypeKind::Ieee32, fp) => {
+            ConstData::Float(FPKind::Ieee32, fp) => {
                 write!(writer.output.borrow_mut(), "{:.20e}", *fp as f32)
             }
-            ConstData::Float(FloatTypeKind::Ieee64, fp) => {
+            ConstData::Float(FPKind::Ieee64, fp) => {
                 write!(writer.output.borrow_mut(), "{:.20e}", *fp)
             }
         }
@@ -121,13 +121,13 @@ impl From<APInt> for ConstData {
 
 impl From<f64> for ConstData {
     fn from(value: f64) -> Self {
-        ConstData::Float(FloatTypeKind::Ieee64, value)
+        ConstData::Float(FPKind::Ieee64, value)
     }
 }
 
 impl From<f32> for ConstData {
     fn from(value: f32) -> Self {
-        ConstData::Float(FloatTypeKind::Ieee32, value as f64)
+        ConstData::Float(FPKind::Ieee32, value as f64)
     }
 }
 impl ConstData {
@@ -143,7 +143,7 @@ impl ConstData {
 
     pub fn is_zero(&self) -> bool {
         use ConstData::*;
-        use FloatTypeKind::*;
+        use FPKind::*;
         match self {
             Zero(_) | PtrNull(_) => true,
             Int(x) => *x == 0, 

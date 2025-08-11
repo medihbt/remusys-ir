@@ -19,7 +19,7 @@ use crate::{
         },
         translate::mirgen::{InstTranslateInfo, operandgen::OperandMap},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use core::panic;
 use slab::Slab;

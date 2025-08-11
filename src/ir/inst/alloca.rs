@@ -5,7 +5,7 @@ use crate::{
         IRWriter, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrStorage, Use,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 
 /// 在栈上分配一段固定大小的内存. 这个指令的特殊之处在于, 该指令分配得到的内存

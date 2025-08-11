@@ -8,7 +8,7 @@ use crate::{
         block::jump_target::JumpTargets,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use std::{
     cell::{Ref, RefCell},

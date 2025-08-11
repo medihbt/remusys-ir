@@ -4,7 +4,7 @@ use crate::{
         InstRef, Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::{context::TypeContext, id::ValTypeID, types::StructTypeRef},
+    typing::{IValType, StructTypeRef, TypeContext, ValTypeID},
 };
 use std::{num::NonZero, panic, rc::Rc};
 
@@ -204,8 +204,8 @@ impl IndexPtr {
             base_ty,
             last_ty,
             nindices,
-            strict_ilog2(base_ty.try_get_instance_align(type_ctx).unwrap()),
-            strict_ilog2(last_ty.try_get_instance_align(type_ctx).unwrap()),
+            base_ty.get_align_log2(type_ctx),
+            last_ty.get_align_log2(type_ctx),
         );
 
         // 设置索引操作数
@@ -376,11 +376,11 @@ impl<'a> GEPTypeIndexer<'a> {
                     panic!("Expected an integer constant for struct index but got {cdata:?}");
                 }
             };
-            let nfields = sty.get_nelements(type_ctx);
+            let nfields = sty.get_nfields(type_ctx);
             if index < 0 || index >= nfields as isize {
                 panic!("Struct index out of bounds: {index} for struct with {nfields} fields");
             }
-            sty.get_element_type(type_ctx, index as usize).unwrap()
+            sty.get_field(type_ctx, index as usize)
         }
 
         match self.type_state {
@@ -500,16 +500,6 @@ impl<'a> Iterator for GEPIndexIter<'a> {
     }
 }
 
-fn strict_ilog2(x: usize) -> u8 {
-    if x == 0 {
-        panic!("Cannot compute log2 of zero");
-    } else if x.is_power_of_two() {
-        x.trailing_zeros() as u8
-    } else {
-        panic!("Value {x} is not a power of two");
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GEPRef(InstRef);
 
@@ -545,7 +535,7 @@ impl<'a> IrGEPOffsetIter<'a> {
     }
 
     fn locate_array(type_ctx: &TypeContext, index: ValueSSA, elemty: ValTypeID) -> IrGEPOffset {
-        let elemty_size = elemty.get_instance_size_unwrap(type_ctx);
+        let elemty_size = elemty.get_size(type_ctx);
         let elemty_align = elemty.get_align(type_ctx);
         let weight = elemty_size.next_multiple_of(elemty_align) as i64;
         match index {
@@ -582,17 +572,17 @@ impl<'a> IrGEPOffsetIter<'a> {
                 panic!("Expected an integer constant for struct index but got {cdata:?}");
             }
         };
-        let nfields = sty.get_nelements(type_ctx);
+        let nfields = sty.get_nfields(type_ctx);
         debug_assert!(
             index < nfields,
             "Struct index out of bounds: {index} for struct with {nfields} fields"
         );
         debug_assert_eq!(
-            Some(elemty),
-            sty.get_element_type(type_ctx, index),
+            elemty,
+            sty.get_field(type_ctx, index),
             "Struct index type mismatch"
         );
-        let offset = sty.offset_unwrap(type_ctx, index);
+        let offset = sty.get_offset(type_ctx, index);
         IrGEPOffset::Imm(offset as i64)
     }
 }

@@ -7,7 +7,7 @@ use crate::{
         checking::{self, ValueCheckError},
         inst::{ISubInstRef, InstOperands},
     },
-    typing::id::{ValTypeID, ValTypeIDClass},
+    typing::{ValTypeID, ValTypeClass},
 };
 
 /// 二元操作指令: 执行两个操作数的二元运算（算术运算、逻辑运算、移位运算），并返回结果。
@@ -125,21 +125,21 @@ impl BinOp {
         match opcode {
             Opcode::Add | Opcode::Sub | Opcode::Mul => {
                 if !matches!(retty, ValTypeID::Int(_)) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeIDClass::Int));
+                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem => {
                 if !matches!(retty, ValTypeID::Float(_)) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeIDClass::Float));
+                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Float));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem => {
                 if !matches!(retty, ValTypeID::Int(_)) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeIDClass::Int));
+                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;
@@ -152,7 +152,7 @@ impl BinOp {
             }
             Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor => {
                 if !matches!(retty, ValTypeID::Int(_)) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeIDClass::Int));
+                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;
@@ -160,7 +160,7 @@ impl BinOp {
             }
             Opcode::Shl | Opcode::Lshr | Opcode::Ashr => {
                 if !matches!(retty, ValTypeID::Int(_)) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeIDClass::Int));
+                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;

@@ -1,6 +1,6 @@
 use crate::{
     base::{APInt, SlabRef},
-    typing::{id::ValTypeID, types::FloatTypeKind},
+    typing::{ValTypeID, FPKind},
 };
 use std::{
     fmt::Debug,
@@ -143,13 +143,13 @@ impl From<APInt> for ValueSSA {
 
 impl From<f32> for ValueSSA {
     fn from(value: f32) -> Self {
-        ValueSSA::ConstData(ConstData::Float(FloatTypeKind::Ieee32, value as f64))
+        ValueSSA::ConstData(ConstData::Float(FPKind::Ieee32, value as f64))
     }
 }
 
 impl From<f64> for ValueSSA {
     fn from(value: f64) -> Self {
-        ValueSSA::ConstData(ConstData::Float(FloatTypeKind::Ieee64, value))
+        ValueSSA::ConstData(ConstData::Float(FPKind::Ieee64, value))
     }
 }
 

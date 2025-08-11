@@ -1,7 +1,7 @@
 use crate::{
     base::SlabRef,
     ir::{IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, UserList, ValueSSA},
-    typing::{context::TypeContext, id::ValTypeID, types::ArrayTypeRef},
+    typing::{ArrayTypeRef, TypeContext, ValTypeID},
 };
 use slab::Slab;
 
@@ -196,9 +196,7 @@ impl Struct {
             if i > 0 {
                 writer.write_str(", ")?;
             }
-            let elemty = sty
-                .get_element_type(writer.type_ctx, i)
-                .expect("Element type not found");
+            let elemty = sty.get_field(writer.type_ctx, i);
             debug_assert_eq!(
                 elemty,
                 elem.get_valtype(&writer.allocs),

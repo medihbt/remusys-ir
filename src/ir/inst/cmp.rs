@@ -4,7 +4,7 @@ use crate::{
         InstRef, Opcode, Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use std::rc::Rc;
 

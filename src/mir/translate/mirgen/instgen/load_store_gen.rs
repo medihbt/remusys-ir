@@ -14,7 +14,7 @@ use crate::{
         },
         translate::mirgen::operandgen::{InstRetval, OperandMap, OperandMapError},
     },
-    typing::{id::ValTypeID, types::FloatTypeKind},
+    typing::{ValTypeID, FPKind},
 };
 use core::panic;
 use log::debug;
@@ -61,7 +61,7 @@ impl StrSrc {
     }
 
     fn from_constdata(data: ConstData) -> Self {
-        use FloatTypeKind::*;
+        use FPKind::*;
         match data {
             ConstData::Zero(ty) => Self::zeroed(ty),
             ConstData::PtrNull(_) => Self::Imm64(Imm64::full(0)),
@@ -83,8 +83,8 @@ impl StrSrc {
         match ty {
             ValTypeID::Int(32) => Self::Imm32(Imm32::full(0)),
             ValTypeID::Int(64) | ValTypeID::Ptr => Self::Imm64(Imm64::full(0)),
-            ValTypeID::Float(FloatTypeKind::Ieee32) => Self::Imm32(Imm32::full(0)),
-            ValTypeID::Float(FloatTypeKind::Ieee64) => Self::Imm64(Imm64::full(0)),
+            ValTypeID::Float(FPKind::Ieee32) => Self::Imm32(Imm32::full(0)),
+            ValTypeID::Float(FPKind::Ieee64) => Self::Imm64(Imm64::full(0)),
             _ => panic!("Unsupported zeroed type for store: {ty:?}"),
         }
     }

@@ -4,7 +4,7 @@ use crate::{
         FuncRef, GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module,
         PredList, UserList, ValueSSA,
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{IValType, TypeContext, ValTypeID},
 };
 use std::{
     cell::{Cell, Ref, RefCell},

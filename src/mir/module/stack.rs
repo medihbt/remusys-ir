@@ -4,7 +4,7 @@ use crate::{
         operand::{physreg_set::MirPhysRegSet, reg::*},
         translate::mirgen::operandgen::DispatchedReg,
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FloatTypeKind},
+    typing::{FPKind, IValType, TypeContext, ValTypeID},
 };
 use std::{cell::Cell, collections::BTreeSet};
 
@@ -216,8 +216,8 @@ impl MirStackLayout {
             "Cannot add more args after building the stack layout"
         );
         let (natural_size, align_log2) = match irtype {
-            ValTypeID::Float(FloatTypeKind::Ieee32) => (4, 2),
-            ValTypeID::Float(FloatTypeKind::Ieee64) => (8, 3),
+            ValTypeID::Float(FPKind::Ieee32) => (4, 2),
+            ValTypeID::Float(FPKind::Ieee64) => (8, 3),
             ValTypeID::Int(32) => (4, 2),
             ValTypeID::Int(64) | ValTypeID::Ptr => (8, 3),
             _ => panic!("Unsupported type for spilled argument: {irtype:?}"),
@@ -272,7 +272,7 @@ impl MirStackLayout {
         type_ctx: &TypeContext,
         vreg_alloc: &mut VirtRegAlloc,
     ) -> &mut MirStackItem {
-        let size = irtype.get_instance_size_unwrap(type_ctx);
+        let size = irtype.get_size(type_ctx);
         let align_log2 = irtype.get_align_log2(type_ctx);
         self.add_variable_item(irtype, vreg_alloc, size, align_log2)
     }
@@ -319,8 +319,8 @@ impl MirStackLayout {
         );
         let pure = DispatchedReg::from_reg(vreg);
         let (irtype, size, align_log2) = match pure {
-            DispatchedReg::F32(_) => (ValTypeID::Float(FloatTypeKind::Ieee32), 4, 2),
-            DispatchedReg::F64(_) => (ValTypeID::Float(FloatTypeKind::Ieee64), 8, 3),
+            DispatchedReg::F32(_) => (ValTypeID::Float(FPKind::Ieee32), 4, 2),
+            DispatchedReg::F64(_) => (ValTypeID::Float(FPKind::Ieee64), 8, 3),
             DispatchedReg::G32(_) => (ValTypeID::Int(32), 4, 2),
             DispatchedReg::G64(_) => (ValTypeID::Int(64), 8, 3),
         };

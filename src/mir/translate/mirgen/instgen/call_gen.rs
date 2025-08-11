@@ -10,7 +10,7 @@ use crate::{
         },
         translate::mirgen::operandgen::{InstRetval, OperandMap},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 use slab::Slab;
 use std::{collections::VecDeque, rc::Rc};
@@ -86,7 +86,7 @@ fn prepare_call_args(args: &[Rc<Use>], operand_map: &OperandMap) -> Vec<MirOpera
 }
 
 fn call_arg_from_constdata(data: ConstData) -> MirOperand {
-    use crate::typing::types::FloatTypeKind::*;
+    use crate::typing::FPKind::*;
     match data {
         ConstData::Zero(ty) => match ty {
             ValTypeID::Ptr | ValTypeID::Int(64) => GPR64::zr().into_mir(),

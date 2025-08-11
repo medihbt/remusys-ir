@@ -8,7 +8,7 @@ use crate::{
         PtrStorage, PtrUser, UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{FuncTypeRef, TypeContext, ValTypeID},
 };
 use std::cell::Cell;
 
@@ -24,17 +24,21 @@ pub trait FuncStorage: PtrStorage {
 
     /// 获取函数的返回值类型
     fn get_return_type(&self, type_ctx: &TypeContext) -> ValTypeID {
-        self.get_stored_func_type().get_return_type(type_ctx)
+        self.get_stored_func_type().ret_type(type_ctx)
     }
 
     /// 获取函数参数个数
     fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
-        self.get_stored_func_type().get_nargs(type_ctx)
+        self.get_stored_func_type().nargs(type_ctx)
     }
 
     /// 获取指定索引的参数类型
-    fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
-        self.get_stored_func_type().get_arg(type_ctx, index)
+    fn try_get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
+        self.get_stored_func_type().try_get_arg(type_ctx, index)
+    }
+    fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> ValTypeID {
+        self.try_get_arg_type(type_ctx, index)
+            .expect("Failed to get argument type")
     }
 
     /// 检查函数是否为可变参数函数
@@ -54,17 +58,20 @@ pub trait FuncUser: PtrUser {
 
     /// 获取操作数函数的返回值类型
     fn get_return_type(&self, type_ctx: &TypeContext) -> ValTypeID {
-        self.get_operand_func_type().get_return_type(type_ctx)
+        self.get_operand_func_type().ret_type(type_ctx)
     }
 
     /// 获取操作数函数的参数个数
     fn get_nargs(&self, type_ctx: &TypeContext) -> usize {
-        self.get_operand_func_type().get_nargs(type_ctx)
+        self.get_operand_func_type().nargs(type_ctx)
     }
 
     /// 获取操作数函数指定索引的参数类型
-    fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
-        self.get_operand_func_type().get_arg(type_ctx, index)
+    fn try_get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> Option<ValTypeID> {
+        self.get_operand_func_type().try_get_arg(type_ctx, index)
+    }
+    fn get_arg_type(&self, type_ctx: &TypeContext, index: usize) -> ValTypeID {
+        self.try_get_arg_type(type_ctx, index).unwrap()
     }
 }
 
@@ -196,13 +203,13 @@ impl Func {
         let common = GlobalDataCommon::new(name, content_ty, 8);
 
         let args = {
-            let mut args = Vec::with_capacity(functy.get_nargs(type_ctx));
-            for (index, arg_ty) in functy.get_args(type_ctx).iter().enumerate() {
+            let mut args = Vec::with_capacity(functy.nargs(type_ctx));
+            for (index, arg_ty) in functy.args(type_ctx).iter().enumerate() {
                 args.push(FuncArg { ty: arg_ty.clone(), index, users: UserList::new_empty() });
             }
             args.into_boxed_slice()
         };
-        let return_type = functy.get_return_type(type_ctx);
+        let return_type = functy.ret_type(type_ctx);
         Func {
             common,
             args,

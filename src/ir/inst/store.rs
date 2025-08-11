@@ -4,7 +4,7 @@ use crate::{
         Use, UseKind, ValueSSA,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{IValType, TypeContext, ValTypeID},
 };
 use std::{num::NonZero, rc::Rc};
 

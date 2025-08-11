@@ -11,7 +11,7 @@ use crate::{
             global::{MirGlobalData, MirGlobalVariable, Section},
         },
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{TypeContext, ValTypeID, FuncTypeRef},
 };
 
 #[derive(Debug, Clone)]

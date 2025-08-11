@@ -36,7 +36,7 @@ use crate::{
         analysis::cfg::{dfs::CfgDfsSeq, snapshot::CfgSnapshot},
         util::DfsOrder,
     },
-    typing::{id::ValTypeID, types::FloatTypeKind},
+    typing::{ValTypeID, FPKind},
 };
 
 pub mod datagen;
@@ -356,12 +356,12 @@ impl MirTranslateCtx {
                         let vreg = alloc_reg.insert_gp(to_insert.into_real());
                         RegOperand::from(vreg)
                     }
-                    ValTypeID::Float(FloatTypeKind::Ieee32) => {
+                    ValTypeID::Float(FPKind::Ieee32) => {
                         let to_insert = FPR32::new_empty();
                         let vreg = alloc_reg.insert_float(to_insert.into_real());
                         RegOperand::from(vreg)
                     }
-                    ValTypeID::Float(FloatTypeKind::Ieee64) => {
+                    ValTypeID::Float(FPKind::Ieee64) => {
                         let to_insert = FPR64::new_empty();
                         let vreg = alloc_reg.insert_float(to_insert.into_real());
                         RegOperand::from(vreg)

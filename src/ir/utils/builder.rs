@@ -9,7 +9,7 @@ use crate::{
             LoadOp, PhiNode, PhiRef, Ret, SelectOp, StoreOp, Switch,
         },
     },
-    typing::{context::TypeContext, id::ValTypeID, types::FuncTypeRef},
+    typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
 
 pub struct IRBuilder {

@@ -10,7 +10,7 @@ use crate::{
         operand::{IMirSubOperand, imm::ImmCalc, reg::*},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
-    typing::{context::TypeContext, id::ValTypeID},
+    typing::{TypeContext, ValTypeID},
 };
 use log::debug;
 use slab::Slab;

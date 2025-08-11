@@ -9,7 +9,7 @@ use crate::{
         block::jump_target::JumpTargets,
         inst::{ISubInstRef, InstOperands},
     },
-    typing::id::ValTypeID,
+    typing::ValTypeID,
 };
 
 /// 无条件跳转到某个基本块

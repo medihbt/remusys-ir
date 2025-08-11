@@ -185,7 +185,7 @@ impl<'a> IRValueMarker<'a> {
 mod tests {
     use super::*;
     use crate::ir::{ConstData, GlobalData, GlobalRef, Var};
-    use crate::typing::id::ValTypeID;
+    use crate::typing::ValTypeID;
 
     #[test]
     fn test_gc_basic_marking() {
