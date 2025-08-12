@@ -6,12 +6,16 @@ use crate::{
             MirModule,
             block::{MirBlock, MirBlockRef},
             global::{Linkage, MirGlobalCommon, Section},
-            stack::{MirStackItem, MirStackLayout},
+            stack::{MirStackItem, MirStackLayout, StackItemKind},
             vreg_alloc::VirtRegAlloc,
         },
-        operand::{IMirSubOperand, physreg_set::MirPhysRegSet, reg::*},
+        operand::{physreg_set::MirPhysRegSet, reg::*},
+        translate::mirgen::{
+            operandgen::DispatchedReg,
+            paramgen::{ArgPos, MirArgBuilder, MirArgInfo},
+        },
     },
-    typing::{TypeContext, ValTypeID, FuncTypeRef},
+    typing::{FuncTypeRef, IValType, PrimType, TypeContext, ValTypeID},
 };
 use slab::Slab;
 use std::{
@@ -26,7 +30,7 @@ pub struct MirFunc {
     pub arg_ir_types: Vec<ValTypeID>,
     pub ret_ir_type: ValTypeID,
 
-    pub arg_regs: Vec<RegOperand>,
+    pub arg_info: MirArgInfo,
     pub blocks: SlabRefList<MirBlockRef>,
 
     pub has_call: Cell<bool>,
@@ -45,19 +49,13 @@ impl MirFunc {
         let arg_ir_types = func_ty.args(type_ctx).to_vec();
         let ret_ir_type = func_ty.ret_type(type_ctx);
         let mut vreg_alloc = VirtRegAlloc::new();
-        let mut arg_regs = Vec::with_capacity(16.min(arg_ir_types.len()));
-        let mut stack_layout = MirStackLayout::new();
-        Self::init_args(
-            &mut arg_regs,
-            &mut stack_layout,
-            &mut vreg_alloc,
-            arg_ir_types.as_slice(),
-        );
+        let arg_info = MirArgBuilder::new().build_func(func_ty, type_ctx, &mut vreg_alloc);
+        let stack_layout = Self::init_stack(&arg_info);
         Self {
             common: MirGlobalCommon::new(name, Section::Text, 2, 0, Linkage::Extern),
             arg_ir_types,
             ret_ir_type,
-            arg_regs,
+            arg_info,
             blocks: SlabRefList::new_guide(),
             has_call: Cell::new(false),
             inner: RefCell::new(MirFuncInner {
@@ -81,40 +79,24 @@ impl MirFunc {
         ret
     }
 
-    fn init_args(
-        arg_regs: &mut Vec<RegOperand>,
-        stack: &mut MirStackLayout,
-        vreg_alloc: &mut VirtRegAlloc,
-        arg_tys: &[ValTypeID],
-    ) {
-        // 第 0-7 个整型/指针参数使用 GP 寄存器传递。这里记录已经使用的 GP 寄存器数量, 超过则转为栈分配.
-        let mut gpreg_top: u32 = 0;
-        // 第 0-7 个浮点参数使用 FP 寄存器传递。这里记录已经使用的 FP 寄存器数量, 超过则转为栈分配.
-        let mut fpreg_top: u32 = 0;
-
-        for &arg_ty in arg_tys {
-            let (reg_top, mut reg) = match arg_ty {
-                ValTypeID::Ptr | ValTypeID::Int(_) => (
-                    &mut gpreg_top,
-                    RegOperand::from(GPR64::new_empty().into_real()),
-                ),
-                ValTypeID::Float(_) => (
-                    &mut fpreg_top,
-                    RegOperand::from(FPR64::new_empty().into_real()),
-                ),
-                _ => panic!("Invalid argument type for MIR function: {arg_ty:?}"),
-            };
-            if *reg_top < 8 {
-                // 使用寄存器传递参数
-                reg.set_id(RegID::Phys(*reg_top));
-                arg_regs.push(reg);
-                *reg_top += 1;
-            } else {
-                // 使用栈传递参数
-                stack.add_spilled_arg(arg_ty, vreg_alloc);
-            }
+    fn init_stack(arg_info: &MirArgInfo) -> MirStackLayout {
+        let mut stack = MirStackLayout::new();
+        let mut count = 0;
+        for &(ty, pos) in &arg_info.pos {
+            let ArgPos::Stack(offset, vreg, stackpos) = pos else { continue };
+            stack.args.push(MirStackItem {
+                irtype: ty.into_ir(),
+                index: count,
+                stackpos_reg: stackpos,
+                offset: offset as i64,
+                size: vreg.get_size() as u64,
+                size_with_padding: vreg.get_size().max(8) as u64,
+                align_log2: vreg.get_align().ilog2() as u8,
+                kind: StackItemKind::SpilledArg,
+            });
+            count += 1;
         }
-        stack.finish_arg_building();
+        stack
     }
 
     /// 在虚拟寄存器 / 虚拟栈空间中添加一个变量，并返回指向这块栈空间的位置虚拟寄存器。
@@ -214,5 +196,8 @@ impl MirFunc {
             .borrow_mut()
             .stack_layout
             .reinit_saved_regs(saved_regs);
+    }
+    pub fn arg_regs(&self) -> &[(u32, PrimType, DispatchedReg)] {
+        self.arg_info.arg_regs.as_slice()
     }
 }

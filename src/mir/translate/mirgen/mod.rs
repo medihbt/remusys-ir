@@ -1,10 +1,3 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    rc::Rc,
-};
-
-use log::debug;
-
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
@@ -36,13 +29,19 @@ use crate::{
         analysis::cfg::{dfs::CfgDfsSeq, snapshot::CfgSnapshot},
         util::DfsOrder,
     },
-    typing::{ValTypeID, FPKind},
+    typing::{FPKind, ValTypeID},
+};
+use log::debug;
+use std::{
+    collections::{BTreeMap, VecDeque},
+    rc::Rc,
 };
 
 pub mod datagen;
 pub mod globalgen;
 pub mod instgen;
 pub mod operandgen;
+pub mod paramgen;
 
 pub fn codegen_ir_to_mir(
     ir_module: Rc<IRModule>,

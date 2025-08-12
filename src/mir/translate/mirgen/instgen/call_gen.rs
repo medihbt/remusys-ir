@@ -61,8 +61,8 @@ fn prepare_call_args(args: &[Rc<Use>], operand_map: &OperandMap) -> Vec<MirOpera
         let arg = arg.get_operand();
         let arg_mir = match arg {
             ValueSSA::ConstData(data) => call_arg_from_constdata(data),
-            ValueSSA::FuncArg(_, arg_id) => operand_map
-                .find_operand_for_arg(arg_id)
+            ValueSSA::FuncArg(func, arg_id) => operand_map
+                .find_operand_for_arg(func, arg_id)
                 .unwrap_or_else(|| panic!("Failed to find operand for arg_id: {arg_id}"))
                 .into_mir(),
             ValueSSA::Inst(instval) => {

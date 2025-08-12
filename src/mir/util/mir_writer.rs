@@ -89,7 +89,7 @@ impl<'a> Debug for FormatMirFunc<'a> {
             .field("align_log2", &func.common.align_log2)
             .field("blocks", &blocks)
             .field("switch_tabs", &func.borrow_vec_switch_tabs())
-            .field("args_regs", &func.arg_regs)
+            .field("args", &func.arg_info)
             .field("stack_layout", &func.borrow_inner().stack_layout)
             .finish()
     }

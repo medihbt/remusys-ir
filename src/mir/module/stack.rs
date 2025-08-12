@@ -101,7 +101,6 @@ pub struct MirStackLayout {
     /// The total size of the arguments section in the stack frame.
     pub args_size: u64,
 
-    finished_arg_build: bool,
     _saved_regs_size_cache: Cell<u64>,
 }
 
@@ -119,7 +118,6 @@ impl MirStackLayout {
             saved_regs: Vec::new(),
             vars_size: 0,
             args_size: 0,
-            finished_arg_build: false,
             _saved_regs_size_cache: Cell::new(0),
         }
     }
@@ -203,67 +201,6 @@ impl MirStackLayout {
     }
     pub fn vreg_is_stackpos(&self, vreg: GPR64) -> bool {
         self.find_vreg_stackpos(vreg).is_some()
-    }
-
-    /// Adds a spilled argument to the stack layout.
-    pub(super) fn add_spilled_arg(
-        &mut self,
-        irtype: ValTypeID,
-        vreg_alloc: &mut VirtRegAlloc,
-    ) -> &mut MirStackItem {
-        assert!(
-            self.finished_arg_build == false,
-            "Cannot add more args after building the stack layout"
-        );
-        let (natural_size, align_log2) = match irtype {
-            ValTypeID::Float(FPKind::Ieee32) => (4, 2),
-            ValTypeID::Float(FPKind::Ieee64) => (8, 3),
-            ValTypeID::Int(32) => (4, 2),
-            ValTypeID::Int(64) | ValTypeID::Ptr => (8, 3),
-            _ => panic!("Unsupported type for spilled argument: {irtype:?}"),
-        };
-        let size = natural_size.max(8);
-        // Ensure at least 8-byte alignment
-        let align_log2 = align_log2.max(3);
-        let new_top = self.args_size.next_multiple_of(1u64 << align_log2);
-        let item = MirStackItem {
-            irtype,
-            index: self.args.len(),
-            stackpos_reg: vreg_alloc.alloc_stackpos(),
-            offset: new_top as i64,
-            size,
-            size_with_padding: 0,
-            align_log2,
-            kind: StackItemKind::SpilledArg,
-        };
-        self.args_size = new_top + size;
-        self.args.push(item);
-        self.args.last_mut().unwrap()
-    }
-
-    pub(super) fn finish_arg_building(&mut self) {
-        if self.finished_arg_build {
-            return;
-        }
-        self.finished_arg_build = true;
-
-        // Align the args size to 16.
-        self.args_size = self.args_size.next_multiple_of(16);
-        // Calculate the size with padding for each argument
-        let nargs = self.args.len();
-        if nargs == 0 {
-            return;
-        }
-        let args = self.args.as_mut_slice();
-        for i in 1..nargs {
-            let curr_offset = args[i - 1].offset;
-            let next_offset = args[i].offset;
-            args[i - 1].size_with_padding = (next_offset - curr_offset) as u64;
-        }
-        // The last argument's size is the remaining space in the stack frame
-        if let Some(last_arg) = self.args.last_mut() {
-            last_arg.size_with_padding = self.args_size - last_arg.offset as u64;
-        }
     }
 
     pub fn add_variable(

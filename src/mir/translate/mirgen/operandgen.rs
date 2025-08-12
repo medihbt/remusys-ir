@@ -5,12 +5,7 @@ use crate::{
     mir::{
         fmt::FuncFormatContext,
         inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-        module::{
-            MirGlobalRef,
-            block::MirBlockRef,
-            func::{MirFunc, MirFuncInner},
-            vreg_alloc::VirtRegAlloc,
-        },
+        module::{MirGlobalRef, block::MirBlockRef, func::MirFunc, vreg_alloc::VirtRegAlloc},
         operand::{
             IMirSubOperand, MirOperand,
             compound::MirSymbolOp,
@@ -18,7 +13,9 @@ use crate::{
             imm_traits::{try_cast_f32_to_aarch8, try_cast_f64_to_aarch8},
             reg::{FPR32, FPR64, GPR32, GPR64, RegOperand, RegUseFlags, SubRegIndex},
         },
-        translate::mirgen::{MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst},
+        translate::mirgen::{
+            MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst, paramgen::ArgPos,
+        },
     },
     typing::{FPKind, IValType, PrimType, TypeContext, ValTypeID},
 };
@@ -50,11 +47,26 @@ pub enum OperandMapError {
 
 impl<'a> Debug for OperandMap<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let args = {
+            let mut args = Vec::with_capacity(self.args.len());
+            for (id, op) in self.args.iter() {
+                args.push(format!("[{id}] => {op:?}"));
+            }
+            args
+        };
+        let insts = {
+            let mut insts = Vec::with_capacity(self.insts.len());
+            for (iref, iretval) in self.insts.iter() {
+                insts.push(format!("{iref:?} => {iretval:?}"));
+            }
+            insts
+        };
         f.debug_struct("OperandMap")
-            .field("args", &self.args)
             .field("func", &self.func.get_name())
+            .field("ir_ref", &self.ir_func.0)
+            .field("args", &args)
+            .field("insts", &insts)
             .field("globals", &self.globals)
-            .field("insts", &self.insts)
             .finish()
     }
 }
@@ -70,81 +82,60 @@ impl<'a> OperandMap<'a> {
         debug_assert!(insts.is_sorted_by_key(|(inst, _)| *inst));
         debug_assert!(blocks.is_sorted_by_key(|b| b.ir));
 
-        let nargs = func.arg_ir_types.len();
-        let mut args = Vec::with_capacity(nargs);
-        let mut args_builder_template = Vec::with_capacity(nargs);
-        let mut arg_id = 0u32;
-        for &preg in &func.arg_regs {
+        let mut args = Vec::new();
+        let mut args_builder_template = Vec::new();
+        for (arg_id, &(_, pos)) in func.arg_info.pos.iter().enumerate() {
             let mut inner = func.borrow_inner_mut();
             let vreg_alloc = &mut inner.vreg_alloc;
-            let parg = DispatchedReg::from_reg(preg);
-            let (virt, mov_inst) = match parg {
-                DispatchedReg::F32(parg) => {
-                    let virt = vreg_alloc.insert_fpr32(parg);
-                    let mov_inst = UnaF32::new(MirOP::FMov32R, virt, parg);
-                    (RegOperand::from(virt), mov_inst.into_mir())
-                }
-                DispatchedReg::F64(parg) => {
-                    let virt = vreg_alloc.insert_fpr64(parg);
-                    let mov_inst = UnaF64::new(MirOP::FMov64R, virt, parg);
-                    (RegOperand::from(virt), mov_inst.into_mir())
-                }
-                DispatchedReg::G32(parg) => {
-                    let virt = vreg_alloc.insert_gpr32(parg);
-                    let mov_inst = Una32R::new(MirOP::Mov32R, virt, parg, None);
-                    (RegOperand::from(virt), mov_inst.into_mir())
-                }
-                DispatchedReg::G64(parg) => {
-                    let virt = vreg_alloc.insert_gpr64(parg);
-                    let mov_inst = Una64R::new(MirOP::Mov64R, virt, parg, None);
-                    (RegOperand::from(virt), mov_inst.into_mir())
-                }
-            };
-            args.push((arg_id, virt));
+            let (virt, mov_inst) = Self::build_arg_load(pos, vreg_alloc);
+            args.push((arg_id as u32, virt));
             args_builder_template.push(mov_inst);
-            arg_id += 1;
         }
-
-        let mut inner = func.borrow_inner_mut();
-        let MirFuncInner { stack_layout, vreg_alloc, .. } = &mut *inner;
-        for spilled_arg in stack_layout.args.iter() {
-            log::debug!("arg id {arg_id}, spilled arg: {:?}", spilled_arg.irtype);
-            let arg_type = spilled_arg.irtype;
-            let stackpos = spilled_arg.stackpos_reg;
-            let (parg, ldr_inst) = match arg_type {
-                ValTypeID::Ptr | ValTypeID::Int(64) => {
-                    let virt = vreg_alloc.insert_gpr64(GPR64::new_empty());
-                    let ldr_inst =
-                        LoadGr64Base::new(MirOP::LdrGr64Base, virt, stackpos, ImmLSP64(0));
-                    (RegOperand::from(virt), ldr_inst.into_mir())
-                }
-                ValTypeID::Int(32) => {
-                    let virt = vreg_alloc.insert_gpr32(GPR32::new_empty());
-                    let ldr_inst =
-                        LoadGr32Base::new(MirOP::LdrGr32Base, virt, stackpos, ImmLSP32(0));
-                    (RegOperand::from(virt), ldr_inst.into_mir())
-                }
-                ValTypeID::Float(FPKind::Ieee32) => {
-                    let virt = vreg_alloc.insert_fpr32(FPR32::new_empty());
-                    let ldr_inst = LoadF32Base::new(MirOP::LdrF32Base, virt, stackpos, ImmLSP32(0));
-                    (RegOperand::from(virt), ldr_inst.into_mir())
-                }
-                ValTypeID::Float(FPKind::Ieee64) => {
-                    let virt = vreg_alloc.insert_fpr64(FPR64::new_empty());
-                    let ldr_inst = LoadF64Base::new(MirOP::LdrF64Base, virt, stackpos, ImmLSP64(0));
-                    (RegOperand::from(virt), ldr_inst.into_mir())
-                }
-                _ => panic!("Unsupported argument type for spilled argument: {arg_type:?}"),
-            };
-            args.push((arg_id, parg));
-            arg_id += 1;
-            args_builder_template.push(ldr_inst);
-        }
-        drop(inner);
 
         let ret = Self { args, ir_func, func, globals, insts, blocks };
         log::debug!("Operand map for function: {:#?}", ret);
         (ret, args_builder_template)
+    }
+
+    fn build_arg_load(pos: ArgPos, vreg_alloc: &mut VirtRegAlloc) -> (RegOperand, MirInst) {
+        match pos {
+            ArgPos::Reg(DispatchedReg::G64(parg)) => {
+                let virt = vreg_alloc.insert_gpr64(parg);
+                let mov_inst = Una64R::new(MirOP::Mov64R, virt, parg, None);
+                (RegOperand::from(virt), mov_inst.into_mir())
+            }
+            ArgPos::Reg(DispatchedReg::G32(parg)) => {
+                let virt = vreg_alloc.insert_gpr32(parg);
+                let mov_inst = Una32R::new(MirOP::Mov32R, virt, parg, None);
+                (RegOperand::from(virt), mov_inst.into_mir())
+            }
+            ArgPos::Reg(DispatchedReg::F64(parg)) => {
+                let virt = vreg_alloc.insert_fpr64(parg);
+                let mov_inst = UnaF64::new(MirOP::FMov64R, virt, parg);
+                (RegOperand::from(virt), mov_inst.into_mir())
+            }
+            ArgPos::Reg(DispatchedReg::F32(parg)) => {
+                let virt = vreg_alloc.insert_fpr32(parg);
+                let mov_inst = UnaF32::new(MirOP::FMov32R, virt, parg);
+                (RegOperand::from(virt), mov_inst.into_mir())
+            }
+            ArgPos::Stack(_, DispatchedReg::G64(varg), stackpos) => {
+                let ldr_inst = LoadGr64Base::new(MirOP::LdrGr64Base, varg, stackpos, ImmLSP64(0));
+                (RegOperand::from(varg), ldr_inst.into_mir())
+            }
+            ArgPos::Stack(_, DispatchedReg::G32(varg), stackpos) => {
+                let ldr_inst = LoadGr32Base::new(MirOP::LdrGr32Base, varg, stackpos, ImmLSP32(0));
+                (RegOperand::from(varg), ldr_inst.into_mir())
+            }
+            ArgPos::Stack(_, DispatchedReg::F64(varg), stackpos) => {
+                let ldr_inst = LoadF64Base::new(MirOP::LdrF64Base, varg, stackpos, ImmLSP64(0));
+                (RegOperand::from(varg), ldr_inst.into_mir())
+            }
+            ArgPos::Stack(_, DispatchedReg::F32(varg), stackpos) => {
+                let ldr_inst = LoadF32Base::new(MirOP::LdrF32Base, varg, stackpos, ImmLSP32(0));
+                (RegOperand::from(varg), ldr_inst.into_mir())
+            }
+        }
     }
 
     pub fn find_operand_for_inst(&self, inst: InstRef) -> Option<InstRetval> {
@@ -153,11 +144,16 @@ impl<'a> OperandMap<'a> {
             .ok()
             .map(|idx| self.insts[idx].1)
     }
-    pub fn find_operand_for_arg(&self, arg_id: u32) -> Option<RegOperand> {
+    pub fn find_operand_for_arg(&self, func: GlobalRef, arg_id: u32) -> Option<RegOperand> {
+        assert_eq!(func, self.ir_func.0, "Function reference mismatch");
         self.args
             .binary_search_by_key(&arg_id, |(id, _)| *id)
             .ok()
-            .map(|idx| self.args[idx].1)
+            .map(|idx| {
+                let (key_id, op) = self.args[idx];
+                assert_eq!(key_id, arg_id, "Argument ID mismatch");
+                op
+            })
     }
     pub fn find_operand_for_global(&self, gref: GlobalRef) -> Option<MirGlobalRef> {
         self.globals.find_mir_ref(gref)
@@ -177,15 +173,10 @@ impl<'a> OperandMap<'a> {
         operand: &ValueSSA,
     ) -> Result<MirOperand, OperandMapError> {
         match operand {
-            ValueSSA::FuncArg(gref, n) => {
-                assert_eq!(
-                    self.ir_func.0, *gref,
-                    "FuncArg is live only in its own function"
-                );
-                self.find_operand_for_arg(*n)
-                    .map(RegOperand::into)
-                    .ok_or(OperandMapError::IsNotFound(operand.clone()))
-            }
+            ValueSSA::FuncArg(gref, n) => self
+                .find_operand_for_arg(*gref, *n)
+                .map(RegOperand::into)
+                .ok_or(OperandMapError::IsNotFound(operand.clone())),
             ValueSSA::Block(b) => self
                 .find_operand_for_block(*b)
                 .map(MirOperand::Label)
@@ -384,6 +375,16 @@ impl DispatchedReg {
             DispatchedReg::G32(gpr32) => gpr32.into_mir(),
             DispatchedReg::G64(gpr64) => gpr64.into_mir(),
         }
+    }
+
+    pub fn get_size(self) -> usize {
+        match self {
+            DispatchedReg::F32(_) | DispatchedReg::G32(_) => 4,
+            DispatchedReg::F64(_) | DispatchedReg::G64(_) => 8,
+        }
+    }
+    pub fn get_align(self) -> usize {
+        self.get_size()
     }
 
     fn make_ldr_for_imm32(

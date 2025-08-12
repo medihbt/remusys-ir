@@ -1,13 +1,26 @@
+use std::fmt::Debug;
+
 use crate::typing::{
     ArrayTypeRef, FPKind, IValType, IntType, PtrType, StructAliasRef, StructTypeRef, TypeAllocs,
     TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass, ValTypeID,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PrimType {
     Ptr,
     Int(u8),
     Float(FPKind),
+}
+
+impl Debug for PrimType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrimType::Ptr => write!(f, "ptr"),
+            PrimType::Int(bits) => write!(f, "i{bits}"),
+            PrimType::Float(FPKind::Ieee32) => write!(f, "float"),
+            PrimType::Float(FPKind::Ieee64) => write!(f, "double"),
+        }
+    }
 }
 
 impl IValType for PrimType {

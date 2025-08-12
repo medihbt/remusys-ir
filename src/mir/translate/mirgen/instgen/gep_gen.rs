@@ -57,15 +57,17 @@ pub(super) fn dispatch_gep(
     // 处理偏移量
     let offset_weight = offset_iter.map(|off| match off {
         IrGEPOffset::Imm(value) => (MirGEPOffset::Imm(value), 1),
-        IrGEPOffset::Arg(_, arg_id, weight) => match operand_map.find_operand_for_arg(arg_id) {
-            Some(op) => match DispatchedReg::from_reg(op) {
-                DispatchedReg::G64(gpr64) => (MirGEPOffset::G64(gpr64), weight),
-                // 注意：按语法来说这里这里本应是 sext，但我为了省事儿实现成了 zext. 得想办法加点什么了.
-                DispatchedReg::G32(gpr32) => (MirGEPOffset::U32(gpr32), weight),
-                _ => panic!("Expected a GPR64 register for GEP index, found: {op:?}"),
-            },
-            None => panic!("No operand found for GEP index argument: {arg_id:?}"),
-        },
+        IrGEPOffset::Arg(func, arg_id, weight) => {
+            match operand_map.find_operand_for_arg(func.0, arg_id) {
+                Some(op) => match DispatchedReg::from_reg(op) {
+                    DispatchedReg::G64(gpr64) => (MirGEPOffset::G64(gpr64), weight),
+                    // 注意：按语法来说这里这里本应是 sext，但我为了省事儿实现成了 zext. 得想办法加点什么了.
+                    DispatchedReg::G32(gpr32) => (MirGEPOffset::U32(gpr32), weight),
+                    _ => panic!("Expected a GPR64 register for GEP index, found: {op:?}"),
+                },
+                None => panic!("No operand found for GEP index argument: {arg_id:?}"),
+            }
+        }
         IrGEPOffset::Inst(inst, weight) => match operand_map.find_operand_for_inst(inst) {
             Some(InstRetval::Reg(op)) => match DispatchedReg::from_reg(op) {
                 DispatchedReg::G64(gpr64) => (MirGEPOffset::G64(gpr64), weight),
@@ -99,7 +101,7 @@ fn translate_base_ptr(operand_map: &OperandMap, base_ptr: ValueSSA) -> MirGEPBas
                 operand_map.ir_func.0, gref,
                 "FuncArg is live only in its function"
             );
-            let reg = operand_map.find_operand_for_arg(id).unwrap();
+            let reg = operand_map.find_operand_for_arg(gref, id).unwrap();
             match DispatchedReg::from_reg(reg) {
                 DispatchedReg::G64(gpr64) => MirGEPBase::Reg(gpr64),
                 _ => panic!(
