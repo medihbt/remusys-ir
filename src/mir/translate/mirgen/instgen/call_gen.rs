@@ -10,7 +10,7 @@ use crate::{
         },
         translate::mirgen::operandgen::{InstRetval, OperandMap},
     },
-    typing::ValTypeID,
+    typing::{PrimType, ValTypeID},
 };
 use slab::Slab;
 use std::{collections::VecDeque, rc::Rc};
@@ -89,10 +89,10 @@ fn call_arg_from_constdata(data: ConstData) -> MirOperand {
     use crate::typing::FPKind::*;
     match data {
         ConstData::Zero(ty) => match ty {
-            ValTypeID::Ptr | ValTypeID::Int(64) => GPR64::zr().into_mir(),
-            ValTypeID::Int(32) => GPR32::zr().into_mir(),
-            ValTypeID::Float(Ieee32) => MirOperand::F32(0.0),
-            ValTypeID::Float(Ieee64) => MirOperand::F64(0.0),
+            PrimType::Ptr | PrimType::Int(64) => GPR64::zr().into_mir(),
+            PrimType::Int(32) => GPR32::zr().into_mir(),
+            PrimType::Float(Ieee32) => MirOperand::F32(0.0),
+            PrimType::Float(Ieee64) => MirOperand::F64(0.0),
             _ => panic!("Unsupported zero constant type: {ty:?}"),
         },
         ConstData::PtrNull(_) => GPR64::zr().into_mir(),

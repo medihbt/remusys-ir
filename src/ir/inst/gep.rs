@@ -366,7 +366,7 @@ impl<'a> GEPTypeIndexer<'a> {
         }
 
         fn unpack_struct(type_ctx: &TypeContext, sty: StructTypeRef, idx: ValueSSA) -> ValTypeID {
-            let Some(cdata) = ConstData::try_from_ir(&idx) else {
+            let Some(cdata) = ConstData::try_from_ir(idx) else {
                 panic!("Struct index must be a constant value but got {idx:?}");
             };
             let index = match cdata {
@@ -562,7 +562,7 @@ impl<'a> IrGEPOffsetIter<'a> {
         index: ValueSSA,
         elemty: ValTypeID,
     ) -> IrGEPOffset {
-        let Some(cdata) = ConstData::try_from_ir(&index) else {
+        let Some(cdata) = ConstData::try_from_ir(index) else {
             panic!("Struct index must be a constant value but got {index:?}");
         };
         let index = match cdata {

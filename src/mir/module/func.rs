@@ -54,7 +54,7 @@ impl MirFunc {
             arg_ir_types.as_slice(),
         );
         Self {
-            common: MirGlobalCommon::new(name, Section::Text, 2, Linkage::Extern),
+            common: MirGlobalCommon::new(name, Section::Text, 2, 0, Linkage::Extern),
             arg_ir_types,
             ret_ir_type,
             arg_regs,

@@ -158,6 +158,7 @@ impl<'a> IRWriter<'a> {
             ValueSSA::None => write!(self.output.borrow_mut(), "none"),
             ValueSSA::ConstData(data) => data.fmt_ir(self),
             ValueSSA::ConstExpr(expr) => expr.fmt_ir(self),
+            ValueSSA::AggrZero(_) => self.write_str("zeroinitializer"),
             ValueSSA::FuncArg(gref, id) => {
                 assert_eq!(
                     self.stat.curr_func.get().0,

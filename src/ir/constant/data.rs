@@ -1,14 +1,14 @@
 use crate::{
     base::APInt,
     ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
-    typing::{ValTypeID, FPKind},
+    typing::{FPKind, IValType, PrimType, ValTypeID},
 };
 use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ConstData {
     Undef(ValTypeID),
-    Zero(ValTypeID),
+    Zero(PrimType),
     PtrNull(ValTypeID),
     Int(APInt),
     Float(FPKind, f64),
@@ -59,7 +59,7 @@ impl Eq for ConstData {
 }
 
 impl ISubValueSSA for ConstData {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+    fn try_from_ir(value: ValueSSA) -> Option<Self> {
         match value {
             ValueSSA::ConstData(data) => Some(data),
             _ => None,
@@ -72,7 +72,7 @@ impl ISubValueSSA for ConstData {
     fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
         match self {
             ConstData::Undef(ty) => ty,
-            ConstData::Zero(ty) => ty,
+            ConstData::Zero(ty) => ty.into_ir(),
             ConstData::PtrNull(_) => ValTypeID::Ptr,
             ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(kind),
@@ -91,13 +91,9 @@ impl ISubValueSSA for ConstData {
         match self {
             ConstData::Undef(_) => writer.write_str("undef"),
             ConstData::Zero(ty) => match ty {
-                ValTypeID::Ptr => writer.write_str("null"),
-                ValTypeID::Int(_) => writer.write_str("0"),
-                ValTypeID::Float(_) => writer.write_str("0.0"),
-                ValTypeID::Array(_) | ValTypeID::Struct(_) | ValTypeID::StructAlias(_) => {
-                    writer.write_str("zeroinitializer")
-                }
-                _ => panic!("Unsupported type {ty:?} for zero constant"),
+                PrimType::Ptr => writer.write_str("null"),
+                PrimType::Int(_) => writer.write_str("0"),
+                PrimType::Float(_) => writer.write_str("0.0"),
             },
             ConstData::PtrNull(_) => writer.write_str("null"),
             ConstData::Int(apint) => {
@@ -134,7 +130,7 @@ impl ConstData {
     pub fn get_valtype_noalloc(&self) -> ValTypeID {
         match self {
             ConstData::Undef(ty) => *ty,
-            ConstData::Zero(ty) => *ty,
+            ConstData::Zero(ty) => ty.into_ir(),
             ConstData::PtrNull(_) => ValTypeID::Ptr,
             ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(*kind),

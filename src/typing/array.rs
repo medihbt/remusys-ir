@@ -126,6 +126,28 @@ impl ArrayTypeRef {
         self.to_data(&tctx.allocs.borrow().array).nelems
     }
 
+    pub fn get_element_size(self, tctx: &TypeContext) -> usize {
+        let allocs = tctx.allocs.borrow();
+        let data = self.to_data(&allocs.array);
+        data.update_size(&allocs, tctx)
+    }
+    pub fn get_element_align(self, tctx: &TypeContext) -> usize {
+        let allocs = tctx.allocs.borrow();
+        let data = self.to_data(&allocs.array);
+        data.update_align(&allocs, tctx)
+    }
+    pub fn get_unit_size(self, tctx: &TypeContext) -> usize {
+        let allocs = tctx.allocs.borrow();
+        let data = self.to_data(&allocs.array);
+        let elem_size = data.update_size(&allocs, tctx);
+        let elem_align = data.update_align(&allocs, tctx);
+        elem_size.next_multiple_of(elem_align)
+    }
+
+    pub fn get_offset(self, tctx: &TypeContext, index: usize) -> usize {
+        index * self.get_unit_size(tctx)
+    }
+
     pub fn new(tctx: &TypeContext, elemty: ValTypeID, nelems: usize) -> Self {
         let mut allocs = tctx.allocs.borrow_mut();
         let alloc_arr = &mut allocs.array;

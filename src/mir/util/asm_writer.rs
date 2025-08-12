@@ -132,7 +132,7 @@ impl<'a> AsmWriter<'a> {
         self.wrap_indent();
         if gdata.common.section == Section::Bss {
             // For BSS section, we don't write the data, just the size.
-            write!(self, ".zero {}", gdata.data.len()).expect("Failed to write zero data");
+            write!(self, ".zero {}", gdata.get_nbytes()).expect("Failed to write zero data");
         } else if let Some(asciz_str) = gdata.as_asciz_string() {
             write!(self, ".asciz {asciz_str}").expect("Failed to write asciz string");
         } else {
@@ -170,7 +170,7 @@ impl<'a> AsmWriter<'a> {
             let mut size = 0;
             for initval in &gvar.initval {
                 self.write_global_data(initval);
-                size += initval.data.len();
+                size += initval.get_nbytes();
             }
             size
         };

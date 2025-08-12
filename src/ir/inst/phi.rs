@@ -184,7 +184,7 @@ impl PhiNode {
     pub fn income_block_at(&self, index: usize) -> BlockRef {
         let income = self.incoming_uses();
         let [_, ublk] = &income[index];
-        *BlockRef::from_ir(&ublk.get_operand())
+        BlockRef::from_ir(ublk.get_operand())
     }
     pub fn income_value_at(&self, index: usize) -> ValueSSA {
         let income = self.incoming_uses();
@@ -261,7 +261,7 @@ impl PhiNode {
             incomes.swap(group_index, back_index);
             // 更新被移动到 group_index 位置的操作数的 UseKind
             let [uval, ublk] = &incomes[group_index];
-            let _moved_block = *BlockRef::from_ir(&ublk.get_operand());
+            let _moved_block = BlockRef::from_ir(ublk.get_operand());
             uval.kind.set(UseKind::PhiIncomingValue(group_index as u32));
             ublk.kind.set(UseKind::PhiIncomingBlock(group_index as u32));
         }
@@ -406,7 +406,7 @@ impl<'a> Iterator for PhiIncomeIter<'a> {
         self.index += 1; // Move to the next pair
         Some((
             value_use.get_operand(),
-            *BlockRef::from_ir(&block_use.get_operand()),
+            BlockRef::from_ir(block_use.get_operand()),
         ))
     }
 

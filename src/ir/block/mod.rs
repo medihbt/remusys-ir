@@ -10,7 +10,7 @@ use crate::{
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
     },
-    typing::ValTypeID,
+    typing::{IValType, PrimType, ValTypeID},
 };
 use slab::Slab;
 use std::{
@@ -194,19 +194,11 @@ impl BlockData {
     ///
     /// # Panics
     /// 如果返回类型不支持零值构造则会 panic
-    pub fn new_return_zero_from_alloc(alloc: &mut Slab<InstData>, ret_ty: ValTypeID) -> Self {
+    pub fn new_return_zero_from_alloc(alloc: &mut Slab<InstData>, ret_ty: PrimType) -> Self {
         let ret_bb = Self::empty_from_alloc(alloc);
         let ret_inst = {
-            let zero_value = match ret_ty {
-                ValTypeID::Void => ValueSSA::None,
-                ValTypeID::Ptr
-                | ValTypeID::Int(_)
-                | ValTypeID::Float(_)
-                | ValTypeID::Array(_)
-                | ValTypeID::Struct(_) => ConstData::Zero(ret_ty).into_ir(),
-                _ => panic!("Unsupported return type {ret_ty:?} for zero return"),
-            };
-            let retinst = Ret::new_raw(ret_ty);
+            let zero_value = ConstData::Zero(ret_ty).into_ir();
+            let retinst = Ret::new_raw(ret_ty.into_ir());
             // 如上所示, 0 值都是不可追踪的常量, 因此这里直接绕开数据流反图追踪机制.
             retinst.retval().operand.set(zero_value);
             InstRef::from_alloc(alloc, retinst.into_ir())
@@ -225,7 +217,7 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回包含返回零值指令的基本块
-    pub fn new_return_zero(module: &Module, ret_ty: ValTypeID) -> Self {
+    pub fn new_return_zero(module: &Module, ret_ty: PrimType) -> Self {
         let mut alloc = module.allocs.borrow_mut();
         Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
     }
@@ -238,7 +230,7 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回包含返回零值指令的基本块
-    pub fn new_return_zero_from_mut_module(module: &mut Module, ret_ty: ValTypeID) -> Self {
+    pub fn new_return_zero_from_mut_module(module: &mut Module, ret_ty: PrimType) -> Self {
         let alloc = module.allocs.get_mut();
         Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
     }
@@ -629,7 +621,7 @@ impl SlabListNodeRef for BlockRef {
 }
 
 impl ISubValueSSA for BlockRef {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+    fn try_from_ir(value: ValueSSA) -> Option<Self> {
         match value {
             ValueSSA::Block(bb) => Some(bb),
             _ => None,
@@ -711,7 +703,7 @@ impl BlockRef {
         BlockRef::from_allocs(allocs, data)
     }
 
-    pub fn new_return_zero(allocs: &mut IRAllocs, ret_ty: ValTypeID) -> Self {
+    pub fn new_return_zero(allocs: &mut IRAllocs, ret_ty: PrimType) -> Self {
         let data = BlockData::new_return_zero_from_alloc(&mut allocs.insts, ret_ty);
         BlockRef::from_allocs(allocs, data)
     }

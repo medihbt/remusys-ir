@@ -20,7 +20,7 @@ use crate::{
         },
         translate::mirgen::{MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst},
     },
-    typing::{FPKind, IValType, TypeContext, ValTypeID},
+    typing::{FPKind, IValType, PrimType, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +43,7 @@ pub enum OperandMapError {
     IsConstData(ConstData),
     OperandUndefined,
     IsNone,
-    IsUnsupported(ValueSSA),
+    Unsupported(ValueSSA),
     IsNotFound(ValueSSA),
     ResultWasted(InstRef),
 }
@@ -202,8 +202,8 @@ impl<'a> OperandMap<'a> {
                 .find_operand_for_global(*g)
                 .map(MirOperand::Global)
                 .ok_or(OperandMapError::IsNotFound(operand.clone())),
-            ValueSSA::ConstExpr(_) | ValueSSA::None => {
-                Err(OperandMapError::IsUnsupported(operand.clone()))
+            ValueSSA::ConstExpr(_) | ValueSSA::AggrZero(_) | ValueSSA::None => {
+                Err(OperandMapError::Unsupported(operand.clone()))
             }
             ValueSSA::ConstData(c) => Err(OperandMapError::IsConstData(*c)),
         }
@@ -215,10 +215,10 @@ impl<'a> OperandMap<'a> {
             Err(OperandMapError::IsConstData(c)) => match c {
                 ConstData::Undef(_) => MirOperand::None,
                 ConstData::Zero(ty) => match ty {
-                    ValTypeID::Ptr | ValTypeID::Int(64) => Imm64::new_empty().into_mir(),
-                    ValTypeID::Int(32) => Imm32::new_empty().into_mir(),
-                    ValTypeID::Float(FPKind::Ieee32) => MirOperand::F32(0.0),
-                    ValTypeID::Float(FPKind::Ieee64) => MirOperand::F64(0.0),
+                    PrimType::Ptr | PrimType::Int(64) => Imm64::new_empty().into_mir(),
+                    PrimType::Int(32) => Imm32::new_empty().into_mir(),
+                    PrimType::Float(FPKind::Ieee32) => MirOperand::F32(0.0),
+                    PrimType::Float(FPKind::Ieee64) => MirOperand::F64(0.0),
                     _ => panic!("Unexpected type for zero constant: {ty:?}"),
                 },
                 ConstData::PtrNull(_) => Imm64::new_empty().into_mir(),
@@ -277,8 +277,8 @@ impl DispatchedReg {
                     }
                 }
                 match ty {
-                    ValTypeID::Ptr | ValTypeID::Int(_) => get_zr_by_size(ty, type_ctx),
-                    ValTypeID::Float(FPKind::Ieee32) => {
+                    PrimType::Ptr | PrimType::Int(_) => get_zr_by_size(&ty.into_ir(), type_ctx),
+                    PrimType::Float(FPKind::Ieee32) => {
                         let f32_reg =
                             alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
                         let f32_reg = FPR32::from_real(f32_reg);
@@ -288,7 +288,7 @@ impl DispatchedReg {
                         );
                         DispatchedReg::F32(f32_reg)
                     }
-                    ValTypeID::Float(FPKind::Ieee64) => {
+                    PrimType::Float(FPKind::Ieee64) => {
                         let f64_reg =
                             alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
                         let f64_reg = FPR64::from_real(f64_reg);
@@ -298,7 +298,6 @@ impl DispatchedReg {
                         );
                         DispatchedReg::F64(f64_reg)
                     }
-                    _ => panic!("Unsupported zero constant type: {ty:?}"),
                 }
             }
             ConstData::PtrNull(_) => {

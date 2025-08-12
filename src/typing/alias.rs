@@ -13,7 +13,7 @@ pub struct StructAliasData {
     pub aliasee: StructTypeRef,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructAliasRef(pub usize);
 
 impl SlabRef for StructAliasRef {

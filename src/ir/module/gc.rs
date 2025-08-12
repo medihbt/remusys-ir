@@ -30,7 +30,7 @@ impl IRLiveValueSet {
     pub fn add(&mut self, value: impl ISubValueSSA) {
         let value = value.into_ir();
         match value {
-            ValueSSA::ConstData(_) => {} // ConstData 是不可变的，不需要 GC
+            ValueSSA::ConstData(_) | ValueSSA::AggrZero(_) => {} // ConstData 是不可变的，不需要 GC
             ValueSSA::ConstExpr(expr) => self.exprs.enable(expr.get_handle()),
             ValueSSA::FuncArg(func, _) => self.globals.enable(func.get_handle()),
             ValueSSA::Block(block) => self.blocks.enable(block.get_handle()),
@@ -43,7 +43,7 @@ impl IRLiveValueSet {
     pub fn is_live(&self, value: impl ISubValueSSA) -> bool {
         let value = value.into_ir();
         match value {
-            ValueSSA::ConstData(_) => true, // ConstData 总是存活的
+            ValueSSA::ConstData(_) | ValueSSA::AggrZero(_) => true, // ConstData 总是存活的
             ValueSSA::ConstExpr(expr) => self.exprs.get(expr.get_handle()),
             ValueSSA::FuncArg(func, _) => self.globals.get(func.get_handle()),
             ValueSSA::Block(block) => self.blocks.get(block.get_handle()),
@@ -123,6 +123,7 @@ impl<'a> IRValueMarker<'a> {
     fn consume_one(&mut self, value: ValueSSA) {
         match value {
             ValueSSA::ConstData(_) => {} // ConstData 不包含引用，无需遍历
+            ValueSSA::AggrZero(_) => {} // AggrZero 不包含引用，无需遍历
             ValueSSA::ConstExpr(expr) => self.consume_expr(expr),
             ValueSSA::Block(block) => self.consume_block(block),
             ValueSSA::Inst(inst) => self.consume_inst(inst),
@@ -136,8 +137,8 @@ impl<'a> IRValueMarker<'a> {
         let Self { live_set, mark_queue, allocs } = self;
         let expr_data = expr.to_data(&allocs.exprs);
         let elems = match expr_data {
-            ConstExprData::Array(arr) => &arr.elems,
-            ConstExprData::Struct(st) => &st.elems,
+            ConstExprData::Array(arr) => arr.elems.as_slice(),
+            ConstExprData::Struct(st) => st.elems.as_slice(),
         };
         for &elem in elems {
             Self::do_push_mark(live_set, mark_queue, elem);
@@ -185,7 +186,7 @@ impl<'a> IRValueMarker<'a> {
 mod tests {
     use super::*;
     use crate::ir::{ConstData, GlobalData, GlobalRef, Var};
-    use crate::typing::ValTypeID;
+    use crate::typing::{PrimType, ValTypeID};
 
     #[test]
     fn test_gc_basic_marking() {
@@ -213,6 +214,6 @@ mod tests {
 
         // 测试不同类型的 ValueSSA 处理
         assert!(live_set.is_live(ValueSSA::None)); // None 总是存活
-        assert!(live_set.is_live(ValueSSA::ConstData(ConstData::Zero(ValTypeID::Int(32))))); // ConstData 总是存活
+        assert!(live_set.is_live(ValueSSA::ConstData(ConstData::Zero(PrimType::Int(32))))); // ConstData 总是存活
     }
 }

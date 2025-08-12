@@ -540,7 +540,7 @@ impl SlabListNodeRef for InstRef {
 }
 
 impl ISubValueSSA for InstRef {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+    fn try_from_ir(value: ValueSSA) -> Option<Self> {
         match value {
             ValueSSA::Inst(inst) => Some(inst),
             _ => None,

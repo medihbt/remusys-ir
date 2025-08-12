@@ -10,7 +10,7 @@ use crate::{
         operand::{IMirSubOperand, imm::ImmCalc, reg::*},
         translate::mirgen::operandgen::{DispatchedReg, InstRetval, OperandMap},
     },
-    typing::{TypeContext, ValTypeID},
+    typing::{PrimType, TypeContext},
 };
 use log::debug;
 use slab::Slab;
@@ -376,7 +376,7 @@ impl<'a> BinGenContext<'a> {
     }
     fn constdata_as_imm_calc(data: &ConstData) -> Option<ImmCalc> {
         match data {
-            ConstData::Zero(ValTypeID::Int(bits)) if *bits <= 64 => Some(ImmCalc(0)),
+            ConstData::Zero(PrimType::Int(bits)) if *bits <= 64 => Some(ImmCalc(0)),
             ConstData::PtrNull(_) => Some(ImmCalc(0)),
             ConstData::Int(apint) => ImmCalc::try_new(apint.as_signed() as u64),
             _ => None,

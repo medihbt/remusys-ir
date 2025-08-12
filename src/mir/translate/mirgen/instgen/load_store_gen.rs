@@ -3,18 +3,14 @@ use crate::{
     base::SlabRef,
     ir::{ConstData, InstData, InstRef, ValueSSA},
     mir::{
-        inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
-        module::{MirGlobalRef, vreg_alloc::VirtRegAlloc},
+        inst::{impls::*, inst::MirInst, opcode::MirOP, IMirSubInst},
+        module::{vreg_alloc::VirtRegAlloc, MirGlobalRef},
         operand::{
-            MirOperand,
-            compound::MirSymbolOp,
-            imm::{Imm32, Imm64, ImmLSP32, ImmLSP64},
-            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, VFReg},
-            subop::IMirSubOperand,
+            compound::MirSymbolOp, imm::{Imm32, Imm64, ImmLSP32, ImmLSP64}, reg::{GPReg, RegOperand, RegUseFlags, VFReg, FPR32, FPR64, GPR32, GPR64}, subop::IMirSubOperand, MirOperand
         },
         translate::mirgen::operandgen::{InstRetval, OperandMap, OperandMapError},
     },
-    typing::{ValTypeID, FPKind},
+    typing::{FPKind, IValType, ValTypeID},
 };
 use core::panic;
 use log::debug;
@@ -63,7 +59,7 @@ impl StrSrc {
     fn from_constdata(data: ConstData) -> Self {
         use FPKind::*;
         match data {
-            ConstData::Zero(ty) => Self::zeroed(ty),
+            ConstData::Zero(ty) => Self::zeroed(ty.into_ir()),
             ConstData::PtrNull(_) => Self::Imm64(Imm64::full(0)),
             ConstData::Int(apint) => match (apint.bits(), apint.as_unsigned()) {
                 (32, 0) => Self::G32(GPR32::zr()),

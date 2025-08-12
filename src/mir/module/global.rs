@@ -62,13 +62,19 @@ pub struct MirGlobalCommon {
 }
 
 impl MirGlobalCommon {
-    pub fn new(name: String, section: Section, align_log2: u8, linkage: Linkage) -> Self {
+    pub fn new(
+        name: String,
+        section: Section,
+        align_log2: u8,
+        size: usize,
+        linkage: Linkage,
+    ) -> Self {
         Self {
             name,
             section,
             linkage,
             align_log2,
-            size: 0,
+            size,
             self_ref: Cell::new(MirGlobalRef::new_null()), // Default to MAX to indicate not set
         }
     }
@@ -83,6 +89,69 @@ impl MirGlobalCommon {
     }
     pub fn set_self_ref(&self, self_ref: MirGlobalRef) {
         self.self_ref.set(self_ref);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MirGlobalDataStorage {
+    /// Full data
+    Full(Vec<u8>),
+    /// N units
+    Zero(usize),
+}
+
+impl MirGlobalDataStorage {
+    pub fn last(&self) -> Option<u8> {
+        match self {
+            MirGlobalDataStorage::Full(data) => data.last().copied(),
+            MirGlobalDataStorage::Zero(nunits) if *nunits > 0 => Some(0),
+            _ => None,
+        }
+    }
+
+    pub fn nunits(&self, unit_log2: u8) -> usize {
+        match self {
+            MirGlobalDataStorage::Full(data) => data.len() >> unit_log2,
+            MirGlobalDataStorage::Zero(nunits) => *nunits,
+        }
+    }
+
+    pub fn nbytes(&self, unit_log2: u8) -> usize {
+        match self {
+            MirGlobalDataStorage::Full(data) => data.len(),
+            MirGlobalDataStorage::Zero(nunits) => *nunits << unit_log2,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum MirGlobalDataUnit<'a> {
+    Full(&'a [u8]),
+    Zero(usize),
+}
+
+impl<'a> MirGlobalDataUnit<'a> {
+    pub fn get_size(&self) -> usize {
+        match self {
+            MirGlobalDataUnit::Full(data) => data.len(),
+            MirGlobalDataUnit::Zero(nunits) => *nunits,
+        }
+    }
+
+    pub fn size_log2(&self) -> u8 {
+        self.get_size().ilog2() as u8
+    }
+
+    pub fn try_byte_at(&self, index: usize) -> Option<u8> {
+        match self {
+            MirGlobalDataUnit::Full(data) => data.get(index).copied(),
+            MirGlobalDataUnit::Zero(nbytes) if index < *nbytes => Some(0),
+            _ => None,
+        }
+    }
+
+    pub fn at(&self, index: usize) -> u8 {
+        self.try_byte_at(index).unwrap_or(0)
     }
 }
 
@@ -107,7 +176,7 @@ impl MirGlobalCommon {
 #[derive(Debug, Clone)]
 pub struct MirGlobalData {
     pub common: MirGlobalCommon,
-    pub data: Vec<u8>,
+    pub data: MirGlobalDataStorage,
     pub unit_bytes_log2: u8, // Log2 of the size of each unit in the data
 }
 
@@ -127,11 +196,43 @@ impl MirGlobalData {
                 String::new(),
                 section,
                 unit_bytes_log2,
+                bytes.len(),
                 Linkage::NotSymbol,
             ),
-            data: bytes,
+            data: MirGlobalDataStorage::Full(bytes),
             unit_bytes_log2,
         }
+    }
+    pub fn new_full(section: Section, data: Vec<u8>, unit_bytes_log2: u8) -> Self {
+        Self {
+            common: MirGlobalCommon::new(
+                String::new(),
+                section,
+                unit_bytes_log2,
+                data.len(),
+                Linkage::NotSymbol,
+            ),
+            data: MirGlobalDataStorage::Full(data),
+            unit_bytes_log2,
+        }
+    }
+    pub fn new_zeroinit(mut section: Section, unit_bytes_log2: u8, nunits: usize) -> Self {
+        if section == Section::Data {
+            section = Section::Bss; // Zero-initialized data should be in BSS
+        }
+        let ret = Self {
+            common: MirGlobalCommon::new(
+                String::new(),
+                section,
+                unit_bytes_log2,
+                nunits << unit_bytes_log2,
+                Linkage::NotSymbol,
+            ),
+            data: MirGlobalDataStorage::Zero(nunits),
+            unit_bytes_log2,
+        };
+        log::debug!("Created zero-initialized global data: {ret:?}");
+        ret
     }
     pub fn new_bytes_vec(section: Section, data: Vec<u8>) -> Self {
         let unit_bytes_log2 = 0; // 1 byte per unit
@@ -140,9 +241,10 @@ impl MirGlobalData {
                 String::new(),
                 section,
                 unit_bytes_log2,
+                data.len(),
                 Linkage::NotSymbol,
             ),
-            data,
+            data: MirGlobalDataStorage::Full(data),
             unit_bytes_log2,
         }
     }
@@ -174,15 +276,29 @@ impl MirGlobalData {
     }
 
     pub fn get_nunits(&self) -> usize {
-        self.data.len() >> self.unit_bytes_log2
+        match &self.data {
+            MirGlobalDataStorage::Full(items) => items.len() >> self.unit_bytes_log2,
+            MirGlobalDataStorage::Zero(nunits) => *nunits,
+        }
     }
-    pub fn get_unit(&self, index: usize) -> Option<&[u8]> {
+    pub fn get_nbytes(&self) -> usize {
+        match &self.data {
+            MirGlobalDataStorage::Full(items) => items.len(),
+            MirGlobalDataStorage::Zero(nunits) => *nunits << self.unit_bytes_log2,
+        }
+    }
+    pub fn get_unit(&self, index: usize) -> Option<MirGlobalDataUnit> {
         if index >= self.get_nunits() {
             return None;
         }
-        let start = index << self.unit_bytes_log2;
-        let end = start + self.get_unit_size();
-        Some(&self.data[start..end])
+        match &self.data {
+            MirGlobalDataStorage::Full(items) => {
+                let start = index << self.unit_bytes_log2;
+                let end = start + self.get_unit_size();
+                Some(MirGlobalDataUnit::Full(&items[start..end]))
+            }
+            MirGlobalDataStorage::Zero(_) => Some(MirGlobalDataUnit::Zero(self.get_unit_size())),
+        }
     }
     /// Writes a unit to string by index and unit_bytes_log2.
     pub fn unit_to_string(&self, index: usize) -> Option<String> {
@@ -212,23 +328,34 @@ impl MirGlobalData {
     }
     /// Writes a unit to the writer by index and unit_bytes_log2.
     fn format_unit_data(
-        unit: &[u8],
+        unit: MirGlobalDataUnit,
         unit_bytes_log2: u8,
         writer: &mut dyn std::io::Write,
     ) -> std::io::Result<()> {
         match unit_bytes_log2 {
-            0 => write!(writer, "0x{:02x}", unit[0]),
-            1 => write!(writer, "0x{:04x}", u16::from_le_bytes([unit[0], unit[1]])),
+            0 => write!(writer, "0x{:02x}", unit.at(0)),
+            1 => write!(
+                writer,
+                "0x{:04x}",
+                u16::from_le_bytes([unit.at(0), unit.at(1)])
+            ),
             2 => write!(
                 writer,
                 "0x{:08x}",
-                u32::from_le_bytes([unit[0], unit[1], unit[2], unit[3]])
+                u32::from_le_bytes([unit.at(0), unit.at(1), unit.at(2), unit.at(3)])
             ),
             3 => write!(
                 writer,
                 "0x{:016x}",
                 u64::from_le_bytes([
-                    unit[0], unit[1], unit[2], unit[3], unit[4], unit[5], unit[6], unit[7]
+                    unit.at(0),
+                    unit.at(1),
+                    unit.at(2),
+                    unit.at(3),
+                    unit.at(4),
+                    unit.at(5),
+                    unit.at(6),
+                    unit.at(7)
                 ])
             ),
             _ => Err(std::io::Error::new(
@@ -239,14 +366,20 @@ impl MirGlobalData {
     }
 
     pub fn can_make_asciz(&self) -> bool {
-        self.unit_bytes_log2 == 0 && self.data.last() == Some(&0)
+        self.unit_bytes_log2 == 0
+            && matches!(self.data, MirGlobalDataStorage::Full(_))
+            && self.data.last() == Some(0)
     }
     pub fn write_as_asciz(&self, mut writer: impl std::io::Write) -> Result<bool, std::io::Error> {
         if !self.can_make_asciz() {
             return Ok(false);
         }
+        let MirGlobalDataStorage::Full(data) = &self.data else {
+            // Zero-initializer has better representation.
+            return Ok(false);
+        };
         writer.write(b"\"")?;
-        for &byte in &self.data[..self.data.len() - 1] {
+        for &byte in &data[..data.len() - 1] {
             if byte == 0 {
                 writer.write_all(b"\\0")?;
             } else if byte.is_ascii_graphic() {
@@ -259,7 +392,7 @@ impl MirGlobalData {
         Ok(true)
     }
     pub fn as_asciz_string(&self) -> Option<String> {
-        let mut buffer = Vec::with_capacity(self.data.len() + 2);
+        let mut buffer = Vec::with_capacity(self.get_nbytes() + 2);
         if self.write_as_asciz(&mut buffer).ok()? { String::from_utf8(buffer).ok() } else { None }
     }
 }
@@ -291,8 +424,9 @@ impl MirGlobalVariable {
         type_ctx: &TypeContext,
     ) -> Self {
         let align_log2 = ty.get_align_log2(type_ctx).max(3);
+        let size = ty.get_size(type_ctx);
         Self {
-            common: MirGlobalCommon::new(name, section, align_log2, Linkage::Extern),
+            common: MirGlobalCommon::new(name, section, align_log2, size, Linkage::Extern),
             ty,
             initval: Vec::new(),
         }
@@ -305,8 +439,9 @@ impl MirGlobalVariable {
         type_ctx: &TypeContext,
     ) -> Self {
         let align_log2 = ty.get_align_log2(type_ctx).max(3);
+        let size = ty.get_size(type_ctx);
         Self {
-            common: MirGlobalCommon::new(name, section, align_log2, Linkage::Global),
+            common: MirGlobalCommon::new(name, section, align_log2, size, Linkage::Global),
             ty,
             initval,
         }

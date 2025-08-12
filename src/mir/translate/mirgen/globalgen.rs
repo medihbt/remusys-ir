@@ -12,11 +12,12 @@ use crate::{
         module::{
             MirGlobalRef,
             func::MirFunc,
-            global::{MirGlobalVariable, Section},
+            global::{MirGlobalData, MirGlobalVariable, Section},
         },
         translate::mirgen::datagen::DataGen,
         util::builder::MirBuilder,
     },
+    typing::IValType,
 };
 
 #[derive(Debug, Clone)]
@@ -301,20 +302,42 @@ impl MirGlobalItems {
             initval != ValueSSA::None,
             "{category} {name} has no initializer"
         );
-        let mut data_gen = DataGen::new();
-        match data_gen.add_ir_value(initval, &ir_module.type_ctx, &allocs.exprs) {
-            Ok(()) => {}
-            Err(e) => {
-                panic!("Failed to add IR value for global constant {name}: {e}");
+        let constdef = if section != Section::Bss {
+            let mut data_gen = DataGen::new();
+            match data_gen.add_ir_value(initval, &ir_module.type_ctx, &allocs.exprs) {
+                Ok(()) => {}
+                Err(e) => {
+                    panic!("Failed to add IR value for global constant {name}: {e}");
+                }
             }
-        }
-        let constdef = MirGlobalVariable::with_init(
-            name.to_string(),
-            section,
-            global.get_stored_pointee_type(),
-            data_gen.collect_data(section),
-            &ir_module.type_ctx,
-        );
+            log::debug!(
+                "datagen from name {name} with {} units",
+                data_gen.data.len()
+            );
+            MirGlobalVariable::with_init(
+                name.to_string(),
+                section,
+                global.get_stored_pointee_type(),
+                data_gen.collect_data(section),
+                &ir_module.type_ctx,
+            )
+        } else {
+            let global_type = global.get_stored_pointee_type();
+            let size = global_type.get_size(&ir_module.type_ctx);
+            let align_log2 = global_type.get_align_log2(&ir_module.type_ctx);
+            let initval = MirGlobalData::new_zeroinit(
+                Section::Bss,
+                align_log2,
+                size.div_ceil(1 << align_log2),
+            );
+            MirGlobalVariable::with_init(
+                name.into(),
+                Section::Bss,
+                global_type,
+                vec![initval],
+                &ir_module.type_ctx,
+            )
+        };
         let (mir_ref, _) = mir_builder.push_variable(constdef);
         all_globals.push((gref, mir_ref));
     }

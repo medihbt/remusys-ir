@@ -198,7 +198,7 @@ impl SlabRef for GlobalRef {
 }
 
 impl ISubValueSSA for GlobalRef {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+    fn try_from_ir(value: ValueSSA) -> Option<Self> {
         if let ValueSSA::Global(gref) = value { Some(gref) } else { None }
     }
     fn into_ir(self) -> ValueSSA {

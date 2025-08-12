@@ -1,6 +1,6 @@
 use crate::{
     base::{APInt, SlabRef},
-    typing::{ValTypeID, FPKind},
+    typing::{AggrType, FPKind, IValType, PrimType, ValTypeID},
 };
 use std::{
     fmt::Debug,
@@ -32,8 +32,10 @@ pub use self::{
     },
     cmp_cond::CmpCond,
     constant::{
+        array::Array,
         data::ConstData,
-        expr::{Array, ConstExprData, ConstExprRef, Struct},
+        expr::{ConstExprData, ConstExprRef, ExprCommon, ISubExpr},
+        structure::Struct,
     },
     global::{
         GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal, Linkage,
@@ -70,6 +72,9 @@ pub enum ValueSSA {
     /// 常量表达式, 包括数组、结构体
     ConstExpr(ConstExprRef),
 
+    /// 常量 0 表达式
+    AggrZero(AggrType),
+
     /// 函数参数, 包含函数引用和参数索引
     FuncArg(GlobalRef, u32),
 
@@ -84,7 +89,7 @@ pub enum ValueSSA {
 }
 
 impl ISubValueSSA for ValueSSA {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self> {
+    fn try_from_ir(value: ValueSSA) -> Option<Self> {
         Some(value)
     }
     fn into_ir(self) -> ValueSSA {
@@ -95,6 +100,7 @@ impl ISubValueSSA for ValueSSA {
         match self {
             ValueSSA::ConstData(data) => data.is_zero(),
             ValueSSA::ConstExpr(expr) => expr.is_zero(allocs),
+            ValueSSA::AggrZero(_) => true,
             _ => false,
         }
     }
@@ -110,6 +116,7 @@ impl ISubValueSSA for ValueSSA {
             ValueSSA::Block(_) => ValTypeID::Void,
             ValueSSA::Inst(inst_ref) => inst_ref.get_valtype(allocs),
             ValueSSA::Global(_) => ValTypeID::Ptr, // Global references are treated as pointers
+            ValueSSA::AggrZero(aggr) => aggr.into_ir(),
         }
     }
 
@@ -118,6 +125,7 @@ impl ISubValueSSA for ValueSSA {
             ValueSSA::ConstData(data) => data.try_gettype_noalloc(),
             ValueSSA::Global(_) => Some(ValTypeID::Ptr),
             ValueSSA::Block(_) => Some(ValTypeID::Void),
+            ValueSSA::AggrZero(aggr) => Some(aggr.into_ir()),
             _ => None,
         }
     }
@@ -127,6 +135,7 @@ impl ISubValueSSA for ValueSSA {
             ValueSSA::None => writer.write_str("none"),
             ValueSSA::ConstData(data) => data.fmt_ir(writer),
             ValueSSA::ConstExpr(expr) => expr.fmt_ir(writer),
+            ValueSSA::AggrZero(_) => writer.write_str("zeroinitializer"),
             ValueSSA::FuncArg(_, id) => write!(writer.output.borrow_mut(), "%{id}"),
             ValueSSA::Block(block) => block.fmt_ir(writer),
             ValueSSA::Inst(inst) => inst.fmt_ir(writer),
@@ -208,6 +217,20 @@ impl ValueSSA {
         }
     }
 
+    pub fn new_zero(ty: ValTypeID) -> ValueSSA {
+        match ty {
+            ValTypeID::Ptr => Self::ConstData(ConstData::Zero(PrimType::Ptr)),
+            ValTypeID::Int(bits) => Self::ConstData(ConstData::Int(APInt::new(0, bits))),
+            ValTypeID::Float(fpkind) => Self::ConstData(ConstData::Float(fpkind, 0.0)),
+            ValTypeID::Array(aggr) => Self::AggrZero(aggr.into()),
+            ValTypeID::Struct(aggr) => Self::AggrZero(aggr.into()),
+            ValTypeID::StructAlias(aggr) => Self::AggrZero(aggr.into()),
+            ValTypeID::Void | ValTypeID::Func(_) => {
+                panic!("Cannot create zero value for void or function types")
+            }
+        }
+    }
+
     pub(crate) fn add_user_rc(self, allocs: &IRAllocs, user: &Rc<Use>) -> bool {
         self.add_user(allocs, Rc::downgrade(user))
     }
@@ -244,9 +267,14 @@ pub enum ValueSSAError {
 }
 
 pub trait ISubValueSSA: Debug + Clone + PartialEq + Eq + Hash {
-    fn try_from_ir(value: &ValueSSA) -> Option<&Self>;
-    fn from_ir(value: &ValueSSA) -> &Self {
-        Self::try_from_ir(value).expect("ValueSSA type mismatch")
+    fn try_from_ir(value: ValueSSA) -> Option<Self>;
+    fn from_ir(value: ValueSSA) -> Self {
+        if let Some(val) = Self::try_from_ir(value) {
+            val
+        } else {
+            let selfty = std::any::type_name::<Self>();
+            panic!("ValueSSA kind mismatch: {value:?} but requires {selfty}",);
+        }
     }
     fn into_ir(self) -> ValueSSA;
 
