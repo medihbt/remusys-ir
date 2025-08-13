@@ -55,6 +55,8 @@ impl Debug for MirArgInfo {
             pos
         };
 
+        assert!(self.stack_size % 16 == 0, "Stack size must be aligned to 16 bytes");
+
         f.debug_struct("MirArgInfo")
             .field("stack_size", &self.stack_size)
             .field("pos", &pos)
@@ -160,7 +162,7 @@ impl MirArgBuilder {
             let ArgPos::Stack(_, vreg, gpr64) = pos else {
                 continue;
             };
-            *gpr64 = vreg_alloc.insert_gpr64(*gpr64);
+            *gpr64 = vreg_alloc.alloc_stackpos();
             *vreg = match *vreg {
                 DispatchedReg::F32(fpr32) => DispatchedReg::F32(vreg_alloc.insert_fpr32(fpr32)),
                 DispatchedReg::F64(fpr64) => DispatchedReg::F64(vreg_alloc.insert_fpr64(fpr64)),
@@ -176,7 +178,9 @@ impl MirArgBuilder {
             };
             arg_regs.push((id as u32, ty, dreg));
         }
-        MirArgInfo { pos: self.pos, arg_regs, stack_size: self.stack_top as usize }
+        // Ensure stack size is aligned to 16 bytes
+        let stack_size = self.stack_top.next_multiple_of(16) as usize;
+        MirArgInfo { pos: self.pos, arg_regs, stack_size }
     }
 
     pub fn build_func(

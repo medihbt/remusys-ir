@@ -96,6 +96,7 @@ impl MirFunc {
             });
             count += 1;
         }
+        stack.args_size = arg_info.stack_size as u64;
         stack
     }
 
