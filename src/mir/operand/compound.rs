@@ -15,6 +15,22 @@ pub enum MirSymbolOp {
     SwitchTab(u32),
 }
 
+impl From<MirBlockRef> for MirSymbolOp {
+    fn from(block_ref: MirBlockRef) -> Self {
+        MirSymbolOp::Label(block_ref)
+    }
+}
+impl From<MirGlobalRef> for MirSymbolOp {
+    fn from(global_ref: MirGlobalRef) -> Self {
+        MirSymbolOp::Global(global_ref)
+    }
+}
+impl From<SwitchTab> for MirSymbolOp {
+    fn from(tab: SwitchTab) -> Self {
+        MirSymbolOp::SwitchTab(tab.0)
+    }
+}
+
 impl Debug for MirSymbolOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

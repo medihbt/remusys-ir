@@ -2,7 +2,8 @@ use crate::{
     base::{INullableValue, SlabRef},
     ir::{
         BlockRef, FuncRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, InstData,
-        InstKind as InstDataKind, InstRef, Module as IRModule, NumberOption, inst::ISubInstRef,
+        InstKind as InstDataKind, InstRef, Module as IRModule, NumberOption, ValueSSA,
+        inst::ISubInstRef,
     },
     mir::{
         inst::MirInstRef,
@@ -302,24 +303,26 @@ impl MirTranslateCtx {
         allocas: &[AllocaInfo],
         func: &MirFunc,
     ) -> Vec<(InstRef, InstRetval)> {
-        let mut vregs = Vec::new();
+        let mut vregs = BTreeMap::new();
         let type_ctx = &self.ir_module.type_ctx;
 
         // 为所有 alloca 分配表示栈位置的虚拟寄存器.
         for alloca_info in allocas {
             let vreg = func.add_spilled_variable(alloca_info.pointee_ty, type_ctx);
-            vregs.push((alloca_info.ir, InstRetval::Reg(vreg.into())));
+            // vregs.push((alloca_info.ir, InstRetval::Reg(vreg.into())));
+            vregs.insert(alloca_info.ir, InstRetval::Reg(vreg.into()));
         }
 
         // Remusys-IR 的指令本身也表示它的返回值操作数, 因此为每个有返回值的指令分配一个虚拟寄存器.
-        for MirBlockInfo { insts, .. } in block_map {
+        for MirBlockInfo { insts, .. } in block_map.iter() {
             for InstTranslateInfo { ir, ty, kind } in insts {
                 type K = InstDataKind;
                 debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
 
                 let allocs = self.ir_module.borrow_allocs();
                 if !ir.to_data(&allocs.insts).has_users() {
-                    vregs.push((*ir, InstRetval::Wasted));
+                    // vregs.push((*ir, InstRetval::Wasted));
+                    vregs.insert(*ir, InstRetval::Wasted);
                     continue;
                 }
                 // 如果指令有用户, 则分配寄存器或存储空间.
@@ -367,11 +370,32 @@ impl MirTranslateCtx {
                     }
                     _ => panic!("Unsupported type for MIR instruction: {ty:?}"),
                 };
-                vregs.push((*ir, InstRetval::Reg(vreg.into())));
+                // vregs.push((*ir, InstRetval::Reg(vreg.into())));
+                vregs.insert(*ir, InstRetval::Reg(vreg.into()));
+
+                // 检查指令的所有操作数, 如果操作数也是指令并且只有自己一个 user, 则归还.
+                for uref in &ir.to_data(&allocs.insts).get_operands() {
+                    let ValueSSA::Inst(operand_iref) = uref.get_operand() else {
+                        continue; // 不是指令, 跳过
+                    };
+                    let operand_inst = operand_iref.to_data(&allocs.insts);
+                    if block_map.len() != 1 {
+                        continue; // 多个基本块的情况不好把控, 跳过
+                    }
+                    if !operand_inst.users().is_single() {
+                        continue; // 操作数有不止本指令一个 user, 跳过
+                    }
+                    let Some(InstRetval::Reg(vreg)) = vregs.get(&operand_iref).cloned() else {
+                        continue; // 怪怪的, 可能还没分配到吧, 跳过
+                    };
+                    alloc_reg.dealloc(vreg);
+                }
             }
         }
-        vregs.sort_by_key(|(k, _)| *k);
-        vregs
+        // 因为指令的翻译流程实际上不是线性的, 上面还有一部分操作数没有分配虚拟寄存器. 如果不重新把缓存的虚拟寄存器还到
+        // 主要的 allocator 里，就会出现不同操作数复用一个虚拟寄存器的冲突情况. 因此现在应该归还寄存器.
+        func.borrow_inner_mut().vreg_alloc.restore_cache();
+        vregs.into_iter().collect()
     }
 
     /// Step 1.5: 翻译每个基本块的指令
