@@ -354,7 +354,7 @@ impl InstData {
             user.operand.set(ValueSSA::Inst(self_ref));
         }
         for operand in inst.operands_mut() {
-            operand.user.set(UserID::from(self_ref));
+            operand.user.set(UserID::Inst(self_ref));
         }
     }
 }

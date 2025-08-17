@@ -242,6 +242,7 @@ pub(super) fn merge_exprs(module: &Module) {
             useref.set_operand(&allocs, new_op);
         }
     }
+    drop(allocs);
 
     module.gc_mark_sweep([]);
 }

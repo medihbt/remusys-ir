@@ -4,7 +4,7 @@ use crate::{
     base::SlabRef,
     ir::{
         Array, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
-        OperandSet, Struct, Use, UserList, ValueSSA,
+        OperandSet, Struct, Use, UserID, UserList, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -115,10 +115,6 @@ pub trait ISubExpr: IUser {
     fn get_common(&self) -> &ExprCommon;
     fn is_aggregate(&self) -> bool;
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
-
-    fn users(&self) -> &UserList {
-        &self.get_common().users
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -190,7 +186,15 @@ impl ISubValueSSA for ExprRef {
 }
 
 impl ExprRef {
-    pub fn from_alloc(alloc: &mut Slab<ConstExprData>, data: ConstExprData) -> Self {
-        ExprRef(alloc.insert(data))
+    pub fn from_alloc(alloc: &mut Slab<ConstExprData>, mut data: ConstExprData) -> Self {
+        let ret = ExprRef(alloc.vacant_key());
+        for user in data.users() {
+            user.operand.set(ValueSSA::ConstExpr(ret));
+        }
+        for operands in data.operands_mut() {
+            operands.user.set(UserID::Expr(ret));
+        }
+        alloc.insert(data);
+        ret
     }
 }

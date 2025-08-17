@@ -3,8 +3,7 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
-        Module, OperandSet, PtrStorage, Use, UserList, ValueSSA, Var, global::func::Func,
+        global::func::Func, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef, Module, OperandSet, PtrStorage, Use, UserID, UserList, ValueSSA, Var
     },
     typing::ValTypeID,
 };
@@ -261,6 +260,9 @@ impl GlobalRef {
         data.common_mut().self_ref = ret;
         for user in data.users() {
             user.operand.set(ValueSSA::Global(ret));
+        }
+        for operands in data.operands_mut() {
+            operands.user.set(UserID::Global(ret));
         }
         let GlobalData::Func(func) = &mut data else {
             allocs.globals.insert(data);
