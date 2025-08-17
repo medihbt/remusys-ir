@@ -4,18 +4,14 @@ use crate::{
         SlabListRes, SlabRef,
     },
     ir::{
-        BlockRef, IRAllocs, IRAllocsRef, IRWriter, ISubValueSSA, ITraceableValue, ManagedInst,
-        Module, Opcode, Use, UserList, ValueSSA, ValueSSAError,
+        BlockRef, IRAllocs, IRAllocsRef, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue,
+        IUser, IUserRef, ManagedInst, Module, Opcode, OperandSet, Use, UserID, UserList, ValueSSA,
+        ValueSSAError,
     },
     typing::{TypeMismatchError, ValTypeID},
 };
 use slab::Slab;
-use std::{
-    cell::{Cell, Ref},
-    fmt::Debug,
-    ops::Deref,
-    rc::Rc,
-};
+use std::{cell::Cell, fmt::Debug, rc::Rc};
 
 pub(crate) mod usedef;
 
@@ -124,6 +120,52 @@ pub enum InstData {
     Store(StoreOp),
 }
 
+impl IUser for InstData {
+    fn get_operands(&self) -> OperandSet {
+        match self {
+            InstData::ListGuideNode(_) => OperandSet::Fixed(&[]),
+            InstData::PhiInstEnd(_) => OperandSet::Fixed(&[]),
+            InstData::Unreachable(_) => OperandSet::Fixed(&[]),
+            InstData::Ret(ret) => ret.get_operands(),
+            InstData::Jump(_) => OperandSet::Fixed(&[]),
+            InstData::Br(br) => br.get_operands(),
+            InstData::Switch(switch) => switch.get_operands(),
+            InstData::Alloca(_) => OperandSet::Fixed(&[]),
+            InstData::BinOp(binop) => binop.get_operands(),
+            InstData::Call(call) => call.get_operands(),
+            InstData::Cast(cast_op) => cast_op.get_operands(),
+            InstData::Phi(phi) => phi.get_operands(),
+            InstData::Cmp(cmp_op) => cmp_op.get_operands(),
+            InstData::GEP(gep) => gep.get_operands(),
+            InstData::Select(select_op) => select_op.get_operands(),
+            InstData::Load(load) => load.get_operands(),
+            InstData::Store(store) => store.get_operands(),
+        }
+    }
+
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        match self {
+            InstData::ListGuideNode(_) => &mut [],
+            InstData::PhiInstEnd(_) => &mut [],
+            InstData::Unreachable(_) => &mut [],
+            InstData::Ret(ret) => ret.operands_mut(),
+            InstData::Jump(_) => &mut [],
+            InstData::Br(br) => br.operands_mut(),
+            InstData::Switch(switch) => switch.operands_mut(),
+            InstData::Alloca(_) => &mut [],
+            InstData::BinOp(binop) => binop.operands_mut(),
+            InstData::Call(call) => call.operands_mut(),
+            InstData::Cast(cast_op) => cast_op.operands_mut(),
+            InstData::Phi(phi) => phi.operands_mut(),
+            InstData::Cmp(cmp_op) => cmp_op.operands_mut(),
+            InstData::GEP(gep) => gep.operands_mut(),
+            InstData::Select(select_op) => select_op.operands_mut(),
+            InstData::Load(load) => load.operands_mut(),
+            InstData::Store(store) => store.operands_mut(),
+        }
+    }
+}
+
 impl ISubInst for InstData {
     fn new_empty(_: Opcode) -> Self {
         InstData::ListGuideNode(InstCommon::new_empty())
@@ -179,50 +221,6 @@ impl ISubInst for InstData {
             InstData::Select(select_op) => select_op.common_mut(),
             InstData::Load(load) => load.common_mut(),
             InstData::Store(store) => store.common_mut(),
-        }
-    }
-
-    fn get_operands(&self) -> InstOperands {
-        match self {
-            InstData::ListGuideNode(_) => InstOperands::Fixed(&[]),
-            InstData::PhiInstEnd(_) => InstOperands::Fixed(&[]),
-            InstData::Unreachable(_) => InstOperands::Fixed(&[]),
-            InstData::Ret(ret) => ret.get_operands(),
-            InstData::Jump(_) => InstOperands::Fixed(&[]),
-            InstData::Br(br) => br.get_operands(),
-            InstData::Switch(switch) => switch.get_operands(),
-            InstData::Alloca(_) => InstOperands::Fixed(&[]),
-            InstData::BinOp(binop) => binop.get_operands(),
-            InstData::Call(call) => call.get_operands(),
-            InstData::Cast(cast_op) => cast_op.get_operands(),
-            InstData::Phi(phi) => phi.get_operands(),
-            InstData::Cmp(cmp_op) => cmp_op.get_operands(),
-            InstData::GEP(gep) => gep.get_operands(),
-            InstData::Select(select_op) => select_op.get_operands(),
-            InstData::Load(load) => load.get_operands(),
-            InstData::Store(store) => store.get_operands(),
-        }
-    }
-
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        match self {
-            InstData::ListGuideNode(_) => &mut [],
-            InstData::PhiInstEnd(_) => &mut [],
-            InstData::Unreachable(_) => &mut [],
-            InstData::Ret(ret) => ret.operands_mut(),
-            InstData::Jump(_) => &mut [],
-            InstData::Br(br) => br.operands_mut(),
-            InstData::Switch(switch) => switch.operands_mut(),
-            InstData::Alloca(_) => &mut [],
-            InstData::BinOp(binop) => binop.operands_mut(),
-            InstData::Call(call) => call.operands_mut(),
-            InstData::Cast(cast_op) => cast_op.operands_mut(),
-            InstData::Phi(phi) => phi.operands_mut(),
-            InstData::Cmp(cmp_op) => cmp_op.operands_mut(),
-            InstData::GEP(gep) => gep.operands_mut(),
-            InstData::Select(select_op) => select_op.operands_mut(),
-            InstData::Load(load) => load.operands_mut(),
-            InstData::Store(store) => store.operands_mut(),
         }
     }
 
@@ -356,45 +354,12 @@ impl InstData {
             user.operand.set(ValueSSA::Inst(self_ref));
         }
         for operand in inst.operands_mut() {
-            operand.inst.set(self_ref);
+            operand.user.set(UserID::from(self_ref));
         }
     }
 }
 
-#[derive(Debug)]
-pub enum InstOperands<'a> {
-    Fixed(&'a [Rc<Use>]),
-    InRef(Ref<'a, [Rc<Use>]>),
-    Phi(Ref<'a, Vec<[Rc<Use>; 2]>>),
-}
-
-impl Deref for InstOperands<'_> {
-    type Target = [Rc<Use>];
-    fn deref(&self) -> &Self::Target {
-        self.as_slice()
-    }
-}
-
-impl<'ops: 'inst, 'inst> IntoIterator for &'ops InstOperands<'inst> {
-    type Item = &'ops Rc<Use>;
-    type IntoIter = std::slice::Iter<'ops, Rc<Use>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.as_slice().iter()
-    }
-}
-
-impl<'a> InstOperands<'a> {
-    pub fn as_slice(&self) -> &[Rc<Use>] {
-        match self {
-            InstOperands::Fixed(ops) => ops,
-            InstOperands::InRef(ops_ref) => ops_ref.deref(),
-            InstOperands::Phi(ops_ref) => ops_ref.deref().as_flattened(),
-        }
-    }
-}
-
-pub trait ISubInst: Debug + Sized {
+pub trait ISubInst: Debug + Sized + IUser {
     fn new_empty(opcode: Opcode) -> Self;
 
     fn try_from_ir(inst: &InstData) -> Option<&Self>;
@@ -431,16 +396,6 @@ pub trait ISubInst: Debug + Sized {
     }
 
     fn is_terminator(&self) -> bool;
-
-    fn get_operands(&self) -> InstOperands;
-    fn operands_mut(&mut self) -> &mut [Rc<Use>];
-    fn get_use_at(&self, index: usize) -> Option<Rc<Use>> {
-        self.get_operands().as_slice().get(index).cloned()
-    }
-    fn get_operand(&self, index: usize) -> ValueSSA {
-        self.get_use_at(index)
-            .map_or(ValueSSA::None, |use_ref| use_ref.get_operand())
-    }
 
     fn get_prev(&self) -> InstRef {
         InstRef::from_handle(self.get_common().inner.get().node_head.prev)
@@ -539,6 +494,24 @@ impl SlabListNodeRef for InstRef {
     }
 }
 
+impl IReferenceValue for InstRef {
+    type ValueDataT = InstData;
+
+    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_inst(&allocs.insts)
+    }
+
+    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data_mut(&mut allocs.insts)
+    }
+}
+
 impl ISubValueSSA for InstRef {
     fn try_from_ir(value: ValueSSA) -> Option<Self> {
         match value {
@@ -567,6 +540,19 @@ impl ISubValueSSA for InstRef {
         self.to_data(&writer.allocs.insts).fmt_ir(id, writer)
     }
 }
+
+impl ISubInstRef for InstRef {
+    type InstDataT = InstData;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        inst_ref
+    }
+    fn into_raw(self) -> InstRef {
+        self
+    }
+}
+
+impl IUserRef for InstRef {}
 
 impl InstRef {
     fn node_attach_set_parent(self, to_attach: Self, alloc: &Slab<InstData>) -> SlabListRes {
@@ -661,19 +647,5 @@ pub trait ISubInstRef: Sized + Clone {
 
     fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {
         self.to_inst(alloc).get_common().opcode
-    }
-    fn get_valtype(self, alloc: &IRAllocs) -> ValTypeID {
-        self.to_inst(&alloc.insts).get_common().ret_type
-    }
-}
-
-impl ISubInstRef for InstRef {
-    type InstDataT = InstData;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        inst_ref
-    }
-    fn into_raw(self) -> InstRef {
-        self
     }
 }

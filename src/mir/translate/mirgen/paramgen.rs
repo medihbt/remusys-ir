@@ -55,7 +55,10 @@ impl Debug for MirArgInfo {
             pos
         };
 
-        assert!(self.stack_size % 16 == 0, "Stack size must be aligned to 16 bytes");
+        assert!(
+            self.stack_size % 16 == 0,
+            "Stack size must be aligned to 16 bytes"
+        );
 
         f.debug_struct("MirArgInfo")
             .field("stack_size", &self.stack_size)

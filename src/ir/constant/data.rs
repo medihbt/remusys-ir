@@ -142,7 +142,7 @@ impl ConstData {
         use FPKind::*;
         match self {
             Zero(_) | PtrNull(_) => true,
-            Int(x) => *x == 0, 
+            Int(x) => *x == 0,
             Float(Ieee32, f) => (*f as f32).to_bits() == 0,
             Float(Ieee64, f) => (*f as f64).to_bits() == 0,
             _ => false,

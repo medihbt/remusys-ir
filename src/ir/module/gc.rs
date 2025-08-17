@@ -3,8 +3,8 @@ use std::{collections::VecDeque, ops::ControlFlow};
 use crate::{
     base::{FixBitSet, SlabRef},
     ir::{
-        BlockRef, ConstExprData, ConstExprRef, GlobalData, GlobalRef, IRAllocs, ISubInst,
-        ISubValueSSA, InstRef, TerminatorRef, ValueSSA,
+        BlockRef, ConstExprData, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubValueSSA, IUser,
+        InstRef, TerminatorRef, ValueSSA,
     },
 };
 
@@ -123,7 +123,7 @@ impl<'a> IRValueMarker<'a> {
     fn consume_one(&mut self, value: ValueSSA) {
         match value {
             ValueSSA::ConstData(_) => {} // ConstData 不包含引用，无需遍历
-            ValueSSA::AggrZero(_) => {} // AggrZero 不包含引用，无需遍历
+            ValueSSA::AggrZero(_) => {}  // AggrZero 不包含引用，无需遍历
             ValueSSA::ConstExpr(expr) => self.consume_expr(expr),
             ValueSSA::Block(block) => self.consume_block(block),
             ValueSSA::Inst(inst) => self.consume_inst(inst),
@@ -133,15 +133,15 @@ impl<'a> IRValueMarker<'a> {
         }
     }
 
-    fn consume_expr(&mut self, expr: ConstExprRef) {
+    fn consume_expr(&mut self, expr: ExprRef) {
         let Self { live_set, mark_queue, allocs } = self;
         let expr_data = expr.to_data(&allocs.exprs);
         let elems = match expr_data {
-            ConstExprData::Array(arr) => arr.elems.as_slice(),
-            ConstExprData::Struct(st) => st.elems.as_slice(),
+            ConstExprData::Array(arr) => &arr.elems,
+            ConstExprData::Struct(st) => &st.elems,
         };
-        for &elem in elems {
-            Self::do_push_mark(live_set, mark_queue, elem);
+        for elem in elems {
+            Self::do_push_mark(live_set, mark_queue, elem.get_operand());
         }
     }
 

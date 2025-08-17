@@ -103,6 +103,24 @@ pub enum AggrType {
     Alias(StructAliasRef),
 }
 
+impl From<ArrayTypeRef> for AggrType {
+    fn from(value: ArrayTypeRef) -> Self {
+        AggrType::Array(value)
+    }
+}
+
+impl From<StructTypeRef> for AggrType {
+    fn from(value: StructTypeRef) -> Self {
+        AggrType::Struct(value)
+    }
+}
+
+impl From<StructAliasRef> for AggrType {
+    fn from(value: StructAliasRef) -> Self {
+        AggrType::Alias(value)
+    }
+}
+
 impl IValType for AggrType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         match ty {
@@ -192,21 +210,31 @@ impl AggrType {
     }
 }
 
-impl From<ArrayTypeRef> for AggrType {
-    fn from(value: ArrayTypeRef) -> Self {
-        AggrType::Array(value)
+pub struct AggrTypeIter<'a> {
+    aggr_type: AggrType,
+    type_ctx: &'a TypeContext,
+    index: usize,
+    nfields: usize,
+}
+
+impl<'a> AggrTypeIter<'a> {
+    pub fn new(aggr_type: AggrType, type_ctx: &'a TypeContext) -> Self {
+        let nfields = aggr_type.nfields(type_ctx);
+        Self { aggr_type, type_ctx, index: 0, nfields }
     }
 }
 
-impl From<StructTypeRef> for AggrType {
-    fn from(value: StructTypeRef) -> Self {
-        AggrType::Struct(value)
-    }
-}
+impl<'a> Iterator for AggrTypeIter<'a> {
+    type Item = (usize, ValTypeID);
 
-impl From<StructAliasRef> for AggrType {
-    fn from(value: StructAliasRef) -> Self {
-        AggrType::Alias(value)
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.nfields {
+            return None;
+        }
+        let field_type = self.aggr_type.get_field(self.type_ctx, self.index);
+        let item = (self.index, field_type);
+        self.index += 1;
+        Some(item)
     }
 }
 

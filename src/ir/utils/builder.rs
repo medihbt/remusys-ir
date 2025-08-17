@@ -2,8 +2,8 @@ use crate::{
     base::{INullableValue, SlabListError, SlabListRange, SlabRef},
     ir::{
         BlockData, BlockRef, CmpCond, Func, FuncRef, GlobalRef, IRAllocs, ISubGlobal, ISubInst,
-        ISubValueSSA, ITraceableValue, InstData, InstRef, ManagedInst, Module, Opcode, UseKind,
-        ValueSSA, Var,
+        ISubValueSSA, ITraceableValue, IUser, InstData, InstRef, ManagedInst, Module, Opcode,
+        UseKind, UserID, ValueSSA, Var,
         inst::{
             Alloca, BinOp, Br, CallOp, CastOp, CmpOp, ISubInstRef, IndexPtr, InstError, Jump,
             LoadOp, PhiNode, PhiRef, Ret, SelectOp, StoreOp, Switch,
@@ -275,7 +275,7 @@ impl IRBuilder {
             content_ty.get_align(self.get_type_ctx()).max(8),
         );
         var.set_readonly(is_const);
-        var.set_init(init);
+        var.set_init(self.allocs_mut(), init);
 
         let var = GlobalRef::from_allocs(self.allocs_mut(), var.into_ir());
         var.register_to_symtab(&self.module);
@@ -511,7 +511,10 @@ impl IRBuilder {
                 };
                 // 这里不使用 set_operand(), 因为链表已经发生移动了.
                 u.operand.set(new_block.into_ir());
-                let phi_inst = PhiRef::from_inst(u.inst.get(), &allocs.insts);
+                let phi_inst = {
+                    let UserID::Inst(inst) = u.user.get() else { unreachable!() };
+                    PhiRef::from_inst(inst, &allocs.insts)
+                };
                 let phi_operands = phi_inst.to_inst(&allocs.insts).get_operands();
                 let phi_value_use = &phi_operands[value_use_index as usize];
                 let UseKind::PhiIncomingValue(block_idx) = phi_value_use.kind.get() else {

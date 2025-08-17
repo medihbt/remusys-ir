@@ -4,10 +4,9 @@ use slab::Slab;
 
 use crate::{
     ir::{
-        BlockData, BlockRef, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef,
-        JumpTarget, JumpTargetKind, Opcode, Use,
-        block::jump_target::JumpTargets,
-        inst::{ISubInstRef, InstOperands},
+        BlockData, BlockRef, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon, InstData,
+        InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet, Use,
+        inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -23,6 +22,15 @@ use crate::{
 pub struct Jump {
     common: InstCommon,
     target: [Rc<JumpTarget>; 1],
+}
+
+impl IUser for Jump {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&[])
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut []
+    }
 }
 
 impl ISubInst for Jump {
@@ -55,12 +63,6 @@ impl ISubInst for Jump {
     }
     fn is_terminator(&self) -> bool {
         true
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&[])
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut []
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {

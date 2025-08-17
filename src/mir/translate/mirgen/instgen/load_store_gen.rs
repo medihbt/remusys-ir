@@ -3,10 +3,14 @@ use crate::{
     base::SlabRef,
     ir::{ConstData, InstData, InstRef, ValueSSA},
     mir::{
-        inst::{impls::*, inst::MirInst, opcode::MirOP, IMirSubInst},
-        module::{vreg_alloc::VirtRegAlloc, MirGlobalRef},
+        inst::{IMirSubInst, impls::*, inst::MirInst, opcode::MirOP},
+        module::{MirGlobalRef, vreg_alloc::VirtRegAlloc},
         operand::{
-            compound::MirSymbolOp, imm::{Imm32, Imm64, ImmLSP32, ImmLSP64}, reg::{GPReg, RegOperand, RegUseFlags, VFReg, FPR32, FPR64, GPR32, GPR64}, subop::IMirSubOperand, MirOperand
+            MirOperand,
+            compound::MirSymbolOp,
+            imm::{Imm32, Imm64, ImmLSP32, ImmLSP64},
+            reg::{FPR32, FPR64, GPR32, GPR64, GPReg, RegOperand, RegUseFlags, VFReg},
+            subop::IMirSubOperand,
         },
         translate::mirgen::operandgen::{InstRetval, OperandMap, OperandMapError},
     },

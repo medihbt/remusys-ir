@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrUser, Use, UseKind,
-        ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Opcode, OperandSet,
+        PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{IValType, TypeContext, ValTypeID},
 };
@@ -57,6 +56,15 @@ pub struct LoadOp {
     pub pointee_align_log2: u8,
 }
 
+impl IUser for LoadOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
+}
+
 impl ISubInst for LoadOp {
     fn new_empty(_: Opcode) -> Self {
         Self {
@@ -82,12 +90,6 @@ impl ISubInst for LoadOp {
     }
     fn is_terminator(&self) -> bool {
         false
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef, Opcode, Use,
-        UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef, Opcode,
+        OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -19,6 +18,15 @@ use std::rc::Rc;
 pub struct SelectOp {
     common: InstCommon,
     operands: [Rc<Use>; 3],
+}
+
+impl IUser for SelectOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
 }
 
 impl ISubInst for SelectOp {
@@ -49,12 +57,6 @@ impl ISubInst for SelectOp {
     }
     fn is_terminator(&self) -> bool {
         false
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

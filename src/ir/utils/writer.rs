@@ -245,7 +245,7 @@ impl<'a> IRWriter<'a> {
                 self.write_str(", ").unwrap();
             }
             write!(self, "({:?}, ", user.kind.get()).unwrap();
-            self.write_operand(user.inst.get()).unwrap();
+            self.write_operand(user.user.get()).unwrap();
             self.write_str(")").unwrap();
         }
         self.write_str(" ]").unwrap();

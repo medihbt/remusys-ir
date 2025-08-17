@@ -10,7 +10,7 @@ use crate::{
     base::{INullableValue, IWeakListNode, SlabRef, WeakList},
     ir::{
         BlockData, BlockRef, FuncRef, IRAllocs, ISubInst, ISubValueSSA, InstData, InstRef, Use,
-        UseKind,
+        UseKind, UserID,
         inst::{Br, BrRef, ISubInstRef, Jump, JumpRef, PhiRef, RetRef, Switch, SwitchRef},
     },
 };
@@ -617,7 +617,10 @@ impl<'a> JumpTargetSplitter<'a> {
                 let UseKind::PhiIncomingBlock(group_idx) = u.kind.get() else {
                     continue;
                 };
-                let phi = PhiRef(u.inst.get()).to_inst(&self.allocs.insts);
+                let phi = {
+                    let UserID::Inst(inst) = u.user.get() else { unreachable!() };
+                    PhiRef(inst).to_inst(&self.allocs.insts)
+                };
                 let income_val = phi.income_value_at(group_idx as usize);
                 // 为新基本块创建新的传入值，不影响原有的 use-def 关系
                 phi.set_income(self.allocs, new_block, income_val)

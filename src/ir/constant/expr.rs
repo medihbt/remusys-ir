@@ -1,6 +1,11 @@
+use std::rc::Rc;
+
 use crate::{
     base::SlabRef,
-    ir::{Array, IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Struct, UserList, ValueSSA},
+    ir::{
+        Array, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
+        OperandSet, Struct, Use, UserList, ValueSSA,
+    },
     typing::ValTypeID,
 };
 use slab::Slab;
@@ -21,6 +26,22 @@ impl ITraceableValue for ConstExprData {
 
     fn has_single_reference_semantics(&self) -> bool {
         false
+    }
+}
+
+impl IUser for ConstExprData {
+    fn get_operands<'a>(&'a self) -> OperandSet<'a> {
+        match self {
+            ConstExprData::Array(data) => data.get_operands(),
+            ConstExprData::Struct(data) => data.get_operands(),
+        }
+    }
+
+    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>] {
+        match self {
+            ConstExprData::Array(data) => data.operands_mut(),
+            ConstExprData::Struct(data) => data.operands_mut(),
+        }
     }
 }
 
@@ -90,7 +111,7 @@ impl ExprCommon {
     }
 }
 
-pub trait ISubExpr {
+pub trait ISubExpr: IUser {
     fn get_common(&self) -> &ExprCommon;
     fn is_aggregate(&self) -> bool;
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
@@ -101,19 +122,39 @@ pub trait ISubExpr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConstExprRef(usize);
+pub struct ExprRef(usize);
 
-impl SlabRef for ConstExprRef {
+impl SlabRef for ExprRef {
     type RefObject = ConstExprData;
     fn from_handle(handle: usize) -> Self {
-        ConstExprRef(handle)
+        ExprRef(handle)
     }
     fn get_handle(&self) -> usize {
         self.0
     }
 }
 
-impl ISubValueSSA for ConstExprRef {
+impl IReferenceValue for ExprRef {
+    type ValueDataT = ConstExprData;
+
+    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data(&allocs.exprs)
+    }
+
+    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data_mut(&mut allocs.exprs)
+    }
+}
+
+impl IUserRef for ExprRef {}
+
+impl ISubValueSSA for ExprRef {
     fn try_from_ir(value: ValueSSA) -> Option<Self> {
         match value {
             ValueSSA::ConstExpr(x) => Some(x),
@@ -135,8 +176,8 @@ impl ISubValueSSA for ConstExprRef {
 
     fn is_zero(&self, allocs: &IRAllocs) -> bool {
         match self.to_data(&allocs.exprs) {
-            ConstExprData::Array(data) => data.elems.iter().all(|elem| elem.is_zero(allocs)),
-            ConstExprData::Struct(data) => data.elems.iter().all(|elem| elem.is_zero(allocs)),
+            ConstExprData::Array(data) => data.is_zero(allocs),
+            ConstExprData::Struct(data) => data.is_zero(allocs),
         }
     }
 
@@ -148,8 +189,8 @@ impl ISubValueSSA for ConstExprRef {
     }
 }
 
-impl ConstExprRef {
+impl ExprRef {
     pub fn from_alloc(alloc: &mut Slab<ConstExprData>, data: ConstExprData) -> Self {
-        ConstExprRef(alloc.insert(data))
+        ExprRef(alloc.insert(data))
     }
 }

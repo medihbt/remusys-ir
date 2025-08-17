@@ -1,6 +1,6 @@
 use crate::{
     ir::{IRAllocs, ISubValueSSA, ValueSSA},
-    typing::{ValTypeID, ValTypeClass},
+    typing::{ValTypeClass, ValTypeID},
 };
 
 #[derive(Debug, Clone)]

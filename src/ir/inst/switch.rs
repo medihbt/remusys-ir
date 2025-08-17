@@ -3,10 +3,9 @@ use slab::Slab;
 use crate::{
     base::INullableValue,
     ir::{
-        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITerminatorInst,
-        InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode, Use, UseKind, ValueSSA,
-        block::jump_target::JumpTargets,
-        inst::{ISubInstRef, InstOperands},
+        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITerminatorInst, IUser,
+        InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode, OperandSet, Use,
+        UseKind, ValueSSA, block::jump_target::JumpTargets, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -59,6 +58,15 @@ pub struct Switch {
     targets: RefCell<Vec<Rc<JumpTarget>>>,
 }
 
+impl IUser for Switch {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.cond)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.cond
+    }
+}
+
 impl ISubInst for Switch {
     fn new_empty(_: Opcode) -> Self {
         Self {
@@ -91,12 +99,6 @@ impl ISubInst for Switch {
 
     fn is_terminator(&self) -> bool {
         true
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.cond)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.cond
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {

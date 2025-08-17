@@ -18,7 +18,7 @@ use crate::{
             operandgen::{DispatchedReg, InstRetval, OperandMap},
         },
     },
-    typing::{TypeContext, ValTypeID, FPKind},
+    typing::{FPKind, TypeContext, ValTypeID},
 };
 use std::collections::VecDeque;
 

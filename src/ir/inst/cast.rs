@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind, InstRef,
-        Opcode, Use, UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind, InstRef,
+        Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -24,6 +23,15 @@ pub struct CastOp {
     common: InstCommon,
     fromop: [Rc<Use>; 1],
     pub fromty: ValTypeID, // 源类型
+}
+
+impl IUser for CastOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.fromop)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.fromop
+    }
 }
 
 impl ISubInst for CastOp {
@@ -54,12 +62,6 @@ impl ISubInst for CastOp {
     }
     fn is_terminator(&self) -> bool {
         false
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.fromop)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.fromop
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

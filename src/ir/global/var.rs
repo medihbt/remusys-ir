@@ -1,12 +1,13 @@
 use super::GlobalDataCommon;
 use crate::{
     ir::{
-        GlobalData, GlobalKind, GlobalRef, IRWriter, ISubValueSSA, ValueSSA,
+        GlobalData, GlobalKind, GlobalRef, IRAllocs, IRWriter, ISubValueSSA, Use, UseKind,
+        ValueSSA,
         global::{ISubGlobal, Linkage},
     },
     typing::ValTypeID,
 };
-use std::cell::Cell;
+use std::{cell::Cell, rc::Rc};
 
 /// 全局变量
 ///
@@ -21,13 +22,14 @@ use std::cell::Cell;
 #[derive(Debug)]
 pub struct Var {
     pub common: GlobalDataCommon,
+    /// Initializer.
+    pub init: [Rc<Use>; 1],
     pub inner: Cell<VarInner>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct VarInner {
     pub readonly: bool,
-    pub init: ValueSSA,
 }
 
 impl ISubGlobal for Var {
@@ -63,7 +65,7 @@ impl ISubGlobal for Var {
         self.inner.get().readonly
     }
     fn is_extern(&self) -> bool {
-        matches!(self.inner.get().init, ValueSSA::None)
+        matches!(self.get_init(), ValueSSA::None)
     }
     fn get_linkage(&self) -> Linkage {
         if self.is_extern() { Linkage::Extern } else { self.common.linkage.get() }
@@ -71,7 +73,7 @@ impl ISubGlobal for Var {
     fn set_linkage(&self, linkage: Linkage) {
         self.common.linkage.set(linkage);
         if linkage == Linkage::Extern {
-            self.set_init(ValueSSA::None);
+            self.init[0].clean_operand();
         }
     }
 
@@ -102,21 +104,17 @@ impl Var {
     }
 
     pub fn get_init(&self) -> ValueSSA {
-        self.inner.get().init
+        self.init[0].get_operand()
     }
-    pub fn set_init(&self, init: ValueSSA) {
-        let mut inner = self.inner.get();
-        inner.init = init;
-        self.inner.set(inner);
-        if init != ValueSSA::None {
-            self.common.linkage.set(Linkage::DSOLocal);
-        }
+    pub fn set_init(&self, allocs: &IRAllocs, init: ValueSSA) {
+        self.init[0].set_operand(allocs, init);
     }
 
     pub fn new_extern(name: String, content_ty: ValTypeID, content_align: usize) -> Self {
         Self {
             common: GlobalDataCommon::new(name, content_ty, content_align),
-            inner: Cell::new(VarInner { readonly: false, init: ValueSSA::None }),
+            init: [Use::new(UseKind::GlobalInit)],
+            inner: Cell::new(VarInner { readonly: false }),
         }
     }
 }

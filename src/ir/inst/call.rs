@@ -1,9 +1,8 @@
 use crate::{
     base::INullableValue,
     ir::{
-        FuncUser, GlobalRef, IRAllocs, IRWriter, ISubInst, InstCommon, InstData, InstRef, Module,
-        Opcode, PtrUser, Use, UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        FuncUser, GlobalRef, IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef,
+        Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
@@ -59,6 +58,15 @@ impl PtrUser for CallOp {
 
 impl FuncUser for CallOp {}
 
+impl IUser for CallOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
+}
+
 impl ISubInst for CallOp {
     fn new_empty(_: Opcode) -> Self {
         CallOp {
@@ -92,12 +100,6 @@ impl ISubInst for CallOp {
     }
     fn is_terminator(&self) -> bool {
         false // CallOp is not a terminator
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

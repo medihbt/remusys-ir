@@ -16,10 +16,11 @@ mod global;
 mod managed;
 mod module;
 mod opcode;
+mod user;
 mod utils;
 
 pub mod checking;
-pub mod graph_traits;
+pub mod compact_ir;
 pub mod inst;
 
 pub use self::{
@@ -27,14 +28,14 @@ pub use self::{
         BlockData, BlockDataInner, BlockRef,
         jump_target::{
             ITerminatorInst, ITerminatorRef, JumpTarget, JumpTargetKind, JumpTargetSplitter,
-            PredList, TerminatorDataRef, TerminatorRef,
+            JumpTargets, PredList, TerminatorDataRef, TerminatorRef,
         },
     },
     cmp_cond::CmpCond,
     constant::{
         array::Array,
         data::ConstData,
-        expr::{ConstExprData, ConstExprRef, ExprCommon, ISubExpr},
+        expr::{ConstExprData, ExprCommon, ExprRef, ISubExpr},
         structure::Struct,
     },
     global::{
@@ -43,7 +44,7 @@ pub use self::{
         var::{Var, VarInner},
     },
     inst::{
-        ISubInst, InstCommon, InstData, InstInner, InstRef,
+        ISubInst, ISubInstRef, InstCommon, InstData, InstInner, InstRef,
         usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
     },
     managed::{IManagedIRValue, IRManaged, ManagedInst},
@@ -52,6 +53,7 @@ pub use self::{
         gc::{IRLiveValueSet, IRValueMarker},
     },
     opcode::{InstKind, Opcode},
+    user::{IUser, IUserRef, OperandSet, UserID},
     utils::{
         builder::{
             IRBuilder, IRBuilderError, IRBuilderExpandedFocus, IRBuilderFocus,
@@ -70,7 +72,7 @@ pub enum ValueSSA {
     ConstData(ConstData),
 
     /// 常量表达式, 包括数组、结构体
-    ConstExpr(ConstExprRef),
+    ConstExpr(ExprRef),
 
     /// 常量 0 表达式
     AggrZero(AggrType),
@@ -310,4 +312,16 @@ pub trait PtrUser {
 
     /// Gets the align of this value user.
     fn get_operand_align(&self) -> Option<NonZero<usize>>;
+}
+
+pub trait IReferenceValue {
+    type ValueDataT;
+
+    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
+    where
+        Self::ValueDataT: 'a;
+
+    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
+    where
+        Self::ValueDataT: 'a;
 }

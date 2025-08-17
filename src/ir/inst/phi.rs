@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstRef,
-        Opcode, Use, UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef,
+        Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -52,6 +51,18 @@ pub struct PhiNode {
     incomes: RefCell<Vec<[Rc<Use>; 2]>>,
 }
 
+impl IUser for PhiNode {
+    fn get_operands(&self) -> OperandSet {
+        let operands = self.incomes.borrow();
+        let operands = Ref::map(operands, |ops| ops.as_flattened());
+        OperandSet::InRef(operands)
+    }
+
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        self.incomes.get_mut().as_flattened_mut()
+    }
+}
+
 impl ISubInst for PhiNode {
     fn new_empty(opcode: Opcode) -> Self {
         if opcode != Opcode::Phi {
@@ -84,16 +95,6 @@ impl ISubInst for PhiNode {
 
     fn is_terminator(&self) -> bool {
         false
-    }
-
-    fn get_operands(&self) -> InstOperands {
-        let operands = self.incomes.borrow();
-        let operands = Ref::map(operands, |ops| ops.as_flattened());
-        InstOperands::InRef(operands)
-    }
-
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        self.incomes.get_mut().as_flattened_mut()
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

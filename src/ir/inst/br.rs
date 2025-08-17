@@ -1,9 +1,8 @@
 use crate::{
     ir::{
-        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData,
-        InstRef, JumpTarget, JumpTargetKind, Opcode, Use, UseKind, ValueSSA,
-        block::jump_target::JumpTargets,
-        inst::{ISubInstRef, InstOperands},
+        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon,
+        InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet, Use,
+        UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -29,6 +28,15 @@ pub struct Br {
     /// * `[0] = if_true`: 条件为真时跳转的目标
     /// * `[1] = if_false`: 条件为假时跳转的目标
     targets: [Rc<JumpTarget>; 2],
+}
+
+impl IUser for Br {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.cond)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.cond
+    }
 }
 
 impl ISubInst for Br {
@@ -65,12 +73,6 @@ impl ISubInst for Br {
     }
     fn is_terminator(&self) -> bool {
         true
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.cond)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.cond
     }
 
     fn init_self_reference(&mut self, self_ref: InstRef) {

@@ -1,7 +1,7 @@
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        BlockRef, FuncRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, InstData,
+        BlockRef, FuncRef, GlobalRef, IRValueNumberMap, ISubInst, ITraceableValue, IUser, InstData,
         InstKind as InstDataKind, InstRef, Module as IRModule, NumberOption, ValueSSA,
         inst::ISubInstRef,
     },

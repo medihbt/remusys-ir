@@ -1,9 +1,8 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ITerminatorInst, InstCommon, InstData, InstRef, JumpTarget,
-        Opcode, Use, UseKind, ValueSSA,
-        block::jump_target::JumpTargets,
-        inst::{ISubInstRef, InstOperands},
+        IRAllocs, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon, InstData, InstRef,
+        JumpTarget, Opcode, OperandSet, Use, UseKind, ValueSSA, block::jump_target::JumpTargets,
+        inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -21,6 +20,15 @@ use std::rc::Rc;
 pub struct Ret {
     common: InstCommon,
     operands: [Rc<Use>; 1],
+}
+
+impl IUser for Ret {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
 }
 
 impl ISubInst for Ret {
@@ -55,13 +63,6 @@ impl ISubInst for Ret {
 
     fn is_terminator(&self) -> bool {
         true
-    }
-
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

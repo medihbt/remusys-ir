@@ -77,7 +77,8 @@ impl IManagedIRValue for InstRef {
         // 把自己从基本块中删除
         let parent = self.get_parent_from_alloc(&allocs.insts);
         if parent.is_nonnull() {
-            parent.insts_from_alloc(&allocs.blocks)
+            parent
+                .insts_from_alloc(&allocs.blocks)
                 .unplug_node(&allocs.insts, *self)
                 .expect("Failed to unplug instruction from block");
         }

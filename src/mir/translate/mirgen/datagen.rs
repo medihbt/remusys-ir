@@ -4,7 +4,7 @@ use slab::Slab;
 
 use crate::{
     base::SlabRef,
-    ir::{ConstData, ConstExprData, ConstExprRef, Module, ValueSSA},
+    ir::{ConstData, ConstExprData, ExprRef, IUser, Module, ValueSSA},
     mir::module::global::{MirGlobalData, Section},
     typing::{FPKind, IValType, TypeContext, ValTypeID},
 };
@@ -205,24 +205,24 @@ impl DataGen {
     }
     pub fn add_ir_expr(
         &mut self,
-        expr: ConstExprRef,
+        expr: ExprRef,
         tctx: &TypeContext,
         alloc_expr: &Slab<ConstExprData>,
     ) {
         let expr_data = expr.to_data(alloc_expr);
         match expr_data {
-            ConstExprData::Array(a) => self.add_aggr(&a.elems, tctx, alloc_expr),
-            ConstExprData::Struct(s) => self.add_aggr(&s.elems, tctx, alloc_expr),
+            ConstExprData::Array(a) => self.add_aggr(a.operands_iter(), tctx, alloc_expr),
+            ConstExprData::Struct(s) => self.add_aggr(s.operands_iter(), tctx, alloc_expr),
         }
     }
-    pub fn add_ir_expr_from_module(&mut self, expr: ConstExprRef, module: &Module) {
+    pub fn add_ir_expr_from_module(&mut self, expr: ExprRef, module: &Module) {
         let allocs = module.borrow_allocs();
         let type_ctx = &*module.type_ctx;
         self.add_ir_expr(expr, type_ctx, &allocs.exprs);
     }
     fn add_aggr(
         &mut self,
-        values: &[ValueSSA],
+        values: impl Iterator<Item = ValueSSA>,
         type_ctx: &TypeContext,
         alloc_expr: &Slab<ConstExprData>,
     ) {
@@ -232,7 +232,7 @@ impl DataGen {
                     self.add_ir_data(data.clone(), type_ctx);
                 }
                 ValueSSA::ConstExpr(expr) => {
-                    self.add_ir_expr(*expr, type_ctx, alloc_expr);
+                    self.add_ir_expr(expr, type_ctx, alloc_expr);
                 }
                 ValueSSA::AggrZero(aggr_ty) => {
                     let size_bytes = aggr_ty.get_size(type_ctx);

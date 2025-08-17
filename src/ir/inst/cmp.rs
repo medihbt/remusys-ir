@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        CmpCond, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind,
-        InstRef, Opcode, Use, UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        CmpCond, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind,
+        InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -35,6 +34,15 @@ pub struct CmpOp {
     pub operand_ty: ValTypeID,
 }
 
+impl IUser for CmpOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
+}
+
 impl ISubInst for CmpOp {
     fn new_empty(opcode: Opcode) -> Self {
         if opcode.get_kind() != InstKind::Cmp {
@@ -64,12 +72,6 @@ impl ISubInst for CmpOp {
     }
     fn is_terminator(&self) -> bool {
         false
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

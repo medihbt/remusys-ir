@@ -3,8 +3,8 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        IRAllocs, IRWriter, ISubValueSSA, ITraceableValue, Module, PtrStorage, UserList, ValueSSA,
-        Var, global::func::Func,
+        IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
+        Module, OperandSet, PtrStorage, Use, UserList, ValueSSA, Var, global::func::Func,
     },
     typing::ValTypeID,
 };
@@ -12,6 +12,7 @@ use std::{
     cell::{Cell, Ref},
     num::NonZero,
     ops::ControlFlow,
+    rc::Rc,
 };
 
 pub(super) mod func;
@@ -28,6 +29,22 @@ pub enum Linkage {
 pub enum GlobalData {
     Var(Var),
     Func(Func),
+}
+
+impl IUser for GlobalData {
+    fn get_operands<'a>(&'a self) -> OperandSet<'a> {
+        match self {
+            GlobalData::Var(var) => OperandSet::Fixed(&var.init),
+            GlobalData::Func(_) => OperandSet::Fixed(&[]),
+        }
+    }
+
+    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>] {
+        match self {
+            GlobalData::Var(var) => &mut var.init,
+            GlobalData::Func(_) => &mut [],
+        }
+    }
 }
 
 impl ISubGlobal for GlobalData {
@@ -196,6 +213,26 @@ impl SlabRef for GlobalRef {
         self.0
     }
 }
+
+impl IReferenceValue for GlobalRef {
+    type ValueDataT = GlobalData;
+
+    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a GlobalData
+    where
+        GlobalData: 'a,
+    {
+        self.to_data(&allocs.globals)
+    }
+
+    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data_mut(&mut allocs.globals)
+    }
+}
+
+impl IUserRef for GlobalRef {}
 
 impl ISubValueSSA for GlobalRef {
     fn try_from_ir(value: ValueSSA) -> Option<Self> {

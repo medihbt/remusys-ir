@@ -12,7 +12,7 @@ mod structty;
 pub use self::{
     alias::{StructAliasData, StructAliasRef},
     array::{ArrayTypeData, ArrayTypeRef},
-    compound::{AggrType, PrimType},
+    compound::{AggrType, AggrTypeIter, PrimType},
     context::{ArchInfo, TypeAllocs, TypeContext},
     fmt::TypeFormatter,
     func::{FuncType, FuncTypeRef},

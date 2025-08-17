@@ -1,8 +1,8 @@
 use crate::{
     ir::{
-        ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData,
-        InstRef, Opcode, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
-        inst::{ISubInstRef, InstOperands},
+        ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon,
+        InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
+        inst::ISubInstRef,
     },
     typing::{IValType, StructTypeRef, TypeContext, ValTypeID},
 };
@@ -44,6 +44,15 @@ pub struct IndexPtr {
     pub ret_align_log2: u8,
 }
 
+impl IUser for IndexPtr {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
+}
+
 impl ISubInst for IndexPtr {
     fn new_empty(opcode: Opcode) -> Self {
         if opcode != Opcode::IndexPtr {
@@ -77,12 +86,6 @@ impl ISubInst for IndexPtr {
     }
     fn is_terminator(&self) -> bool {
         false
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {

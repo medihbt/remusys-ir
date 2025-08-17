@@ -1,5 +1,6 @@
 use crate::typing::{
-    IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass, ValTypeID
+    IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass,
+    ValTypeID,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -2,12 +2,12 @@ use std::rc::Rc;
 
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, InstCommon, InstData, InstKind, InstRef,
-        Opcode, Use, UseKind, ValueSSA,
+        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind, InstRef,
+        Opcode, OperandSet, Use, UseKind, ValueSSA,
         checking::{self, ValueCheckError},
-        inst::{ISubInstRef, InstOperands},
+        inst::ISubInstRef,
     },
-    typing::{ValTypeID, ValTypeClass},
+    typing::{ValTypeClass, ValTypeID},
 };
 
 /// 二元操作指令: 执行两个操作数的二元运算（算术运算、逻辑运算、移位运算），并返回结果。
@@ -21,6 +21,15 @@ use crate::{
 pub struct BinOp {
     common: InstCommon,
     operands: [Rc<Use>; 2],
+}
+
+impl IUser for BinOp {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut self.operands
+    }
 }
 
 impl ISubInst for BinOp {
@@ -44,12 +53,6 @@ impl ISubInst for BinOp {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
-    }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&self.operands)
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
     }
     fn is_terminator(&self) -> bool {
         false

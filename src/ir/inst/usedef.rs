@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     base::{INullableValue, IWeakListNode, WeakList, WeakListIter},
-    ir::{IRAllocs, ISubValueSSA, InstRef, ValueSSA},
+    ir::{ExprRef, GlobalRef, IRAllocs, ISubValueSSA, InstRef, UserID, ValueSSA},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,13 +40,37 @@ pub enum UseKind {
     BranchCond,
     SwitchCond,
     RetValue,
+
+    // 以下为非指令操作数
+    GlobalInit,
+    ArrayElem(usize),
+    StructField(usize),
+}
+
+impl UseKind {
+    pub const fn is_phi_incoming(self) -> bool {
+        matches!(
+            self,
+            UseKind::PhiIncomingBlock(_) | UseKind::PhiIncomingValue(_)
+        )
+    }
+
+    pub const fn is_inst_operand(self) -> bool {
+        !matches!(
+            self,
+            UseKind::GuideNode
+                | UseKind::GlobalInit
+                | UseKind::ArrayElem(_)
+                | UseKind::StructField(_)
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Use {
     head: RefCell<(Weak<Use>, Weak<Use>)>,
     pub kind: Cell<UseKind>,
-    pub inst: Cell<InstRef>,
+    pub user: Cell<UserID>,
     pub operand: Cell<ValueSSA>,
 }
 
@@ -80,10 +104,20 @@ impl Use {
     pub fn new(kind: UseKind) -> Rc<Self> {
         Rc::new(Use {
             head: RefCell::new((Weak::new(), Weak::new())),
+            user: Self::user_null(kind),
             kind: Cell::new(kind),
-            inst: Cell::new(InstRef::new_null()),
             operand: Cell::new(ValueSSA::None),
         })
+    }
+
+    fn user_null(kind: UseKind) -> Cell<UserID> {
+        use UseKind::*;
+        let id = match kind {
+            GlobalInit => UserID::Global(GlobalRef::new_null()),
+            ArrayElem(_) | StructField(_) => UserID::Expr(ExprRef::new_null()),
+            _ => UserID::Inst(InstRef::new_null()),
+        };
+        Cell::new(id)
     }
 }
 
@@ -93,14 +127,14 @@ impl IWeakListNode for Use {
     }
 
     fn store_head(&self, head: (Weak<Self>, Weak<Self>)) {
-        *self.head.borrow_mut() = head;
+        self.head.replace(head);
     }
 
     fn new_sentinel() -> Rc<Self> {
         Rc::new(Use {
             head: RefCell::new((Weak::new(), Weak::new())),
             kind: Cell::new(UseKind::GuideNode),
-            inst: Cell::new(InstRef::new_null()),
+            user: Cell::new(UserID::None),
             operand: Cell::new(ValueSSA::None),
         })
     }
@@ -159,13 +193,13 @@ pub trait ITraceableValue {
     ///   该函数可能导致结果误报.
     fn has_multiple_users(&self) -> bool {
         let users = self.users();
-        let mut first_user: Option<InstRef> = None;
+        let mut first_user = UserID::None;
         for user_use in users.iter() {
-            let user = user_use.inst.get();
+            let user = user_use.user.get();
             match first_user {
-                None => first_user = Some(user),
-                Some(existing_user) if existing_user != user => return true,
-                Some(_) => continue,
+                UserID::None => first_user = user,
+                x if x != user => return true,
+                _ => continue,
             }
         }
         false

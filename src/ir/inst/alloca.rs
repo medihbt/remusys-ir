@@ -2,8 +2,8 @@ use std::{num::NonZero, rc::Rc};
 
 use crate::{
     ir::{
-        IRWriter, ISubInst, InstCommon, InstData, InstRef, Opcode, PtrStorage, Use,
-        inst::{ISubInstRef, InstOperands},
+        IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Opcode, OperandSet, PtrStorage,
+        Use, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -63,18 +63,21 @@ impl ISubInst for Alloca {
     fn is_terminator(&self) -> bool {
         false
     }
-    fn get_operands(&self) -> InstOperands {
-        InstOperands::Fixed(&[])
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut []
-    }
 
     fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
         let Some(id) = id else { panic!("Tried to format an Alloca without an ID") };
         write!(writer, "%{} = alloca ", id)?;
         writer.write_type(self.pointee_ty)?;
         write!(writer, ", align {}", 1usize << self.align_log2)
+    }
+}
+
+impl IUser for Alloca {
+    fn get_operands(&self) -> OperandSet {
+        OperandSet::Fixed(&[])
+    }
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+        &mut []
     }
 }
 

@@ -4,8 +4,8 @@ use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
         BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs,
-        IRValueNumberMap, IRWriter, ISubValueSSA, ITraceableValue, Module, NumberOption,
-        PtrStorage, PtrUser, UserList, ValueSSA,
+        IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, Module,
+        NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
     },
     typing::{FuncTypeRef, TypeContext, ValTypeID},
@@ -413,6 +413,24 @@ impl ITraceableValue for FuncArg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FuncArgRef(pub GlobalRef, pub usize);
 
+impl IReferenceValue for FuncArgRef {
+    type ValueDataT = FuncArg;
+
+    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data(&allocs.globals)
+    }
+
+    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
+    where
+        Self::ValueDataT: 'a,
+    {
+        self.to_data_mut(&mut allocs.globals)
+    }
+}
+
 impl FuncArgRef {
     pub fn get_func(self) -> GlobalRef {
         self.0
@@ -442,6 +460,21 @@ impl FuncArgRef {
         let func_data = self.0.to_data(alloc);
         match func_data {
             GlobalData::Func(func) => func.args.get(self.1),
+            _ => None,
+        }
+    }
+
+    pub fn to_data_mut<'a>(&self, alloc: &'a mut Slab<GlobalData>) -> &'a mut FuncArg {
+        let func_data = self.0.to_data_mut(alloc);
+        match func_data {
+            GlobalData::Func(func) => &mut func.args[self.1],
+            _ => panic!("Expected a function data"),
+        }
+    }
+    pub fn as_data_mut<'a>(&self, alloc: &'a mut Slab<GlobalData>) -> Option<&'a mut FuncArg> {
+        let func_data = self.0.to_data_mut(alloc);
+        match func_data {
+            GlobalData::Func(func) => func.args.get_mut(self.1),
             _ => None,
         }
     }
