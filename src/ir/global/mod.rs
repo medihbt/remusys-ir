@@ -3,12 +3,14 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        global::func::Func, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef, Module, OperandSet, PtrStorage, Use, UserID, UserList, ValueSSA, Var
+        IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
+        Module, OperandSet, PtrStorage, Use, UserID, UserList, ValueSSA, Var, global::func::Func,
     },
     typing::ValTypeID,
 };
 use std::{
     cell::{Cell, Ref},
+    fmt::Debug,
     num::NonZero,
     ops::ControlFlow,
     rc::Rc,
@@ -200,7 +202,7 @@ impl ITraceableValue for GlobalData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalRef(usize);
 
 impl SlabRef for GlobalRef {
@@ -210,6 +212,12 @@ impl SlabRef for GlobalRef {
     }
     fn get_handle(&self) -> usize {
         self.0
+    }
+}
+
+impl Debug for GlobalRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GlobalRef({})", self.0)
     }
 }
 

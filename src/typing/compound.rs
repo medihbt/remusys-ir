@@ -1,8 +1,12 @@
 use std::fmt::Debug;
 
-use crate::typing::{
-    ArrayTypeRef, FPKind, IValType, IntType, PtrType, StructAliasRef, StructTypeRef, TypeAllocs,
-    TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass, ValTypeID,
+use crate::{
+    base::INullableValue,
+    typing::{
+        ArrayTypeRef, FPKind, IValType, IntType, PtrType, StructAliasRef, StructTypeRef,
+        TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass,
+        ValTypeID,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -101,6 +105,20 @@ pub enum AggrType {
     Array(ArrayTypeRef),
     Struct(StructTypeRef),
     Alias(StructAliasRef),
+}
+
+impl INullableValue for AggrType {
+    fn new_null() -> Self {
+        Self::Alias(StructAliasRef::new_null())
+    }
+
+    fn is_null(&self) -> bool {
+        match self {
+            AggrType::Array(x) => x.is_null(),
+            AggrType::Struct(x) => x.is_null(),
+            AggrType::Alias(x) => x.is_null(),
+        }
+    }
 }
 
 impl From<ArrayTypeRef> for AggrType {

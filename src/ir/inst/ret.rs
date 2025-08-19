@@ -24,10 +24,10 @@ pub struct Ret {
 
 impl IUser for Ret {
     fn get_operands(&self) -> OperandSet {
-        OperandSet::Fixed(&self.operands)
+        if self.has_retval() { OperandSet::Fixed(&self.operands) } else { OperandSet::Fixed(&[]) }
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.operands
+        if self.has_retval() { &mut self.operands } else { &mut [] }
     }
 }
 
@@ -113,6 +113,9 @@ impl Ret {
     }
     pub fn set_retval(&mut self, allocs: &IRAllocs, ret_value: ValueSSA) {
         self.operands[0].set_operand(allocs, ret_value);
+    }
+    pub fn has_retval(&self) -> bool {
+        !matches!(self.get_valtype(), ValTypeID::Void)
     }
 }
 

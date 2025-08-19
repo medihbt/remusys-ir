@@ -1,5 +1,5 @@
 use crate::{
-    base::{APInt, SlabRef},
+    base::{APInt, INullableValue, SlabRef},
     typing::{AggrType, FPKind, IValType, PrimType, ValTypeID},
 };
 use std::{
@@ -88,6 +88,33 @@ pub enum ValueSSA {
 
     /// 全局变量引用, 包括函数和全局变量
     Global(GlobalRef),
+}
+
+#[rustfmt::skip]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ValueSSAClass {
+    None,
+    ConstData, ConstExpr, AggrZero,
+    FuncArg, Block, Inst, Global,
+}
+
+impl INullableValue for ValueSSA {
+    fn new_null() -> Self {
+        ValueSSA::None
+    }
+
+    fn is_null(&self) -> bool {
+        match self {
+            ValueSSA::None => true,
+            ValueSSA::ConstData(_) => false,
+            ValueSSA::ConstExpr(x) => x.is_null(),
+            ValueSSA::AggrZero(x) => x.is_null(),
+            ValueSSA::FuncArg(x, _) => x.is_null(),
+            ValueSSA::Block(x) => x.is_null(),
+            ValueSSA::Inst(x) => x.is_null(),
+            ValueSSA::Global(x) => x.is_null(),
+        }
+    }
 }
 
 impl ISubValueSSA for ValueSSA {

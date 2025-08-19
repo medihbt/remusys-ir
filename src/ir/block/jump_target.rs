@@ -587,7 +587,7 @@ impl<'a> JumpTargetSplitter<'a> {
         );
 
         // 将新基本块插入到前驱基本块的后面
-        let Some(body) = parent_func.get_body(&self.allocs.globals) else {
+        let Some(body) = parent_func.try_get_body(&self.allocs.globals) else {
             unreachable!("Function {parent_func:?} without body cannot have critical edges");
         };
         body.node_add_next(&self.allocs.blocks, pred_block, new_block)

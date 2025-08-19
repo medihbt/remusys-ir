@@ -66,7 +66,7 @@ fn find_critical_edges_for_func(
         // 并将所有相关的 JumpTarget 重定向到这个新块。
         let mid_bb = {
             let mid_bb = BlockRef::new_jump_to(allocs, edge.to);
-            func.body_unwrap(&allocs.globals)
+            func.get_body(&allocs.globals)
                 .node_add_prev(&allocs.blocks, edge.to, mid_bb)
                 .expect("Failed to add new block");
             mid_bb

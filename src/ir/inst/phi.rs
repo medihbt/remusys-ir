@@ -1,4 +1,5 @@
 use crate::{
+    base::INullableValue,
     ir::{
         BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef,
         Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
@@ -248,9 +249,15 @@ impl PhiNode {
         let Some(group_index) = self.locate_income_group(block) else {
             return Err(PhiError::IncomeBBNotFound(block));
         };
+        self.remove_income_index(group_index);
+        Ok(())
+    }
 
+    /// 移除指定组索引下的基本块传入值.
+    /// 移除时会保持操作数列表的紧凑性, 通过与末尾元素交换并弹出末尾元素来实现.
+    /// 这种方式会改变被交换元素的索引, 因此需要更新它们的 UseKind 以反映新的索引.
+    pub fn remove_income_index(&self, group_index: usize) {
         let mut incomes = self.incomes.borrow_mut();
-
         // 清理操作数, 同时解除掉相关的 Use 关系.
         // 由于 UserList 良好的性质, 这里不需要借助 IRAllocs.
         let [val, blk] = &incomes[group_index];
@@ -262,12 +269,35 @@ impl PhiNode {
             incomes.swap(group_index, back_index);
             // 更新被移动到 group_index 位置的操作数的 UseKind
             let [uval, ublk] = &incomes[group_index];
-            let _moved_block = BlockRef::from_ir(ublk.get_operand());
             uval.kind.set(UseKind::PhiIncomingValue(group_index as u32));
             ublk.kind.set(UseKind::PhiIncomingBlock(group_index as u32));
         }
         incomes.pop();
-        Ok(())
+    }
+
+    pub fn retain_valid_income(&self) {
+        let mut incomes = self.incomes.borrow_mut();
+        let mut index = 0;
+        while index < incomes.len() {
+            if incomes[index][1].get_operand().is_nonnull() {
+                index += 1;
+                continue;
+            }
+            let [val, blk] = if index == incomes.len() - 1 {
+                let Some(pair) = incomes.pop() else {
+                    return;
+                };
+                pair
+            } else {
+                let pair = incomes.swap_remove(index);
+                let [val, blk] = &incomes[index];
+                val.kind.set(UseKind::PhiIncomingValue(index as u32));
+                blk.kind.set(UseKind::PhiIncomingBlock(index as u32));
+                pair
+            };
+            val.clean_operand();
+            blk.clean_operand();
+        }
     }
 
     /// 重定向 Phi 节点中某个前驱基本块的引用到新的基本块

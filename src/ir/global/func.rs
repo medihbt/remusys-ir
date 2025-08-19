@@ -529,6 +529,9 @@ impl FuncRef {
     pub fn from_ir(value: ValueSSA, alloc: &Slab<GlobalData>) -> Self {
         Self::try_from_ir(value, alloc).expect("Expected a function refrence")
     }
+    pub fn into_ir(self) -> GlobalRef {
+        self.0
+    }
 
     pub fn get_arg(self, alloc: &Slab<GlobalData>, index: usize) -> Option<FuncArgRef> {
         let func_data = self.to_data(alloc);
@@ -538,10 +541,23 @@ impl FuncRef {
         self.to_data(alloc).args.as_ref()
     }
 
-    pub fn get_body(self, alloc: &Slab<GlobalData>) -> Option<&SlabRefList<BlockRef>> {
+    pub fn try_get_body(self, alloc: &Slab<GlobalData>) -> Option<&SlabRefList<BlockRef>> {
         self.to_data(alloc).get_body()
     }
-    pub fn body_unwrap(self, alloc: &Slab<GlobalData>) -> &SlabRefList<BlockRef> {
-        self.get_body(alloc).expect("Expected a function body")
+    pub fn get_body(self, alloc: &Slab<GlobalData>) -> &SlabRefList<BlockRef> {
+        self.try_get_body(alloc).expect("Expected a function body")
+    }
+
+    pub fn try_get_entry(self, alloc: &Slab<GlobalData>) -> Option<BlockRef> {
+        let func = self.to_data(alloc);
+        if func.is_extern() {
+            return None;
+        }
+        func.entry.get().to_option()
+    }
+
+    pub fn get_entry(self, alloc: &Slab<GlobalData>) -> BlockRef {
+        self.try_get_entry(alloc)
+            .expect("trying to get entry block from extern or broken function")
     }
 }

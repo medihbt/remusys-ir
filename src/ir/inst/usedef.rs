@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     base::{INullableValue, IWeakListNode, WeakList, WeakListIter},
-    ir::{ExprRef, GlobalRef, IRAllocs, ISubValueSSA, InstRef, UserID, ValueSSA},
+    ir::{ExprRef, GlobalRef, IRAllocs, ISubValueSSA, InstRef, UserID, ValueSSA, ValueSSAClass},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +64,14 @@ impl UseKind {
                 | UseKind::StructField(_)
         )
     }
+
+    pub const fn get_user_kind(self) -> ValueSSAClass {
+        match self {
+            Self::GlobalInit => ValueSSAClass::Global,
+            Self::ArrayElem(_) | Self::StructField(_) => ValueSSAClass::ConstExpr,
+            _ => ValueSSAClass::Inst,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +126,10 @@ impl Use {
             _ => UserID::Inst(InstRef::new_null()),
         };
         Cell::new(id)
+    }
+
+    pub fn get_user_kind(&self) -> ValueSSAClass {
+        self.kind.get().get_user_kind()
     }
 }
 

@@ -4,9 +4,9 @@ use crate::{
         SlabListRes, SlabRef,
     },
     ir::{
-        BlockRef, IRAllocs, IRAllocsRef, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue,
-        IUser, IUserRef, ManagedInst, Module, Opcode, OperandSet, Use, UserID, UserList, ValueSSA,
-        ValueSSAError,
+        BlockRef, FuncRef, IRAllocs, IRAllocsRef, IRWriter, IReferenceValue, ISubValueSSA,
+        ITraceableValue, IUser, IUserRef, ManagedInst, Module, Opcode, OperandSet, Use, UserID,
+        UserList, ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, ValTypeID},
 };
@@ -468,7 +468,7 @@ impl InstCommon {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstRef(usize);
 
 impl SlabRef for InstRef {
@@ -478,6 +478,12 @@ impl SlabRef for InstRef {
     }
     fn get_handle(&self) -> usize {
         self.0
+    }
+}
+
+impl Debug for InstRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "InstRef({})", self.0)
     }
 }
 
@@ -600,6 +606,12 @@ impl InstRef {
     pub fn get_parent_with_module(self, module: &Module) -> BlockRef {
         let alloc = module.allocs.borrow();
         self.to_inst(&alloc.insts).get_parent_bb()
+    }
+
+    pub fn get_parent_func(self, allocs: &IRAllocs) -> FuncRef {
+        let parent_bb = self.get_parent(allocs);
+        let func = parent_bb.to_data(&allocs.blocks).get_parent_func();
+        FuncRef(func)
     }
 }
 
