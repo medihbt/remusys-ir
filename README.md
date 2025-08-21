@@ -1,46 +1,35 @@
 # Remusys-IR: Recrafted LLVM-like IR system
 
--- by Medi H.B.T.
+**Languages:** [English](README.md) | [中文](README-zh_CN.md)
 
-使用 Rust 编写的类 LLVM 中间代码系统, 主要为编译器竞赛服务.
+A CSCC 2025 competition project: an LLVM-like intermediate representation system written in Rust, redesigned from Musys IR. Includes a competitive AArch64 RIG backend.
 
-只能说这玩意除了思想和 LLVM-IR 沾点边外, 从头到尾一点都不像 LLVM.
+## ⚠️ Warning
 
-## 开发进度
+**This project is experimental and intended for learning and research purposes only. Do not use it in production environments!**
 
-- [x] 类型系统
-- [ ] 指令系统
-    - [x] 通用指令系统、基本块
-    - [ ] 实现 Intrinsic 机制
-        - [ ] 怎么在 Module 中定义 Intrinsic 函数
-        - [ ] 怎么调用 Intrinsic 函数
-        - [ ] 支持常见的 Intrinsic: `memcpy` `memset`
-    - [ ] 支持向量
-        - [ ] 向量类型 (Fixed Vector)
-        - [ ] 向量运算
-        - [ ] 向量元素的插入和提取
-        - [ ] 与向量有关的基本检查
-- [x] DFG
-    - [x] 实现 use-def 关系
-    - [x] 实现 Use-Def 反图, 并可以按需启用
-    - [ ] 数据流上的基础优化
-        - [ ] 常量传播
-        - [ ] 指令合并
-        - [ ] 死指令消除
-- [ ] CFG
-    - [x] 实现 jump from-to 关系
-    - [x] 实现控制流图反图，并可以按需启用
-    - [ ] 实现控制流图导出关系
-        - [x] 控制流图快照
-        - [x] DFS 树
-        - [x] 支配树, 后向支配树（Semi-NCA算法）
-        - [ ] 循环检测
-        - [ ] 实现导出关系增量更新
-    - [ ] 控制流上的基础优化
-        - [ ] 死基本块消除
-        - [ ] 函数体排序
-        - [ ] Mem2Reg 可变操作消除
-- [ ] Remusys-MIR 非 SSA 中层代码
-    - [ ] 设计
-    - [ ] Phi 消除
-    - [ ] 寄存器分配
+**The project is in early development/testing stage with no API stability guarantees. Code architecture, interfaces, and implementations may undergo breaking changes at any time. Users are responsible for any consequences.**
+
+## Build Guide
+
+As an experimental project, this library is not published to crates.io—maybe when Cargo supports user-based project categorization like GitHub. To add `remusys-ir` as a dependency in your project, add the following to your `Cargo.toml`:
+
+```toml
+[dependencies]
+remusys-ir = { git = "https://github.com/medihbt/remusys-ir" }
+
+# Or specify a specific branch
+remusys-ir = { git = "https://github.com/medihbt/remusys-ir", branch = "master" }
+
+# Or specify a specific tag/version
+remusys-ir = { git = "https://github.com/medihbt/remusys-ir", tag = "v0.1.0" }
+
+# Or specify a specific commit
+remusys-ir = { git = "https://github.com/medihbt/remusys-ir", rev = "commit-hash" }
+```
+
+This project currently has no FFI bindings. In the future, if time permits and the API stabilizes, I may implement GObject bindings.
+
+## Feature List
+
+See [TODO](TODOLIST.md).
