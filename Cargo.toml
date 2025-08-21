@@ -2,6 +2,13 @@
 name = "remusys-ir"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "A recrafted LLVM-like intermediate representation system written in Rust"
+repository = "https://github.com/medihbt/remusys-ir"
+authors = ["medihbt"]
+readme = "README.md"
+keywords = ["compiler", "ir", "llvm", "intermediate-representation"]
+categories = ["compilers"]
 
 [dependencies]
 bitflags = "2.9.0"
