@@ -44,7 +44,7 @@ pub use self::{
         var::{Var, VarInner},
     },
     inst::{
-        ISubInst, ISubInstRef, InstCommon, InstData, InstInner, InstRef,
+        AmoOrdering, ISubInst, ISubInstRef, InstCommon, InstData, InstInner, InstRef, SyncScope,
         usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
     },
     managed::{IManagedIRValue, IRManaged, ManagedInst},
@@ -57,7 +57,7 @@ pub use self::{
     utils::{
         builder::{
             IRBuilder, IRBuilderError, IRBuilderExpandedFocus, IRBuilderFocus,
-            IRBuilderFocusCheckOption,
+            IRBuilderFocusCheckOption, inst_builders::*,
         },
         numbering::{IRValueNumberMap, NumberOption},
         writer::{IRWriter, IRWriterOption, write_ir_module, write_ir_module_quiet},

@@ -1,8 +1,8 @@
 use crate::{
     base::SlabRef,
     ir::{
-        FuncRef, GlobalRef, IRAllocs, IReferenceValue, ISubInst, IUser, InstData,
-        InstRef, Module, UseKind, ValueSSA,
+        FuncRef, GlobalRef, IRAllocs, IReferenceValue, ISubInst, IUser, InstData, InstRef, Module,
+        UseKind, ValueSSA,
     },
 };
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -41,7 +41,7 @@ impl SideEffectMarker {
         for (_, &g) in globals {
             self.roots.insert(g);
         }
-        
+
         // 扫描所有函数中的副作用指令
         for (_, &g) in globals {
             let Some(func) = FuncRef::try_from_real(g, &allocs.globals) else {

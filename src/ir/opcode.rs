@@ -15,6 +15,10 @@ pub enum Opcode {
     Load, Store, Alloca, DynAlloca,
     Call, DynCall, Phi,
     Icmp, Fcmp,
+    AmoXchg, AmoAdd, AmoSub, AmoAnd, AmoNand, AmoOr, AmoXor,
+    AmoSMax, AmoSMin, AmoUMax, AmoUMin,
+    AmoFAdd, AmoFSub, AmoFMax, AmoFMin,
+    AmoUIncWrap, AmoUDecWrap, AmoUSubCond, AmoUSubStat,
     ConstArray, ConstStruct, ConstVec, ConstPtrNull,
     Intrin, GuideNode, PhiEnd, ReservedCnt,
 }
@@ -188,6 +192,27 @@ impl Opcode {
             | Opcode::IntToPtr
             | Opcode::PtrToInt => InstKind::Cast,
 
+            // Atomic read-modify-write operations
+            Opcode::AmoXchg
+            | Opcode::AmoAdd
+            | Opcode::AmoSub
+            | Opcode::AmoAnd
+            | Opcode::AmoNand
+            | Opcode::AmoOr
+            | Opcode::AmoXor
+            | Opcode::AmoSMax
+            | Opcode::AmoSMin
+            | Opcode::AmoUMax
+            | Opcode::AmoUMin
+            | Opcode::AmoFAdd
+            | Opcode::AmoFSub
+            | Opcode::AmoFMax
+            | Opcode::AmoFMin
+            | Opcode::AmoUIncWrap
+            | Opcode::AmoUDecWrap
+            | Opcode::AmoUSubCond
+            | Opcode::AmoUSubStat => InstKind::AmoRmw,
+
             // Special cases for undefined or reserved opcodes
             Opcode::None => panic!("Opcode::None does not have a kind"),
             Opcode::ReservedCnt => panic!("Opcode::ReservedCnt does not have a kind"),
@@ -235,6 +260,12 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "load", "store", "alloca", "dyn-alloca",
     "call", "dyncall", "phi",
     "icmp", "fcmp",
+
+    "amo.xchg", "amo.add", "amo.sub", "amo.and", "amo.nand", "amo.or", "amo.xor",
+    "amo.max", "amo.min", "amo.umax", "amo.umin",
+    "amo.fadd", "amo.fsub", "amo.fmax", "amo.fmin",
+    "amo.uinc_wrap", "amo.udec_wrap", "amo.usub_cond", "amo.sub_stat",
+
     "constarray", "conststruct", "constvec",
     "constptrnull",
     "intrin", "guide-node", "phi-end",
@@ -272,5 +303,6 @@ pub enum InstKind {
     Cast,
     IndexPtr,
     Call,
+    AmoRmw,
     Intrin,
 }

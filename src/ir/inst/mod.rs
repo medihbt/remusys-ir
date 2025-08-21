@@ -16,6 +16,7 @@ use std::{cell::Cell, fmt::Debug, rc::Rc};
 pub(crate) mod usedef;
 
 mod alloca;
+mod amormw;
 mod binop;
 mod br;
 mod call;
@@ -32,6 +33,7 @@ mod switch;
 
 pub use self::{
     alloca::{Alloca, AllocaRef},
+    amormw::{AmoOrdering, AmoRmw, AmoRmwBuilder, AmoRmwRef, SyncScope},
     binop::{BinOp, BinOpRef},
     br::{Br, BrRef},
     call::{CallOp, CallOpRef},
@@ -118,6 +120,9 @@ pub enum InstData {
 
     /// 存储寄存器中的值到内存.
     Store(StoreOp),
+
+    /// 原子操作: 读取 - 修改 - 写回
+    AmoRmw(AmoRmw),
 }
 
 impl IUser for InstData {
@@ -140,6 +145,7 @@ impl IUser for InstData {
             InstData::Select(select_op) => select_op.get_operands(),
             InstData::Load(load) => load.get_operands(),
             InstData::Store(store) => store.get_operands(),
+            InstData::AmoRmw(amo) => amo.get_operands(),
         }
     }
 
@@ -162,6 +168,7 @@ impl IUser for InstData {
             InstData::Select(select_op) => select_op.operands_mut(),
             InstData::Load(load) => load.operands_mut(),
             InstData::Store(store) => store.operands_mut(),
+            InstData::AmoRmw(amo) => amo.operands_mut(),
         }
     }
 }
@@ -200,6 +207,7 @@ impl ISubInst for InstData {
             InstData::Select(select_op) => select_op.get_common(),
             InstData::Load(load) => load.get_common(),
             InstData::Store(store) => store.get_common(),
+            InstData::AmoRmw(amo) => amo.get_common(),
         }
     }
     fn common_mut(&mut self) -> &mut InstCommon {
@@ -221,6 +229,7 @@ impl ISubInst for InstData {
             InstData::Select(select_op) => select_op.common_mut(),
             InstData::Load(load) => load.common_mut(),
             InstData::Store(store) => store.common_mut(),
+            InstData::AmoRmw(amo) => amo.common_mut(),
         }
     }
 
@@ -250,6 +259,7 @@ impl ISubInst for InstData {
             InstData::Select(inst) => inst.fmt_ir(id, writer),
             InstData::Load(inst) => inst.fmt_ir(id, writer),
             InstData::Store(inst) => inst.fmt_ir(id, writer),
+            InstData::AmoRmw(inst) => inst.fmt_ir(id, writer),
         }
     }
 
@@ -272,6 +282,7 @@ impl ISubInst for InstData {
             InstData::Select(select_op) => select_op.init_self_reference(self_ref),
             InstData::Load(load) => load.init_self_reference(self_ref),
             InstData::Store(store) => store.init_self_reference(self_ref),
+            InstData::AmoRmw(amo) => amo.init_self_reference(self_ref),
         }
     }
 
@@ -294,6 +305,7 @@ impl ISubInst for InstData {
             InstData::Select(select_op) => select_op.cleanup(),
             InstData::Load(load) => load.cleanup(),
             InstData::Store(store) => store.cleanup(),
+            InstData::AmoRmw(amo) => amo.cleanup(),
         }
         log::debug!(
             "InstData cleanup: opcode {:?} ref {:?}",
@@ -424,6 +436,18 @@ pub struct InstCommon {
     pub opcode: Opcode,
     pub self_ref: InstRef,
     pub ret_type: ValTypeID,
+}
+
+impl Clone for InstCommon {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Cell::new(self.inner.get()),
+            users: UserList::new_empty(),
+            self_ref: self.self_ref,
+            opcode: self.opcode,
+            ret_type: self.ret_type,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

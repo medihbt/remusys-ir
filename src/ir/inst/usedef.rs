@@ -41,6 +41,9 @@ pub enum UseKind {
     SwitchCond,
     RetValue,
 
+    AmoRmwPtr,
+    AmoRmwVal,
+
     // 以下为非指令操作数
     GlobalInit,
     ArrayElem(usize),

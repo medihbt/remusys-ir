@@ -792,6 +792,15 @@ impl IRBuilder {
         self.add_inst(InstData::Load(loadop))
     }
 
+    /// 添加原子读-修改-写指令构建器。
+    pub fn add_amormw_builder(
+        &mut self,
+        opcode: Opcode,
+        valtype: ValTypeID,
+    ) -> inst_builders::IRInstBuilderAmoRmw {
+        inst_builders::IRInstBuilderAmoRmw::new(self, opcode, valtype)
+    }
+
     /// Terminator Replacement Function
     ///
     /// This function replaces the current terminator with a new one. If the old
@@ -942,5 +951,48 @@ impl IRBuilder {
             switch.set_case(&allocs.blocks, case, block);
         }
         self.focus_replace_terminator_with(InstData::Switch(switch))
+    }
+}
+
+pub mod inst_builders {
+    use crate::{
+        ir::{
+            IRBuilder, ISubInst, ISubInstRef, Opcode,
+            inst::{AmoRmwBuilder, AmoRmwRef},
+        },
+        typing::ValTypeID,
+    };
+    use std::ops::{Deref, DerefMut};
+
+    pub struct IRInstBuilderAmoRmw<'a> {
+        ir_builder: &'a mut IRBuilder,
+        inst_builder: AmoRmwBuilder,
+    }
+
+    impl<'a> Deref for IRInstBuilderAmoRmw<'a> {
+        type Target = AmoRmwBuilder;
+        fn deref(&self) -> &Self::Target {
+            &self.inst_builder
+        }
+    }
+    impl<'a> DerefMut for IRInstBuilderAmoRmw<'a> {
+        fn deref_mut(&mut self) -> &mut AmoRmwBuilder {
+            &mut self.inst_builder
+        }
+    }
+
+    impl<'a> IRInstBuilderAmoRmw<'a> {
+        pub fn new(ir_builder: &'a mut IRBuilder, opcode: Opcode, ty: ValTypeID) -> Self {
+            Self { ir_builder, inst_builder: AmoRmwBuilder::new(opcode, ty) }
+        }
+
+        pub fn build(self) -> AmoRmwRef {
+            let Self { ir_builder, inst_builder } = self;
+            let inst = inst_builder.build(ir_builder.allocs_mut());
+            let iref = ir_builder
+                .add_inst(inst.into_ir())
+                .expect("Failed to add AmoRmw instruction");
+            AmoRmwRef::from_raw_nocheck(iref)
+        }
     }
 }

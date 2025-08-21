@@ -147,8 +147,8 @@ pub fn dispatch_inst(
             state.has_call = true;
             call_gen::dispatch_call(ir_ref, operand_map, out_insts, alloc_inst)
         }
-        InstKind::Intrin => {
-            todo!("Intrinsics not implemented in IR. Do this until IR supports intrinsics")
+        InstKind::Intrin | InstKind::AmoRmw => {
+            todo!("{kind:?} not implemented in IR. Do this until IR supports intrinsics")
         }
     };
 
