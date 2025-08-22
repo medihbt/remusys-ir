@@ -30,6 +30,24 @@ remusys-ir = { git = "https://github.com/medihbt/remusys-ir", rev = "commit-hash
 
 该项目目前没有任何 FFI 绑定, 将来若有精力, 等 API 稳定后可能会实现一个 GObject 绑定.
 
+## 技术栈说明
+
+### 中间代码 (IR)
+
+类 LLVM 中间代码, 提供完整的数据流与控制流分析框架. IR 模块包括如下部分:
+
+- 操作数定义 -- 操作数、常量
+- 指令+数据流定义
+- 基本块+控制流定义
+
+### 优化器 (Opt)
+
+已经实现了部分分析工具. 完整的优化器等待实现中...
+
+### 后端 (MIR)
+
+使用 [Remusys InstGen DSL (RIG)](https://codeberg.org/medihbt/remusys-instgen) 定义指令结构, 实现了大部分 AArch64 基础部分指令.
+
 ## 功能列表
 
 参见 [TODO](TODOLIST.md).
