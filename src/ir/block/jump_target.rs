@@ -1,13 +1,12 @@
 use std::{
     cell::{Cell, Ref, RefCell},
-    ops::{Deref, Index, Range},
     rc::{Rc, Weak},
 };
 
 use slab::Slab;
 
 use crate::{
-    base::{INullableValue, IWeakListNode, SlabRef, WeakList},
+    base::{INullableValue, IWeakListNode, MixRef, SlabRef, WeakList},
     ir::{
         BlockData, BlockRef, FuncRef, IRAllocs, ISubInst, ISubValueSSA, InstData, InstRef, Use,
         UseKind, UserID,
@@ -178,63 +177,12 @@ impl JumpTarget {
 /// 使用弱引用链表存储指向此基本块的所有跳转目标，
 /// 避免控制流图中的循环引用问题。
 pub type PredList = WeakList<JumpTarget>;
+pub type JumpTargets<'a> = MixRef<'a, [Rc<JumpTarget>]>;
 
-pub enum JumpTargets<'a> {
-    Fixed(&'a [Rc<JumpTarget>]),
-    AsRef(Ref<'a, Vec<Rc<JumpTarget>>>),
-}
-
-impl<'a> Index<usize> for JumpTargets<'a> {
-    type Output = Rc<JumpTarget>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        match self {
-            JumpTargets::Fixed(slice) => &slice[index],
-            JumpTargets::AsRef(vec) => &vec[index],
-        }
-    }
-}
-
-impl<'a> Index<Range<usize>> for JumpTargets<'a> {
-    type Output = [Rc<JumpTarget>];
-
-    fn index(&self, index: Range<usize>) -> &Self::Output {
-        match self {
-            JumpTargets::Fixed(slice) => &slice[index],
-            JumpTargets::AsRef(vec) => &vec[index],
-        }
-    }
-}
-
-impl<'a> IntoIterator for &'a JumpTargets<'_> {
-    type Item = &'a Rc<JumpTarget>;
-    type IntoIter = std::slice::Iter<'a, Rc<JumpTarget>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            JumpTargets::Fixed(slice) => slice.iter(),
-            JumpTargets::AsRef(vec) => vec.iter(),
-        }
-    }
-}
-
-impl<'a> Deref for JumpTargets<'a> {
-    type Target = [Rc<JumpTarget>];
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            JumpTargets::Fixed(slice) => slice,
-            JumpTargets::AsRef(vec) => vec.as_slice(),
-        }
-    }
-}
-
-impl<'a> JumpTargets<'a> {
-    pub fn as_slice(&self) -> &[Rc<JumpTarget>] {
-        match self {
-            JumpTargets::Fixed(slice) => slice,
-            JumpTargets::AsRef(vec) => vec.as_slice(),
-        }
+impl<'a> From<Ref<'a, Vec<Rc<JumpTarget>>>> for JumpTargets<'a> {
+    fn from(value: Ref<'a, Vec<Rc<JumpTarget>>>) -> Self {
+        let value = Ref::map(value, |value| value.as_slice());
+        Self::Dyn(value)
     }
 }
 
@@ -367,7 +315,7 @@ impl TerminatorRef {
 
     pub fn get_jts(self, alloc: &Slab<InstData>) -> JumpTargets {
         match self {
-            TerminatorRef::Unreachable(_) => JumpTargets::Fixed(&[]),
+            TerminatorRef::Unreachable(_) => JumpTargets::Fix(&[]),
             TerminatorRef::Ret(ret) => ret.to_inst(alloc).get_jts(),
             TerminatorRef::Jump(jump) => jump.to_inst(alloc).get_jts(),
             TerminatorRef::Br(br) => br.to_inst(alloc).get_jts(),
@@ -530,7 +478,7 @@ impl<'a> JumpTargetSplitter<'a> {
 
         // 更新关联的 Phi 节点，让它们指向新基本块
         let pred_terminator = self.old_jt.get_terminator();
-        let pred_bb = pred_terminator.get_inst().get_parent(self.allocs);
+        let pred_bb = pred_terminator.get_inst().get_parent(&*self.allocs);
         let pred_users = pred_bb.users(self.allocs);
 
         // 检查是不是只有这一个 JumpTarget 指向这个基本块. 如果不是的话就需要拷贝而不是移动.
@@ -580,7 +528,7 @@ impl<'a> JumpTargetSplitter<'a> {
         };
 
         // 具体的插入位置是: 该 JumpTarget 的前驱基本块的后面.
-        let pred_block = self.old_jt.get_terminator_inst().get_parent(&self.allocs);
+        let pred_block = self.old_jt.get_terminator_inst().get_parent(&*self.allocs);
         assert!(
             pred_block.is_nonnull(),
             "Cannot split JumpTarget without a predecessor block"

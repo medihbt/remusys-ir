@@ -96,7 +96,7 @@ impl ITerminatorInst for Jump {
     }
 
     fn get_jts(&self) -> JumpTargets {
-        JumpTargets::Fixed(&self.target)
+        JumpTargets::Fix(&self.target)
     }
 }
 

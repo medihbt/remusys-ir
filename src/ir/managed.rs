@@ -29,10 +29,6 @@ impl<'a, T: IManagedIRValue> Drop for IRManaged<'a, T> {
             return;
         }
         self.val.defer_cleanup_self(&self.allocs);
-
-        if let IRAllocsRef::Mut(allocs) = &mut self.allocs {
-            T::select_alloc_mut(allocs).remove(self.val.get_handle());
-        }
     }
 }
 
@@ -53,7 +49,7 @@ impl<'a, T: IManagedIRValue> IRManaged<'a, T> {
         Self { val, allocs: IRAllocsRef::Dyn(module.borrow_allocs()) }
     }
     pub fn from_modmut(val: T, module: &'a mut Module) -> Self {
-        Self { val, allocs: IRAllocsRef::Mut(module.allocs_mut()) }
+        Self { val, allocs: IRAllocsRef::Fix(module.allocs_mut()) }
     }
     pub fn from_allocs(val: T, allocs: &'a IRAllocs) -> Self {
         Self { val, allocs: IRAllocsRef::Fix(allocs) }

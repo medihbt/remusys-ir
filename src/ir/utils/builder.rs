@@ -393,7 +393,7 @@ impl IRBuilder {
 
             // Now unplug all instructions after the `inst_split_pos` from the current block.
             for iref in to_insert.iter() {
-                iref.detach_self(&self.allocs_mut())
+                iref.detach_self(self.allocs_mut())
                     .expect("Failed to unplug inst from `to_insert`");
             }
 
@@ -469,7 +469,7 @@ impl IRBuilder {
     }
 
     fn insert_new_block(&mut self, block: BlockData) -> Result<BlockRef, IRBuilderError> {
-        let next_block = BlockRef::from_allocs(self.allocs_mut(), block);
+        let next_block = BlockRef::new(self.allocs_mut(), block);
         let focus_func = FuncRef(self.focus.function);
         let focus_block = self.focus.block;
         if focus_block.is_null() {

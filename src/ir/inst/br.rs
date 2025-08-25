@@ -110,7 +110,7 @@ impl ITerminatorInst for Br {
     }
 
     fn get_jts(&self) -> JumpTargets {
-        JumpTargets::Fixed(&self.targets)
+        JumpTargets::Fix(&self.targets)
     }
 }
 

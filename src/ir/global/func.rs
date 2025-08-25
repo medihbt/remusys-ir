@@ -248,7 +248,7 @@ impl Func {
 
         let unreachable_bb = {
             let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
-            BlockRef::from_allocs(allocs, data)
+            BlockRef::new(&mut *allocs, data)
         };
         self.body
             .push_back_ref(&allocs.blocks, unreachable_bb)

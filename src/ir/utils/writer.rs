@@ -184,7 +184,7 @@ impl<'a> IRWriter<'a> {
                 }
             }
             ValueSSA::Global(global_ref) => {
-                let name = global_ref.get_name_from_alloc(&self.allocs.globals);
+                let name = global_ref.get_name(&self.allocs);
                 write!(self, "@{name}")
             }
         }
@@ -268,7 +268,7 @@ impl<'a> IRWriter<'a> {
                 self.write_str(", ").unwrap();
             }
             write!(self, "({:?}, ", pred.kind).unwrap();
-            self.write_operand(pred.get_terminator_inst().get_parent(&self.allocs))
+            self.write_operand(pred.get_terminator_inst().get_parent(&*self.allocs))
                 .unwrap();
             self.write_str(")").unwrap();
         }

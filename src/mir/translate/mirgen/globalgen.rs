@@ -397,7 +397,7 @@ impl std::fmt::Debug for MirGlobalMapFormatter<'_> {
             let mut global_names = Vec::with_capacity(globals.len());
             let allocs = ir_module.borrow_allocs();
             for (gref, mir_ref) in globals {
-                let ir_name = gref.get_name_from_alloc(&allocs.globals);
+                let ir_name = gref.get_name(&*allocs);
                 let mir_idx = mir_ref.get_handle();
                 let ir_idx = gref.get_handle();
                 global_names.push(format!("ir {ir_idx} -> mir {mir_idx}: {ir_name}"));

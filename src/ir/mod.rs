@@ -50,7 +50,7 @@ pub use self::{
     managed::{IManagedIRValue, IRManaged, ManagedInst},
     module::{
         Module,
-        allocs::{IRAllocs, IRAllocsRef},
+        allocs::*,
         gc::{IRLiveValueSet, IRValueMarker},
     },
     opcode::{InstKind, Opcode},

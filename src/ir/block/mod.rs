@@ -4,8 +4,9 @@ use crate::{
         SlabListRange, SlabListView, SlabRef, SlabRefList,
     },
     ir::{
-        ConstData, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITraceableValue, InstData, InstRef,
-        JumpTarget, ManagedInst, Module, PredList, TerminatorRef, UserList, ValueSSA,
+        ConstData, IRAllocs, IRAllocsEditable, IRWriter, ISubInst, ISubValueSSA, ITraceableValue,
+        InstData, InstRef, JumpTarget, ManagedInst, Module, PredList, TerminatorRef, UserList,
+        ValueSSA,
         block::jump_target::JumpTargets,
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
@@ -673,18 +674,7 @@ impl ISubValueSSA for BlockRef {
 impl BlockRef {
     pub const VEXIT_ID: usize = 0xFFFF_FFFF_FFFF_FFFE;
 
-    /// 从 IR 分配器创建基本块引用
-    ///
-    /// 将基本块数据插入分配器并返回对应的引用。
-    /// 同时更新基本块内所有指令的父基本块信息和用户的操作数。
-    ///
-    /// # 参数
-    /// - `allocs`: IR 分配器的可变引用
-    /// - `data`: 要插入的基本块数据
-    ///
-    /// # 返回
-    /// 返回新创建的基本块引用
-    pub fn from_allocs(allocs: &mut IRAllocs, mut data: BlockData) -> Self {
+    fn from_allocs(allocs: &mut IRAllocs, mut data: BlockData) -> Self {
         let ret = BlockRef(allocs.blocks.vacant_key());
         data.self_ref = ret;
         data.insts.forall_nodes(&allocs.insts, |_, inst| {
@@ -696,6 +686,22 @@ impl BlockRef {
         }
         allocs.blocks.insert(data);
         ret
+    }
+
+    /// 从 IR 分配器创建基本块引用
+    ///
+    /// 将基本块数据插入分配器并返回对应的引用。
+    /// 同时更新基本块内所有指令的父基本块信息和用户的操作数。
+    ///
+    /// # 参数
+    /// - `allocs`: IR 分配器的可变引用
+    /// - `data`: 要插入的基本块数据
+    ///
+    /// # 返回
+    /// 返回新创建的基本块引用
+    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: BlockData) -> Self {
+        let mut allocs = allocs.get_allocs_mutref();
+        Self::from_allocs(allocs.get_mut(), data)
     }
 
     pub fn new_unreachable(allocs: &mut IRAllocs) -> Self {

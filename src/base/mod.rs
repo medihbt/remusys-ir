@@ -1,6 +1,7 @@
 mod apint;
 mod bitset;
 mod dsu;
+mod mixref;
 mod slablist;
 mod slabref;
 mod weak_list;
@@ -9,6 +10,7 @@ pub use {
     apint::APInt,
     bitset::{FixBitSet, FixBitSetIter},
     dsu::DSU,
+    mixref::{MixMutRef, MixRef},
     slablist::{
         SlabListError, SlabListIterator, SlabListNode, SlabListNodeHead, SlabListNodeRef,
         SlabListRange, SlabListRes, SlabListView, SlabRefList,

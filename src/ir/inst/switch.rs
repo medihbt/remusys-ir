@@ -160,7 +160,7 @@ impl ITerminatorInst for Switch {
     }
 
     fn get_jts(&self) -> JumpTargets {
-        JumpTargets::AsRef(self.targets.borrow())
+        JumpTargets::from(self.targets.borrow())
     }
 }
 

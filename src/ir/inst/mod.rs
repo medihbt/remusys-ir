@@ -4,9 +4,9 @@ use crate::{
         SlabListRes, SlabRef,
     },
     ir::{
-        BlockRef, FuncRef, IRAllocs, IRAllocsRef, IRWriter, IReferenceValue, ISubValueSSA,
-        ITraceableValue, IUser, IUserRef, ManagedInst, Module, Opcode, OperandSet, Use, UserID,
-        UserList, ValueSSA, ValueSSAError,
+        BlockRef, FuncRef, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue,
+        ISubValueSSA, ITraceableValue, IUser, IUserRef, ManagedInst, Opcode, OperandSet, Use,
+        UserID, UserList, ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, ValTypeID},
 };
@@ -604,8 +604,17 @@ impl InstRef {
         ret
     }
 
+    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: InstData) -> Self {
+        let mut allocs = allocs.get_allocs_mutref();
+        Self::from_alloc(&mut allocs.insts, data)
+    }
+
     /// 如果自己在指令列表里, 就把自己移除掉.
-    pub fn detach_self(self, allocs: &IRAllocs) -> Result<ManagedInst, InstError> {
+    pub fn detach_self<'a>(
+        self,
+        allocs: impl IRAllocsReadable<'a>,
+    ) -> Result<ManagedInst<'a>, InstError> {
+        let allocs = allocs.get_allocs_ref();
         let (parent, opcode) = {
             let data = self.to_inst(&allocs.insts);
             (data.get_parent_bb(), data.get_opcode())
@@ -618,23 +627,21 @@ impl InstRef {
             .insts_from_alloc(&allocs.blocks)
             .unplug_node(&allocs.insts, self)
             .map_err(InstError::ListError)?;
-        Ok(ManagedInst::new(self, IRAllocsRef::Fix(allocs)))
+        Ok(ManagedInst::new(self, allocs))
     }
 
-    pub fn get_parent(self, allocs: &IRAllocs) -> BlockRef {
+    pub fn get_parent<'a>(self, allocs: impl IRAllocsReadable<'a>) -> BlockRef {
+        let allocs = allocs.get_allocs_ref();
         self.to_inst(&allocs.insts).get_parent_bb()
     }
     pub fn get_parent_from_alloc(self, alloc: &Slab<InstData>) -> BlockRef {
         self.to_inst(alloc).get_parent_bb()
     }
-    pub fn get_parent_with_module(self, module: &Module) -> BlockRef {
-        let alloc = module.allocs.borrow();
-        self.to_inst(&alloc.insts).get_parent_bb()
-    }
 
-    pub fn get_parent_func(self, allocs: &IRAllocs) -> FuncRef {
-        let parent_bb = self.get_parent(allocs);
-        let func = parent_bb.to_data(&allocs.blocks).get_parent_func();
+    pub fn get_parent_func<'a>(self, allocs: impl IRAllocsReadable<'a>) -> FuncRef {
+        let allocs = allocs.get_allocs_ref();
+        let parent = self.to_inst(&allocs.insts).get_parent_bb();
+        let func = parent.to_data(&allocs.blocks).get_parent_func();
         FuncRef(func)
     }
 }

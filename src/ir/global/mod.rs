@@ -1,20 +1,15 @@
 use slab::Slab;
 
 use crate::{
-    base::{INullableValue, SlabRef},
+    base::{INullableValue, MixRef, SlabRef},
     ir::{
-        IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
-        Module, OperandSet, PtrStorage, Use, UserID, UserList, ValueSSA, Var, global::func::Func,
+        IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue, ISubValueSSA,
+        ITraceableValue, IUser, IUserRef, Module, OperandSet, PtrStorage, Use, UserID, UserList,
+        ValueSSA, Var, global::func::Func,
     },
     typing::ValTypeID,
 };
-use std::{
-    cell::{Cell, Ref},
-    fmt::Debug,
-    num::NonZero,
-    ops::ControlFlow,
-    rc::Rc,
-};
+use std::{cell::Cell, fmt::Debug, num::NonZero, ops::ControlFlow, rc::Rc};
 
 pub(super) mod func;
 pub(super) mod var;
@@ -285,13 +280,10 @@ impl GlobalRef {
         allocs.globals.insert(data);
         return ret;
     }
-    pub fn from_module(module: &Module, data: GlobalData) -> Self {
-        let mut allocs = module.allocs.borrow_mut();
-        Self::from_allocs(&mut allocs, data)
-    }
-    pub fn from_mut_module(module: &mut Module, data: GlobalData) -> Self {
-        let allocs = module.allocs.get_mut();
-        Self::from_allocs(allocs, data)
+
+    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: GlobalData) -> Self {
+        let mut allocs = allocs.get_allocs_mutref();
+        Self::from_allocs(allocs.get_mut(), data)
     }
 
     /// Registers this global reference to the module's symbol table.
@@ -300,16 +292,10 @@ impl GlobalRef {
         module.globals.borrow_mut().insert(name, self);
     }
 
-    pub fn get_name_from_alloc<'a>(self, alloc: &'a Slab<GlobalData>) -> &'a str {
-        self.to_data(alloc).get_name()
-    }
-    pub fn get_name<'a>(self, module: &'a Module) -> Ref<'a, str> {
-        let allocs = module.allocs.borrow();
-        Ref::map(allocs, |allocs| self.get_name_from_alloc(&allocs.globals))
-    }
-    pub fn get_name_from_mut_module<'a>(self, module: &'a mut Module) -> &'a str {
-        let alloc = module.allocs.get_mut();
-        self.get_name_from_alloc(&alloc.globals)
+    pub fn get_name<'a>(self, allocs: impl IRAllocsReadable<'a>) -> MixRef<'a, str> {
+        allocs
+            .get_allocs_ref()
+            .map(|allocs| self.to_data(&allocs.globals).get_name())
     }
 
     pub fn get_content_type_from_alloc(self, alloc: &Slab<GlobalData>) -> ValTypeID {
