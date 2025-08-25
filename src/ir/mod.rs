@@ -49,7 +49,8 @@ pub use self::{
     },
     managed::{IManagedIRValue, IRManaged, ManagedInst},
     module::{
-        IRAllocs, IRAllocsRef, Module,
+        Module,
+        allocs::{IRAllocs, IRAllocsRef},
         gc::{IRLiveValueSet, IRValueMarker},
     },
     opcode::{InstKind, Opcode},
