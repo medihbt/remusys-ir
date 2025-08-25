@@ -1,4 +1,4 @@
-//! # Remusys-IR Compiler IR System
+//! # Remusys-IR 类 LLVM 中间代码系统.
 //!
 //! Copyright (c) 2025 Medi H.B.T.
 

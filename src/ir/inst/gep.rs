@@ -2,9 +2,9 @@ use crate::{
     ir::{
         ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon,
         InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
-        inst::ISubInstRef,
+        ValueSSAClass, checking::ValueCheckError, inst::ISubInstRef,
     },
-    typing::{IValType, StructTypeRef, TypeContext, ValTypeID},
+    typing::{IValType, StructTypeRef, TypeContext, ValTypeClass, ValTypeID},
 };
 use std::{num::NonZero, panic, rc::Rc};
 
@@ -235,7 +235,7 @@ impl IndexPtr {
 
         for use_ref in self.operands.iter().skip(1) {
             let idx = use_ref.get_operand();
-            let new_state = indexer.unpack(idx);
+            let new_state = indexer.try_unpack(idx).map_err(|e| e.to_string())?;
             if matches!(new_state, GEPTypeState::Ends) {
                 break;
             }
@@ -361,32 +361,43 @@ impl<'a> GEPTypeIndexer<'a> {
     }
 
     pub fn unpack(&mut self, idx: ValueSSA) -> GEPTypeState {
-        if !matches!(idx.get_valtype(self.allocs), ValTypeID::Int(_)) {
-            panic!(
-                "Expected an integer index for GEP unpacking but got {:?}",
-                idx.get_valtype(self.allocs).get_display_name(self.type_ctx)
-            );
+        self.try_unpack(idx).unwrap()
+    }
+
+    pub fn try_unpack(&mut self, idx: ValueSSA) -> Result<GEPTypeState, ValueCheckError> {
+        use ValueCheckError::{OtherFull, TypeNotClass};
+        let idx_type = idx.get_valtype(self.allocs);
+        if !matches!(idx_type, ValTypeID::Int(_)) {
+            return Err(TypeNotClass(idx_type, ValTypeClass::Int));
         }
 
-        fn unpack_struct(type_ctx: &TypeContext, sty: StructTypeRef, idx: ValueSSA) -> ValTypeID {
+        fn unpack_struct(
+            type_ctx: &TypeContext,
+            sty: StructTypeRef,
+            idx: ValueSSA,
+        ) -> Result<ValTypeID, ValueCheckError> {
+            use ValueCheckError::{OtherFull, ValueNotClass};
             let Some(cdata) = ConstData::try_from_ir(idx) else {
-                panic!("Struct index must be a constant value but got {idx:?}");
+                return Err(ValueNotClass(idx, ValueSSAClass::ConstData));
             };
             let index = match cdata {
                 ConstData::PtrNull(_) | ConstData::Zero(_) => 0,
                 ConstData::Int(apint) => apint.as_signed() as isize,
                 _ => {
-                    panic!("Expected an integer constant for struct index but got {cdata:?}");
+                    return Err(ValueNotClass(idx, ValueSSAClass::ConstData));
                 }
             };
             let nfields = sty.get_nfields(type_ctx);
             if index < 0 || index >= nfields as isize {
-                panic!("Struct index out of bounds: {index} for struct with {nfields} fields");
+                Err(OtherFull(format!(
+                    "Struct index out of bounds: {index} for struct with {nfields} fields"
+                )))
+            } else {
+                Ok(sty.get_field(type_ctx, index as usize))
             }
-            sty.get_field(type_ctx, index as usize)
         }
 
-        match self.type_state {
+        let state = match self.type_state {
             GEPTypeState::Ends => GEPTypeState::Ends,
             GEPTypeState::InfLenArray(elemty) => {
                 // 第一个索引是指针偏移，通常为0，完成指针解引用
@@ -402,13 +413,13 @@ impl<'a> GEPTypeIndexer<'a> {
                     GEPTypeState::ItSelf(elemty)
                 }
                 ValTypeID::Struct(s) => {
-                    let unpacked_ty = unpack_struct(self.type_ctx, s, idx);
+                    let unpacked_ty = unpack_struct(self.type_ctx, s, idx)?;
                     self.type_state = GEPTypeState::ItSelf(unpacked_ty);
                     GEPTypeState::ItSelf(unpacked_ty)
                 }
                 ValTypeID::StructAlias(sa) => {
                     let sty = sa.get_aliasee(self.type_ctx);
-                    let unpacked_ty = unpack_struct(self.type_ctx, sty, idx);
+                    let unpacked_ty = unpack_struct(self.type_ctx, sty, idx)?;
                     self.type_state = GEPTypeState::ItSelf(unpacked_ty);
                     GEPTypeState::ItSelf(unpacked_ty)
                 }
@@ -416,12 +427,15 @@ impl<'a> GEPTypeIndexer<'a> {
                     self.type_state = GEPTypeState::Ends;
                     GEPTypeState::Ends
                 }
-                _ => panic!(
-                    "Cannot unpack GEP type {} with index {idx:?}",
-                    to_unpack.get_display_name(self.type_ctx)
-                ),
+                _ => {
+                    return Err(OtherFull(format!(
+                        "Cannot unpack GEP type {} with index {idx:?}",
+                        to_unpack.get_display_name(self.type_ctx)
+                    )));
+                }
             },
-        }
+        };
+        Ok(state)
     }
 }
 

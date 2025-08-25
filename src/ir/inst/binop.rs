@@ -108,6 +108,9 @@ impl BinOp {
     }
 
     pub fn check_operands(&self, allocs: &IRAllocs) {
+        self.validate(allocs).unwrap()
+    }
+    pub fn validate(&self, allocs: &IRAllocs) -> Result<(), ValueCheckError> {
         Self::do_validate_operands(
             self.common.opcode,
             self.common.ret_type,
@@ -115,7 +118,6 @@ impl BinOp {
             self.get_rhs(),
             allocs,
         )
-        .unwrap()
     }
 
     fn do_validate_operands(
@@ -148,7 +150,11 @@ impl BinOp {
                 checking::type_matches(retty, rhs, allocs)?;
                 if let ValueSSA::ConstData(x) = rhs {
                     if x.is_zero() {
-                        return Err(ValueCheckError::InvalidValue(ValueSSA::ConstData(x)));
+                        return Err(ValueCheckError::InvalidZeroOP(
+                            x.into_ir(),
+                            opcode,
+                            UseKind::BinOpRhs,
+                        ));
                     }
                 }
                 Ok(())

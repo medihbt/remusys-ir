@@ -20,14 +20,14 @@ enum PostLowerAction {
     ///
     /// 通过几次 PushFront 操作得到的指令序列仍然保持原有的顺序, 例如下面的基本块:
     ///
-    /// ```
+    /// ```text
     /// ... -> I1 -> I2 -> *I3 -> I4 -> ...
     /// (*) 表示焦点.
     /// ```
     ///
     /// 以 I3 为焦点, 执行动作:
     ///
-    /// ```
+    /// ```text
     /// PushFront(J1)
     /// PushFront(J2)
     /// PushFront(J3)
@@ -35,7 +35,7 @@ enum PostLowerAction {
     ///
     /// 得到的指令序列为:
     ///
-    /// ```
+    /// ```text
     /// ... -> I1 -> I2 -> J1 -> J2 -> J3 -> *I3 -> I4 -> ...
     /// ```
     PushFront(MirInst),

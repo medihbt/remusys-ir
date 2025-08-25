@@ -403,6 +403,11 @@ pub trait ISubInst: Debug + Sized + IUser {
         inner.parent_bb = parent;
         self.get_common().inner.set(inner);
     }
+    fn get_parent_func(&self, allocs: &IRAllocs) -> FuncRef {
+        let parent_bb = self.get_parent_bb();
+        let parent_block = parent_bb.to_data(&allocs.blocks);
+        FuncRef(parent_block.get_parent_func())
+    }
     fn get_valtype(&self) -> ValTypeID {
         self.get_common().ret_type
     }

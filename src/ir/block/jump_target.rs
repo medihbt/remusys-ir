@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// 跳转目标的类型，用于区分不同的控制流转移
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum JumpTargetKind {
     /// 无效/哨兵类型，用于链表哨兵节点
     None,

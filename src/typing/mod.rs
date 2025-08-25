@@ -206,4 +206,14 @@ impl ValTypeID {
     pub fn new_boolean() -> Self {
         Self::Int(1) // 1 bit for boolean
     }
+
+    pub fn try_get_bits(self, tctx: &TypeContext) -> Option<usize> {
+        match self {
+            ValTypeID::Int(bits) => Some(bits as usize),
+            ValTypeID::Float(FPKind::Ieee32) => Some(32),
+            ValTypeID::Float(FPKind::Ieee64) => Some(64),
+            ValTypeID::Ptr => Some(tctx.arch.ptr_nbits),
+            _ => self.try_get_size(tctx).map(|s| s * 8),
+        }
+    }
 }

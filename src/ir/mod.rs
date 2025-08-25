@@ -1,3 +1,7 @@
+//! # 中间代码子系统
+//!
+//! 中间代码子系统提供了类似 LLVM IR 的中间表示形式、数据流与控制流分析系统, 用于程序的分析和优化.
+
 use crate::{
     base::{APInt, INullableValue, SlabRef},
     typing::{AggrType, FPKind, IValType, PrimType, ValTypeID},
@@ -65,6 +69,11 @@ pub use self::{
     },
 };
 
+/// # 操作数定义
+///
+/// 和 LLVM IR 一样, Remusys IR 一切可追踪对象皆 Value. ValueSSA 可以是
+/// 常量、指令、基本块、函数参数、全局变量等, 其中全局量、指令等引用类型采用
+/// 实体内存池方式存储, 这里仅仅存储它们的引用, 其他值类型直接内联在 ValueSSA 里.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueSSA {
     None,
