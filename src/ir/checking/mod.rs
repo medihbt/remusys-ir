@@ -3,8 +3,8 @@ use std::collections::BTreeSet;
 use crate::{
     base::INullableValue,
     ir::{
-        BlockRef, IRAllocs, IRAllocsReadable, IRAllocsRef, ISubValueSSA, InstData, InstKind,
-        JumpTargetKind, Module, Opcode, UseKind, ValueSSA, ValueSSAClass, inst::*,
+        BlockRef, IRAllocs, IRAllocsReadable, ISubValueSSA, InstData, InstKind, JumpTargetKind,
+        Opcode, UseKind, ValueSSA, ValueSSAClass, inst::*,
     },
     typing::{IValType, TypeContext, ValTypeClass, ValTypeID},
 };
@@ -101,23 +101,16 @@ pub(super) fn type_isclass(
 
 pub struct InstValidateCtx<'a> {
     type_ctx: &'a TypeContext,
-    allocs: IRAllocsRef<'a>,
+    allocs: &'a IRAllocs,
 }
 
 impl<'a> InstValidateCtx<'a> {
-    pub fn new(type_ctx: &'a TypeContext, allocs: impl IRAllocsReadable<'a>) -> Self {
+    pub fn new(type_ctx: &'a TypeContext, allocs: &'a impl IRAllocsReadable) -> Self {
         Self { type_ctx, allocs: allocs.get_allocs_ref() }
     }
 
-    pub fn from_module(module: &'a Module) -> Self {
-        Self {
-            type_ctx: &module.type_ctx,
-            allocs: IRAllocsRef::Dyn(module.allocs.borrow()),
-        }
-    }
-
     pub fn allocs(&self) -> &IRAllocs {
-        self.allocs.get()
+        self.allocs
     }
 
     pub fn check_inst(&self, inst: &InstData) -> Result<(), ValueCheckError> {

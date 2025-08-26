@@ -69,10 +69,7 @@ impl IRValueNumberMap {
     }
 
     pub fn from_module(module: &Module, func: GlobalRef, option: NumberOption) -> Self {
-        Self::new(&module.borrow_allocs(), func, option)
-    }
-    pub fn from_mut_module(module: &mut Module, func: GlobalRef, option: NumberOption) -> Self {
-        Self::new(module.allocs_mut(), func, option)
+        Self::new(&module.allocs, func, option)
     }
 }
 

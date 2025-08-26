@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use crate::{
     base::{INullableValue, SlabRef},
-    ir::{IRAllocs, IRAllocsRef, ISubInst, ISubValueSSA, InstData, InstRef, Module},
+    ir::{IRAllocs, ISubInst, ISubValueSSA, InstData, InstRef},
 };
 
 pub trait IManagedIRValue: ISubValueSSA + SlabRef {
@@ -18,7 +18,7 @@ pub trait IManagedIRValue: ISubValueSSA + SlabRef {
 
 pub struct IRManaged<'a, T: IManagedIRValue> {
     val: T,
-    allocs: IRAllocsRef<'a>,
+    allocs: &'a IRAllocs,
 }
 
 pub type ManagedInst<'a> = IRManaged<'a, InstRef>;
@@ -28,7 +28,7 @@ impl<'a, T: IManagedIRValue> Drop for IRManaged<'a, T> {
         if self.val.is_null() {
             return;
         }
-        self.val.defer_cleanup_self(&self.allocs);
+        self.val.defer_cleanup_self(self.allocs);
     }
 }
 
@@ -42,17 +42,8 @@ impl<'a, T: IManagedIRValue> Deref for IRManaged<'a, T> {
 }
 
 impl<'a, T: IManagedIRValue> IRManaged<'a, T> {
-    pub fn new(val: T, allocs: IRAllocsRef<'a>) -> Self {
+    pub fn new(val: T, allocs: &'a IRAllocs) -> Self {
         Self { val, allocs }
-    }
-    pub fn from_module(val: T, module: &'a Module) -> Self {
-        Self { val, allocs: IRAllocsRef::Dyn(module.borrow_allocs()) }
-    }
-    pub fn from_modmut(val: T, module: &'a mut Module) -> Self {
-        Self { val, allocs: IRAllocsRef::Fix(module.allocs_mut()) }
-    }
-    pub fn from_allocs(val: T, allocs: &'a IRAllocs) -> Self {
-        Self { val, allocs: IRAllocsRef::Fix(allocs) }
     }
 
     pub fn release(mut self) -> T {

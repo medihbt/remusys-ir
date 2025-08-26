@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io::Write) {
-    let allocs = module.allocs.borrow();
+    let allocs = &module.allocs;
     let GlobalData::Func(func_data) = func.to_data(&allocs.globals) else {
         panic!("Expected a function");
     };
@@ -38,7 +38,7 @@ pub fn write_func_cfg(module: &Module, func: GlobalRef, writer: &mut dyn std::io
                 block_ref.get_handle()
             ))
             .unwrap();
-        let terminator = block.get_terminator(&allocs.insts);
+        let terminator = block.get_terminator_from_alloc(&allocs.insts);
         for succ in &terminator.get_jts(&allocs.insts) {
             let succ = succ.get_block();
             cfg_edges.push((block_ref, succ));

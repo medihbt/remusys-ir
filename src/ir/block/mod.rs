@@ -4,9 +4,9 @@ use crate::{
         SlabListRange, SlabListView, SlabRef, SlabRefList,
     },
     ir::{
-        ConstData, IRAllocs, IRAllocsEditable, IRWriter, ISubInst, ISubValueSSA, ITraceableValue,
-        InstData, InstRef, JumpTarget, ManagedInst, Module, PredList, TerminatorRef, UserList,
-        ValueSSA,
+        ConstData, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA,
+        ITraceableValue, InstData, InstRef, JumpTarget, ManagedInst, PredList, TerminatorRef,
+        UserList, ValueSSA,
         block::jump_target::JumpTargets,
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
@@ -14,11 +14,7 @@ use crate::{
     typing::{IValType, PrimType, ValTypeID},
 };
 use slab::Slab;
-use std::{
-    cell::{Cell, Ref},
-    ops::ControlFlow,
-    rc::Rc,
-};
+use std::{cell::Cell, ops::ControlFlow, rc::Rc};
 
 pub(super) mod jump_target;
 
@@ -117,23 +113,8 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回新创建的空基本块
-    pub fn new_empty(module: &Module) -> Self {
-        let mut alloc = module.allocs.borrow_mut();
-        Self::empty_from_alloc(&mut alloc.insts)
-    }
-
-    /// 从可变模块创建一个空的基本块
-    ///
-    /// 与 `new_empty` 功能相同，但接受可变模块引用，避免借用检查开销。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    ///
-    /// # 返回
-    /// 返回新创建的空基本块
-    pub fn new_empty_from_mut_module(module: &mut Module) -> Self {
-        let alloc = module.allocs.get_mut();
-        Self::empty_from_alloc(&mut alloc.insts)
+    pub fn new_empty(module: &mut impl IRAllocsEditable) -> Self {
+        Self::empty_from_alloc(&mut module.get_allocs_mutref().insts)
     }
 
     /// 从指令分配器创建一个包含 unreachable 指令的基本块
@@ -164,21 +145,8 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回包含 unreachable 指令的基本块
-    pub fn new_unreachable(module: &Module) -> Self {
-        let mut alloc = module.allocs.borrow_mut();
-        Self::new_unreachable_from_alloc(&mut alloc.insts)
-    }
-
-    /// 从可变模块创建一个包含 unreachable 指令的基本块
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    ///
-    /// # 返回
-    /// 返回包含 unreachable 指令的基本块
-    pub fn new_unreachable_from_mut_module(module: &mut Module) -> Self {
-        let alloc = module.allocs.get_mut();
-        Self::new_unreachable_from_alloc(&mut alloc.insts)
+    pub fn new_unreachable(allocs: &mut impl IRAllocsEditable) -> Self {
+        Self::new_unreachable_from_alloc(&mut allocs.get_allocs_mutref().insts)
     }
 
     /// 从指令分配器创建一个返回零值的基本块
@@ -218,26 +186,13 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回包含返回零值指令的基本块
-    pub fn new_return_zero(module: &Module, ret_ty: PrimType) -> Self {
-        let mut alloc = module.allocs.borrow_mut();
-        Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
-    }
-
-    /// 从可变模块创建一个返回零值的基本块
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    /// - `ret_ty`: 函数的返回值类型
-    ///
-    /// # 返回
-    /// 返回包含返回零值指令的基本块
-    pub fn new_return_zero_from_mut_module(module: &mut Module, ret_ty: PrimType) -> Self {
-        let alloc = module.allocs.get_mut();
-        Self::new_return_zero_from_alloc(&mut alloc.insts, ret_ty)
+    pub fn new_return_zero(module: &mut impl IRAllocsEditable, ret_ty: PrimType) -> Self {
+        Self::new_return_zero_from_alloc(&mut module.get_allocs_mutref().insts, ret_ty)
     }
 
     /// 创建一个跳转到指定基本块的指令
-    pub fn new_jump_to(allocs: &mut IRAllocs, target: BlockRef) -> Self {
+    pub fn new_jump_to(allocs: &mut impl IRAllocsEditable, target: BlockRef) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         let ret = BlockData::empty_from_alloc(&mut allocs.insts);
         let jump_inst = {
             let jump = Jump::new(&allocs.blocks, target);
@@ -319,7 +274,7 @@ impl BlockData {
         }
     }
 
-    pub fn try_get_terminator(
+    pub fn try_get_terminator_from_alloc(
         &self,
         alloc: &Slab<InstData>,
     ) -> Result<TerminatorRef, &'static str> {
@@ -337,14 +292,27 @@ impl BlockData {
         };
         Ok(terminator)
     }
-
-    pub fn get_terminator(&self, alloc: &Slab<InstData>) -> TerminatorRef {
-        self.try_get_terminator(alloc)
+    pub fn get_terminator_from_alloc(&self, alloc: &Slab<InstData>) -> TerminatorRef {
+        self.try_get_terminator_from_alloc(alloc)
             .expect("Block does not have a terminator instruction")
     }
-
-    pub fn has_terminator(&self, alloc: &Slab<InstData>) -> bool {
-        self.insts.is_valid() && self.try_get_terminator(alloc).is_ok()
+    pub fn has_terminator_from_alloc(&self, alloc: &Slab<InstData>) -> bool {
+        self.insts.is_valid() && self.try_get_terminator_from_alloc(alloc).is_ok()
+    }
+    pub fn try_get_terminator(
+        &self,
+        allocs: &impl IRAllocsReadable,
+    ) -> Result<TerminatorRef, &'static str> {
+        let allocs = allocs.get_allocs_ref();
+        self.try_get_terminator_from_alloc(&allocs.insts)
+    }
+    pub fn get_terminator(&self, allocs: &impl IRAllocsReadable) -> TerminatorRef {
+        let allocs = allocs.get_allocs_ref();
+        self.get_terminator_from_alloc(&allocs.insts)
+    }
+    pub fn has_terminator(&self, allocs: &impl IRAllocsReadable) -> bool {
+        let allocs = allocs.get_allocs_ref();
+        self.has_terminator_from_alloc(&allocs.insts)
     }
 
     fn set_terminator_with_alloc(
@@ -358,7 +326,7 @@ impl BlockData {
         if !terminator.to_inst(alloc).is_terminator() {
             panic!("Instruction NOT terminator: {terminator:?}")
         }
-        let ret = if let Ok(terminator) = self.try_get_terminator(alloc) {
+        let ret = if let Ok(terminator) = self.try_get_terminator_from_alloc(alloc) {
             self.insts
                 .unplug_node(alloc, terminator.get_inst())
                 .map_err(InstError::ListError)?;
@@ -371,23 +339,24 @@ impl BlockData {
             .map_err(InstError::ListError)?;
         Ok(ret)
     }
-    pub fn set_terminator_with_allocs<'a>(
+    pub fn set_terminator<'a>(
         &self,
-        allocs: &'a IRAllocs,
+        allocs: &'a impl IRAllocsReadable,
         terminator: InstRef,
     ) -> Result<ManagedInst<'a>, InstError> {
+        let allocs = allocs.get_allocs_ref();
         let old = self.set_terminator_with_alloc(&allocs.insts, terminator)?;
-        Ok(ManagedInst::from_allocs(InstRef::from_option(old), allocs))
+        Ok(ManagedInst::new(InstRef::from_option(old), allocs))
     }
 
     pub fn get_successors<'a>(&self, alloc: &'a Slab<InstData>) -> JumpTargets<'a> {
-        self.get_terminator(alloc).get_jts(alloc)
+        self.get_terminator_from_alloc(alloc).get_jts(alloc)
     }
     pub fn successors_mut<'a>(
         &mut self,
         alloc: &'a mut Slab<InstData>,
     ) -> &'a mut [Rc<JumpTarget>] {
-        self.get_terminator(alloc).jts_mut(alloc)
+        self.get_terminator_from_alloc(alloc).jts_mut(alloc)
     }
 
     pub fn has_phi(&self, alloc: &Slab<InstData>) -> bool {
@@ -509,7 +478,7 @@ impl BlockData {
     pub fn count_succ_blocks(&self, alloc: &Slab<InstData>) -> usize {
         use std::collections::HashSet;
 
-        if !self.has_terminator(alloc) {
+        if !self.has_terminator_from_alloc(alloc) {
             return 0;
         }
 
@@ -537,7 +506,7 @@ impl BlockData {
         match inst.to_inst(alloc) {
             InstData::Phi(_) => self.build_add_phi(alloc, PhiRef::from_raw_nocheck(inst)),
             x if x.is_terminator() => {
-                if self.has_terminator(alloc) {
+                if self.has_terminator_from_alloc(alloc) {
                     panic!("Tried to add a terminator instruction to a block that already has one");
                 }
                 self.insts
@@ -545,7 +514,7 @@ impl BlockData {
                     .expect("Failed to push terminator instruction")
             }
             _ => {
-                if let Ok(terminator) = self.try_get_terminator(alloc) {
+                if let Ok(terminator) = self.try_get_terminator_from_alloc(alloc) {
                     self.insts
                         .node_add_prev(alloc, terminator.get_inst(), inst)
                         .expect("Failed to add instruction before terminator");
@@ -699,22 +668,21 @@ impl BlockRef {
     ///
     /// # 返回
     /// 返回新创建的基本块引用
-    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: BlockData) -> Self {
-        let mut allocs = allocs.get_allocs_mutref();
-        Self::from_allocs(allocs.get_mut(), data)
+    pub fn new<'a>(allocs: &mut impl IRAllocsEditable, data: BlockData) -> Self {
+        Self::from_allocs(allocs.get_allocs_mutref(), data)
     }
-
-    pub fn new_unreachable(allocs: &mut IRAllocs) -> Self {
+    pub fn new_unreachable(allocs: &mut impl IRAllocsEditable) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
         BlockRef::from_allocs(allocs, data)
     }
-
-    pub fn new_return_zero(allocs: &mut IRAllocs, ret_ty: PrimType) -> Self {
+    pub fn new_return_zero(allocs: &mut impl IRAllocsEditable, ret_ty: PrimType) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         let data = BlockData::new_return_zero_from_alloc(&mut allocs.insts, ret_ty);
         BlockRef::from_allocs(allocs, data)
     }
-
-    pub fn new_jump_to(allocs: &mut IRAllocs, target: BlockRef) -> Self {
+    pub fn new_jump_to(allocs: &mut impl IRAllocsEditable, target: BlockRef) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         let data = BlockData::new_jump_to(allocs, target);
         BlockRef::from_allocs(allocs, data)
     }
@@ -737,9 +705,8 @@ impl BlockRef {
     ///
     /// # 返回
     /// 返回基本块指令列表的借用引用
-    pub fn insts<'a>(self, module: &'a Module) -> Ref<'a, SlabRefList<InstRef>> {
-        let allocs = module.allocs.borrow();
-        Ref::map(allocs, |allocs| self.insts_from_alloc(&allocs.blocks))
+    pub fn insts(self, allocs: &impl IRAllocsReadable) -> &SlabRefList<InstRef> {
+        self.insts_from_alloc(&allocs.get_allocs_ref().blocks)
     }
 
     /// 直接从分配器获取可迭代的基本块指令视图
@@ -757,18 +724,6 @@ impl BlockRef {
         self.to_data(&allocs.blocks).get_successors(&allocs.insts)
     }
 
-    /// 从可变模块获取基本块的指令列表
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    ///
-    /// # 返回
-    /// 返回基本块指令列表的引用
-    pub fn insts_from_mut_module<'a>(self, module: &'a mut Module) -> &'a SlabRefList<InstRef> {
-        let alloc = module.allocs.get_mut();
-        self.insts_from_alloc(&alloc.blocks)
-    }
-
     pub fn new_vexit() -> Self {
         BlockRef(Self::VEXIT_ID)
     }
@@ -779,5 +734,15 @@ impl BlockRef {
 
     pub fn has_phi(self, allocs: &IRAllocs) -> bool {
         self.to_data(&allocs.blocks).has_phi(&allocs.insts)
+    }
+    pub fn get_terminator(self, allocs: &impl IRAllocsReadable) -> TerminatorRef {
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .get_terminator_from_alloc(&allocs.insts)
+    }
+    pub fn has_terminator(self, allocs: &impl IRAllocsReadable) -> bool {
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .has_terminator_from_alloc(&allocs.insts)
     }
 }

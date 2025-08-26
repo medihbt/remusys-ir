@@ -160,7 +160,7 @@ impl CfgDfsSeq {
         if dfn_map.contains_key(&block) {
             return;
         }
-        let terminator = block.to_data(&allocs.blocks).get_terminator(&allocs.insts);
+        let terminator = block.to_data(&allocs.blocks).get_terminator_from_alloc(&allocs.insts);
         let dfn = node_seq.len();
         dfn_map.insert(block, dfn);
         node_seq.push(CfgDfsNode { block, parent, dfn, parent_dfn });
@@ -182,7 +182,7 @@ impl CfgDfsSeq {
             return None;
         }
         dfn_map.insert(block, usize::MAX);
-        let terminator = block.to_data(&allocs.blocks).get_terminator(&allocs.insts);
+        let terminator = block.to_data(&allocs.blocks).get_terminator_from_alloc(&allocs.insts);
         let mut succ_dfns = Vec::new();
         for succ in &terminator.get_jts(&allocs.insts) {
             let succ = succ.get_block();

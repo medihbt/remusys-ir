@@ -9,7 +9,7 @@ pub mod pass;
 pub mod transform;
 pub mod util;
 
-pub fn optimize_module(module: &Module) {
+pub fn optimize_module(module: &mut Module) {
     transform::dce::dce_pass(module);
     if log::log_enabled!(log::Level::Debug) {
         let module_name = {

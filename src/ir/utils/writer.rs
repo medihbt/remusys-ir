@@ -1,8 +1,8 @@
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        FuncRef, GlobalKind, GlobalRef, IRAllocsRef, IRValueNumberMap, ISubValueSSA, Module,
-        PredList, UserList, ValueSSA,
+        FuncRef, GlobalKind, GlobalRef, IRAllocs, IRValueNumberMap, ISubValueSSA, Module, PredList,
+        UserList, ValueSSA,
     },
     typing::{IValType, TypeContext, ValTypeID},
 };
@@ -49,7 +49,7 @@ pub struct IRWriter<'a> {
     pub output: RefCell<&'a mut dyn Write>,
     pub option: IRWriterOption,
     pub type_ctx: &'a TypeContext,
-    pub allocs: IRAllocsRef<'a>,
+    pub allocs: &'a IRAllocs,
     pub indent_level: Cell<usize>,
     pub numbering: RefCell<IRValueNumberMap>,
     pub globals: Vec<GlobalRef>,
@@ -76,7 +76,7 @@ impl<'a> IRWriter<'a> {
     pub fn new_loud(
         output: &'a mut dyn Write,
         type_ctx: &'a TypeContext,
-        allocs: IRAllocsRef<'a>,
+        allocs: &'a IRAllocs,
         globals: impl IntoIterator<Item = GlobalRef>,
     ) -> Self {
         Self {
@@ -96,7 +96,7 @@ impl<'a> IRWriter<'a> {
         Self::new_loud(
             output,
             &module.type_ctx,
-            IRAllocsRef::Dyn(module.allocs.borrow()),
+            &module.allocs,
             module.globals.borrow().iter().map(|(_, &gref)| gref),
         )
     }
@@ -184,7 +184,7 @@ impl<'a> IRWriter<'a> {
                 }
             }
             ValueSSA::Global(global_ref) => {
-                let name = global_ref.get_name(&self.allocs);
+                let name = global_ref.get_name(self.allocs);
                 write!(self, "@{name}")
             }
         }

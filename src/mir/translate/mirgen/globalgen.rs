@@ -67,7 +67,6 @@ impl GlobalStatistics {
         let mut global_zero_inits = Vec::new();
 
         ir_module.forall_globals(true, |gref, gdata| {
-            let allocs = ir_module.allocs.borrow();
             let name = gdata.get_name();
             match gdata {
                 GlobalData::Var(var) => match var.get_kind() {
@@ -81,7 +80,7 @@ impl GlobalStatistics {
                             init != ValueSSA::None,
                             "Global variable {gref:?} has no initializer"
                         );
-                        if init.is_zero(&allocs) {
+                        if init.is_zero(&ir_module.allocs) {
                             debug!("Discovered global zero-init variable: {gref:?} name {name}",);
                             global_zero_inits.push(gref);
                         } else {
@@ -192,7 +191,7 @@ impl MirGlobalItems {
         let mut all_globals = Vec::with_capacity(statistics.all_globals.len());
         let mut funcs = Vec::with_capacity(statistics.funcs().len());
         let mut extern_funcs = Vec::with_capacity(statistics.extern_funcs().len());
-        let allocs = ir_module.borrow_allocs();
+        let allocs = &ir_module.allocs;
 
         for &gref in statistics.extern_vars() {
             let global = gref.to_data(&allocs.globals);
@@ -290,7 +289,7 @@ impl MirGlobalItems {
         section: Section,
         category: &str,
     ) {
-        let allocs = ir_module.borrow_allocs();
+        let allocs = &ir_module.allocs;
         let GlobalData::Var(global) = gref.to_data(&allocs.globals) else {
             let name = gref.to_data(&allocs.globals).get_name();
             panic!("Expected a global variable, got {gref:?} name {name}");
@@ -395,9 +394,8 @@ impl std::fmt::Debug for MirGlobalMapFormatter<'_> {
         }
         fn get_alls(globals: &[(GlobalRef, MirGlobalRef)], ir_module: &IRModule) -> Vec<String> {
             let mut global_names = Vec::with_capacity(globals.len());
-            let allocs = ir_module.borrow_allocs();
             for (gref, mir_ref) in globals {
-                let ir_name = gref.get_name(&*allocs);
+                let ir_name = gref.get_name(&ir_module.allocs);
                 let mir_idx = mir_ref.get_handle();
                 let ir_idx = gref.get_handle();
                 global_names.push(format!("ir {ir_idx} -> mir {mir_idx}: {ir_name}"));

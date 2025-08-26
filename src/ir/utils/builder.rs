@@ -112,7 +112,7 @@ impl IRBuilder {
     }
 
     pub fn allocs_mut(&mut self) -> &mut IRAllocs {
-        self.module.allocs_mut()
+        &mut self.module.allocs
     }
 
     pub fn get_focus(&self) -> Option<IRBuilderFocus> {
@@ -204,7 +204,7 @@ impl IRBuilder {
         let allocs = self.allocs_mut();
         let terminator = focus_block
             .to_data(&allocs.blocks)
-            .get_terminator(&allocs.insts);
+            .get_terminator_from_alloc(&allocs.insts);
         self.focus.inst = terminator.get_inst();
         Ok(prev_focus)
     }
@@ -219,7 +219,7 @@ impl IRBuilder {
         }
         let func = Func::new_extern(functy, name, self.get_type_ctx());
         let funcref = GlobalRef::from_allocs(self.allocs_mut(), func.into_ir());
-        funcref.register_to_symtab(&self.module);
+        funcref.register_to_symtab(&mut self.module);
         Ok(funcref)
     }
     pub fn define_function_with_unreachable(
@@ -230,17 +230,17 @@ impl IRBuilder {
         if let Some(global) = self.module.globals.borrow().get(name) {
             return Err(IRBuilderError::GlobalDefExists(name.to_string(), *global));
         }
-        let func = Func::new_with_unreachable_from_mut_module(&mut self.module, functy, name);
+        let func = Func::new_with_unreachable(&mut self.module, functy, name);
         let (entry, inst) = {
             let entry = func.get_entry();
             let allocs = self.allocs_mut();
             let alloc_block = &allocs.blocks;
             let alloc_inst = &allocs.insts;
-            let inst = entry.to_data(alloc_block).get_terminator(alloc_inst);
+            let inst = entry.to_data(alloc_block).get_terminator_from_alloc(alloc_inst);
             (entry, inst.get_inst())
         };
         let func = GlobalRef::from_allocs(self.allocs_mut(), func.into_ir());
-        func.register_to_symtab(&self.module);
+        func.register_to_symtab(&mut self.module);
         self.set_focus_full(func, entry, inst);
         Ok(func)
     }
@@ -256,7 +256,7 @@ impl IRBuilder {
         );
         var.set_readonly(is_const);
         let var = GlobalRef::from_allocs(self.allocs_mut(), var.into_ir());
-        var.register_to_symtab(&self.module);
+        var.register_to_symtab(&mut self.module);
         var
     }
     pub fn define_var(
@@ -278,7 +278,7 @@ impl IRBuilder {
         var.set_init(self.allocs_mut(), init);
 
         let var = GlobalRef::from_allocs(self.allocs_mut(), var.into_ir());
-        var.register_to_symtab(&self.module);
+        var.register_to_symtab(&mut self.module);
         Ok(var)
     }
 
@@ -431,7 +431,7 @@ impl IRBuilder {
 
         // Now create a new block. After that, a new jump instruction to this block will be created.
         let new_block = {
-            let block = BlockData::new_empty(&self.module);
+            let block = BlockData::new_empty(&mut self.module);
             self.insert_new_block(block)?
         };
         let (old_terminator, jump_to_new_bb) = self.focus_set_jump_to(new_block)?;
@@ -446,7 +446,7 @@ impl IRBuilder {
 
         new_block
             .to_data(alloc_block)
-            .set_terminator_with_allocs(&allocs, old_terminator)
+            .set_terminator(allocs, old_terminator)
             .map_err(Self::map_inst_error)?;
 
         // Now we need to update the PHI nodes in the successors of the original block.
@@ -476,7 +476,7 @@ impl IRBuilder {
             let allocs = self.allocs_mut();
             focus_func
                 .to_data(&allocs.globals)
-                .add_block_ref_from_allocs(allocs, next_block)
+                .add_block_ref(allocs, next_block)
                 .map_err(IRBuilderError::ListError)?;
         } else {
             let allocs = self.allocs_mut();
@@ -696,7 +696,7 @@ impl IRBuilder {
         align: usize,
     ) -> InstBuildRes {
         let Module { allocs, type_ctx, .. } = &mut self.module;
-        let mut store_op = StoreOp::new(allocs.get_mut(), &type_ctx, source, target);
+        let mut store_op = StoreOp::new(allocs, &type_ctx, source, target);
         store_op.source_align_log2 = align.ilog2() as u8;
         self.add_inst(InstData::Store(store_op))
     }
@@ -750,13 +750,7 @@ impl IRBuilder {
         T::IntoIter: Clone,
     {
         let Module { allocs, type_ctx, .. } = &mut self.module;
-        let mut gep = IndexPtr::new(
-            type_ctx,
-            allocs.get_mut(),
-            base_ptr,
-            base_pointee_ty,
-            indices,
-        );
+        let mut gep = IndexPtr::new(type_ctx, allocs, base_ptr, base_pointee_ty, indices);
         gep.storage_align_log2 = base_align.ilog2() as u8;
         gep.ret_align_log2 = ret_align.ilog2() as u8;
         self.add_inst(InstData::GEP(gep))
@@ -768,7 +762,7 @@ impl IRBuilder {
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> InstBuildRes {
         let Module { allocs, type_ctx, .. } = &mut self.module;
-        let call = CallOp::from_allocs(allocs.get_mut(), type_ctx, callee, args);
+        let call = CallOp::from_allocs(allocs, type_ctx, callee, args);
         self.add_inst(InstData::Call(call))
     }
 
@@ -823,7 +817,7 @@ impl IRBuilder {
 
         let old_terminator = focus_block
             .to_data(&allocs.blocks)
-            .set_terminator_with_allocs(allocs, new_terminator)
+            .set_terminator(allocs, new_terminator)
             .map_err(Self::map_inst_error)?;
         Ok((old_terminator, new_terminator))
     }

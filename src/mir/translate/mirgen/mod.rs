@@ -45,7 +45,7 @@ pub mod operandgen;
 pub mod paramgen;
 
 pub fn codegen_ir_to_mir(
-    ir_module: Rc<IRModule>,
+    ir_module: &IRModule,
     copy_map: CopyMap,
     mut cfgs: Vec<CfgSnapshot>,
 ) -> MirModule {
@@ -53,11 +53,11 @@ pub fn codegen_ir_to_mir(
     if !cfgs.is_sorted_by_key(|cfg| cfg.func) {
         cfgs.sort_by_key(|cfg| cfg.func);
     }
-    MirTranslateCtx::new(ir_module.clone(), copy_map).do_translate(&cfgs)
+    MirTranslateCtx::new(ir_module, copy_map).do_translate(&cfgs)
 }
 
-pub struct MirTranslateCtx {
-    ir_module: Rc<IRModule>,
+pub struct MirTranslateCtx<'a> {
+    ir_module: &'a IRModule,
     mir_module: MirModule,
     copy_map: CopyMap,
     number_maps: BTreeMap<GlobalRef, IRValueNumberMap>,
@@ -82,8 +82,8 @@ struct AllocaInfo {
     pub pointee_ty: ValTypeID,
 }
 
-impl MirTranslateCtx {
-    fn new(ir_module: Rc<IRModule>, copy_map: CopyMap) -> Self {
+impl<'a> MirTranslateCtx<'a> {
+    fn new(ir_module: &'a IRModule, copy_map: CopyMap) -> Self {
         let name = ir_module.name.clone();
         Self {
             ir_module,
@@ -111,7 +111,7 @@ impl MirTranslateCtx {
                 .find_func(ir_func_ref)
                 .expect("MIR function info not found for IR function reference");
             let numbers = IRValueNumberMap::new(
-                &self.ir_module.borrow_allocs(),
+                &self.ir_module.allocs,
                 ir_func_ref,
                 NumberOption::ignore_all(),
             );
@@ -152,11 +152,8 @@ impl MirTranslateCtx {
             vregs,
             block_map,
         );
-        let numbers = IRValueNumberMap::new(
-            &self.ir_module.borrow_allocs(),
-            cfg.func,
-            NumberOption::ignore_all(),
-        );
+        let numbers =
+            IRValueNumberMap::new(&self.ir_module.allocs, cfg.func, NumberOption::ignore_all());
         let entry_block = operand_map.blocks[0].mir;
         let mut mir_builder = MirBuilder::new(&mut self.mir_module);
         mir_builder.set_focus(MirFocus::Block(Rc::clone(mir_func), entry_block));
@@ -275,10 +272,10 @@ impl MirTranslateCtx {
     fn dump_insts_and_layout(&mut self, block_map: &mut [MirBlockInfo]) -> Vec<AllocaInfo> {
         let mut allocas = Vec::new();
         for MirBlockInfo { ir, insts, .. } in block_map {
-            let (insts_in_block, len) = ir.insts(&self.ir_module).load_range_and_length();
+            let (insts_in_block, len) = ir.insts(self.ir_module).load_range_and_length();
             insts.reserve(len);
 
-            let allocs = self.ir_module.borrow_allocs();
+            let allocs = &self.ir_module.allocs;
             for (iref, inst) in insts_in_block.view(&allocs.insts) {
                 if let InstData::Alloca(a) = inst {
                     allocas.push(AllocaInfo { ir: iref, pointee_ty: a.pointee_ty });
@@ -319,7 +316,7 @@ impl MirTranslateCtx {
                 type K = InstDataKind;
                 debug!("Translating instruction {ir:?} with type {ty:?} and kind {kind:?}");
 
-                let allocs = self.ir_module.borrow_allocs();
+                let allocs = &self.ir_module.allocs;
                 if !ir.to_data(&allocs.insts).has_users() {
                     // vregs.push((*ir, InstRetval::Wasted));
                     vregs.insert(*ir, InstRetval::Wasted);
