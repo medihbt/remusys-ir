@@ -732,7 +732,8 @@ impl BlockRef {
         self.0 == Self::VEXIT_ID
     }
 
-    pub fn has_phi(self, allocs: &IRAllocs) -> bool {
+    pub fn has_phi(self, allocs: &impl IRAllocsReadable) -> bool {
+        let allocs = allocs.get_allocs_ref();
         self.to_data(&allocs.blocks).has_phi(&allocs.insts)
     }
     pub fn get_terminator(self, allocs: &impl IRAllocsReadable) -> TerminatorRef {

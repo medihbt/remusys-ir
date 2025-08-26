@@ -2,8 +2,8 @@ use std::{cell::Ref, ops::Deref, rc::Rc, usize};
 
 use crate::{
     ir::{
-        ExprRef, GlobalRef, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, InstRef, Use,
-        ValueSSA,
+        ExprRef, GlobalRef, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter,
+        IReferenceValue, ISubValueSSA, InstRef, Use, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -64,6 +64,12 @@ impl<'a> Iterator for OperandIter<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for OperandIter<'a> {
+    fn len(&self) -> usize {
+        self.operands.as_slice().len() - self.index
+    }
+}
+
 impl<'a> OperandIter<'a> {
     pub fn new(operands: OperandSet<'a>) -> Self {
         Self { operands, index: 0 }
@@ -71,9 +77,9 @@ impl<'a> OperandIter<'a> {
 }
 
 pub trait IUser {
-    fn get_operands<'a>(&'a self) -> OperandSet<'a>;
+    fn get_operands(&self) -> OperandSet;
 
-    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>];
+    fn operands_mut(&mut self) -> &mut [Rc<Use>];
 
     fn get_use_at(&self, index: usize) -> Option<Rc<Use>> {
         self.get_operands().as_slice().get(index).cloned()
@@ -183,7 +189,8 @@ impl ISubValueSSA for UserID {
 }
 
 impl UserID {
-    pub fn user_operands(self, allocs: &IRAllocs) -> OperandSet {
+    pub fn user_operands(self, allocs: &impl IRAllocsReadable) -> OperandSet {
+        let allocs = allocs.get_allocs_ref();
         match self {
             UserID::None => OperandSet::Fixed(&[]),
             UserID::Inst(inst_ref) => inst_ref.user_operands(allocs),
@@ -191,7 +198,8 @@ impl UserID {
             UserID::Global(global_ref) => global_ref.user_operands(allocs),
         }
     }
-    pub fn user_operands_mut(self, allocs: &mut IRAllocs) -> &mut [Rc<Use>] {
+    pub fn user_operands_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut [Rc<Use>] {
+        let allocs = allocs.get_allocs_mutref();
         match self {
             UserID::None => &mut [],
             UserID::Inst(inst_ref) => inst_ref.user_operands_mut(allocs),

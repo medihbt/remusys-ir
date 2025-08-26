@@ -35,6 +35,7 @@ pub use self::{
             JumpTargets, PredList, TerminatorDataRef, TerminatorRef,
         },
     },
+    checking::{ValueCheckError, inst_check::InstCheckCtx},
     cmp_cond::CmpCond,
     constant::{
         array::Array,
