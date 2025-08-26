@@ -1,21 +1,20 @@
 use crate::{
     base::SlabRef,
-    ir::{Func, FuncRef, GlobalData, GlobalRef, ISubGlobal, ValueSSA, module::allocs::IRAllocs},
+    ir::{
+        Func, FuncRef, GlobalData, GlobalRef, IRAllocsEditable, IRAllocsReadable, ISubGlobal,
+        ValueSSA, module::allocs::IRAllocs,
+    },
     typing::TypeContext,
 };
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    collections::HashMap,
-    ops::ControlFlow,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, ops::ControlFlow, rc::Rc};
 
 pub(super) mod allocs;
 pub(super) mod gc;
+pub(super) mod view;
 
 pub struct Module {
     pub name: String,
-    pub allocs: RefCell<IRAllocs>,
+    pub allocs: IRAllocs,
     pub globals: RefCell<HashMap<String, GlobalRef>>,
     pub type_ctx: Rc<TypeContext>,
 }
@@ -24,7 +23,7 @@ impl Module {
     pub fn new(name: String, type_ctx: Rc<TypeContext>) -> Self {
         Self {
             name,
-            allocs: RefCell::new(IRAllocs::new()),
+            allocs: IRAllocs::new(),
             globals: RefCell::new(HashMap::new()),
             type_ctx,
         }
@@ -32,43 +31,23 @@ impl Module {
     pub fn with_capacity(name: String, type_ctx: Rc<TypeContext>, base_capacity: usize) -> Self {
         Self {
             name,
-            allocs: RefCell::new(IRAllocs::with_capacity(base_capacity)),
+            allocs: IRAllocs::with_capacity(base_capacity),
             globals: RefCell::new(HashMap::new()),
             type_ctx,
         }
     }
 
-    pub fn borrow_allocs(&self) -> Ref<IRAllocs> {
-        self.allocs.borrow()
-    }
-    pub fn borrow_allocs_mut(&self) -> RefMut<IRAllocs> {
-        self.allocs.borrow_mut()
-    }
-    pub fn allocs_mut(&mut self) -> &mut IRAllocs {
-        self.allocs.get_mut()
-    }
-
-    pub fn gc_mark_sweep_mut(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {
+    pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {
         let Self { allocs, globals, .. } = self;
-        let mut marker = gc::IRValueMarker::from_allocs(allocs.get_mut());
+        let mut marker = gc::IRValueMarker::from_allocs(allocs);
         for (_, &global) in globals.get_mut().iter() {
-            marker.push_mark(global);
-        }
-        marker.mark_and_sweep(roots);
-    }
-    pub fn gc_mark_sweep(&self, roots: impl IntoIterator<Item = ValueSSA>) {
-        let Self { allocs, globals, .. } = self;
-        let mut allocs = allocs.borrow_mut();
-        let mut marker = gc::IRValueMarker::from_allocs(&mut allocs);
-        let globals = globals.borrow();
-        for (_, &global) in globals.iter() {
             marker.push_mark(global);
         }
         marker.mark_and_sweep(roots);
     }
 
     pub fn forall_funcs(&self, has_extern: bool, f: impl FnMut(FuncRef, &Func) -> ControlFlow<()>) {
-        let allocs = self.allocs.borrow();
+        let allocs = &self.allocs;
         let globals = self.globals.borrow();
         let mut f = f;
         for (_, &global) in globals.iter() {
@@ -96,7 +75,7 @@ impl Module {
         has_extern: bool,
         f: impl FnMut(GlobalRef, &GlobalData) -> ControlFlow<()>,
     ) {
-        let allocs = self.allocs.borrow();
+        let allocs = &self.allocs;
         let globals = self.globals.borrow();
         let mut f = f;
         for (_, &global) in globals.iter() {
@@ -109,3 +88,15 @@ impl Module {
         }
     }
 }
+
+pub trait IModuleReadable: IRAllocsReadable {
+    fn get_type_ctx(&self) -> &Rc<TypeContext>;
+}
+pub trait IModuleEditable: IModuleReadable + IRAllocsEditable {}
+
+impl IModuleReadable for Module {
+    fn get_type_ctx(&self) -> &Rc<TypeContext> {
+        &self.type_ctx
+    }
+}
+impl IModuleEditable for Module {}

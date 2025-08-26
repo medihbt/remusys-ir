@@ -233,7 +233,7 @@ impl CallOp {
         args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
     ) -> Self {
         let nargs = args.clone().count();
-        let func_ty = callee.get_content_type_from_alloc(&allocs.globals);
+        let func_ty = callee.get_content_type(allocs);
         let func_ty = match func_ty {
             ValTypeID::Func(func_ty) => func_ty,
             _ => panic!("Callee must be a function type for CallOp"),
@@ -244,87 +244,6 @@ impl CallOp {
             ret.operands[i + 1].set_operand(allocs, arg.clone());
         }
         ret
-    }
-
-    /// 从模块创建函数调用指令
-    ///
-    /// 便利函数，从模块中获取分配器和类型上下文来创建函数调用。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块引用
-    /// - `func_ty`: 被调用函数的类型引用
-    /// - `callee`: 被调用的函数（必须是全局引用的 ValueSSA）
-    /// - `args`: 传递给函数的参数迭代器
-    ///
-    /// # 返回
-    /// 返回完全初始化的函数调用指令
-    ///
-    /// # Panics
-    /// 如果 `callee` 不是 `ValueSSA::Global` 类型则会 panic
-    pub fn new<'a>(
-        module: &Module,
-        callee: ValueSSA,
-        args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
-    ) -> Self {
-        let ValueSSA::Global(callee) = callee else {
-            panic!("Callee must be a global reference for CallOp");
-        };
-        Self::from_allocs(
-            &module.allocs.borrow(),
-            module.type_ctx.as_ref(),
-            callee,
-            args,
-        )
-    }
-
-    /// 从可变模块创建函数调用指令
-    ///
-    /// 与 `new` 功能相同，但接受可变的模块引用，避免借用检查开销。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    /// - `func_ty`: 被调用函数的类型引用
-    /// - `callee`: 被调用的函数（必须是全局引用的 ValueSSA）
-    /// - `args`: 传递给函数的参数迭代器
-    ///
-    /// # 返回
-    /// 返回完全初始化的函数调用指令
-    pub fn new_with_mut_module<'a>(
-        module: &mut Module,
-        callee: ValueSSA,
-        args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
-    ) -> Self {
-        let ValueSSA::Global(callee) = callee else {
-            panic!("Callee must be a global reference for CallOp");
-        };
-        Self::from_allocs(
-            &module.allocs.get_mut(),
-            module.type_ctx.as_ref(),
-            callee,
-            args,
-        )
-    }
-
-    /// 从全局函数引用创建函数调用指令
-    ///
-    /// 便利函数，自动从全局函数引用中提取函数类型，然后创建调用指令。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块引用
-    /// - `func`: 被调用的全局函数引用
-    /// - `args`: 传递给函数的参数迭代器
-    ///
-    /// # 返回
-    /// 返回完全初始化的函数调用指令
-    ///
-    /// # Panics
-    /// 如果 `func` 的内容类型不是函数类型则会 panic
-    pub fn new_from_func<'a>(
-        module: &Module,
-        func: GlobalRef,
-        args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
-    ) -> Self {
-        Self::new(module, ValueSSA::Global(func), args)
     }
 }
 

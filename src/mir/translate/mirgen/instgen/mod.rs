@@ -75,7 +75,7 @@ pub fn dispatch_inst(
     let kind = inst_info.kind;
     let number = numbers.inst_get_number(ir_ref);
 
-    let allocs = ir_module.borrow_allocs();
+    let allocs = &ir_module.allocs;
     let alloc_inst = &allocs.insts;
     match kind {
         InstKind::ListGuideNode | InstKind::PhiInstEnd | InstKind::Phi | InstKind::Unreachable => {

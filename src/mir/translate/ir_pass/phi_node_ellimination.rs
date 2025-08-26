@@ -95,12 +95,10 @@ impl CopyMap {
     fn add_from_func(&mut self, func_ref: GlobalRef, ir_module: &Module) -> CfgSnapshot {
         // Create a new snapshot of the CFG for the function.
         // Snapshot time: After the critical edge elimination pass; all critical edges are broken.
-        let allocs = ir_module.borrow_allocs();
-        let cfg_snapshot = CfgSnapshot::new(&allocs, func_ref);
-
+        let cfg_snapshot = CfgSnapshot::new(&ir_module.allocs, func_ref);
         for node in cfg_snapshot.nodes.iter() {
             let bb = node.block;
-            for (iref, inst) in bb.view_insts(&allocs) {
+            for (iref, inst) in bb.view_insts(&ir_module.allocs) {
                 let InstData::Phi(phi) = inst else { break };
                 for (from, bb_from) in phi {
                     self.insts.push(CopyInstNode {

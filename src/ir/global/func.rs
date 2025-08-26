@@ -3,7 +3,7 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
-        BlockData, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs,
+        BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs, IRAllocsReadable,
         IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, Module,
         NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
@@ -228,9 +228,9 @@ impl Func {
     ///
     /// # 返回
     /// 返回一个只有声明没有定义的外部函数
-    pub fn new_extern<T: Into<String>>(
+    pub fn new_extern(
         functy: FuncTypeRef,
-        name: T,
+        name: impl Into<String>,
         type_ctx: &TypeContext,
     ) -> Self {
         Self::create_extern(name.into(), functy, type_ctx)
@@ -246,17 +246,12 @@ impl Func {
         // 将函数体设置为一个空的基本块列表
         self.body = SlabRefList::from_slab(&mut allocs.blocks);
 
-        let unreachable_bb = {
-            let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
-            BlockRef::new(&mut *allocs, data)
-        };
+        let unreachable_bb = BlockRef::new_unreachable(allocs);
         self.body
             .push_back_ref(&allocs.blocks, unreachable_bb)
             .expect("Failed to push unreachable block");
         assert!(
-            unreachable_bb
-                .to_data(&allocs.blocks)
-                .has_terminator(&allocs.insts),
+            unreachable_bb.has_terminator(allocs),
             "Failed to push unreachable block"
         );
         self.entry.set(unreachable_bb);
@@ -273,37 +268,14 @@ impl Func {
     ///
     /// # 返回
     /// 返回一个包含单个 unreachable 基本块的已定义函数
-    pub fn new_with_unreachable<T: Into<String>>(
-        module: &Module,
-        functy: FuncTypeRef,
-        name: T,
-    ) -> Self {
-        let mut func = Self::create_extern(name.into(), functy, &module.type_ctx);
-        let mut allocs = module.allocs.borrow_mut();
-        func.make_defined_with_unreachable(&mut allocs);
-        func
-    }
-
-    /// 创建一个包含单个 unreachable 基本块的函数 (可变模块版本)
-    ///
-    /// 与 `new_with_unreachable` 功能相同，但接受可变的模块引用，
-    /// 避免了内部的 RefCell 借用检查开销。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    /// - `functy`: 函数类型引用
-    /// - `name`: 函数名称
-    ///
-    /// # 返回
-    /// 返回一个包含单个 unreachable 基本块的已定义函数
-    pub fn new_with_unreachable_from_mut_module<T: Into<String>>(
+    pub fn new_with_unreachable(
         module: &mut Module,
         functy: FuncTypeRef,
-        name: T,
+        name: impl Into<String>,
     ) -> Self {
         let mut func = Self::create_extern(name.into(), functy, &module.type_ctx);
-        let allocs = module.allocs.get_mut();
-        func.make_defined_with_unreachable(allocs);
+        let mut allocs = &mut module.allocs;
+        func.make_defined_with_unreachable(&mut allocs);
         func
     }
 }
@@ -321,47 +293,12 @@ impl Func {
     /// # 返回
     /// - `Ok(())`: 成功添加基本块
     /// - `Err(SlabListError)`: 添加失败 (通常是因为函数已经有定义)
-    pub fn add_block_ref_from_allocs(&self, allocs: &IRAllocs, block: BlockRef) -> SlabListRes {
+    pub fn add_block_ref(&self, allocs: &impl IRAllocsReadable, block: BlockRef) -> SlabListRes {
         if !self.is_extern() {
             return Err(SlabListError::InvalidList);
         }
-        self.body.push_back_ref(&allocs.blocks, block)
-    }
-
-    /// 向函数添加基本块引用 (使用模块)
-    ///
-    /// 功能与 `add_block_ref_from_alloc` 相同，但从模块中获取分配器。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块引用
-    /// - `block`: 要添加的基本块引用
-    ///
-    /// # 返回
-    /// - `Ok(())`: 成功添加基本块
-    /// - `Err(SlabListError)`: 添加失败
-    pub fn add_block_ref(&self, module: &Module, block: BlockRef) -> SlabListRes {
-        let mut allocs = module.allocs.borrow_mut();
-        self.add_block_ref_from_allocs(&mut allocs, block)
-    }
-
-    /// 向函数添加基本块引用 (使用可变模块)
-    ///
-    /// 功能与 `add_block_ref` 相同，但接受可变模块引用，避免借用检查开销。
-    ///
-    /// # 参数
-    /// - `module`: IR 模块的可变引用
-    /// - `block`: 要添加的基本块引用
-    ///
-    /// # 返回
-    /// - `Ok(())`: 成功添加基本块
-    /// - `Err(SlabListError)`: 添加失败
-    pub fn add_block_ref_from_mut_module(
-        &self,
-        module: &mut Module,
-        block: BlockRef,
-    ) -> SlabListRes {
-        let allocs = module.allocs.get_mut();
-        self.add_block_ref_from_allocs(allocs, block)
+        self.body
+            .push_back_ref(&allocs.get_allocs_ref().blocks, block)
     }
 
     /// 获取函数的入口基本块引用
@@ -533,31 +470,45 @@ impl FuncRef {
         self.0
     }
 
-    pub fn get_arg(self, alloc: &Slab<GlobalData>, index: usize) -> Option<FuncArgRef> {
-        let func_data = self.to_data(alloc);
-        if index < func_data.args.len() { Some(FuncArgRef(self.0, index)) } else { None }
-    }
-    pub fn args<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a [FuncArg] {
+    pub fn args_from_alloc(self, alloc: &Slab<GlobalData>) -> &[FuncArg] {
         self.to_data(alloc).args.as_ref()
     }
+    pub fn args(self, allocs: &impl IRAllocsReadable) -> &[FuncArg] {
+        self.args_from_alloc(&allocs.get_allocs_ref().globals)
+    }
 
-    pub fn try_get_body(self, alloc: &Slab<GlobalData>) -> Option<&SlabRefList<BlockRef>> {
+    pub fn try_get_body_from_alloc(
+        self,
+        alloc: &Slab<GlobalData>,
+    ) -> Option<&SlabRefList<BlockRef>> {
         self.to_data(alloc).get_body()
     }
-    pub fn get_body(self, alloc: &Slab<GlobalData>) -> &SlabRefList<BlockRef> {
-        self.try_get_body(alloc).expect("Expected a function body")
+    pub fn get_body_from_alloc(self, alloc: &Slab<GlobalData>) -> &SlabRefList<BlockRef> {
+        self.try_get_body_from_alloc(alloc)
+            .expect("Expected a function body")
+    }
+    pub fn try_get_body(self, allocs: &impl IRAllocsReadable) -> Option<&SlabRefList<BlockRef>> {
+        self.try_get_body_from_alloc(&allocs.get_allocs_ref().globals)
+    }
+    pub fn get_body(self, allocs: &impl IRAllocsReadable) -> &SlabRefList<BlockRef> {
+        self.get_body_from_alloc(&allocs.get_allocs_ref().globals)
     }
 
-    pub fn try_get_entry(self, alloc: &Slab<GlobalData>) -> Option<BlockRef> {
+    pub fn try_get_entry_from_alloc(self, alloc: &Slab<GlobalData>) -> Option<BlockRef> {
         let func = self.to_data(alloc);
         if func.is_extern() {
             return None;
         }
         func.entry.get().to_option()
     }
-
-    pub fn get_entry(self, alloc: &Slab<GlobalData>) -> BlockRef {
-        self.try_get_entry(alloc)
+    pub fn get_entry_from_alloc(self, alloc: &Slab<GlobalData>) -> BlockRef {
+        self.try_get_entry_from_alloc(alloc)
             .expect("trying to get entry block from extern or broken function")
+    }
+    pub fn try_get_entry(self, allocs: &impl IRAllocsReadable) -> Option<BlockRef> {
+        self.try_get_entry_from_alloc(&allocs.get_allocs_ref().globals)
+    }
+    pub fn get_entry(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.get_entry_from_alloc(&allocs.get_allocs_ref().globals)
     }
 }

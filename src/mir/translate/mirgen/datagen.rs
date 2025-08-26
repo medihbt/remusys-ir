@@ -216,9 +216,8 @@ impl DataGen {
         }
     }
     pub fn add_ir_expr_from_module(&mut self, expr: ExprRef, module: &Module) {
-        let allocs = module.borrow_allocs();
         let type_ctx = &*module.type_ctx;
-        self.add_ir_expr(expr, type_ctx, &allocs.exprs);
+        self.add_ir_expr(expr, type_ctx, &module.allocs.exprs);
     }
     fn add_aggr(
         &mut self,

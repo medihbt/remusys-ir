@@ -198,8 +198,8 @@ impl<'a> ExprMergeMap<'a> {
     }
 }
 
-pub(super) fn merge_exprs(module: &Module) {
-    let allocs = module.borrow_allocs();
+pub(super) fn merge_exprs(module: &mut Module) {
+    let allocs = &module.allocs;
     let value_map = {
         let mut merge_map = ExprMergeMap::new(&module.type_ctx, &allocs);
         for (expr_ref, _) in allocs.exprs.iter() {
@@ -242,7 +242,5 @@ pub(super) fn merge_exprs(module: &Module) {
             useref.set_operand(&allocs, new_op);
         }
     }
-    drop(allocs);
-
     module.gc_mark_sweep([]);
 }

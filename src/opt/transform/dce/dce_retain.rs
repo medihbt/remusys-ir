@@ -8,9 +8,8 @@ use crate::{
 };
 use std::ops::ControlFlow;
 
-pub(super) fn retain_globals(module: &Module) {
-    let mut allocs = module.borrow_allocs_mut();
-    let mut marker = IRValueMarker::from_allocs(&mut allocs);
+pub(super) fn retain_globals(module: &mut Module) {
+    let mut marker = IRValueMarker::from_allocs(&mut module.allocs);
     let mut to_erase = Vec::new();
     for (_, &global) in module.globals.borrow().iter() {
         let linkage = global.to_data(&marker.allocs.globals).get_linkage();
@@ -42,7 +41,7 @@ fn reatin_cfg_for_func(allocs: &IRAllocs, func: FuncRef) {
             continue;
         }
         dead_user::kill_block(allocs, bref, &dfs);
-        func.get_body(&allocs.globals)
+        func.get_body_from_alloc(&allocs.globals)
             .unplug_node(&allocs.blocks, bref)
             .unwrap_or_else(|e| {
                 let name = func.to_data(&allocs.globals).get_name();
@@ -51,13 +50,12 @@ fn reatin_cfg_for_func(allocs: &IRAllocs, func: FuncRef) {
     }
 }
 
-pub(super) fn retain_cfg_for_module(module: &Module) {
-    let allocs = module.borrow_allocs();
+pub(super) fn retain_cfg_for_module(module: &mut Module) {
+    let allocs = &module.allocs;
     module.forall_funcs(false, |fref, _| {
         reatin_cfg_for_func(&allocs, fref);
         ControlFlow::Continue(())
     });
-    drop(allocs);
     module.gc_mark_sweep([]);
 }
 

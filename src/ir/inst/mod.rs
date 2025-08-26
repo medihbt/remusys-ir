@@ -609,16 +609,13 @@ impl InstRef {
         ret
     }
 
-    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: InstData) -> Self {
-        let mut allocs = allocs.get_allocs_mutref();
+    pub fn new(allocs: &mut impl IRAllocsEditable, data: InstData) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         Self::from_alloc(&mut allocs.insts, data)
     }
 
     /// 如果自己在指令列表里, 就把自己移除掉.
-    pub fn detach_self<'a>(
-        self,
-        allocs: impl IRAllocsReadable<'a>,
-    ) -> Result<ManagedInst<'a>, InstError> {
+    pub fn detach_self(self, allocs: &impl IRAllocsReadable) -> Result<ManagedInst, InstError> {
         let allocs = allocs.get_allocs_ref();
         let (parent, opcode) = {
             let data = self.to_inst(&allocs.insts);
@@ -635,15 +632,14 @@ impl InstRef {
         Ok(ManagedInst::new(self, allocs))
     }
 
-    pub fn get_parent<'a>(self, allocs: impl IRAllocsReadable<'a>) -> BlockRef {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).get_parent_bb()
+    pub fn get_parent<'a>(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_parent_bb()
     }
     pub fn get_parent_from_alloc(self, alloc: &Slab<InstData>) -> BlockRef {
         self.to_inst(alloc).get_parent_bb()
     }
 
-    pub fn get_parent_func<'a>(self, allocs: impl IRAllocsReadable<'a>) -> FuncRef {
+    pub fn get_parent_func<'a>(self, allocs: &impl IRAllocsReadable) -> FuncRef {
         let allocs = allocs.get_allocs_ref();
         let parent = self.to_inst(&allocs.insts).get_parent_bb();
         let func = parent.to_data(&allocs.blocks).get_parent_func();

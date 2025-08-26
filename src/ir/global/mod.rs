@@ -1,7 +1,7 @@
 use slab::Slab;
 
 use crate::{
-    base::{INullableValue, MixRef, SlabRef},
+    base::{INullableValue, SlabRef},
     ir::{
         IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue, ISubValueSSA,
         ITraceableValue, IUser, IUserRef, Module, OperandSet, PtrStorage, Use, UserID, UserList,
@@ -281,33 +281,24 @@ impl GlobalRef {
         return ret;
     }
 
-    pub fn new<'a>(allocs: impl IRAllocsEditable<'a>, data: GlobalData) -> Self {
-        let mut allocs = allocs.get_allocs_mutref();
-        Self::from_allocs(allocs.get_mut(), data)
+    pub fn new(allocs: &mut impl IRAllocsEditable, data: GlobalData) -> Self {
+        Self::from_allocs(allocs.get_allocs_mutref(), data)
     }
 
     /// Registers this global reference to the module's symbol table.
-    pub fn register_to_symtab(self, module: &Module) {
+    pub fn register_to_symtab(self, module: &mut Module) {
         let name = self.get_name(module).to_string();
         module.globals.borrow_mut().insert(name, self);
     }
 
-    pub fn get_name<'a>(self, allocs: impl IRAllocsReadable<'a>) -> MixRef<'a, str> {
-        allocs
-            .get_allocs_ref()
-            .map(|allocs| self.to_data(&allocs.globals).get_name())
+    pub fn get_name<'a>(self, allocs: &'a impl IRAllocsReadable) -> &'a str {
+        self.to_data(&allocs.get_allocs_ref().globals).get_name()
     }
 
-    pub fn get_content_type_from_alloc(self, alloc: &Slab<GlobalData>) -> ValTypeID {
-        self.to_data(alloc).get_common().content_ty
-    }
-    pub fn get_content_type(self, module: &Module) -> ValTypeID {
-        let allocs = module.allocs.borrow();
-        self.get_content_type_from_alloc(&allocs.globals)
-    }
-    pub fn get_content_type_from_mut_module(self, module: &mut Module) -> ValTypeID {
-        let alloc = module.allocs.get_mut();
-        self.get_content_type_from_alloc(&alloc.globals)
+    pub fn get_content_type(self, allocs: &impl IRAllocsReadable) -> ValTypeID {
+        self.to_data(&allocs.get_allocs_ref().globals)
+            .get_common()
+            .content_ty
     }
 
     pub fn is_extern(self, allocs: &IRAllocs) -> bool {

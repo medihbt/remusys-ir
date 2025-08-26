@@ -32,8 +32,7 @@ impl SideEffectMarker {
 
     pub fn from_module(module: &Module) -> Self {
         let globals = module.globals.borrow();
-        let allocs = module.borrow_allocs();
-        Self::new_full(&globals, &allocs)
+        Self::new_full(&globals, &module.allocs)
     }
 
     fn init_roots(&mut self, allocs: &IRAllocs, globals: &HashMap<String, GlobalRef>) {
@@ -52,7 +51,7 @@ impl SideEffectMarker {
     }
 
     fn init_insts_root(&mut self, allocs: &IRAllocs, func: FuncRef) {
-        let Some(body) = func.try_get_body(&allocs.globals) else {
+        let Some(body) = func.try_get_body(allocs) else {
             return;
         };
         for (_, block) in body.view(&allocs.blocks) {

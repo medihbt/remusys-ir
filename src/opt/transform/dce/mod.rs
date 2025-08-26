@@ -12,7 +12,7 @@ mod dce_merge;
 mod dce_retain;
 mod side_effect;
 
-pub fn dce_pass(module: &Module) {
+pub fn dce_pass(module: &mut Module) {
     dce_retain::retain_globals(module);
     dce_merge::merge_exprs(module);
     dce_retain::retain_cfg_for_module(module);
@@ -36,16 +36,15 @@ impl DCEContext {
         }
     }
 
-    fn exec(&mut self, module: &Module) {
+    fn exec(&mut self, module: &mut Module) {
         let funcs = module.dump_funcs(false);
-        let mut allocs = module.borrow_allocs_mut();
         for func in funcs {
-            self.perform_dce_for_func(&mut allocs, func);
+            self.perform_dce_for_func(&mut module.allocs, func);
         }
     }
 
     fn perform_dce_for_func(&mut self, allocs: &mut IRAllocs, func: FuncRef) {
-        for (bref, block) in func.get_body(&allocs.globals).view(&allocs.blocks) {
+        for (bref, block) in func.get_body_from_alloc(&allocs.globals).view(&allocs.blocks) {
             for (iref, inst) in block.insts.view(&allocs.insts) {
                 if self.side_effect.inst_has_side_effect(iref) {
                     continue;
@@ -132,7 +131,7 @@ impl DCEContext {
                 Some(Up)
             } else {
                 // Case 3: 后继块只有 block 一个前驱
-                let terminator = block.get_terminator(&allocs.insts);
+                let terminator = block.get_terminator_from_alloc(&allocs.insts);
                 let ok = succ
                     .preds(allocs)
                     .iter()

@@ -31,13 +31,11 @@ use crate::{
 ///
 /// # 参数
 /// - `ir_module`: 要处理的 IR 模块
-pub fn break_critical_edges(ir_module: &Module) {
+pub fn break_critical_edges(ir_module: &mut Module) {
     let funcs = ir_module.dump_funcs(false);
-    let mut allocs = ir_module.borrow_allocs_mut();
-
     let mut critical_edges = VecDeque::new();
     for &func in funcs.iter() {
-        find_critical_edges_for_func(func, &mut allocs, &mut critical_edges);
+        find_critical_edges_for_func(func, &mut ir_module.allocs, &mut critical_edges);
     }
 }
 
@@ -66,7 +64,7 @@ fn find_critical_edges_for_func(
         // 并将所有相关的 JumpTarget 重定向到这个新块。
         let mid_bb = {
             let mid_bb = BlockRef::new_jump_to(allocs, edge.to);
-            func.get_body(&allocs.globals)
+            func.get_body_from_alloc(&allocs.globals)
                 .node_add_prev(&allocs.blocks, edge.to, mid_bb)
                 .expect("Failed to add new block");
             mid_bb

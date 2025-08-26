@@ -513,7 +513,7 @@ impl<'a> JumpTargetSplitter<'a> {
         };
         // 设置新基本块的终结指令为 Jump
         new_block
-            .set_terminator_with_allocs(&self.allocs, jump_inst)
+            .set_terminator(self.allocs, jump_inst)
             .expect("Failed to set terminator for new block");
         let new_block = BlockRef::from_allocs(self.allocs, new_block);
 
@@ -535,9 +535,7 @@ impl<'a> JumpTargetSplitter<'a> {
         );
 
         // 将新基本块插入到前驱基本块的后面
-        let Some(body) = parent_func.try_get_body(&self.allocs.globals) else {
-            unreachable!("Function {parent_func:?} without body cannot have critical edges");
-        };
+        let body = parent_func.get_body(self.allocs);
         body.node_add_next(&self.allocs.blocks, pred_block, new_block)
             .expect("Failed to insert new block after predecessor block");
         new_block
