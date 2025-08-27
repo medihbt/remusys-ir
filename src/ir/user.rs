@@ -89,7 +89,7 @@ pub trait IUser {
             .map_or(ValueSSA::None, |use_ref| use_ref.get_operand())
     }
 
-    fn operands_iter<'a>(&'a self) -> OperandIter<'a> {
+    fn operands_iter(&self) -> OperandIter {
         OperandIter::new(self.get_operands())
     }
 }

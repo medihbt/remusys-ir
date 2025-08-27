@@ -668,7 +668,7 @@ impl BlockRef {
     ///
     /// # 返回
     /// 返回新创建的基本块引用
-    pub fn new<'a>(allocs: &mut impl IRAllocsEditable, data: BlockData) -> Self {
+    pub fn new(allocs: &mut impl IRAllocsEditable, data: BlockData) -> Self {
         Self::from_allocs(allocs.get_allocs_mutref(), data)
     }
     pub fn new_unreachable(allocs: &mut impl IRAllocsEditable) -> Self {
@@ -694,7 +694,7 @@ impl BlockRef {
     ///
     /// # 返回
     /// 返回基本块指令列表的引用
-    pub fn insts_from_alloc<'a>(self, alloc: &'a Slab<BlockData>) -> &'a SlabRefList<InstRef> {
+    pub fn insts_from_alloc(self, alloc: &Slab<BlockData>) -> &SlabRefList<InstRef> {
         &self.to_data(alloc).insts
     }
 

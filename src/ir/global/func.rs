@@ -386,14 +386,14 @@ impl FuncArgRef {
         ValueSSA::FuncArg(self.0, self.1 as u32)
     }
 
-    pub fn to_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a FuncArg {
+    pub fn to_data(self, alloc: &Slab<GlobalData>) -> &FuncArg {
         let func_data = self.0.to_data(alloc);
         match func_data {
             GlobalData::Func(func) => &func.args[self.1],
             _ => panic!("Expected a function data"),
         }
     }
-    pub fn as_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> Option<&'a FuncArg> {
+    pub fn as_data(self, alloc: &Slab<GlobalData>) -> Option<&FuncArg> {
         let func_data = self.0.to_data(alloc);
         match func_data {
             GlobalData::Func(func) => func.args.get(self.1),
@@ -401,14 +401,14 @@ impl FuncArgRef {
         }
     }
 
-    pub fn to_data_mut<'a>(&self, alloc: &'a mut Slab<GlobalData>) -> &'a mut FuncArg {
+    pub fn to_data_mut(self, alloc: &mut Slab<GlobalData>) -> &mut FuncArg {
         let func_data = self.0.to_data_mut(alloc);
         match func_data {
             GlobalData::Func(func) => &mut func.args[self.1],
             _ => panic!("Expected a function data"),
         }
     }
-    pub fn as_data_mut<'a>(&self, alloc: &'a mut Slab<GlobalData>) -> Option<&'a mut FuncArg> {
+    pub fn as_data_mut(self, alloc: &mut Slab<GlobalData>) -> Option<&mut FuncArg> {
         let func_data = self.0.to_data_mut(alloc);
         match func_data {
             GlobalData::Func(func) => func.args.get_mut(self.1),
@@ -416,10 +416,10 @@ impl FuncArgRef {
         }
     }
 
-    pub fn get_valtype<'a>(&self, alloc: &'a Slab<GlobalData>) -> ValTypeID {
+    pub fn get_valtype(self, alloc: &Slab<GlobalData>) -> ValTypeID {
         self.to_data(alloc).ty
     }
-    pub fn get_users<'a>(&self, alloc: &'a Slab<GlobalData>) -> &'a UserList {
+    pub fn get_users(self, alloc: &Slab<GlobalData>) -> &UserList {
         self.to_data(alloc).users()
     }
 }

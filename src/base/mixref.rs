@@ -4,24 +4,24 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub enum MixRef<'a, T: ?Sized + 'a> {
+pub enum MixRef<'a, T: ?Sized> {
     Fix(&'a T),
     Dyn(Ref<'a, T>),
 }
 
-impl<'a, T: ?Sized + 'a> Deref for MixRef<'a, T> {
+impl<'a, T: ?Sized> Deref for MixRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         self.get()
     }
 }
-impl<'a, T: ?Sized + Display + 'a> Display for MixRef<'a, T> {
+impl<'a, T: ?Sized + Display> Display for MixRef<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.get().fmt(f)
     }
 }
-impl<'a, T: ?Sized + 'a> Clone for MixRef<'a, T> {
+impl<'a, T: ?Sized> Clone for MixRef<'a, T> {
     fn clone(&self) -> Self {
         match self {
             MixRef::Fix(val) => MixRef::Fix(val),
@@ -41,7 +41,7 @@ where
         self.get().into_iter()
     }
 }
-impl<'a, T: ?Sized + 'a> MixRef<'a, T> {
+impl<'a, T: ?Sized> MixRef<'a, T> {
     pub fn get(&self) -> &T {
         match self {
             MixRef::Fix(val) => val,
@@ -57,29 +57,29 @@ impl<'a, T: ?Sized + 'a> MixRef<'a, T> {
     }
 }
 
-pub enum MixMutRef<'a, T: ?Sized + 'a> {
+pub enum MixMutRef<'a, T: ?Sized> {
     Fix(&'a mut T),
     Dyn(RefMut<'a, T>),
 }
 
-impl<'a, T: ?Sized + 'a> Deref for MixMutRef<'a, T> {
+impl<'a, T: ?Sized> Deref for MixMutRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
         self.get()
     }
 }
-impl<'a, T: ?Sized + 'a> DerefMut for MixMutRef<'a, T> {
+impl<'a, T: ?Sized> DerefMut for MixMutRef<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.get_mut()
     }
 }
-impl<'a, T: ?Sized + Display + 'a> Display for MixMutRef<'a, T> {
+impl<'a, T: ?Sized + Display> Display for MixMutRef<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.get().fmt(f)
     }
 }
-impl<'a, T: ?Sized + 'a> MixMutRef<'a, T> {
+impl<'a, T: ?Sized> MixMutRef<'a, T> {
     pub fn get(&self) -> &T {
         match self {
             MixMutRef::Fix(val) => val,

@@ -291,7 +291,7 @@ impl GlobalRef {
         module.globals.borrow_mut().insert(name, self);
     }
 
-    pub fn get_name<'a>(self, allocs: &'a impl IRAllocsReadable) -> &'a str {
+    pub fn get_name(self, allocs: &impl IRAllocsReadable) -> &str {
         self.to_data(&allocs.get_allocs_ref().globals).get_name()
     }
 

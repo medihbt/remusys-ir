@@ -16,11 +16,11 @@ pub struct Array {
 }
 
 impl IUser for Array {
-    fn get_operands<'a>(&'a self) -> OperandSet<'a> {
+    fn get_operands(&self) -> OperandSet {
         OperandSet::Fixed(&self.elems)
     }
 
-    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
         &mut self.elems
     }
 }
