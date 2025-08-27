@@ -32,6 +32,9 @@ impl ISubExpr for FixVec {
     fn get_common(&self) -> &ExprCommon {
         &self.common
     }
+    fn common_mut(&mut self) -> &mut ExprCommon {
+        &mut self.common
+    }
 
     fn is_aggregate(&self) -> bool {
         true

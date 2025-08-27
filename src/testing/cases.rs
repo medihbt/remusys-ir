@@ -214,7 +214,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .add_store_inst(ValueSSA::Inst(alloca_c_1), APInt::new(168, 32).into(), 4)
         .unwrap();
     builder.focus_set_jump_to(while_block_5).unwrap();
-    builder.module.gc_mark_sweep([]);
+    builder.module.gc_cleaner().compact([]);
     builder
 }
 

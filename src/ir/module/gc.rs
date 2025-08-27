@@ -1,12 +1,12 @@
-use std::{collections::VecDeque, ops::ControlFlow};
-
 use crate::{
-    base::{FixBitSet, SlabRef},
+    base::{FixBitSet, INullableValue, SlabListNode, SlabListNodeHead, SlabRef},
     ir::{
-        BlockRef, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubValueSSA, IUser, InstRef,
-        TerminatorRef, ValueSSA,
+        BlockData, BlockRef, ConstExprData, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubGlobal,
+        ISubInst, ISubValueSSA, IUser, InstData, InstRef, JumpTarget, TerminatorRef, Use, UserID,
+        ValueSSA,
     },
 };
+use std::{collections::VecDeque, ops::ControlFlow, rc::Rc};
 
 #[derive(Debug, Clone)]
 pub struct IRLiveValueSet {
@@ -80,6 +80,15 @@ impl<'a> IRValueMarker<'a> {
     pub fn push_mark(&mut self, value: impl ISubValueSSA) {
         let Self { live_set, mark_queue, .. } = self;
         Self::do_push_mark(live_set, mark_queue, value);
+    }
+    pub fn mark_leaf(&mut self, value: impl ISubValueSSA) {
+        let Self { live_set, .. } = self;
+        let value = value.into_ir();
+        if live_set.is_live(value) {
+            return;
+        }
+        live_set.add(value);
+        // 不将 value 放入 mark_queue，因此不会遍历其子对象
     }
 
     pub fn mark_all(&mut self) {
@@ -175,6 +184,203 @@ impl<'a> IRValueMarker<'a> {
                 });
             }
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IRValueCompactMap {
+    pub insts: Vec<InstRef>,
+    pub blocks: Vec<BlockRef>,
+    pub exprs: Vec<ExprRef>,
+    pub globals: Vec<GlobalRef>,
+}
+
+impl IRValueCompactMap {
+    fn from_liveset(liveset: &IRLiveValueSet) -> Self {
+        Self {
+            insts: Self::build_vecmap(&liveset.insts),
+            blocks: Self::build_vecmap(&liveset.blocks),
+            exprs: Self::build_vecmap(&liveset.exprs),
+            globals: Self::build_vecmap(&liveset.globals),
+        }
+    }
+
+    fn build_vecmap<T: SlabRef, const N: usize>(bitset: &FixBitSet<N>) -> Vec<T> {
+        let mut v = vec![T::new_null(); bitset.compact_len()];
+        for live in bitset.iter() {
+            v[live] = T::from_handle(live);
+        }
+        v
+    }
+
+    pub fn redirect_value(&self, value: impl ISubValueSSA) -> ValueSSA {
+        let value = value.into_ir();
+        match value {
+            ValueSSA::ConstData(_) | ValueSSA::AggrZero(_) => value, // ConstData 保持不变
+            ValueSSA::ConstExpr(expr) => {
+                let new_expr = self.exprs[expr.get_handle()];
+                ValueSSA::ConstExpr(new_expr)
+            }
+            ValueSSA::FuncArg(func, index) => {
+                let new_func = self.globals[func.get_handle()];
+                ValueSSA::FuncArg(new_func, index)
+            }
+            ValueSSA::Block(block) => {
+                let new_block = self.blocks[block.get_handle()];
+                ValueSSA::Block(new_block)
+            }
+            ValueSSA::Inst(inst) => {
+                let new_inst = self.insts[inst.get_handle()];
+                ValueSSA::Inst(new_inst)
+            }
+            ValueSSA::Global(global) => {
+                let new_global = self.globals[global.get_handle()];
+                ValueSSA::Global(new_global)
+            }
+            ValueSSA::None => ValueSSA::None, // None 保持不变
+        }
+    }
+
+    pub fn redirect_inst(&self, inst: InstRef) -> InstRef {
+        if inst.is_null() { inst } else { self.insts[inst.get_handle()] }
+    }
+    pub fn redirect_global(&self, global: GlobalRef) -> GlobalRef {
+        if global.is_null() { global } else { self.globals[global.get_handle()] }
+    }
+    pub fn redirect_block(&self, block: BlockRef) -> BlockRef {
+        if block.is_null() || block.is_vexit() { block } else { self.blocks[block.get_handle()] }
+    }
+    pub fn redirect_expr(&self, expr: ExprRef) -> ExprRef {
+        if expr.is_null() { expr } else { self.exprs[expr.get_handle()] }
+    }
+}
+
+impl<'a> IRValueMarker<'a> {
+    fn compact(&mut self) -> IRValueCompactMap {
+        let Self { live_set, allocs, .. } = self;
+        let mut compact_map = IRValueCompactMap::from_liveset(live_set);
+
+        allocs.globals.compact(|_, old, new| {
+            compact_map.globals[old] = GlobalRef::from_handle(new);
+            true
+        });
+        allocs.blocks.compact(|_, old, new| {
+            compact_map.blocks[old] = BlockRef::from_handle(new);
+            true
+        });
+        allocs.insts.compact(|_, old, new| {
+            compact_map.insts[old] = InstRef::from_handle(new);
+            true
+        });
+        allocs.exprs.compact(|_, old, new| {
+            compact_map.exprs[old] = ExprRef::from_handle(new);
+            true
+        });
+
+        for (id, inst) in allocs.insts.iter_mut() {
+            Self::fix_inst(&compact_map, id, inst);
+        }
+        for (id, block) in allocs.blocks.iter_mut() {
+            Self::fix_block(&compact_map, id, block);
+        }
+        for (id, global) in allocs.globals.iter_mut() {
+            Self::fix_global(&compact_map, id, global);
+        }
+        for (id, expr) in allocs.exprs.iter_mut() {
+            Self::fix_expr(&compact_map, id, expr);
+        }
+
+        compact_map
+    }
+
+    fn redirect_jts(compact_map: &IRValueCompactMap, new: InstRef, jts: &[Rc<JumpTarget>]) {
+        for jt in jts {
+            jt.set_terminator(new);
+            jt.block.set(compact_map.redirect_block(jt.get_block()));
+        }
+    }
+    fn redirect_use(compact_map: &IRValueCompactMap, new: impl Into<UserID>, uses: &[Rc<Use>]) {
+        let new = new.into();
+        for u in uses {
+            u.user.set(new);
+            u.operand.set(compact_map.redirect_value(u.get_operand()));
+        }
+    }
+
+    fn fix_inst(compact_map: &IRValueCompactMap, id: usize, inst: &mut InstData) {
+        let new = InstRef::from_handle(id);
+        inst.set_parent_bb(compact_map.redirect_block(inst.get_parent_bb()));
+        inst.common_mut().self_ref = new;
+        inst.store_node_head({
+            let SlabListNodeHead { prev, next } = inst.load_node_head();
+            SlabListNodeHead {
+                prev: compact_map
+                    .redirect_inst(InstRef::from_handle(prev))
+                    .get_handle(),
+                next: compact_map
+                    .redirect_inst(InstRef::from_handle(next))
+                    .get_handle(),
+            }
+        });
+        Self::redirect_use(compact_map, new, &inst.get_operands());
+        if let Some(jts) = inst.try_get_jts() {
+            Self::redirect_jts(compact_map, new, &jts);
+        }
+    }
+
+    fn fix_block(compact_map: &IRValueCompactMap, id: usize, block: &mut BlockData) {
+        block.self_ref = BlockRef::from_handle(id);
+        block.set_parent_func({
+            let parent = block.get_parent_func();
+            compact_map.redirect_global(parent)
+        });
+        block.store_node_head({
+            let SlabListNodeHead { prev, next } = block.load_node_head();
+            SlabListNodeHead {
+                prev: compact_map
+                    .redirect_block(BlockRef::from_handle(prev))
+                    .get_handle(),
+                next: compact_map
+                    .redirect_block(BlockRef::from_handle(next))
+                    .get_handle(),
+            }
+        });
+        block.insts._head = compact_map.redirect_inst(block.insts._head);
+        block.insts._tail = compact_map.redirect_inst(block.insts._tail);
+        block.phi_end = compact_map.redirect_inst(block.phi_end);
+    }
+
+    fn fix_global(compact_map: &IRValueCompactMap, id: usize, global: &mut GlobalData) {
+        let new = GlobalRef::from_handle(id);
+        global.common_mut().self_ref = new;
+        Self::redirect_use(compact_map, new, &global.get_operands());
+
+        let GlobalData::Func(func) = global else { return };
+        func.entry.set(compact_map.redirect_block(func.entry.get()));
+        func.body._head = compact_map.redirect_block(func.body._head);
+        func.body._tail = compact_map.redirect_block(func.body._tail);
+    }
+
+    fn fix_expr(compact_map: &IRValueCompactMap, id: usize, expr: &mut ConstExprData) {
+        Self::redirect_use(compact_map, ExprRef::from_handle(id), &expr.get_operands());
+    }
+
+    /// 标记-压缩法垃圾回收. 由于 Slab allocator 限制, 实际行为是: 先执行一次标记-清除,
+    /// 然后就地压缩.
+    ///
+    /// ### Returns
+    ///
+    /// * `IRValueCompactMap` -- 从原始索引到压缩后索引的映射.
+    ///
+    /// ### Warning
+    ///
+    /// 注意: 绝大多数情况下不要调用这个压缩函数. 否则, 全局对象移动以后, IR Module 内部的引用可能会变得无效.
+    pub(super) fn mark_and_compact(
+        mut self,
+        roots: impl IntoIterator<Item = ValueSSA>,
+    ) -> IRValueCompactMap {
+        self.mark_and_sweep(roots);
+        self.compact()
     }
 }
 

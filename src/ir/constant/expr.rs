@@ -53,6 +53,13 @@ impl ISubExpr for ConstExprData {
             ConstExprData::FixVec(data) => &data.common,
         }
     }
+    fn common_mut(&mut self) -> &mut ExprCommon {
+        match self {
+            ConstExprData::Array(data) => &mut data.common,
+            ConstExprData::Struct(data) => &mut data.common,
+            ConstExprData::FixVec(data) => &mut data.common,
+        }
+    }
 
     fn is_aggregate(&self) -> bool {
         matches!(self, ConstExprData::Array(_) | ConstExprData::Struct(_))
@@ -116,6 +123,7 @@ impl ExprCommon {
 
 pub trait ISubExpr: IUser {
     fn get_common(&self) -> &ExprCommon;
+    fn common_mut(&mut self) -> &mut ExprCommon;
     fn is_aggregate(&self) -> bool;
     fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
 }

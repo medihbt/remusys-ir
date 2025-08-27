@@ -105,6 +105,40 @@ impl<const N: usize> FixBitSet<N> {
 
         count
     }
+
+    /// 找到最后一个为 true 的索引
+    pub fn last_true_pos(&self) -> Option<usize> {
+        let slice = self.get_slice();
+        let full_words = self.len() / 64;
+
+        // 从后向前查找
+        for i in (0..=full_words).rev() {
+            if slice[i] == 0 {
+                continue;
+            }
+            // 找到最后一个非零字，查找其中的位
+            for bit in (0..64).rev() {
+                if (slice[i] & (1 << bit)) != 0 {
+                    return Some(i * 64 + bit);
+                }
+            }
+        }
+
+        // 如果没有找到，返回无效值
+        None
+    }
+
+    /// 计算压缩后的长度
+    pub fn compact_len(&self) -> usize {
+        match self.last_true_pos() {
+            Some(pos) => pos + 1,
+            None => 0,
+        }
+    }
+
+    pub fn iter(&self) -> FixBitSetIter {
+        FixBitSetIter::new(self)
+    }
 }
 
 pub struct FixBitSetIter<'a> {

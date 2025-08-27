@@ -55,9 +55,9 @@ pub use self::{
     },
     managed::{IManagedIRValue, IRManaged, ManagedInst},
     module::{
-        IModuleEditable, IModuleReadable, Module,
+        IModuleEditable, IModuleReadable, Module, IRModuleCleaner,
         allocs::*,
-        gc::{IRLiveValueSet, IRValueMarker},
+        gc::{IRLiveValueSet, IRValueMarker, IRValueCompactMap},
         view::*,
     },
     opcode::{InstKind, Opcode},

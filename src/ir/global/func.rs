@@ -89,9 +89,9 @@ pub struct Func {
     /// 返回类型
     pub return_type: ValTypeID,
     /// 函数体的基本块列表 (空列表表示外部函数)
-    body: SlabRefList<BlockRef>,
+    pub(crate) body: SlabRefList<BlockRef>,
     /// 函数入口基本块的引用
-    entry: Cell<BlockRef>,
+    pub(crate) entry: Cell<BlockRef>,
 }
 
 impl ISubGlobal for Func {

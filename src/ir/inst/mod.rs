@@ -5,8 +5,8 @@ use crate::{
     },
     ir::{
         BlockRef, FuncRef, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue,
-        ISubValueSSA, ITraceableValue, IUser, IUserRef, ManagedInst, Opcode, OperandSet, Use,
-        UserID, UserList, ValueSSA, ValueSSAError,
+        ISubValueSSA, ITerminatorInst, ITraceableValue, IUser, IUserRef, JumpTargets, ManagedInst,
+        Opcode, OperandSet, Use, UserID, UserList, ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, ValTypeID},
 };
@@ -349,6 +349,15 @@ impl InstData {
     }
     pub fn new_phi_inst_end() -> Self {
         InstData::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
+    }
+
+    pub fn try_get_jts(&self) -> Option<JumpTargets> {
+        match self {
+            InstData::Br(br) => Some(br.get_jts()),
+            InstData::Switch(switch) => Some(switch.get_jts()),
+            InstData::Jump(jump) => Some(jump.get_jts()),
+            _ => None,
+        }
     }
 
     fn basic_cleanup(inst: &impl ISubInst) {
