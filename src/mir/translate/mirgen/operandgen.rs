@@ -17,7 +17,7 @@ use crate::{
             MirBlockInfo, globalgen::MirGlobalItems, instgen::make_copy_inst, paramgen::ArgPos,
         },
     },
-    typing::{FPKind, IValType, PrimType, TypeContext, ValTypeID},
+    typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,10 +206,10 @@ impl<'a> OperandMap<'a> {
             Err(OperandMapError::IsConstData(c)) => match c {
                 ConstData::Undef(_) => MirOperand::None,
                 ConstData::Zero(ty) => match ty {
-                    PrimType::Ptr | PrimType::Int(64) => Imm64::new_empty().into_mir(),
-                    PrimType::Int(32) => Imm32::new_empty().into_mir(),
-                    PrimType::Float(FPKind::Ieee32) => MirOperand::F32(0.0),
-                    PrimType::Float(FPKind::Ieee64) => MirOperand::F64(0.0),
+                    ScalarType::Ptr | ScalarType::Int(64) => Imm64::new_empty().into_mir(),
+                    ScalarType::Int(32) => Imm32::new_empty().into_mir(),
+                    ScalarType::Float(FPKind::Ieee32) => MirOperand::F32(0.0),
+                    ScalarType::Float(FPKind::Ieee64) => MirOperand::F64(0.0),
                     _ => panic!("Unexpected type for zero constant: {ty:?}"),
                 },
                 ConstData::PtrNull(_) => Imm64::new_empty().into_mir(),
@@ -268,8 +268,8 @@ impl DispatchedReg {
                     }
                 }
                 match ty {
-                    PrimType::Ptr | PrimType::Int(_) => get_zr_by_size(&ty.into_ir(), type_ctx),
-                    PrimType::Float(FPKind::Ieee32) => {
+                    ScalarType::Ptr | ScalarType::Int(_) => get_zr_by_size(&ty.into_ir(), type_ctx),
+                    ScalarType::Float(FPKind::Ieee32) => {
                         let f32_reg =
                             alloc_reg.insert_float(FPR32(0, RegUseFlags::DEF).into_real());
                         let f32_reg = FPR32::from_real(f32_reg);
@@ -279,7 +279,7 @@ impl DispatchedReg {
                         );
                         DispatchedReg::F32(f32_reg)
                     }
-                    PrimType::Float(FPKind::Ieee64) => {
+                    ScalarType::Float(FPKind::Ieee64) => {
                         let f64_reg =
                             alloc_reg.insert_float(FPR64(0, RegUseFlags::DEF).into_real());
                         let f64_reg = FPR64::from_real(f64_reg);

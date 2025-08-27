@@ -15,7 +15,7 @@ use crate::{
             paramgen::{ArgPos, MirArgBuilder, MirArgInfo},
         },
     },
-    typing::{FuncTypeRef, IValType, PrimType, TypeContext, ValTypeID},
+    typing::{FuncTypeRef, IValType, ScalarType, TypeContext, ValTypeID},
 };
 use slab::Slab;
 use std::{
@@ -198,7 +198,7 @@ impl MirFunc {
             .stack_layout
             .reinit_saved_regs(saved_regs);
     }
-    pub fn arg_regs(&self) -> &[(u32, PrimType, DispatchedReg)] {
+    pub fn arg_regs(&self) -> &[(u32, ScalarType, DispatchedReg)] {
         self.arg_info.arg_regs.as_slice()
     }
 }

@@ -3,7 +3,7 @@ use crate::typing::{
     ValTypeID,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FPKind {
     Ieee32,
     Ieee64,

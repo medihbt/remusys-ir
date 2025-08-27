@@ -11,7 +11,7 @@ use crate::{
         global::GlobalRef,
         inst::{BrRef, ISubInstRef, InstError, Jump, JumpRef, PhiRef, Ret, RetRef, SwitchRef},
     },
-    typing::{IValType, PrimType, ValTypeID},
+    typing::{IValType, ScalarType, ValTypeID},
 };
 use slab::Slab;
 use std::{cell::Cell, ops::ControlFlow, rc::Rc};
@@ -163,7 +163,7 @@ impl BlockData {
     ///
     /// # Panics
     /// 如果返回类型不支持零值构造则会 panic
-    pub fn new_return_zero_from_alloc(alloc: &mut Slab<InstData>, ret_ty: PrimType) -> Self {
+    pub fn new_return_zero_from_alloc(alloc: &mut Slab<InstData>, ret_ty: ScalarType) -> Self {
         let ret_bb = Self::empty_from_alloc(alloc);
         let ret_inst = {
             let zero_value = ConstData::Zero(ret_ty).into_ir();
@@ -186,7 +186,7 @@ impl BlockData {
     ///
     /// # 返回
     /// 返回包含返回零值指令的基本块
-    pub fn new_return_zero(module: &mut impl IRAllocsEditable, ret_ty: PrimType) -> Self {
+    pub fn new_return_zero(module: &mut impl IRAllocsEditable, ret_ty: ScalarType) -> Self {
         Self::new_return_zero_from_alloc(&mut module.get_allocs_mutref().insts, ret_ty)
     }
 
@@ -676,7 +676,7 @@ impl BlockRef {
         let data = BlockData::new_unreachable_from_alloc(&mut allocs.insts);
         BlockRef::from_allocs(allocs, data)
     }
-    pub fn new_return_zero(allocs: &mut impl IRAllocsEditable, ret_ty: PrimType) -> Self {
+    pub fn new_return_zero(allocs: &mut impl IRAllocsEditable, ret_ty: ScalarType) -> Self {
         let allocs = allocs.get_allocs_mutref();
         let data = BlockData::new_return_zero_from_alloc(&mut allocs.insts, ret_ty);
         BlockRef::from_allocs(allocs, data)

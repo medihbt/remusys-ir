@@ -129,21 +129,21 @@ impl BinOp {
     ) -> Result<(), ValueCheckError> {
         match opcode {
             Opcode::Add | Opcode::Sub | Opcode::Mul => {
-                if !matches!(retty, ValTypeID::Int(_)) {
+                if !retty.isclass_or_vec(ValTypeClass::Int) {
                     return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem => {
-                if !matches!(retty, ValTypeID::Float(_)) {
+                if !retty.isclass_or_vec(ValTypeClass::Float) {
                     return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Float));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem => {
-                if !matches!(retty, ValTypeID::Int(_)) {
+                if !retty.isclass_or_vec(ValTypeClass::Int) {
                     return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
@@ -160,7 +160,7 @@ impl BinOp {
                 Ok(())
             }
             Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor => {
-                if !matches!(retty, ValTypeID::Int(_)) {
+                if !retty.isclass_or_vec(ValTypeClass::Int) {
                     return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
@@ -168,7 +168,7 @@ impl BinOp {
                 Ok(())
             }
             Opcode::Shl | Opcode::Lshr | Opcode::Ashr => {
-                if !matches!(retty, ValTypeID::Int(_)) {
+                if !retty.isclass_or_vec(ValTypeClass::Int) {
                     return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
                 }
                 checking::type_matches(retty, lhs, allocs)?;

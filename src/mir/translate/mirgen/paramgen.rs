@@ -9,7 +9,7 @@ use crate::{
         },
         translate::mirgen::operandgen::DispatchedReg,
     },
-    typing::{FPKind, FuncTypeRef, IValType, PrimType, TypeContext},
+    typing::{FPKind, FuncTypeRef, IValType, ScalarType, TypeContext},
 };
 
 #[derive(Clone, Copy)]
@@ -31,15 +31,15 @@ impl Debug for ArgPos {
 
 #[derive(Clone)]
 pub struct MirArgInfo {
-    pub pos: Vec<(PrimType, ArgPos)>,
-    pub arg_regs: Vec<(u32, PrimType, DispatchedReg)>,
+    pub pos: Vec<(ScalarType, ArgPos)>,
+    pub arg_regs: Vec<(u32, ScalarType, DispatchedReg)>,
     pub stack_size: usize,
 }
 
 impl Debug for MirArgInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         #[derive(Clone, Copy)]
-        struct ArgPosFmt(PrimType, ArgPos);
+        struct ArgPosFmt(ScalarType, ArgPos);
         impl Debug for ArgPosFmt {
             fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
                 let Self(ty, pos) = *self;
@@ -68,7 +68,7 @@ impl Debug for MirArgInfo {
 }
 
 pub struct MirArgBuilder {
-    pub pos: Vec<(PrimType, ArgPos)>,
+    pub pos: Vec<(ScalarType, ArgPos)>,
     pub stack_top: u64,
     pub fp_count: usize,
     pub gp_count: usize,
@@ -80,7 +80,7 @@ impl MirArgBuilder {
     }
 
     pub fn push_gpr32(&mut self) -> &mut Self {
-        let i32ty = PrimType::Int(32);
+        let i32ty = ScalarType::Int(32);
         let gpid = self.gp_count;
         let dreg = DispatchedReg::G32(GPR32::new_raw(gpid as u32));
         if gpid < 8 {
@@ -97,7 +97,7 @@ impl MirArgBuilder {
         self
     }
 
-    pub fn push_gpr64(&mut self, ty: PrimType) -> &mut Self {
+    pub fn push_gpr64(&mut self, ty: ScalarType) -> &mut Self {
         let gpid = self.gp_count;
         let dreg = DispatchedReg::G64(GPR64::new_raw(gpid as u32));
         if gpid < 8 {
@@ -119,11 +119,11 @@ impl MirArgBuilder {
         let dreg = DispatchedReg::F32(FPR32::new_raw(fpid as u32));
         if fpid < 8 {
             self.pos
-                .push((PrimType::Float(FPKind::Ieee32), ArgPos::Reg(dreg)));
+                .push((ScalarType::Float(FPKind::Ieee32), ArgPos::Reg(dreg)));
         } else {
             self.stack_top = self.stack_top.next_multiple_of(8);
             self.pos.push((
-                PrimType::Float(FPKind::Ieee32),
+                ScalarType::Float(FPKind::Ieee32),
                 ArgPos::Stack(self.stack_top as u32, dreg, GPR64::new_empty()),
             ));
             self.stack_top += 8;
@@ -137,11 +137,11 @@ impl MirArgBuilder {
         let dreg = DispatchedReg::F64(FPR64::new_raw(fpid as u32));
         if fpid < 8 {
             self.pos
-                .push((PrimType::Float(FPKind::Ieee64), ArgPos::Reg(dreg)));
+                .push((ScalarType::Float(FPKind::Ieee64), ArgPos::Reg(dreg)));
         } else {
             self.stack_top = self.stack_top.next_multiple_of(8);
             self.pos.push((
-                PrimType::Float(FPKind::Ieee64),
+                ScalarType::Float(FPKind::Ieee64),
                 ArgPos::Stack(self.stack_top as u32, dreg, GPR64::new_empty()),
             ));
             self.stack_top += 8;
@@ -150,12 +150,12 @@ impl MirArgBuilder {
         self
     }
 
-    pub fn push(&mut self, ty: PrimType) -> &mut Self {
+    pub fn push(&mut self, ty: ScalarType) -> &mut Self {
         match ty {
-            PrimType::Int(32) => self.push_gpr32(),
-            PrimType::Int(64) | PrimType::Ptr => self.push_gpr64(ty),
-            PrimType::Float(FPKind::Ieee32) => self.push_fp32(),
-            PrimType::Float(FPKind::Ieee64) => self.push_fp64(),
+            ScalarType::Int(32) => self.push_gpr32(),
+            ScalarType::Int(64) | ScalarType::Ptr => self.push_gpr64(ty),
+            ScalarType::Float(FPKind::Ieee32) => self.push_fp32(),
+            ScalarType::Float(FPKind::Ieee64) => self.push_fp64(),
             _ => panic!("Unsupported type"),
         }
     }
@@ -193,7 +193,7 @@ impl MirArgBuilder {
         vreg_alloc: &mut VirtRegAlloc,
     ) -> MirArgInfo {
         for &arg in &*func_ty.args(type_ctx) {
-            let arg_ty = PrimType::from_ir(arg);
+            let arg_ty = ScalarType::from_ir(arg);
             self.push(arg_ty);
         }
         self.finish(vreg_alloc)

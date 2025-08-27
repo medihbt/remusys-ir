@@ -3,31 +3,31 @@ use std::fmt::Debug;
 use crate::{
     base::INullableValue,
     typing::{
-        ArrayTypeRef, FPKind, IValType, IntType, PtrType, StructAliasRef, StructTypeRef,
-        TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass,
-        ValTypeID,
+        ArrayTypeRef, FPKind, FixVecType, IValType, IntType, PtrType, StructAliasRef,
+        StructTypeRef, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes,
+        ValTypeClass, ValTypeID,
     },
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PrimType {
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ScalarType {
     Ptr,
     Int(u8),
     Float(FPKind),
 }
 
-impl Debug for PrimType {
+impl Debug for ScalarType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PrimType::Ptr => write!(f, "ptr"),
-            PrimType::Int(bits) => write!(f, "i{bits}"),
-            PrimType::Float(FPKind::Ieee32) => write!(f, "float"),
-            PrimType::Float(FPKind::Ieee64) => write!(f, "double"),
+            ScalarType::Ptr => write!(f, "ptr"),
+            ScalarType::Int(bits) => write!(f, "i{bits}"),
+            ScalarType::Float(FPKind::Ieee32) => write!(f, "float"),
+            ScalarType::Float(FPKind::Ieee64) => write!(f, "double"),
         }
     }
 }
 
-impl IValType for PrimType {
+impl IValType for ScalarType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         match ty {
             ValTypeID::Ptr => Ok(Self::Ptr),
@@ -67,36 +67,36 @@ impl IValType for PrimType {
 
     fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
         match self {
-            PrimType::Ptr => PtrType.try_get_size_full(alloc, tctx),
-            PrimType::Int(bits) => IntType(bits).try_get_size_full(alloc, tctx),
-            PrimType::Float(fpkind) => fpkind.try_get_size_full(alloc, tctx),
+            ScalarType::Ptr => PtrType.try_get_size_full(alloc, tctx),
+            ScalarType::Int(bits) => IntType(bits).try_get_size_full(alloc, tctx),
+            ScalarType::Float(fpkind) => fpkind.try_get_size_full(alloc, tctx),
         }
     }
 
     fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
         match self {
-            PrimType::Ptr => PtrType.try_get_align_full(alloc, tctx),
-            PrimType::Int(bits) => IntType(bits).try_get_align_full(alloc, tctx),
-            PrimType::Float(fpkind) => fpkind.try_get_align_full(alloc, tctx),
+            ScalarType::Ptr => PtrType.try_get_align_full(alloc, tctx),
+            ScalarType::Int(bits) => IntType(bits).try_get_align_full(alloc, tctx),
+            ScalarType::Float(fpkind) => fpkind.try_get_align_full(alloc, tctx),
         }
     }
 }
 
-impl From<IntType> for PrimType {
+impl From<IntType> for ScalarType {
     fn from(value: IntType) -> Self {
-        PrimType::Int(value.0)
+        ScalarType::Int(value.0)
     }
 }
 
-impl From<PtrType> for PrimType {
+impl From<PtrType> for ScalarType {
     fn from(_: PtrType) -> Self {
-        PrimType::Ptr
+        ScalarType::Ptr
     }
 }
 
-impl From<FPKind> for PrimType {
+impl From<FPKind> for ScalarType {
     fn from(value: FPKind) -> Self {
-        PrimType::Float(value)
+        ScalarType::Float(value)
     }
 }
 
@@ -105,6 +105,7 @@ pub enum AggrType {
     Array(ArrayTypeRef),
     Struct(StructTypeRef),
     Alias(StructAliasRef),
+    FixVec(FixVecType),
 }
 
 impl INullableValue for AggrType {
@@ -117,6 +118,7 @@ impl INullableValue for AggrType {
             AggrType::Array(x) => x.is_null(),
             AggrType::Struct(x) => x.is_null(),
             AggrType::Alias(x) => x.is_null(),
+            AggrType::FixVec(_) => false,
         }
     }
 }
@@ -139,6 +141,12 @@ impl From<StructAliasRef> for AggrType {
     }
 }
 
+impl From<FixVecType> for AggrType {
+    fn from(value: FixVecType) -> Self {
+        AggrType::FixVec(value)
+    }
+}
+
 impl IValType for AggrType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         match ty {
@@ -154,6 +162,7 @@ impl IValType for AggrType {
             Self::Array(arr) => ValTypeID::Array(arr),
             Self::Struct(st) => ValTypeID::Struct(st),
             Self::Alias(alias) => ValTypeID::StructAlias(alias),
+            Self::FixVec(fv) => ValTypeID::FixVec(fv),
         }
     }
 
@@ -166,6 +175,7 @@ impl IValType for AggrType {
             Self::Array(arr) => arr.class_id(),
             Self::Struct(st) => st.class_id(),
             Self::Alias(alias) => alias.class_id(),
+            Self::FixVec(_) => ValTypeClass::FixVec,
         }
     }
 
@@ -174,6 +184,7 @@ impl IValType for AggrType {
             Self::Array(arr) => arr.serialize(f),
             Self::Struct(st) => st.serialize(f),
             Self::Alias(alias) => alias.serialize(f),
+            Self::FixVec(fv) => fv.serialize(f),
         }
     }
 
@@ -182,6 +193,7 @@ impl IValType for AggrType {
             Self::Array(arr) => arr.try_get_size_full(alloc, tctx),
             Self::Struct(st) => st.try_get_size_full(alloc, tctx),
             Self::Alias(alias) => alias.try_get_size_full(alloc, tctx),
+            Self::FixVec(fv) => fv.try_get_size_full(alloc, tctx),
         }
     }
 
@@ -190,6 +202,7 @@ impl IValType for AggrType {
             Self::Array(arr) => arr.try_get_align_full(alloc, tctx),
             Self::Struct(st) => st.try_get_align_full(alloc, tctx),
             Self::Alias(alias) => alias.try_get_align_full(alloc, tctx),
+            Self::FixVec(fv) => fv.try_get_align_full(alloc, tctx),
         }
     }
 }
@@ -200,6 +213,7 @@ impl AggrType {
             AggrType::Array(arr) => Some(arr.get_element_type(tctx)),
             AggrType::Struct(st) => st.try_get_field(tctx, index),
             AggrType::Alias(alias) => alias.get_aliasee(tctx).try_get_field(tctx, index),
+            AggrType::FixVec(fv) => Some(fv.get_elemty().into_ir()),
         }
     }
     pub fn get_field(self, tctx: &TypeContext, index: usize) -> ValTypeID {
@@ -212,6 +226,7 @@ impl AggrType {
             AggrType::Array(arr) => Some(arr.get_offset(tctx, index)),
             AggrType::Struct(st) => st.try_get_offset(tctx, index),
             AggrType::Alias(alias) => alias.get_aliasee(tctx).try_get_offset(tctx, index),
+            AggrType::FixVec(fv) => fv.try_get_offset(index as u32, tctx),
         }
     }
     pub fn get_offset(self, tctx: &TypeContext, index: usize) -> usize {
@@ -224,6 +239,7 @@ impl AggrType {
             AggrType::Array(arr) => arr.get_num_elements(tctx),
             AggrType::Struct(st) => st.get_nfields(tctx),
             AggrType::Alias(alias) => alias.get_aliasee(tctx).get_nfields(tctx),
+            AggrType::FixVec(fv) => fv.num_elems() as usize,
         }
     }
 }

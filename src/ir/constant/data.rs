@@ -1,14 +1,14 @@
 use crate::{
     base::APInt,
     ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
-    typing::{FPKind, IValType, PrimType, ValTypeID},
+    typing::{FPKind, IValType, ScalarType, ValTypeID},
 };
 use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ConstData {
     Undef(ValTypeID),
-    Zero(PrimType),
+    Zero(ScalarType),
     PtrNull(ValTypeID),
     Int(APInt),
     Float(FPKind, f64),
@@ -91,9 +91,9 @@ impl ISubValueSSA for ConstData {
         match self {
             ConstData::Undef(_) => writer.write_str("undef"),
             ConstData::Zero(ty) => match ty {
-                PrimType::Ptr => writer.write_str("null"),
-                PrimType::Int(_) => writer.write_str("0"),
-                PrimType::Float(_) => writer.write_str("0.0"),
+                ScalarType::Ptr => writer.write_str("null"),
+                ScalarType::Int(_) => writer.write_str("0"),
+                ScalarType::Float(_) => writer.write_str("0.0"),
             },
             ConstData::PtrNull(_) => writer.write_str("null"),
             ConstData::Int(apint) => {

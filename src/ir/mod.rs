@@ -4,7 +4,7 @@
 
 use crate::{
     base::{APInt, INullableValue, SlabRef},
-    typing::{AggrType, FPKind, IValType, PrimType, ValTypeID},
+    typing::{AggrType, FPKind, IValType, ScalarType, ValTypeID},
 };
 use std::{
     fmt::Debug,
@@ -260,12 +260,13 @@ impl ValueSSA {
 
     pub fn new_zero(ty: ValTypeID) -> ValueSSA {
         match ty {
-            ValTypeID::Ptr => Self::ConstData(ConstData::Zero(PrimType::Ptr)),
+            ValTypeID::Ptr => Self::ConstData(ConstData::Zero(ScalarType::Ptr)),
             ValTypeID::Int(bits) => Self::ConstData(ConstData::Int(APInt::new(0, bits))),
             ValTypeID::Float(fpkind) => Self::ConstData(ConstData::Float(fpkind, 0.0)),
             ValTypeID::Array(aggr) => Self::AggrZero(aggr.into()),
             ValTypeID::Struct(aggr) => Self::AggrZero(aggr.into()),
             ValTypeID::StructAlias(aggr) => Self::AggrZero(aggr.into()),
+            ValTypeID::FixVec(fv) => Self::AggrZero(fv.into()),
             ValTypeID::Void | ValTypeID::Func(_) => {
                 panic!("Cannot create zero value for void or function types")
             }

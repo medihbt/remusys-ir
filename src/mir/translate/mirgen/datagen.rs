@@ -139,7 +139,8 @@ impl DataUnit {
             | ValTypeID::Array(_)
             | ValTypeID::Struct(_)
             | ValTypeID::StructAlias(_)
-            | ValTypeID::Func(_) => panic!("Unsupported type for zero/undef data: {ty:?}"),
+            | ValTypeID::Func(_)
+            | ValTypeID::FixVec(_) => panic!("Unsupported type for zero/undef data: {ty:?}"),
         };
         match bits_log2 {
             0 => Self::Byte(0),

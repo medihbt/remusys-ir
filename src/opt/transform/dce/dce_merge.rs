@@ -9,7 +9,7 @@ use crate::{
         Array, ConstExprData, ExprRef, GlobalData, IRAllocs, ISubValueSSA, IUser, Module, Struct,
         Use, ValueSSA,
     },
-    typing::{AggrType, AggrTypeIter, IValType, PrimType, TypeContext},
+    typing::{AggrType, AggrTypeIter, IValType, ScalarType, TypeContext},
 };
 
 struct ValueDataHasher<'a> {
@@ -221,7 +221,7 @@ pub(super) fn merge_exprs(module: &mut Module) {
     for (_, exprs) in &allocs.exprs {
         let elems = match exprs {
             ConstExprData::Array(arr) => {
-                if let Ok(_) = PrimType::try_from_ir(arr.arrty.get_element_type(&module.type_ctx)) {
+                if let Ok(_) = ScalarType::try_from_ir(arr.arrty.get_element_type(&module.type_ctx)) {
                     continue;
                 }
                 &arr.elems

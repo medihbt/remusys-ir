@@ -8,16 +8,18 @@ mod fmt;
 mod func;
 mod prim;
 mod structty;
+mod vec;
 
 pub use self::{
     alias::{StructAliasData, StructAliasRef},
     array::{ArrayTypeData, ArrayTypeRef},
-    compound::{AggrType, AggrTypeIter, PrimType},
+    compound::{AggrType, AggrTypeIter, ScalarType},
     context::{ArchInfo, TypeAllocs, TypeContext},
     fmt::TypeFormatter,
     func::{FuncType, FuncTypeRef},
     prim::{FPKind, IntType, PtrType},
     structty::{StructOffsetIter, StructTypeData, StructTypeRef},
+    vec::FixVecType,
 };
 
 pub trait IValType: Sized + Clone + Copy {
@@ -104,6 +106,7 @@ pub enum ValTypeClass {
     Ptr,
     Int,
     Float,
+    FixVec,
     Array,
     Struct,
     StructAlias,
@@ -124,6 +127,9 @@ pub enum ValTypeID {
 
     /// Floating Type
     Float(FPKind),
+
+    /// Fixed Vector Type
+    FixVec(FixVecType),
 
     /// Array Type
     Array(ArrayTypeRef),
@@ -157,6 +163,7 @@ impl IValType for ValTypeID {
             ValTypeID::Ptr => ValTypeClass::Ptr,
             ValTypeID::Int(_) => ValTypeClass::Int,
             ValTypeID::Float(_) => ValTypeClass::Float,
+            ValTypeID::FixVec(_) => ValTypeClass::FixVec,
             ValTypeID::Array(_) => ValTypeClass::Array,
             ValTypeID::Struct(_) => ValTypeClass::Struct,
             ValTypeID::StructAlias(_) => ValTypeClass::StructAlias,
@@ -170,6 +177,7 @@ impl IValType for ValTypeID {
             ValTypeID::Ptr => PtrType.try_get_size_full(alloc, tctx),
             ValTypeID::Int(bits) => IntType(bits).try_get_size_full(alloc, tctx),
             ValTypeID::Float(fpkind) => fpkind.try_get_size_full(alloc, tctx),
+            ValTypeID::FixVec(fixvec) => fixvec.try_get_size_full(alloc, tctx),
             ValTypeID::Array(arr) => arr.try_get_size_full(alloc, tctx),
             ValTypeID::Struct(s) => s.try_get_size_full(alloc, tctx),
             ValTypeID::StructAlias(a) => a.try_get_size_full(alloc, tctx),
@@ -182,6 +190,7 @@ impl IValType for ValTypeID {
             ValTypeID::Ptr => PtrType.try_get_align_full(alloc, tctx),
             ValTypeID::Int(bits) => IntType(bits).try_get_align_full(alloc, tctx),
             ValTypeID::Float(fpkind) => fpkind.try_get_align_full(alloc, tctx),
+            ValTypeID::FixVec(fixvec) => fixvec.try_get_align_full(alloc, tctx),
             ValTypeID::Array(arr) => arr.try_get_align_full(alloc, tctx),
             ValTypeID::Struct(s) => s.try_get_align_full(alloc, tctx),
             ValTypeID::StructAlias(a) => a.try_get_align_full(alloc, tctx),
@@ -194,6 +203,7 @@ impl IValType for ValTypeID {
             ValTypeID::Ptr => f.write_str("ptr"),
             ValTypeID::Int(bits) => write!(f, "i{}", bits),
             ValTypeID::Float(fpkind) => fpkind.serialize(f),
+            ValTypeID::FixVec(fixvec) => fixvec.serialize(f),
             ValTypeID::Array(a) => a.serialize(f),
             ValTypeID::Struct(s) => s.serialize(f),
             ValTypeID::StructAlias(sa) => sa.serialize(f),
@@ -215,5 +225,22 @@ impl ValTypeID {
             ValTypeID::Ptr => Some(tctx.arch.ptr_nbits),
             _ => self.try_get_size(tctx).map(|s| s * 8),
         }
+    }
+
+    pub fn matches_or_vec(self, rhs: ValTypeID) -> bool {
+        if self == rhs {
+            return true;
+        }
+        let ValTypeID::FixVec(FixVecType(lty, _)) = self else { return false };
+        let Ok(rty) = ScalarType::try_from_ir(rhs) else { return false };
+        lty == rty
+    }
+
+    pub fn isclass_or_vec(self, rhs: ValTypeClass) -> bool {
+        if self.class_id() == rhs {
+            return true;
+        }
+        let ValTypeID::FixVec(FixVecType(lty, _)) = self else { return false };
+        lty.class_id() == rhs
     }
 }

@@ -186,7 +186,7 @@ impl<'a> IRValueMarker<'a> {
 mod tests {
     use super::*;
     use crate::ir::{ConstData, GlobalData, GlobalRef, Var};
-    use crate::typing::{PrimType, ValTypeID};
+    use crate::typing::{ScalarType, ValTypeID};
 
     #[test]
     fn test_gc_basic_marking() {
@@ -214,6 +214,6 @@ mod tests {
 
         // 测试不同类型的 ValueSSA 处理
         assert!(live_set.is_live(ValueSSA::None)); // None 总是存活
-        assert!(live_set.is_live(ValueSSA::ConstData(ConstData::Zero(PrimType::Int(32))))); // ConstData 总是存活
+        assert!(live_set.is_live(ValueSSA::ConstData(ConstData::Zero(ScalarType::Int(32))))); // ConstData 总是存活
     }
 }

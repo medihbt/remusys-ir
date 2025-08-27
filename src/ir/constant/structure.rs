@@ -85,7 +85,7 @@ impl Struct {
         }
     }
 
-    pub fn new<'a>(
+    pub fn new(
         structty: ValTypeID,
         allocs: &IRAllocs,
         elems: impl IntoIterator<Item = ValueSSA>,
