@@ -42,6 +42,7 @@ pub use self::{
         data::ConstData,
         expr::{ConstExprData, ExprCommon, ExprRef, ISubExpr},
         structure::Struct,
+        vec::FixVec,
     },
     global::{
         GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal, Linkage,

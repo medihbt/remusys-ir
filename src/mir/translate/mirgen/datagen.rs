@@ -211,10 +211,7 @@ impl DataGen {
         alloc_expr: &Slab<ConstExprData>,
     ) {
         let expr_data = expr.to_data(alloc_expr);
-        match expr_data {
-            ConstExprData::Array(a) => self.add_aggr(a.operands_iter(), tctx, alloc_expr),
-            ConstExprData::Struct(s) => self.add_aggr(s.operands_iter(), tctx, alloc_expr),
-        }
+        self.add_aggr(expr_data.operands_iter(), tctx, alloc_expr);
     }
     pub fn add_ir_expr_from_module(&mut self, expr: ExprRef, module: &Module) {
         let type_ctx = &*module.type_ctx;

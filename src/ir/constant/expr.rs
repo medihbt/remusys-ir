@@ -3,8 +3,8 @@ use std::rc::Rc;
 use crate::{
     base::SlabRef,
     ir::{
-        Array, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser, IUserRef,
-        OperandSet, Struct, Use, UserID, UserList, ValueSSA,
+        Array, FixVec, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser,
+        IUserRef, OperandSet, Struct, Use, UserID, UserList, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -14,14 +14,12 @@ use slab::Slab;
 pub enum ConstExprData {
     Array(Array),
     Struct(Struct),
+    FixVec(FixVec),
 }
 
 impl ITraceableValue for ConstExprData {
     fn users(&self) -> &UserList {
-        match self {
-            ConstExprData::Array(data) => &data.common.users,
-            ConstExprData::Struct(data) => &data.common.users,
-        }
+        &self.get_common().users
     }
 
     fn has_single_reference_semantics(&self) -> bool {
@@ -34,6 +32,7 @@ impl IUser for ConstExprData {
         match self {
             ConstExprData::Array(data) => data.get_operands(),
             ConstExprData::Struct(data) => data.get_operands(),
+            ConstExprData::FixVec(data) => data.get_operands(),
         }
     }
 
@@ -41,6 +40,7 @@ impl IUser for ConstExprData {
         match self {
             ConstExprData::Array(data) => data.operands_mut(),
             ConstExprData::Struct(data) => data.operands_mut(),
+            ConstExprData::FixVec(data) => data.operands_mut(),
         }
     }
 }
@@ -50,6 +50,7 @@ impl ISubExpr for ConstExprData {
         match self {
             ConstExprData::Array(data) => &data.common,
             ConstExprData::Struct(data) => &data.common,
+            ConstExprData::FixVec(data) => &data.common,
         }
     }
 
@@ -61,6 +62,7 @@ impl ISubExpr for ConstExprData {
         match self {
             ConstExprData::Array(data) => data.fmt_ir(writer),
             ConstExprData::Struct(data) => data.fmt_ir(writer),
+            ConstExprData::FixVec(data) => data.fmt_ir(writer),
         }
     }
 }
@@ -70,6 +72,7 @@ impl ConstExprData {
         match self {
             ConstExprData::Array(data) => ValTypeID::Array(data.arrty),
             ConstExprData::Struct(data) => data.structty,
+            ConstExprData::FixVec(data) => ValTypeID::FixVec(data.vecty),
         }
     }
 }
@@ -174,6 +177,7 @@ impl ISubValueSSA for ExprRef {
         match self.to_data(&allocs.exprs) {
             ConstExprData::Array(data) => data.is_zero(allocs),
             ConstExprData::Struct(data) => data.is_zero(allocs),
+            ConstExprData::FixVec(data) => data.is_zero(allocs),
         }
     }
 
@@ -181,6 +185,7 @@ impl ISubValueSSA for ExprRef {
         match self.to_data(&writer.allocs.exprs) {
             ConstExprData::Array(arr) => arr.fmt_ir(writer),
             ConstExprData::Struct(str) => str.fmt_ir(writer),
+            ConstExprData::FixVec(vec) => vec.fmt_ir(writer),
         }
     }
 }

@@ -48,6 +48,7 @@ pub enum UseKind {
     GlobalInit,
     ArrayElem(usize),
     StructField(usize),
+    VecElem(usize),
 }
 
 impl UseKind {

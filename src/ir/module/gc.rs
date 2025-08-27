@@ -3,8 +3,8 @@ use std::{collections::VecDeque, ops::ControlFlow};
 use crate::{
     base::{FixBitSet, SlabRef},
     ir::{
-        BlockRef, ConstExprData, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubValueSSA, IUser,
-        InstRef, TerminatorRef, ValueSSA,
+        BlockRef, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubValueSSA, IUser, InstRef,
+        TerminatorRef, ValueSSA,
     },
 };
 
@@ -136,11 +136,7 @@ impl<'a> IRValueMarker<'a> {
     fn consume_expr(&mut self, expr: ExprRef) {
         let Self { live_set, mark_queue, allocs } = self;
         let expr_data = expr.to_data(&allocs.exprs);
-        let elems = match expr_data {
-            ConstExprData::Array(arr) => &arr.elems,
-            ConstExprData::Struct(st) => &st.elems,
-        };
-        for elem in elems {
+        for elem in &expr_data.get_operands() {
             Self::do_push_mark(live_set, mark_queue, elem.get_operand());
         }
     }

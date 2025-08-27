@@ -44,6 +44,10 @@ impl<'a> ValueDataHasher<'a> {
                     let strty = AggrType::from_ir(s.structty);
                     self.hash_aggr(&mut hasher, strty, s.operands_iter());
                 }
+                ConstExprData::FixVec(v) => {
+                    let vecty = AggrType::FixVec(v.vecty);
+                    self.hash_aggr(&mut hasher, vecty, v.operands_iter());
+                }
             },
             ValueSSA::AggrZero(zeroty) => {
                 let aggr_iter = AggrTypeIter::new(zeroty, self.type_ctx);
@@ -221,12 +225,14 @@ pub(super) fn merge_exprs(module: &mut Module) {
     for (_, exprs) in &allocs.exprs {
         let elems = match exprs {
             ConstExprData::Array(arr) => {
-                if let Ok(_) = ScalarType::try_from_ir(arr.arrty.get_element_type(&module.type_ctx)) {
+                if let Ok(_) = ScalarType::try_from_ir(arr.arrty.get_element_type(&module.type_ctx))
+                {
                     continue;
                 }
                 &arr.elems
             }
             ConstExprData::Struct(s) => &s.elems,
+            ConstExprData::FixVec(_) => continue,
         };
         for old_elem in elems {
             let oldval = old_elem.get_operand();
