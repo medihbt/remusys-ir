@@ -1,9 +1,9 @@
 use crate::{
     base::INullableValue,
     ir::{
-        BlockRef, IRAllocs, IRAllocsReadable, ISubValueSSA, InstKind, JumpTargetKind, Module,
-        Opcode, UseKind, ValueSSA, ValueSSAClass,
-        checking::{ValueCheckError, type_isclass, type_matches},
+        BlockData, BlockRef, FuncRef, IRAllocs, IRAllocsReadable, ISubValueSSA, InstKind,
+        JumpTargetKind, Module, Opcode, UseKind, ValueSSA, ValueSSAClass,
+        checking::{ValueCheckError, optype_isclass, optype_matches, type_matches},
         inst::*,
     },
     typing::{IValType, TypeContext, ValTypeClass, ValTypeID},
@@ -25,6 +25,61 @@ impl<'a> InstCheckCtx<'a> {
 
     pub fn allocs(&self) -> &IRAllocs {
         self.allocs
+    }
+
+    pub fn check_module(&self, module: &Module) -> Result<(), ValueCheckError> {
+        for (name, global) in &*module.globals.borrow() {
+            log::debug!("checking global {name}");
+            let Some(fref) = FuncRef::try_from_real(*global, &self.allocs.globals) else {
+                continue;
+            };
+            self.check_func(fref)?;
+        }
+        Ok(())
+    }
+
+    pub fn check_func(&self, fref: FuncRef) -> Result<(), ValueCheckError> {
+        let func = fref.to_data(&self.allocs.globals);
+        let Some(body) = func.get_body() else {
+            // extern functions detected, skip checking
+            return Ok(());
+        };
+        let body = body.view(&self.allocs.blocks).into_iter();
+        for (id, (bref, block)) in body.enumerate() {
+            use super::FuncLayoutError as F;
+            use super::ValueCheckError as V;
+            if bref == func.entry.get() && id != 0 {
+                return Err(V::FuncLayoutError(F::EntryNotInFront(fref)));
+            }
+            self.check_block(block)?;
+        }
+        Ok(())
+    }
+
+    pub fn check_block(&self, block: &BlockData) -> Result<(), ValueCheckError> {
+        let mut has_terminator = false;
+        let mut phi_ends = false;
+        for (iref, inst) in block.insts.view(&self.allocs.insts) {
+            use super::BlockLayoutError as L;
+            use ValueCheckError::*;
+            match (phi_ends, inst) {
+                (false, InstData::Phi(_)) => {}
+                (false, InstData::PhiInstEnd(_)) => phi_ends = true,
+                (false, _) => return Err(BlockLayoutError(L::DirtyPhiSection(iref))),
+                (true, InstData::Phi(_)) => {
+                    return Err(BlockLayoutError(L::PhiNotInHead(PhiRef(iref))));
+                }
+                _ => {}
+            }
+            if has_terminator && inst.is_terminator() {
+                return Err(BlockLayoutError(L::MultipleTerminator(iref)));
+            }
+            if inst.is_terminator() {
+                has_terminator = true;
+            }
+            self.check_inst(inst)?;
+        }
+        Ok(())
     }
 
     pub fn check_inst(&self, inst: &InstData) -> Result<(), ValueCheckError> {
@@ -54,7 +109,12 @@ impl<'a> InstCheckCtx<'a> {
         let func_retty = func.to_data(&self.allocs.globals).return_type;
 
         if ret.get_valtype() != func_retty {
-            return Err(TypeMismatch(func_retty, ret.get_valtype()));
+            return Err(OpTypeMismatch(
+                ret.get_self_ref(),
+                UseKind::RetValue,
+                func_retty,
+                ret.get_valtype(),
+            ));
         }
         if !ret.has_retval() {
             return Ok(());
@@ -113,7 +173,13 @@ impl<'a> InstCheckCtx<'a> {
         let sref = switch.get_self_ref();
         Self::jump_target_nonnull(switch.get_default(), sref, JumpTargetKind::SwitchDefault)?;
         let cond = Self::operand_nonnull(switch.get_cond(), sref, UseKind::SwitchCond)?;
-        type_isclass(ValTypeClass::Int, cond, self.allocs())?;
+        optype_isclass(
+            sref,
+            UseKind::SwitchCond,
+            ValTypeClass::Int,
+            cond,
+            self.allocs(),
+        )?;
 
         let mut cases = BTreeSet::new();
         for c in &*switch.cases() {
@@ -132,7 +198,10 @@ impl<'a> InstCheckCtx<'a> {
         if alloca.pointee_ty.makes_instance() {
             Ok(())
         } else {
-            Err(ValueCheckError::TypeNotSized(alloca.pointee_ty))
+            Err(ValueCheckError::InstTypeNotSized(
+                alloca.get_self_ref(),
+                alloca.pointee_ty,
+            ))
         }
     }
 
@@ -145,9 +214,10 @@ impl<'a> InstCheckCtx<'a> {
     /// ## Call 指令规则总结：
     ///
     /// ### 操作数规则：
-    /// 1. **被调用函数操作数**：必须非空且为函数类型（`ValTypeID::Func`）
+    /// 1. **被调用函数操作数**：必须非空且为指针类型（`ValTypeID::Ptr`）
     ///    - 通常为全局函数引用 `ValueSSA::Global`
-    ///    - 函数类型包含返回值类型、参数类型列表和可变参数标志
+    ///    - 全局引用在 IR 中统一按指针类型处理
+    ///    - 具体函数类型信息存储在 `CallOp.callee_ty` 字段中
     ///
     /// 2. **参数操作数**：每个参数都必须非空且类型匹配
     ///    - 固定参数：类型必须与函数签名中对应位置的参数类型完全匹配
@@ -165,17 +235,22 @@ impl<'a> InstCheckCtx<'a> {
     /// 3. **可变参数类型**：超出固定参数范围的参数类型不做严格检查
     ///
     /// ## 检查流程：
-    /// 1. 验证被调用函数操作数非空且为函数类型
+    /// 1. 验证被调用函数操作数非空且为指针类型
     /// 2. 检查参数数量是否符合函数签名要求
     /// 3. 逐一检查固定参数的类型匹配
     /// 4. 验证所有参数操作数非空
     pub fn check_callop(&self, callop: &CallOp) -> Result<(), ValueCheckError> {
         let callref = callop.get_self_ref();
 
-        // 1. 检查被调用函数操作数
-        let callee =
-            Self::operand_nonnull(callop.get_callee(), callref, UseKind::CallOpCallee)?;
-        type_matches(callop.callee_ty.into_ir(), callee, self.allocs())?;
+        // 1. 检查被调用函数操作数. 被调用者的类型应该是指针
+        let callee = Self::operand_nonnull(callop.get_callee(), callref, UseKind::CallOpCallee)?;
+        optype_matches(
+            callref,
+            UseKind::CallOpCallee,
+            ValTypeID::Ptr,
+            callee,
+            self.allocs(),
+        )?;
 
         // 2. 检查参数数量
         let actual_nargs = callop.args().len();
@@ -206,7 +281,13 @@ impl<'a> InstCheckCtx<'a> {
             // 检查固定参数的类型匹配
             if index < expected_fixed_nargs {
                 let expected_arg_type = callop.callee_ty.get_arg(self.type_ctx, index);
-                type_matches(expected_arg_type, arg_val, self.allocs())?;
+                optype_matches(
+                    callref,
+                    UseKind::CallOpArg(index as u32),
+                    expected_arg_type,
+                    arg_val,
+                    self.allocs(),
+                )?;
             }
             // 可变参数部分不做类型检查，由运行时处理
         }
@@ -254,8 +335,7 @@ impl<'a> InstCheckCtx<'a> {
         let intoty = cast.get_valtype();
 
         // 1. 检查源操作数非空
-        let from_operand =
-            Self::operand_nonnull(cast.get_from(), castref, UseKind::CastOpFrom)?;
+        let from_operand = Self::operand_nonnull(cast.get_from(), castref, UseKind::CastOpFrom)?;
 
         // 2. 检查操作数类型与声明的源类型匹配
         type_matches(fromty, from_operand, self.allocs())?;
@@ -279,10 +359,19 @@ impl<'a> InstCheckCtx<'a> {
             // 整数位宽转换：零扩展、符号扩展、截断
             Opcode::Zext | Opcode::Sext | Opcode::Trunc => {
                 let ValTypeID::Int(from_bits) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Int));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 let ValTypeID::Int(into_bits) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 let matches = if matches!(opcode, Opcode::Zext | Opcode::Sext) {
                     from_bits <= into_bits // 扩展：源位宽必须 <= 目标位宽
@@ -299,10 +388,19 @@ impl<'a> InstCheckCtx<'a> {
             // 浮点扩展：从低精度浮点到高精度浮点
             Opcode::Fpext => {
                 let ValTypeID::Float(from_fp) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Float));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 let ValTypeID::Float(into_fp) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Float));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 // 只支持 f32 -> f64 的扩展
                 if matches!((from_fp, into_fp), (FPKind::Ieee32, FPKind::Ieee64)) {
@@ -315,10 +413,19 @@ impl<'a> InstCheckCtx<'a> {
             // 浮点截断：从高精度浮点到低精度浮点
             Opcode::Fptrunc => {
                 let ValTypeID::Float(from_fp) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Float));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 let ValTypeID::Float(into_fp) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Float));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 // 只支持 f64 -> f32 的截断
                 if matches!((from_fp, into_fp), (FPKind::Ieee64, FPKind::Ieee32)) {
@@ -331,10 +438,19 @@ impl<'a> InstCheckCtx<'a> {
             // 有符号整数到浮点数转换
             Opcode::Sitofp => {
                 let ValTypeID::Int(_) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Int));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 let ValTypeID::Float(_) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Float));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 Ok(()) // 任意整数位宽到任意浮点类型都支持
             }
@@ -342,10 +458,19 @@ impl<'a> InstCheckCtx<'a> {
             // 无符号整数到浮点数转换
             Opcode::Uitofp => {
                 let ValTypeID::Int(_) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Int));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 let ValTypeID::Float(_) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Float));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 Ok(()) // 任意整数位宽到任意浮点类型都支持
             }
@@ -353,10 +478,19 @@ impl<'a> InstCheckCtx<'a> {
             // 浮点数到有符号整数转换
             Opcode::Fptosi => {
                 let ValTypeID::Float(_) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Float));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Float,
+                    ));
                 };
                 let ValTypeID::Int(_) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 Ok(()) // 任意浮点类型到任意整数位宽都支持
             }
@@ -364,12 +498,17 @@ impl<'a> InstCheckCtx<'a> {
             // 位转换：不改变位模式的类型转换
             Opcode::Bitcast => {
                 let tctx = self.type_ctx;
-                let from_bits = fromty
-                    .try_get_bits(tctx)
-                    .ok_or(ValueCheckError::TypeNotSized(fromty))?;
+                let from_bits =
+                    fromty
+                        .try_get_bits(tctx)
+                        .ok_or(ValueCheckError::OpTypeNotSized(
+                            inst,
+                            UseKind::CastOpFrom,
+                            fromty,
+                        ))?;
                 let into_bits = intoty
                     .try_get_bits(tctx)
-                    .ok_or(ValueCheckError::TypeNotSized(intoty))?;
+                    .ok_or(ValueCheckError::InstTypeNotSized(inst, intoty))?;
                 if from_bits == into_bits {
                     Ok(()) // 其他情况由具体实现验证大小匹配
                 } else {
@@ -380,10 +519,19 @@ impl<'a> InstCheckCtx<'a> {
             // 整数到指针转换
             Opcode::IntToPtr => {
                 let ValTypeID::Int(_) = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Int));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 let ValTypeID::Ptr = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Ptr));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Ptr,
+                    ));
                 };
                 Ok(()) // 任意整数位宽到指针都支持
             }
@@ -391,10 +539,19 @@ impl<'a> InstCheckCtx<'a> {
             // 指针到整数转换
             Opcode::PtrToInt => {
                 let ValTypeID::Ptr = fromty else {
-                    return Err(ValueCheckError::TypeNotClass(fromty, ValTypeClass::Ptr));
+                    return Err(ValueCheckError::OpTypeNotClass(
+                        inst,
+                        UseKind::CastOpFrom,
+                        fromty,
+                        ValTypeClass::Ptr,
+                    ));
                 };
                 let ValTypeID::Int(_) = intoty else {
-                    return Err(ValueCheckError::TypeNotClass(intoty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        intoty,
+                        ValTypeClass::Int,
+                    ));
                 };
                 Ok(()) // 指针到任意整数位宽都支持
             }
@@ -487,7 +644,12 @@ impl<'a> InstCheckCtx<'a> {
             let lhsty = lhs.get_valtype(self.allocs());
             let rhsty = rhs.get_valtype(self.allocs());
             if lhsty != rhsty {
-                return Err(ValueCheckError::TypeMismatch(lhsty, rhsty));
+                return Err(ValueCheckError::OpTypeMismatch(
+                    cmpref,
+                    UseKind::CmpRhs,
+                    lhsty,
+                    rhsty,
+                ));
             }
             lhsty
         };
@@ -571,7 +733,13 @@ impl<'a> InstCheckCtx<'a> {
             )?;
 
             // 检查索引类型为整数
-            type_isclass(ValTypeClass::Int, index_val, allocs)?;
+            optype_isclass(
+                gepref,
+                UseKind::GepIndex(index as u32),
+                ValTypeClass::Int,
+                index_val,
+                allocs,
+            )?;
         }
 
         // 3. 验证索引链的类型转换正确性

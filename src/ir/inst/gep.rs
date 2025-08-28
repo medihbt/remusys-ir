@@ -1,4 +1,5 @@
 use crate::{
+    base::INullableValue,
     ir::{
         ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon,
         InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
@@ -227,11 +228,12 @@ impl IndexPtr {
         type_ctx: &TypeContext,
         allocs: &IRAllocs,
     ) -> Result<ValTypeID, String> {
-        let mut indexer = GEPTypeIndexer {
+        let mut indexer = GEPTypeIndexer::with_inst(
+            self.get_self_ref(),
             type_ctx,
             allocs,
-            type_state: GEPTypeState::InfLenArray(self.first_unpacked_ty),
-        };
+            self.first_unpacked_ty,
+        );
 
         for use_ref in self.operands.iter().skip(1) {
             let idx = use_ref.get_operand();
@@ -335,9 +337,11 @@ pub enum GEPTypeState {
 ///
 /// 这个迭代器跟踪 GEP 指令每一步索引操作的类型变化，确保类型转换的正确性并计算最终结果类型。
 pub struct GEPTypeIndexer<'a> {
+    inst: InstRef,
     type_ctx: &'a TypeContext,
     allocs: &'a IRAllocs,
     type_state: GEPTypeState,
+    id: u32,
 }
 
 impl<'a> GEPTypeIndexer<'a> {
@@ -347,9 +351,25 @@ impl<'a> GEPTypeIndexer<'a> {
         base_ty: ValTypeID,
     ) -> Self {
         Self {
+            inst: InstRef::new_null(),
             type_ctx,
             allocs,
             type_state: GEPTypeState::InfLenArray(base_ty),
+            id: 0,
+        }
+    }
+    pub fn with_inst(
+        inst: InstRef,
+        type_ctx: &'a TypeContext,
+        allocs: &'a IRAllocs,
+        base_ty: ValTypeID,
+    ) -> Self {
+        Self {
+            inst,
+            type_ctx,
+            allocs,
+            type_state: GEPTypeState::InfLenArray(base_ty),
+            id: 0,
         }
     }
 
@@ -365,10 +385,15 @@ impl<'a> GEPTypeIndexer<'a> {
     }
 
     pub fn try_unpack(&mut self, idx: ValueSSA) -> Result<GEPTypeState, ValueCheckError> {
-        use ValueCheckError::{OtherFull, TypeNotClass};
+        use ValueCheckError::{OpTypeNotClass, OtherFull};
         let idx_type = idx.get_valtype(self.allocs);
         if !matches!(idx_type, ValTypeID::Int(_)) {
-            return Err(TypeNotClass(idx_type, ValTypeClass::Int));
+            return Err(OpTypeNotClass(
+                self.inst,
+                UseKind::GepIndex(self.id),
+                idx_type,
+                ValTypeClass::Int,
+            ));
         }
 
         fn unpack_struct(
@@ -435,6 +460,7 @@ impl<'a> GEPTypeIndexer<'a> {
                 }
             },
         };
+        self.id += 1;
         Ok(state)
     }
 }

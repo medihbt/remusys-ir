@@ -4,7 +4,7 @@
 use crate::{
     base::APInt,
     ir::{
-        CmpCond, IRBuilder, IRBuilderFocus, Module, Opcode, ValueSSA,
+        CmpCond, IRBuilder, IRBuilderFocus, InstCheckCtx, Module, Opcode, ValueSSA,
         inst::{ISubInstRef, RetRef},
         write_ir_module, write_ir_module_quiet,
     },
@@ -215,6 +215,9 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .unwrap();
     builder.focus_set_jump_to(while_block_5).unwrap();
     builder.module.gc_cleaner().compact([]);
+    InstCheckCtx::from_module(&builder.module)
+        .check_module(&builder.module)
+        .unwrap();
     builder
 }
 

@@ -44,7 +44,10 @@ impl DCEContext {
     }
 
     fn perform_dce_for_func(&mut self, allocs: &mut IRAllocs, func: FuncRef) {
-        for (bref, block) in func.get_body_from_alloc(&allocs.globals).view(&allocs.blocks) {
+        for (bref, block) in func
+            .get_body_from_alloc(&allocs.globals)
+            .view(&allocs.blocks)
+        {
             for (iref, inst) in block.insts.view(&allocs.insts) {
                 if self.side_effect.inst_has_side_effect(iref) {
                     continue;

@@ -236,7 +236,9 @@ impl IRBuilder {
             let allocs = self.allocs_mut();
             let alloc_block = &allocs.blocks;
             let alloc_inst = &allocs.insts;
-            let inst = entry.to_data(alloc_block).get_terminator_from_alloc(alloc_inst);
+            let inst = entry
+                .to_data(alloc_block)
+                .get_terminator_from_alloc(alloc_inst);
             (entry, inst.get_inst())
         };
         let func = GlobalRef::from_allocs(self.allocs_mut(), func.into_ir());

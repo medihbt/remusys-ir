@@ -112,6 +112,7 @@ impl BinOp {
     }
     pub fn validate(&self, allocs: &IRAllocs) -> Result<(), ValueCheckError> {
         Self::do_validate_operands(
+            self.get_self_ref(),
             self.common.opcode,
             self.common.ret_type,
             self.get_lhs(),
@@ -121,6 +122,7 @@ impl BinOp {
     }
 
     fn do_validate_operands(
+        inst: InstRef,
         opcode: Opcode,
         retty: ValTypeID,
         lhs: ValueSSA,
@@ -130,21 +132,33 @@ impl BinOp {
         match opcode {
             Opcode::Add | Opcode::Sub | Opcode::Mul => {
                 if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        retty,
+                        ValTypeClass::Int,
+                    ));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem => {
                 if !retty.isclass_or_vec(ValTypeClass::Float) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Float));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        retty,
+                        ValTypeClass::Float,
+                    ));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)
             }
             Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem => {
                 if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        retty,
+                        ValTypeClass::Int,
+                    ));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;
@@ -161,7 +175,11 @@ impl BinOp {
             }
             Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor => {
                 if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        retty,
+                        ValTypeClass::Int,
+                    ));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;
@@ -169,7 +187,11 @@ impl BinOp {
             }
             Opcode::Shl | Opcode::Lshr | Opcode::Ashr => {
                 if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::TypeNotClass(retty, ValTypeClass::Int));
+                    return Err(ValueCheckError::InstTypeNotClass(
+                        inst,
+                        retty,
+                        ValTypeClass::Int,
+                    ));
                 }
                 checking::type_matches(retty, lhs, allocs)?;
                 checking::type_matches(retty, rhs, allocs)?;
