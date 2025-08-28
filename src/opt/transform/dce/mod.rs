@@ -3,8 +3,9 @@
 use std::collections::VecDeque;
 
 use crate::{
-    base::SlabRef,
-    ir::{BlockData, BlockRef, FuncRef, IRAllocs, IUser, InstRef, Module, UserID},
+    ir::{
+        BlockData, BlockRef, FuncRef, IManageableIRValue, IRAllocs, IUser, InstRef, Module, UserID,
+    },
     opt::transform::dce::side_effect::SideEffectMarker,
 };
 
@@ -70,7 +71,7 @@ impl DCEContext {
         }
 
         while let Some(inst) = self.inst_to_remove.pop_front() {
-            allocs.insts.remove(inst.get_handle());
+            inst.free_from_allocs(allocs);
         }
 
         while let Some((_action, _block)) = self.block_to_merge.pop_front() {

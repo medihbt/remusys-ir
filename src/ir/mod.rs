@@ -53,7 +53,7 @@ pub use self::{
         AmoOrdering, ISubInst, ISubInstRef, InstCommon, InstData, InstInner, InstRef, SyncScope,
         usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
     },
-    managed::{IManagedIRValue, IRManaged, ManagedInst},
+    managed::{IManageableIRValue, IRManaged, ManagedInst},
     module::{
         IModuleEditable, IModuleReadable, IRModuleCleaner, Module,
         allocs::*,

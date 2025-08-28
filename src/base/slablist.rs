@@ -637,7 +637,7 @@ mod testing {
         for i in 0..5 {
             let node = list.pop_back(&slab).unwrap();
             assert_eq!(node.as_data(&slab).unwrap().number, 10 - i);
-            slab.remove(node.get_handle());
+            node.free_from_alloc(&mut slab);
         }
         assert_eq!(list.len(), 5);
         print_test_list(&list, &slab);

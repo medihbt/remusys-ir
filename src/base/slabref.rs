@@ -46,6 +46,11 @@ pub trait SlabRef: Clone + Eq + INullableValue + std::fmt::Debug {
     ) -> Option<R> {
         if let Some(v) = slab.get(self.get_handle()) { Some(read(v)) } else { None }
     }
+
+    /// 直接释放对象.
+    fn free_from_alloc(&self, allocs: &mut Slab<Self::RefObject>) -> Self::RefObject {
+        allocs.remove(self.get_handle())
+    }
 }
 
 impl<T: SlabRef> INullableValue for T {
