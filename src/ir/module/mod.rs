@@ -47,7 +47,7 @@ impl Module {
         Self::new(name.into(), type_ctx)
     }
 
-    pub fn gc_cleaner(&mut self) -> IRModuleCleaner {
+    pub fn gc_cleaner(&mut self) -> IRModuleCleaner<'_> {
         IRModuleCleaner::new(self)
     }
     pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {

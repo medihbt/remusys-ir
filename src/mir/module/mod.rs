@@ -62,7 +62,7 @@ impl MirGlobalRef {
         MirGlobalRef::from_alloc(&mut alloc, data)
     }
 
-    pub fn data_from_module(self, module: &MirModule) -> Ref<MirGlobal> {
+    pub fn data_from_module(self, module: &MirModule) -> Ref<'_, MirGlobal> {
         let alloc = module.borrow_alloc_item();
         Ref::map(alloc, |a| {
             a.get(self.0 as usize).expect("Invalid ModuleItemRef")
@@ -83,7 +83,7 @@ impl MirGlobalRef {
         }
     }
 
-    pub fn get_common(self, module: &MirModule) -> Ref<MirGlobalCommon> {
+    pub fn get_common(self, module: &MirModule) -> Ref<'_, MirGlobalCommon> {
         let item = self.data_from_module(module);
         Ref::map(item, |item| item.get_common())
     }
@@ -151,22 +151,22 @@ impl MirModule {
         item_ref
     }
 
-    pub fn borrow_alloc_block(&self) -> Ref<Slab<MirBlock>> {
+    pub fn borrow_alloc_block(&self) -> Ref<'_, Slab<MirBlock>> {
         Ref::map(self.allocs.borrow(), |allocs| &allocs.block)
     }
-    pub fn borrow_alloc_block_mut(&self) -> RefMut<Slab<MirBlock>> {
+    pub fn borrow_alloc_block_mut(&self) -> RefMut<'_, Slab<MirBlock>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.block)
     }
-    pub fn borrow_alloc_inst(&self) -> Ref<Slab<MirInst>> {
+    pub fn borrow_alloc_inst(&self) -> Ref<'_, Slab<MirInst>> {
         Ref::map(self.allocs.borrow(), |allocs| &allocs.inst)
     }
-    pub fn borrow_alloc_inst_mut(&self) -> RefMut<Slab<MirInst>> {
+    pub fn borrow_alloc_inst_mut(&self) -> RefMut<'_, Slab<MirInst>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.inst)
     }
-    pub fn borrow_alloc_item(&self) -> Ref<Slab<MirGlobal>> {
+    pub fn borrow_alloc_item(&self) -> Ref<'_, Slab<MirGlobal>> {
         Ref::map(self.allocs.borrow(), |allocs| &allocs.item)
     }
-    pub fn borrow_alloc_item_mut(&self) -> RefMut<Slab<MirGlobal>> {
+    pub fn borrow_alloc_item_mut(&self) -> RefMut<'_, Slab<MirGlobal>> {
         RefMut::map(self.allocs.borrow_mut(), |allocs| &mut allocs.item)
     }
 

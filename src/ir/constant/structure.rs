@@ -15,7 +15,7 @@ pub struct Struct {
 }
 
 impl IUser for Struct {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
     }
 

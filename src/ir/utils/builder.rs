@@ -789,11 +789,11 @@ impl IRBuilder {
     }
 
     /// 添加原子读-修改-写指令构建器。
-    pub fn add_amormw_builder(
-        &mut self,
+    pub fn add_amormw_builder<'a>(
+        &'a mut self,
         opcode: Opcode,
         valtype: ValTypeID,
-    ) -> inst_builders::IRInstBuilderAmoRmw {
+    ) -> inst_builders::IRInstBuilderAmoRmw<'a> {
         inst_builders::IRInstBuilderAmoRmw::new(self, opcode, valtype)
     }
 
@@ -833,7 +833,7 @@ impl IRBuilder {
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_unreachable(&mut self) -> TermiBuildRes {
+    pub fn focus_set_unreachable(&mut self) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
@@ -851,7 +851,7 @@ impl IRBuilder {
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_return(&mut self, retval: ValueSSA) -> TermiBuildRes {
+    pub fn focus_set_return(&mut self, retval: ValueSSA) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             return Err(IRBuilderError::NullFocus);
         }
@@ -870,7 +870,7 @@ impl IRBuilder {
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_jump_to(&mut self, jump_to: BlockRef) -> TermiBuildRes {
+    pub fn focus_set_jump_to(&mut self, jump_to: BlockRef) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
@@ -894,7 +894,7 @@ impl IRBuilder {
         cond: ValueSSA,
         if_true: BlockRef,
         if_false: BlockRef,
-    ) -> TermiBuildRes {
+    ) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
@@ -913,7 +913,11 @@ impl IRBuilder {
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_empty_switch(&mut self, cond: ValueSSA, default: BlockRef) -> TermiBuildRes {
+    pub fn focus_set_empty_switch(
+        &mut self,
+        cond: ValueSSA,
+        default: BlockRef,
+    ) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             Err(IRBuilderError::NullFocus)
         } else {
@@ -937,7 +941,7 @@ impl IRBuilder {
         cond: ValueSSA,
         default: BlockRef,
         cases: impl Iterator<Item = (i128, BlockRef)>,
-    ) -> TermiBuildRes {
+    ) -> TermiBuildRes<'_> {
         if self.focus.block.is_null() {
             return Err(IRBuilderError::NullFocus);
         }

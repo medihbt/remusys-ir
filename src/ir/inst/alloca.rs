@@ -73,7 +73,7 @@ impl ISubInst for Alloca {
 }
 
 impl IUser for Alloca {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

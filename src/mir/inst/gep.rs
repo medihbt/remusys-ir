@@ -297,7 +297,7 @@ impl MirGEP {
         self.weights().get(index).copied()
     }
 
-    pub fn iter_offsets(&self) -> MirGEPOffsetIter {
+    pub fn iter_offsets(&self) -> MirGEPOffsetIter<'_> {
         MirGEPOffsetIter::new(self)
     }
 

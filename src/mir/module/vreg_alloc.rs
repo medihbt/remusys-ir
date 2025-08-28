@@ -241,14 +241,14 @@ impl VirtRegAlloc {
         }
     }
 
-    fn try_cached_free_gp(&mut self, bits_log2: u8) -> Option<FreePool> {
+    fn try_cached_free_gp(&mut self, bits_log2: u8) -> Option<FreePool<'_>> {
         match bits_log2 {
             5 if !self.free_g32.is_empty() => Some(FreePool::G32(&mut self.free_g32)),
             6 if !self.free_g64.is_empty() => Some(FreePool::G64(&mut self.free_g64)),
             _ => None,
         }
     }
-    fn try_cached_free_fp(&mut self, bits_log2: u8) -> Option<FreePool> {
+    fn try_cached_free_fp(&mut self, bits_log2: u8) -> Option<FreePool<'_>> {
         match bits_log2 {
             5 if !self.free_f32.is_empty() => Some(FreePool::F32(&mut self.free_f32)),
             6 if !self.free_f64.is_empty() => Some(FreePool::F64(&mut self.free_f64)),

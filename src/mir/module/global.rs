@@ -287,7 +287,7 @@ impl MirGlobalData {
             MirGlobalDataStorage::Zero(nunits) => *nunits << self.unit_bytes_log2,
         }
     }
-    pub fn get_unit(&self, index: usize) -> Option<MirGlobalDataUnit> {
+    pub fn get_unit(&self, index: usize) -> Option<MirGlobalDataUnit<'_>> {
         if index >= self.get_nunits() {
             return None;
         }

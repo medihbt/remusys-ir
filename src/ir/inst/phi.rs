@@ -53,7 +53,7 @@ pub struct PhiNode {
 }
 
 impl IUser for PhiNode {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         let operands = self.incomes.borrow();
         let operands = Ref::map(operands, |ops| ops.as_flattened());
         OperandSet::InRef(operands)
@@ -142,7 +142,7 @@ impl PhiNode {
         }
     }
 
-    pub fn incoming_uses(&self) -> Ref<[[Rc<Use>; 2]]> {
+    pub fn incoming_uses(&self) -> Ref<'_, [[Rc<Use>; 2]]> {
         Ref::map(self.incomes.borrow(), |ops| ops.as_slice())
     }
     pub fn locate_income_group(&self, block: BlockRef) -> Option<usize> {
@@ -157,7 +157,7 @@ impl PhiNode {
         self.locate_income_group(block)
             .map(|index| (index * 2, index * 2 + 1))
     }
-    pub fn find_income(&self, block: BlockRef) -> Option<Ref<[Rc<Use>; 2]>> {
+    pub fn find_income(&self, block: BlockRef) -> Option<Ref<'_, [Rc<Use>; 2]>> {
         self.locate_income_group(block)
             .map(|index| Ref::map(self.incomes.borrow(), |ops| &ops[index]))
     }

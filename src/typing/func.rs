@@ -131,7 +131,7 @@ impl FuncTypeRef {
         self.to_data(&allocs.funcs)
     }
 
-    fn typectx_to_data(self, tctx: &TypeContext) -> Ref<FuncType> {
+    fn typectx_to_data(self, tctx: &TypeContext) -> Ref<'_, FuncType> {
         let allocs = tctx.allocs.borrow();
         Ref::map(allocs, |allocs| self.to_data(&allocs.funcs))
     }
@@ -140,7 +140,7 @@ impl FuncTypeRef {
         self.typectx_to_data(tctx).ret_type
     }
 
-    pub fn args(self, tctx: &TypeContext) -> Ref<[ValTypeID]> {
+    pub fn args(self, tctx: &TypeContext) -> Ref<'_, [ValTypeID]> {
         Ref::map(self.typectx_to_data(tctx), |s| &*s.args)
     }
 

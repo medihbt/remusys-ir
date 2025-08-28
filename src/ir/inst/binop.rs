@@ -24,7 +24,7 @@ pub struct BinOp {
 }
 
 impl IUser for BinOp {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

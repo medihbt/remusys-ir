@@ -25,7 +25,7 @@ pub struct Jump {
 }
 
 impl IUser for Jump {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
@@ -95,7 +95,7 @@ impl ITerminatorInst for Jump {
         &mut self.target
     }
 
-    fn get_jts(&self) -> JumpTargets {
+    fn get_jts(&self) -> JumpTargets<'_> {
         JumpTargets::Fix(&self.target)
     }
 }

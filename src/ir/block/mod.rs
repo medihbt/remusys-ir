@@ -710,7 +710,7 @@ impl BlockRef {
     }
 
     /// 直接从分配器获取可迭代的基本块指令视图
-    pub fn view_insts(self, allocs: &IRAllocs) -> SlabListView<InstRef> {
+    pub fn view_insts(self, allocs: &IRAllocs) -> SlabListView<'_, InstRef> {
         self.insts_from_alloc(&allocs.blocks).view(&allocs.insts)
     }
 
@@ -720,7 +720,7 @@ impl BlockRef {
     pub fn preds(self, allocs: &IRAllocs) -> &PredList {
         &self.to_data(&allocs.blocks).preds
     }
-    pub fn succs(self, allocs: &IRAllocs) -> JumpTargets {
+    pub fn succs(self, allocs: &IRAllocs) -> JumpTargets<'_> {
         self.to_data(&allocs.blocks).get_successors(&allocs.insts)
     }
 

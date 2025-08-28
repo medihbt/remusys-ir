@@ -120,18 +120,18 @@ impl MirFunc {
         self.common.name.as_str()
     }
 
-    pub fn borrow_inner(&self) -> Ref<MirFuncInner> {
+    pub fn borrow_inner(&self) -> Ref<'_, MirFuncInner> {
         self.inner.borrow()
     }
-    pub fn borrow_inner_mut(&self) -> RefMut<MirFuncInner> {
+    pub fn borrow_inner_mut(&self) -> RefMut<'_, MirFuncInner> {
         self.inner.borrow_mut()
     }
 
-    pub fn borrow_spilled_args(&self) -> Ref<Vec<MirStackItem>> {
+    pub fn borrow_spilled_args(&self) -> Ref<'_, Vec<MirStackItem>> {
         Ref::map(self.inner.borrow(), |inner| &inner.stack_layout.args)
     }
 
-    pub fn borrow_vec_switch_tabs(&self) -> Ref<Vec<Rc<VecSwitchTab>>> {
+    pub fn borrow_vec_switch_tabs(&self) -> Ref<'_, Vec<Rc<VecSwitchTab>>> {
         Ref::map(self.inner.borrow(), |inner| &inner.vec_switch_tabs)
     }
     pub fn add_vec_switch_tab(&self, tab: Rc<VecSwitchTab>) -> usize {

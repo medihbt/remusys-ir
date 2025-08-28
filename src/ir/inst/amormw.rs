@@ -67,7 +67,7 @@ pub struct AmoRmw {
 }
 
 impl IUser for AmoRmw {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
 

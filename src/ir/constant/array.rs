@@ -16,7 +16,7 @@ pub struct Array {
 }
 
 impl IUser for Array {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
     }
 

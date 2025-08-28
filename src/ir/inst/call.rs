@@ -59,7 +59,7 @@ impl PtrUser for CallOp {
 impl FuncUser for CallOp {}
 
 impl IUser for CallOp {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

@@ -77,7 +77,7 @@ impl<'a> OperandIter<'a> {
 }
 
 pub trait IUser {
-    fn get_operands(&self) -> OperandSet;
+    fn get_operands(&self) -> OperandSet<'_>;
 
     fn operands_mut(&mut self) -> &mut [Rc<Use>];
 
@@ -89,7 +89,7 @@ pub trait IUser {
             .map_or(ValueSSA::None, |use_ref| use_ref.get_operand())
     }
 
-    fn operands_iter(&self) -> OperandIter {
+    fn operands_iter(&self) -> OperandIter<'_> {
         OperandIter::new(self.get_operands())
     }
 }
@@ -189,7 +189,7 @@ impl ISubValueSSA for UserID {
 }
 
 impl UserID {
-    pub fn user_operands(self, allocs: &impl IRAllocsReadable) -> OperandSet {
+    pub fn user_operands(self, allocs: &impl IRAllocsReadable) -> OperandSet<'_> {
         let allocs = allocs.get_allocs_ref();
         match self {
             UserID::None => OperandSet::Fixed(&[]),

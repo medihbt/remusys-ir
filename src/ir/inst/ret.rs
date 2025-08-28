@@ -23,7 +23,7 @@ pub struct Ret {
 }
 
 impl IUser for Ret {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         if self.has_retval() { OperandSet::Fixed(&self.operands) } else { OperandSet::Fixed(&[]) }
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
@@ -87,7 +87,7 @@ impl ITerminatorInst for Ret {
         &mut []
     }
 
-    fn get_jts(&self) -> JumpTargets {
+    fn get_jts(&self) -> JumpTargets<'_> {
         JumpTargets::Fix(&[])
     }
 }

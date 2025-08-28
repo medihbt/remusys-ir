@@ -136,7 +136,7 @@ impl<const N: usize> FixBitSet<N> {
         }
     }
 
-    pub fn iter(&self) -> FixBitSetIter {
+    pub fn iter(&self) -> FixBitSetIter<'_> {
         FixBitSetIter::new(self)
     }
 }

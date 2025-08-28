@@ -19,7 +19,7 @@ pub struct FixVec {
 }
 
 impl IUser for FixVec {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
     }
 

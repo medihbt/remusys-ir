@@ -59,7 +59,7 @@ pub struct Switch {
 }
 
 impl IUser for Switch {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.cond)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {
@@ -159,7 +159,7 @@ impl ITerminatorInst for Switch {
         self.targets.get_mut()
     }
 
-    fn get_jts(&self) -> JumpTargets {
+    fn get_jts(&self) -> JumpTargets<'_> {
         JumpTargets::from(self.targets.borrow())
     }
 }
@@ -209,7 +209,7 @@ impl Switch {
     }
 
     /// 获取默认跳转目标的引用
-    pub fn default(&self) -> Ref<Rc<JumpTarget>> {
+    pub fn default(&self) -> Ref<'_, Rc<JumpTarget>> {
         Ref::map(self.targets.borrow(), |targets| &targets[0])
     }
 
@@ -229,7 +229,7 @@ impl Switch {
     }
 
     /// 获取所有 case 跳转目标的引用（不包括默认目标）
-    pub fn cases(&self) -> Ref<[Rc<JumpTarget>]> {
+    pub fn cases(&self) -> Ref<'_, [Rc<JumpTarget>]> {
         Ref::map(self.targets.borrow(), |targets| &targets[1..])
     }
 
@@ -237,7 +237,7 @@ impl Switch {
     ///
     /// # 修复说明
     /// 原实现有嵌套借用问题，现在直接从 targets 中查找
-    pub fn ref_case<T: Into<i128>>(&self, case: T) -> Option<Ref<Rc<JumpTarget>>> {
+    pub fn ref_case<T: Into<i128>>(&self, case: T) -> Option<Ref<'_, Rc<JumpTarget>>> {
         let case_value = case.into();
         let targets = self.targets.borrow();
 

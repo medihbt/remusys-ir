@@ -26,7 +26,7 @@ pub struct CastOp {
 }
 
 impl IUser for CastOp {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.fromop)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

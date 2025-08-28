@@ -57,7 +57,7 @@ pub struct LoadOp {
 }
 
 impl IUser for LoadOp {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

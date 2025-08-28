@@ -199,7 +199,7 @@ impl<'a> IRWriter<'a> {
         }
     }
 
-    pub fn borrow_numbers(&self) -> Ref<IRValueNumberMap> {
+    pub fn borrow_numbers(&self) -> Ref<'_, IRValueNumberMap> {
         self.numbering.borrow()
     }
 

@@ -21,7 +21,7 @@ pub struct SelectOp {
 }
 
 impl IUser for SelectOp {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
     fn operands_mut(&mut self) -> &mut [Rc<Use>] {

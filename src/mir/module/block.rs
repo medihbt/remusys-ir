@@ -115,7 +115,7 @@ impl MirBlockRef {
         MirBlockRef::from_alloc(&mut alloc, data)
     }
 
-    pub fn data_from_module(self, module: &MirModule) -> Ref<MirBlock> {
+    pub fn data_from_module(self, module: &MirModule) -> Ref<'_, MirBlock> {
         let alloc = module.borrow_alloc_block();
         Ref::map(alloc, |a| self.as_data(a).expect("Invalid MirBlockRef"))
     }
@@ -132,7 +132,7 @@ impl MirBlockRef {
         let block = self.as_data(alloc).expect("Invalid MirBlockRef");
         &block.insts
     }
-    pub fn get_insts_from_module(self, module: &MirModule) -> Ref<SlabRefList<MirInstRef>> {
+    pub fn get_insts_from_module(self, module: &MirModule) -> Ref<'_, SlabRefList<MirInstRef>> {
         let alloc = module.borrow_alloc_block();
         Ref::map(alloc, |a| self.get_insts(a))
     }

@@ -202,7 +202,7 @@ pub trait ITerminatorInst: ISubInst {
 
     fn jts_mut(&mut self) -> &mut [Rc<JumpTarget>];
 
-    fn get_jts(&self) -> JumpTargets;
+    fn get_jts(&self) -> JumpTargets<'_>;
 
     /// 获取跳转目标的数量
     fn n_jump_targets(&self) -> usize {
@@ -313,7 +313,7 @@ impl TerminatorRef {
         })
     }
 
-    pub fn get_jts(self, alloc: &Slab<InstData>) -> JumpTargets {
+    pub fn get_jts(self, alloc: &Slab<InstData>) -> JumpTargets<'_> {
         match self {
             TerminatorRef::Unreachable(_) => JumpTargets::Fix(&[]),
             TerminatorRef::Ret(ret) => ret.to_inst(alloc).get_jts(),
@@ -389,7 +389,7 @@ impl<'a> TryFrom<&'a InstData> for TerminatorDataRef<'a> {
 }
 
 impl<'a> TerminatorDataRef<'a> {
-    pub fn get_jts(&self) -> JumpTargets {
+    pub fn get_jts(&self) -> JumpTargets<'_> {
         match self {
             TerminatorDataRef::Jump(jump) => jump.get_jts(),
             TerminatorDataRef::Br(br) => br.get_jts(),

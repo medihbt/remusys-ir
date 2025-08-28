@@ -39,7 +39,9 @@ pub use self::{
     call::{CallOp, CallOpRef},
     cast::{CastOp, CastOpRef},
     cmp::{CmpOp, CmpOpRef},
-    gep::{GEPIndexIter, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset, IrGEPOffsetIter},
+    gep::{
+        GEPIndexIter, GEPRef, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset, IrGEPOffsetIter,
+    },
     jump::{Jump, JumpRef},
     load::{LoadInstRef, LoadOp},
     phi::{PhiError, PhiNode, PhiRef},
@@ -126,7 +128,7 @@ pub enum InstData {
 }
 
 impl IUser for InstData {
-    fn get_operands(&self) -> OperandSet {
+    fn get_operands(&self) -> OperandSet<'_> {
         match self {
             InstData::ListGuideNode(_) => OperandSet::Fixed(&[]),
             InstData::PhiInstEnd(_) => OperandSet::Fixed(&[]),
@@ -351,7 +353,7 @@ impl InstData {
         InstData::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
     }
 
-    pub fn try_get_jts(&self) -> Option<JumpTargets> {
+    pub fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
         match self {
             InstData::Br(br) => Some(br.get_jts()),
             InstData::Switch(switch) => Some(switch.get_jts()),
@@ -624,7 +626,10 @@ impl InstRef {
     }
 
     /// 如果自己在指令列表里, 就把自己移除掉.
-    pub fn detach_self(self, allocs: &impl IRAllocsReadable) -> Result<ManagedInst, InstError> {
+    pub fn detach_self<'a>(
+        self,
+        allocs: &'a impl IRAllocsReadable,
+    ) -> Result<ManagedInst<'a>, InstError> {
         let allocs = allocs.get_allocs_ref();
         let (parent, opcode) = {
             let data = self.to_inst(&allocs.insts);

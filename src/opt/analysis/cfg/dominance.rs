@@ -87,10 +87,10 @@ impl DominatorTree {
         CfgDfsSeq::clone(&self.dfs_seq)
     }
 
-    fn dfn_borrow_domcache_mut(&self, dfn: usize) -> RefMut<BTreeSet<BlockRef>> {
+    fn dfn_borrow_domcache_mut(&self, dfn: usize) -> RefMut<'_, BTreeSet<BlockRef>> {
         self.dfn_get_node(dfn).unwrap().dominator_cache.borrow_mut()
     }
-    fn dfn_borrow_domcache(&self, dfn: usize) -> Ref<BTreeSet<BlockRef>> {
+    fn dfn_borrow_domcache(&self, dfn: usize) -> Ref<'_, BTreeSet<BlockRef>> {
         self.dfn_get_node(dfn).unwrap().dominator_cache.borrow()
     }
     pub fn block_dominates_block(&self, domaintor: BlockRef, dominee: BlockRef) -> bool {
