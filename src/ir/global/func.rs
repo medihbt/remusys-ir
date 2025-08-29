@@ -409,10 +409,6 @@ impl FuncArg {
         }
     }
 
-    // ================================
-    // 参数属性操作便利方法
-    // ================================
-
     /// 向参数添加属性
     pub fn add_attr(&self, attr: Attr) -> RefMut<'_, AttrList> {
         RefMut::map(self.attrs.borrow_mut(), |attrs| attrs.add_attr(attr))
