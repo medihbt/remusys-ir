@@ -6,7 +6,7 @@ use crate::{
         JumpTarget, TerminatorRef, Use, UserID, ValueSSA,
     },
 };
-use std::{collections::VecDeque, ops::ControlFlow, rc::Rc};
+use std::{collections::VecDeque, ops::ControlFlow, rc::Rc, usize};
 
 #[derive(Debug, Clone)]
 pub struct IRLiveValueSet {
@@ -183,6 +183,12 @@ impl<'a> IRValueMarker<'a> {
                 Self::do_push_mark(live_set, mark_queue, jt.get_block());
             }
         }
+        if let InstData::Call(callop) = inst_data {
+            for attr in callop.attrs.iter() {
+                let attr = attr.borrow();
+                Self::mark_all_attrs(live_set, &mut self.attrs_queue, &attr.includes, allocs);
+            }
+        };
     }
 
     fn consume_global(&mut self, global: GlobalRef) {
@@ -391,6 +397,11 @@ impl<'a> IRValueMarker<'a> {
         Self::redirect_use(compact_map, new, &inst.get_operands());
         if let Some(jts) = inst.try_get_jts() {
             Self::redirect_jts(compact_map, new, &jts);
+        }
+        if let InstData::Call(callop) = inst {
+            for attr in callop.attrs.iter_mut() {
+                Self::fix_attrs(compact_map, usize::MAX, attr.get_mut());
+            }
         }
     }
 
