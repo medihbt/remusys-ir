@@ -135,6 +135,14 @@ impl Attr {
         }
     }
 
+    pub fn is_func_attr(&self) -> bool {
+        use Attr::*;
+        matches!(
+            self,
+            NoReturn | NoRecurse | Inline(_) | AlignStack(_) | CodeTemp(_)
+        )
+    }
+
     pub fn get_merge_behavior(&self) -> MergeBehavior {
         use Attr::*;
         match self {
@@ -162,7 +170,7 @@ impl Attr {
             Attr::NoRecurse => f.write_str("norecurse"),
             Attr::Inline(inline) => f.write_str(inline.as_str()),
             Attr::AlignStack(val) => {
-                write!(f, "alignstack {}", val)
+                write!(f, "alignstack({})", val)
             }
             Attr::CodeTemp(temp) => match temp {
                 CodeTempAttr::Cold => f.write_str("cold"),
@@ -170,18 +178,15 @@ impl Attr {
             },
             Attr::IntExt(ext) => f.write_str(ext.as_str()),
             Attr::PtrElem(ty) => {
-                f.write_str("ptrelement ")?;
-                f.write_type(*ty)
+                f.write_str("elementtype(")?;
+                f.write_type(*ty)?;
+                f.write_str(")")
             }
             Attr::NoAlias => f.write_str("noalias"),
             Attr::NonNull => f.write_str("nonnull"),
-            Attr::Dereferenceable(val) => {
-                write!(f, "dereferenceable {}", val)
-            }
-            Attr::Align(val) => {
-                write!(f, "align {}", val)
-            }
-            Attr::TargetDependent(dep) => f.write_str(&format!("target-dependent \"{}\"", dep)),
+            Attr::Dereferenceable(val) => write!(f, "dereferenceable({val})"),
+            Attr::Align(val) => write!(f, "align({val})"),
+            Attr::TargetDependent(dep) => f.write_str(&format!("target-dependent \"{dep}\"")),
         }
     }
 }

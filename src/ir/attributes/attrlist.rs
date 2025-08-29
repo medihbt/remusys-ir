@@ -13,8 +13,9 @@ pub struct AttrList {
 
 impl AttrList {
     /// 直接插入属性到本地属性集
-    pub fn insert_attr(&mut self, attr: Attr) {
+    pub fn add_attr(&mut self, attr: Attr) -> &mut Self {
         self.attr.merge_attr(attr);
+        self
     }
 
     /// 检查是否包含特定属性（包括继承的）
@@ -49,6 +50,10 @@ impl AttrList {
         }
 
         merged
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.attr.is_empty() && self.includes.is_empty()
     }
 
     pub fn fmt_ir(&self, f: &IRWriter) -> std::io::Result<()> {
@@ -124,16 +129,16 @@ mod tests {
 
         // 创建基础属性列表
         let mut base_list = AttrList::default();
-        base_list.insert_attr(Attr::NoReturn);
-        base_list.insert_attr(Attr::Inline(InlineAttr::Hint));
+        base_list.add_attr(Attr::NoReturn);
+        base_list.add_attr(Attr::Inline(InlineAttr::Hint));
 
         let base_id = AttrListID(alloc.insert(base_list));
 
         // 创建扩展属性列表，继承基础列表
         let mut ext_list = AttrList::default();
         ext_list.includes.push(base_id);
-        ext_list.insert_attr(Attr::NoRecurse);
-        ext_list.insert_attr(Attr::Inline(InlineAttr::Always)); // 覆盖继承的值
+        ext_list.add_attr(Attr::NoRecurse);
+        ext_list.add_attr(Attr::Inline(InlineAttr::Always)); // 覆盖继承的值
 
         // 现在 API 更清晰了：
 

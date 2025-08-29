@@ -10,7 +10,7 @@ use crate::{
     },
     typing::{FuncTypeRef, TypeContext, ValTypeID},
 };
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, RefCell, RefMut};
 
 /// 函数存储接口，为存储函数值的对象提供类型信息访问能力
 pub trait FuncStorage: PtrStorage {
@@ -170,7 +170,15 @@ impl Func {
         )?;
         writer.write_type(self.return_type)?;
         write!(writer, " @{}", self.common.name)?;
-        self.fmt_args(!self.is_extern(), writer)
+        self.fmt_args(!self.is_extern(), writer)?;
+        self.with_attrs(|attrs| {
+            if attrs.is_empty() {
+                Ok(())
+            } else {
+                writer.write_str(" ")?;
+                attrs.fmt_ir(writer)
+            }
+        })
     }
 
     fn fmt_args(&self, writes_id: bool, writer: &IRWriter) -> std::io::Result<()> {
@@ -180,6 +188,14 @@ impl Func {
                 writer.write_str(", ")?;
             }
             writer.write_type(arg.ty)?;
+            arg.with_attrs(|attrs| {
+                if attrs.is_empty() {
+                    Ok(())
+                } else {
+                    writer.write_str(" ")?;
+                    attrs.fmt_ir(writer)
+                }
+            })?;
             if writes_id {
                 write!(writer, " %{}", arg.index)?;
             }
@@ -325,13 +341,15 @@ impl Func {
         self.args.len()
     }
 
-    // ================================
-    // 属性操作便利方法 - 隐藏 RefCell 复杂性
-    // ================================
-
     /// 向函数添加属性
-    pub fn add_attr(&self, attr: Attr) {
-        self.attrs.borrow_mut().insert_attr(attr);
+    pub fn add_attr(&self, attr: Attr) -> RefMut<'_, AttrList> {
+        RefMut::map(self.attrs.borrow_mut(), |attrs| {
+            if attr.is_func_attr() {
+                attrs.add_attr(attr)
+            } else {
+                panic!("Attribute {attr:?} is not a function attribute");
+            }
+        })
     }
 
     /// 检查函数是否具有特定属性（包括继承）
@@ -396,8 +414,8 @@ impl FuncArg {
     // ================================
 
     /// 向参数添加属性
-    pub fn add_attr(&self, attr: Attr) {
-        self.attrs.borrow_mut().insert_attr(attr);
+    pub fn add_attr(&self, attr: Attr) -> RefMut<'_, AttrList> {
+        RefMut::map(self.attrs.borrow_mut(), |attrs| attrs.add_attr(attr))
     }
 
     /// 检查参数是否具有特定属性（包括继承）

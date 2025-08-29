@@ -4,7 +4,7 @@
 use crate::{
     base::APInt,
     ir::{
-        CmpCond, IRBuilder, IRBuilderFocus, InstCheckCtx, Module, Opcode, ValueSSA,
+        Attr, CmpCond, FuncRef, IRBuilder, IRBuilderFocus, InstCheckCtx, Module, Opcode, ValueSSA,
         inst::{ISubInstRef, RetRef},
         write_ir_module, write_ir_module_quiet,
     },
@@ -87,11 +87,28 @@ use crate::{
 pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let mut builder = create_module_builder("test_case_cfg_deep_while_br");
     let ri32fty = FuncTypeRef::new(builder.get_type_ctx(), ValTypeID::Int(32), false, []);
+    let rarrfty = FuncTypeRef::new(
+        builder.get_type_ctx(),
+        ValTypeID::Void,
+        false,
+        [ValTypeID::Ptr, ValTypeID::Int(64)],
+    );
 
     let getint_func = builder.declare_function("getint", ri32fty).unwrap();
-    let _main_func = builder
+    let putarr_func = builder
+        .define_function_with_unreachable("_Z6putarrPil", rarrfty)
+        .unwrap();
+    let putarr_func = FuncRef(putarr_func).to_data(&builder.module.allocs.globals);
+    putarr_func.args[0].add_attr(Attr::NoAlias);
+    putarr_func.add_attr(Attr::NoReturn);
+
+    let main_func = builder
         .define_function_with_unreachable("main", ri32fty)
         .unwrap();
+    FuncRef(main_func)
+        .to_data(&builder.module.allocs.globals)
+        .add_attr(Attr::AlignStack(4))
+        .add_attr(Attr::NoRecurse);
 
     // set builder current focus to: `Block(main() -> block %0)`
     let entry_block_0 = builder.get_focus_full().block;
