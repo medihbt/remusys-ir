@@ -1,9 +1,9 @@
 use crate::{
     base::{FixBitSet, INullableValue, SlabListNode, SlabListNodeHead, SlabRef},
     ir::{
-        BlockData, BlockRef, ConstExprData, ExprRef, GlobalData, GlobalRef, IRAllocs, ISubGlobal,
-        ISubInst, ISubValueSSA, IUser, InstData, InstRef, JumpTarget, TerminatorRef, Use, UserID,
-        ValueSSA,
+        AttrList, AttrListID, BlockData, BlockRef, ConstExprData, ExprRef, Func, GlobalData,
+        GlobalRef, IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, IUser, InstData, InstRef,
+        JumpTarget, TerminatorRef, Use, UserID, ValueSSA,
     },
 };
 use std::{collections::VecDeque, ops::ControlFlow, rc::Rc};
@@ -14,6 +14,7 @@ pub struct IRLiveValueSet {
     pub blocks: FixBitSet<1>,
     pub exprs: FixBitSet<2>,
     pub globals: FixBitSet<1>,
+    pub attrs: FixBitSet<1>,
 }
 
 impl IRLiveValueSet {
@@ -24,6 +25,7 @@ impl IRLiveValueSet {
             blocks: FixBitSet::with_len(allocs.blocks.capacity()),
             exprs: FixBitSet::with_len(allocs.exprs.capacity()),
             globals: FixBitSet::with_len(allocs.globals.capacity()),
+            attrs: FixBitSet::with_len(allocs.attrs.capacity()),
         }
     }
 
@@ -59,12 +61,14 @@ impl IRLiveValueSet {
         allocs.insts.retain(|inst, _| self.insts.get(inst));
         allocs.blocks.retain(|block, _| self.blocks.get(block));
         allocs.globals.retain(|global, _| self.globals.get(global));
+        allocs.attrs.retain(|attr, _| self.attrs.get(attr));
     }
 }
 
 pub struct IRValueMarker<'a> {
     pub live_set: IRLiveValueSet,
     pub mark_queue: VecDeque<ValueSSA>,
+    pub attrs_queue: VecDeque<AttrListID>,
     pub allocs: &'a mut IRAllocs,
 }
 
@@ -73,6 +77,7 @@ impl<'a> IRValueMarker<'a> {
         Self {
             live_set: IRLiveValueSet::from_allocs(allocs),
             mark_queue: VecDeque::new(),
+            attrs_queue: VecDeque::new(),
             allocs,
         }
     }
@@ -80,6 +85,14 @@ impl<'a> IRValueMarker<'a> {
     pub fn push_mark(&mut self, value: impl ISubValueSSA) {
         let Self { live_set, mark_queue, .. } = self;
         Self::do_push_mark(live_set, mark_queue, value);
+    }
+    pub fn push_mark_attr(&mut self, attr: AttrListID) {
+        let Self { live_set, attrs_queue, .. } = self;
+        if live_set.attrs.get(attr.get_handle()) {
+            return;
+        }
+        live_set.attrs.enable(attr.get_handle());
+        attrs_queue.push_back(attr);
     }
     pub fn mark_leaf(&mut self, value: impl ISubValueSSA) {
         let Self { live_set, .. } = self;
@@ -143,7 +156,7 @@ impl<'a> IRValueMarker<'a> {
     }
 
     fn consume_expr(&mut self, expr: ExprRef) {
-        let Self { live_set, mark_queue, allocs } = self;
+        let Self { live_set, mark_queue, allocs, .. } = self;
         let expr_data = expr.to_data(&allocs.exprs);
         for elem in &expr_data.get_operands() {
             Self::do_push_mark(live_set, mark_queue, elem.get_operand());
@@ -151,7 +164,7 @@ impl<'a> IRValueMarker<'a> {
     }
 
     fn consume_block(&mut self, block: BlockRef) {
-        let Self { live_set, mark_queue, allocs } = self;
+        let Self { live_set, mark_queue, allocs, .. } = self;
         let block_data = block.to_data(&allocs.blocks);
         block_data.insts.forall_nodes(&allocs.insts, |&iref, _| {
             Self::do_push_mark(live_set, mark_queue, iref);
@@ -160,7 +173,7 @@ impl<'a> IRValueMarker<'a> {
     }
 
     fn consume_inst(&mut self, inst: InstRef) {
-        let Self { live_set, mark_queue, allocs } = self;
+        let Self { live_set, mark_queue, allocs, .. } = self;
         let inst_data = inst.to_data(&allocs.insts);
         for useref in &inst_data.get_operands() {
             Self::do_push_mark(live_set, mark_queue, useref.get_operand());
@@ -173,16 +186,57 @@ impl<'a> IRValueMarker<'a> {
     }
 
     fn consume_global(&mut self, global: GlobalRef) {
-        let Self { live_set, mark_queue, allocs } = self;
+        let Self { live_set, mark_queue, attrs_queue, allocs } = self;
         match global.to_data(&allocs.globals) {
             GlobalData::Var(var) => Self::do_push_mark(live_set, mark_queue, var.get_init()),
             GlobalData::Func(func) => {
-                let Some(body) = func.get_body() else { return };
-                body.forall_nodes(&allocs.blocks, |&bref, _| {
-                    Self::do_push_mark(live_set, mark_queue, bref);
-                    ControlFlow::Continue(())
-                });
+                Self::consume_func(live_set, mark_queue, attrs_queue, allocs, func)
             }
+        }
+    }
+
+    fn consume_func(
+        live_set: &mut IRLiveValueSet,
+        mark_queue: &mut VecDeque<ValueSSA>,
+        attrs_queue: &mut VecDeque<AttrListID>,
+        allocs: &IRAllocs,
+        func: &Func,
+    ) {
+        func.with_attrs(|attrs| {
+            Self::mark_all_attrs(live_set, attrs_queue, &attrs.includes, allocs);
+        });
+        for arg in func.args.iter() {
+            arg.with_attrs(|attrs| {
+                Self::mark_all_attrs(live_set, attrs_queue, &attrs.includes, allocs);
+            });
+        }
+        let Some(body) = func.get_body() else { return };
+        body.forall_nodes(&allocs.blocks, |&bref, _| {
+            Self::do_push_mark(live_set, mark_queue, bref);
+            ControlFlow::Continue(())
+        });
+    }
+
+    fn mark_attr_include(
+        live_set: &mut IRLiveValueSet,
+        attrs_queue: &mut VecDeque<AttrListID>,
+        attrs: &[AttrListID],
+    ) {
+        for &include in attrs {
+            live_set.attrs.enable(include.get_handle());
+            attrs_queue.push_back(include);
+        }
+    }
+    fn mark_all_attrs(
+        live_set: &mut IRLiveValueSet,
+        attrs_queue: &mut VecDeque<AttrListID>,
+        attrs: &[AttrListID],
+        allocs: &IRAllocs,
+    ) {
+        Self::mark_attr_include(live_set, attrs_queue, attrs);
+        while let Some(attr) = attrs_queue.pop_front() {
+            let attr = attr.to_data(&allocs.attrs);
+            Self::mark_attr_include(live_set, attrs_queue, &attr.includes);
         }
     }
 }
@@ -193,6 +247,7 @@ pub struct IRValueCompactMap {
     pub blocks: Vec<BlockRef>,
     pub exprs: Vec<ExprRef>,
     pub globals: Vec<GlobalRef>,
+    pub attrs: Vec<AttrListID>,
 }
 
 impl IRValueCompactMap {
@@ -202,6 +257,7 @@ impl IRValueCompactMap {
             blocks: Self::build_vecmap(&liveset.blocks),
             exprs: Self::build_vecmap(&liveset.exprs),
             globals: Self::build_vecmap(&liveset.globals),
+            attrs: Self::build_vecmap(&liveset.attrs),
         }
     }
 
@@ -253,6 +309,9 @@ impl IRValueCompactMap {
     pub fn redirect_expr(&self, expr: ExprRef) -> ExprRef {
         if expr.is_null() { expr } else { self.exprs[expr.get_handle()] }
     }
+    pub fn redirect_attr(&self, attr: AttrListID) -> AttrListID {
+        if attr.is_null() { attr } else { self.attrs[attr.get_handle()] }
+    }
 }
 
 impl<'a> IRValueMarker<'a> {
@@ -276,6 +335,10 @@ impl<'a> IRValueMarker<'a> {
             compact_map.exprs[old] = ExprRef::from_handle(new);
             true
         });
+        allocs.attrs.compact(|_, old, new| {
+            compact_map.attrs[old] = AttrListID::from_handle(new);
+            true
+        });
 
         for (id, inst) in allocs.insts.iter_mut() {
             Self::fix_inst(&compact_map, id, inst);
@@ -288,6 +351,9 @@ impl<'a> IRValueMarker<'a> {
         }
         for (id, expr) in allocs.exprs.iter_mut() {
             Self::fix_expr(&compact_map, id, expr);
+        }
+        for (id, attrs) in allocs.attrs.iter_mut() {
+            Self::fix_attrs(&compact_map, id, attrs);
         }
 
         compact_map
@@ -356,6 +422,15 @@ impl<'a> IRValueMarker<'a> {
         Self::redirect_use(compact_map, new, &global.get_operands());
 
         let GlobalData::Func(func) = global else { return };
+        func.with_attrs_mut(|attrs| {
+            Self::fix_attrs(compact_map, usize::MAX, attrs);
+        });
+        for arg in func.args.iter_mut() {
+            arg.with_attrs_mut(|attrs| {
+                Self::fix_attrs(compact_map, usize::MAX, attrs);
+            });
+        }
+
         func.entry.set(compact_map.redirect_block(func.entry.get()));
         func.body._head = compact_map.redirect_block(func.body._head);
         func.body._tail = compact_map.redirect_block(func.body._tail);
@@ -363,6 +438,15 @@ impl<'a> IRValueMarker<'a> {
 
     fn fix_expr(compact_map: &IRValueCompactMap, id: usize, expr: &mut ConstExprData) {
         Self::redirect_use(compact_map, ExprRef::from_handle(id), &expr.get_operands());
+    }
+
+    fn fix_attrs(compact_map: &IRValueCompactMap, id: usize, attrs: &mut AttrList) {
+        if attrs.self_id.is_nonnull() {
+            attrs.self_id = AttrListID::from_handle(id);
+        }
+        for attr in attrs.includes.iter_mut() {
+            *attr = compact_map.redirect_attr(*attr);
+        }
     }
 
     /// 标记-压缩法垃圾回收. 由于 Slab allocator 限制, 实际行为是: 先执行一次标记-清除,

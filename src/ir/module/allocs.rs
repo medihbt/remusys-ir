@@ -1,6 +1,8 @@
 use crate::{
     base::{MixMutRef, MixRef},
-    ir::{BlockData, ConstExprData, GlobalData, IRValueMarker, InstData, Module},
+    ir::{
+        AttrList, BlockData, ConstExprData, GlobalData, IRValueMarker, InstData, Module, ValueSSA,
+    },
 };
 use slab::Slab;
 
@@ -10,6 +12,7 @@ pub struct IRAllocs {
     pub insts: Slab<InstData>,
     pub blocks: Slab<BlockData>,
     pub globals: Slab<GlobalData>,
+    pub attrs: Slab<AttrList>,
 }
 
 impl IRAllocs {
@@ -19,6 +22,7 @@ impl IRAllocs {
             insts: Slab::new(),
             blocks: Slab::new(),
             globals: Slab::new(),
+            attrs: Slab::new(),
         }
     }
 
@@ -28,6 +32,7 @@ impl IRAllocs {
             insts: Slab::with_capacity(base_capacity * 8),
             blocks: Slab::with_capacity(base_capacity * 2),
             globals: Slab::with_capacity(base_capacity),
+            attrs: Slab::with_capacity(base_capacity),
         }
     }
 
@@ -35,7 +40,7 @@ impl IRAllocs {
     ///
     /// # 参数
     /// - `roots`: 根对象集合，通常包括模块的全局变量和函数入口点
-    pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = crate::ir::ValueSSA>) {
+    pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {
         let mut marker = IRValueMarker::from_allocs(self);
         marker.mark_and_sweep(roots);
     }
