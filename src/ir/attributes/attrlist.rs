@@ -27,10 +27,25 @@ impl AttrList {
         }
     }
 
+    pub fn attached(&self) -> bool {
+        self.self_id.is_nonnull()
+    }
+
     pub fn attr(&self) -> &AttrSet {
         &self.attr
     }
+    pub fn try_attrs_mut(&mut self) -> Result<&mut AttrSet, AttrList> {
+        if self.attached() {
+            Err(self.clone())
+        } else {
+            self.merged_cache.get_mut().take();
+            Ok(&mut self.attr)
+        }
+    }
     pub fn attr_mut(&mut self) -> &mut AttrSet {
+        if self.attached() {
+            panic!("Cannot modify attributes of an attached AttrList");
+        }
         self.merged_cache.get_mut().take();
         &mut self.attr
     }
