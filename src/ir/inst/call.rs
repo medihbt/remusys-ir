@@ -1,12 +1,12 @@
 use crate::{
     base::INullableValue,
     ir::{
-        FuncUser, GlobalRef, IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef,
-        Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        AttrList, FuncUser, GlobalRef, IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData,
+        InstRef, Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
-use std::{num::NonZero, rc::Rc};
+use std::{cell::RefCell, num::NonZero, rc::Rc};
 
 /// 函数调用指令
 ///
@@ -29,6 +29,15 @@ use std::{num::NonZero, rc::Rc};
 /// - `callee`: 被调用的函数（全局函数引用）
 /// - `arg0..argN`: 传递给函数的参数
 ///
+/// ## 属性布局
+///
+/// ```text
+/// [attr(Callee), attr(arg0), attr(arg1), ..., attr(argN)]
+/// ```
+///
+/// - `callee`: 被调用函数在此次调用时附加的额外属性
+/// - `arg0..argN`: 本次调用每个实参的额外属性
+///
 /// ## 设计特点
 /// - **类型安全**: 通过 `FuncTypeRef` 确保参数类型和数量正确
 /// - **可变参数**: 支持 C 风格的可变参数函数
@@ -37,8 +46,10 @@ use std::{num::NonZero, rc::Rc};
 pub struct CallOp {
     /// 指令的通用数据（父基本块、操作码、返回类型等）
     common: InstCommon,
-    /// 操作数数组：[callee, arg0, arg1, ..., argN]
+    /// 操作数数组：`[callee, arg0, arg1, ..., argN]`
     operands: Box<[Rc<Use>]>,
+    /// 属性表: `[attr(Callee), attr(arg0), attr(arg1), ..., attr(argN)]`
+    pub attrs: Box<[RefCell<AttrList>]>,
     /// 被调用函数的类型签名
     pub callee_ty: FuncTypeRef,
     /// 固定参数的数量（不包括可变参数）
@@ -68,10 +79,11 @@ impl IUser for CallOp {
 }
 
 impl ISubInst for CallOp {
-    fn new_empty(_: Opcode) -> Self {
+    fn new_empty(opcode: Opcode) -> Self {
         CallOp {
-            common: InstCommon::new_empty(),
+            common: InstCommon::new(opcode, ValTypeID::Void),
             operands: Box::new([]),
+            attrs: Box::new([]),
             callee_ty: FuncTypeRef::new_null(),
             fixed_nargs: 0,
             is_vararg: false,
@@ -181,6 +193,7 @@ impl CallOp {
         Self {
             common: InstCommon::new(Opcode::Call, func_ty.ret_type(type_ctx)),
             operands: Self::alloc_operands(nargs as u32),
+            attrs: vec![RefCell::new(AttrList::default()); nargs + 1].into_boxed_slice(),
             callee_ty: func_ty,
             fixed_nargs: func_ty.nargs(type_ctx),
             is_vararg: func_ty.is_vararg(type_ctx),
@@ -275,6 +288,20 @@ impl CallOp {
         self.callee().set_operand(allocs, callee);
     }
 
+    /// 获取被调用函数的属性列表
+    pub fn callee_attrs(&self) -> &RefCell<AttrList> {
+        &self.attrs[0]
+    }
+    pub fn callee_attrs_mut(&mut self) -> &mut AttrList {
+        self.attrs[0].get_mut()
+    }
+    pub fn read_callee_attrs<R>(&self, read: impl FnOnce(&AttrList) -> R) -> R {
+        read(&self.attrs[0].borrow())
+    }
+    pub fn edit_callee_attrs<R>(&self, edit: impl FnOnce(&mut AttrList) -> R) -> R {
+        edit(&mut self.attrs[0].borrow_mut())
+    }
+
     /// 获取所有参数的 Use 对象数组
     ///
     /// 返回操作数数组中除了第一个元素（被调用函数）之外的所有元素。
@@ -283,6 +310,31 @@ impl CallOp {
     /// 参数的 Use 对象数组切片
     pub fn args(&self) -> &[Rc<Use>] {
         &self.operands[1..]
+    }
+
+    /// 获取参数的属性列表
+    pub fn args_attrs(&self) -> &[RefCell<AttrList>] {
+        &self.attrs[1..]
+    }
+    pub fn args_attrs_mut(&mut self) -> &mut [RefCell<AttrList>] {
+        &mut self.attrs[1..]
+    }
+
+    pub fn arg_attr(&self, id: usize) -> &RefCell<AttrList> {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        &self.attrs[id + 1]
+    }
+    pub fn arg_attr_mut(&mut self, id: usize) -> &mut AttrList {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        self.attrs[id + 1].get_mut()
+    }
+    pub fn read_arg_attr<R>(&self, id: usize, read: impl FnOnce(&AttrList) -> R) -> R {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        read(&self.attrs[id + 1].borrow())
+    }
+    pub fn edit_arg_attr<R>(&self, id: usize, edit: impl FnOnce(&mut AttrList) -> R) -> R {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        edit(&mut self.attrs[id + 1].borrow_mut())
     }
 
     /// 获取指定索引参数的 Use 对象引用

@@ -3,14 +3,14 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
-        BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, IRAllocs, IRAllocsReadable,
-        IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, Module,
-        NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
+        Attr, AttrList, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef,
+        IRAllocs, IRAllocsReadable, IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA,
+        ITraceableValue, Module, NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
     },
     typing::{FuncTypeRef, TypeContext, ValTypeID},
 };
-use std::cell::Cell;
+use std::cell::{Cell, RefCell, RefMut};
 
 /// 函数存储接口，为存储函数值的对象提供类型信息访问能力
 pub trait FuncStorage: PtrStorage {
@@ -88,6 +88,8 @@ pub struct Func {
     pub args: Box<[FuncArg]>,
     /// 返回类型
     pub return_type: ValTypeID,
+    /// 函数属性
+    pub attrs: RefCell<AttrList>,
     /// 函数体的基本块列表 (空列表表示外部函数)
     pub(crate) body: SlabRefList<BlockRef>,
     /// 函数入口基本块的引用
@@ -168,7 +170,15 @@ impl Func {
         )?;
         writer.write_type(self.return_type)?;
         write!(writer, " @{}", self.common.name)?;
-        self.fmt_args(!self.is_extern(), writer)
+        self.fmt_args(!self.is_extern(), writer)?;
+        self.with_attrs(|attrs| {
+            if attrs.is_empty() {
+                Ok(())
+            } else {
+                writer.write_str(" ")?;
+                attrs.fmt_ir(writer)
+            }
+        })
     }
 
     fn fmt_args(&self, writes_id: bool, writer: &IRWriter) -> std::io::Result<()> {
@@ -178,6 +188,14 @@ impl Func {
                 writer.write_str(", ")?;
             }
             writer.write_type(arg.ty)?;
+            arg.with_attrs(|attrs| {
+                if attrs.is_empty() {
+                    Ok(())
+                } else {
+                    writer.write_str(" ")?;
+                    attrs.fmt_ir(writer)
+                }
+            })?;
             if writes_id {
                 write!(writer, " %{}", arg.index)?;
             }
@@ -205,7 +223,7 @@ impl Func {
         let args = {
             let mut args = Vec::with_capacity(functy.nargs(type_ctx));
             for (index, arg_ty) in functy.args(type_ctx).iter().enumerate() {
-                args.push(FuncArg { ty: arg_ty.clone(), index, users: UserList::new_empty() });
+                args.push(FuncArg::new(index, *arg_ty));
             }
             args.into_boxed_slice()
         };
@@ -213,6 +231,7 @@ impl Func {
         Func {
             common,
             args,
+            attrs: RefCell::new(AttrList::default()),
             body: SlabRefList::new_guide(),
             entry: Cell::new(BlockRef::new_null()),
             return_type,
@@ -321,6 +340,35 @@ impl Func {
     pub fn get_nargs(&self) -> usize {
         self.args.len()
     }
+
+    /// 向函数添加属性
+    pub fn add_attr(&self, attr: Attr) -> RefMut<'_, AttrList> {
+        RefMut::map(self.attrs.borrow_mut(), |attrs| {
+            if attr.is_func_attr() {
+                attrs.add_attr(attr)
+            } else {
+                panic!("Attribute {attr:?} is not a function attribute");
+            }
+        })
+    }
+
+    /// 检查函数是否具有特定属性（包括继承）
+    pub fn has_attr_by_alloc(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
+        self.attrs.borrow().has_attr(attr, alloc)
+    }
+    pub fn has_attr(&self, attr: &Attr, allocs: &impl IRAllocsReadable) -> bool {
+        self.has_attr_by_alloc(attr, &allocs.get_allocs_ref().attrs)
+    }
+
+    /// 访问属性列表（只读）
+    pub fn with_attrs<R>(&self, f: impl FnOnce(&AttrList) -> R) -> R {
+        f(&self.attrs.borrow())
+    }
+
+    /// 访问属性列表（可变）
+    pub fn with_attrs_mut<R>(&self, f: impl FnOnce(&mut AttrList) -> R) -> R {
+        f(&mut self.attrs.borrow_mut())
+    }
 }
 
 /// 函数参数表示
@@ -335,6 +383,8 @@ pub struct FuncArg {
     pub index: usize,
     /// 追踪使用此参数的指令列表 (Use-Def 链)
     pub users: UserList,
+    /// 属性集合
+    pub attrs: RefCell<AttrList>,
 }
 
 impl ITraceableValue for FuncArg {
@@ -344,6 +394,37 @@ impl ITraceableValue for FuncArg {
 
     fn has_single_reference_semantics(&self) -> bool {
         true
+    }
+}
+
+impl FuncArg {
+    pub fn new(index: usize, ty: ValTypeID) -> Self {
+        FuncArg {
+            index,
+            ty,
+            users: UserList::new_empty(),
+            attrs: RefCell::new(AttrList::default()),
+        }
+    }
+
+    /// 向参数添加属性
+    pub fn add_attr(&self, attr: Attr) -> RefMut<'_, AttrList> {
+        RefMut::map(self.attrs.borrow_mut(), |attrs| attrs.add_attr(attr))
+    }
+
+    /// 检查参数是否具有特定属性（包括继承）
+    pub fn has_attr(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
+        self.attrs.borrow().has_attr(attr, alloc)
+    }
+
+    /// 访问属性列表（只读）
+    pub fn with_attrs<R>(&self, f: impl FnOnce(&AttrList) -> R) -> R {
+        f(&self.attrs.borrow())
+    }
+
+    /// 访问属性列表（可变）
+    pub fn with_attrs_mut<R>(&self, f: impl FnOnce(&mut AttrList) -> R) -> R {
+        f(&mut self.attrs.borrow_mut())
     }
 }
 

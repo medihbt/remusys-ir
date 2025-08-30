@@ -13,6 +13,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
+mod attributes;
 mod block;
 mod cmp_cond;
 mod constant;
@@ -28,6 +29,11 @@ pub mod compact_ir;
 pub mod inst;
 
 pub use self::{
+    attributes::{
+        Attr, AttrKind, CodeTempAttr, InlineAttr, IntExtAttr, MergeBehavior,
+        attrlist::{AttrList, AttrListID},
+        attrset::AttrSet,
+    },
     block::{
         BlockData, BlockDataInner, BlockRef,
         jump_target::{
