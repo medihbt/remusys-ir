@@ -1,6 +1,11 @@
+use std::{
+    cell::{Ref, RefCell},
+    ops::Deref,
+};
+
 use crate::{
-    base::{FixBitSet, INullableValue, SlabRef},
-    ir::{Attr, IRWriter, attributes::attrset::AttrSet},
+    base::{FixBitSet, INullableValue, MixRef, SlabRef},
+    ir::{Attr, IRAllocsEditable, IRWriter, attributes::attrset::AttrSet},
 };
 use slab::Slab;
 
@@ -8,48 +13,78 @@ use slab::Slab;
 pub struct AttrList {
     pub includes: Vec<AttrListID>,
     pub self_id: AttrListID,
-    pub attr: AttrSet,
+    attr: AttrSet,
+    merged_cache: RefCell<Option<Box<AttrSet>>>,
 }
 
 impl AttrList {
+    pub fn new(includes: Vec<AttrListID>, attr: AttrSet) -> Self {
+        Self {
+            includes,
+            self_id: AttrListID::new_null(),
+            attr,
+            merged_cache: RefCell::new(None),
+        }
+    }
+
+    pub fn attr(&self) -> &AttrSet {
+        &self.attr
+    }
+    pub fn attr_mut(&mut self) -> &mut AttrSet {
+        self.merged_cache.get_mut().take();
+        &mut self.attr
+    }
+
     /// 直接插入属性到本地属性集
     pub fn add_attr(&mut self, attr: Attr) -> &mut Self {
-        self.attr.merge_attr(attr);
+        self.attr_mut().merge_attr(attr);
         self
     }
 
     /// 检查是否包含特定属性（包括继承的）
     pub fn has_attr(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
-        // 先检查本地属性
-        if self.attr.has_attr(attr) {
-            return true;
-        }
-
-        // 然后检查继承的属性
-        for &include_id in &self.includes {
-            if let Some(included_list) = alloc.get(include_id.0) {
-                if included_list.has_attr(attr, alloc) {
-                    return true;
-                }
-            }
-        }
-
-        false
+        self.merge_all(alloc).has_attr(attr)
     }
 
     /// 获取完整的合并属性集（包括继承）
-    pub fn get_merged_attrs(&self, alloc: &Slab<AttrList>) -> AttrSet {
-        let mut merged = self.attr.clone();
+    pub fn merge_all(&self, alloc: &Slab<AttrList>) -> MixRef<'_, AttrSet> {
+        let mut detect_map = FixBitSet::with_len(alloc.capacity());
+        detect_map.set(self.self_id.0, true);
+        self.do_merge_all(alloc, &mut detect_map)
+    }
 
-        // 合并所有包含的属性列表
+    fn do_merge_all(
+        &self,
+        alloc: &Slab<AttrList>,
+        detect_map: &mut FixBitSet<2>,
+    ) -> MixRef<'_, AttrSet> {
+        if self.includes.is_empty() {
+            return MixRef::Fix(&self.attr);
+        }
+
+        if let Some(_) = self.merged_cache.borrow().as_ref() {
+            return MixRef::Dyn(Ref::map(self.merged_cache.borrow(), |c| {
+                c.as_ref().map(|x| x.deref()).unwrap()
+            }));
+        }
+
+        let mut merged = self.attr.clone();
         for &include_id in &self.includes {
+            if detect_map.get(include_id.0) {
+                panic!(
+                    "Cycle detected [{:?} => {:?}] in attribute list inclusion",
+                    self.self_id, include_id
+                );
+            }
             if let Some(included_list) = alloc.get(include_id.0) {
-                let included_attrs = included_list.get_merged_attrs(alloc);
+                let included_attrs = included_list.do_merge_all(alloc, detect_map);
                 merged.merge_from(&included_attrs);
             }
         }
-
-        merged
+        self.merged_cache.replace(Some(Box::new(merged)));
+        MixRef::Dyn(Ref::map(self.merged_cache.borrow(), |c| {
+            c.as_ref().map(|x| x.deref()).unwrap()
+        }))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -87,30 +122,27 @@ impl SlabRef for AttrListID {
 }
 
 impl AttrListID {
-    pub fn merge_all(self, alloc: &mut Slab<AttrList>) -> AttrSet {
-        let mut visited = FixBitSet::<2>::with_len(alloc.len());
-        let mut stack = vec![self];
-        let mut merged = AttrSet::new();
+    pub fn from_alloc(alloc: &mut Slab<AttrList>, mut data: AttrList) -> Self {
+        let index = alloc.vacant_key();
+        data.self_id = AttrListID(index);
+        alloc.insert(data);
+        Self(index)
+    }
+    pub fn new(allocs: &mut impl IRAllocsEditable, data: AttrList) -> Self {
+        let alloc = allocs.get_allocs_mutref();
+        Self::from_alloc(&mut alloc.attrs, data)
+    }
+    pub fn from_iter(
+        allocs: &mut impl IRAllocsEditable,
+        includes: Vec<AttrListID>,
+        attrs: impl IntoIterator<Item = Attr>,
+    ) -> Self {
+        let attrset = AttrSet::from_attrs(attrs);
+        Self::new(allocs, AttrList::new(includes, attrset))
+    }
 
-        while let Some(current_id) = stack.pop() {
-            if visited.get(current_id.0) {
-                continue; // 已访问，跳过
-            }
-            visited.enable(current_id.0);
-
-            if let Some(attr_list) = alloc.get(current_id.0) {
-                // 先处理包含的 AttrList
-                for &included_id in &attr_list.includes {
-                    if !visited.get(included_id.0) {
-                        stack.push(included_id);
-                    }
-                }
-                // 然后合并当前 AttrList 的属性
-                merged.merge_from(&attr_list.attr);
-            }
-        }
-
-        merged
+    pub fn merge_all(self, alloc: &Slab<AttrList>) -> MixRef<'_, AttrSet> {
+        self.to_data(alloc).merge_all(alloc)
     }
 
     pub fn fmt_ir(&self, f: &IRWriter) -> std::io::Result<()> {
@@ -147,7 +179,7 @@ mod tests {
         assert_eq!(ext_list.attr.inline, Some(InlineAttr::Always));
 
         // ✅ 清楚地获取合并后的属性（包括继承）
-        let merged = ext_list.get_merged_attrs(&alloc);
+        let merged = ext_list.merge_all(&alloc);
         assert!(merged.noreturn); // 从基础列表继承
         assert!(merged.norecurse); // 本地属性
         assert_eq!(merged.inline, Some(InlineAttr::Always)); // 覆盖继承的值

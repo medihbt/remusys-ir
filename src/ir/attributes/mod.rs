@@ -194,7 +194,7 @@ impl Attr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use slab::Slab;
+    use crate::ir::{AttrListID, IRAllocs};
 
     #[test]
     fn test_attrset_basic_functionality() {
@@ -292,26 +292,20 @@ mod tests {
 
     #[test]
     fn test_attrlist_merge_all_simple() {
-        let mut alloc = Slab::new();
+        let mut allocs = IRAllocs::new();
 
         // 创建基础属性列表
-        let base_attrs = attrset::AttrSet::from_attrs([Attr::NoReturn, Attr::Align(8)]);
-        let base_id = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![],
-            self_id: attrlist::AttrListID(0),
-            attr: base_attrs,
-        }));
+        let base_id = AttrListID::from_iter(&mut allocs, vec![], [Attr::NoReturn, Attr::Align(8)]);
 
         // 创建扩展属性列表，继承基础列表
-        let ext_attrs = attrset::AttrSet::from_attrs([Attr::NoRecurse, Attr::Align(16)]);
-        let ext_id = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![base_id],
-            self_id: attrlist::AttrListID(1),
-            attr: ext_attrs,
-        }));
+        let ext_id = AttrListID::from_iter(
+            &mut allocs,
+            vec![base_id],
+            [Attr::NoRecurse, Attr::Align(16)],
+        );
 
         // 合并所有属性
-        let merged = ext_id.merge_all(&mut alloc);
+        let merged = ext_id.merge_all(&mut allocs.attrs);
 
         assert!(merged.noreturn); // 从基础列表继承
         assert!(merged.norecurse); // 自己的属性
@@ -321,64 +315,27 @@ mod tests {
 
     #[test]
     fn test_attrlist_merge_all_complex() {
-        let mut alloc = Slab::new();
+        let mut allocs = IRAllocs::new();
 
         // 创建多个基础属性列表
-        let base1_id = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![],
-            self_id: attrlist::AttrListID(0),
-            attr: attrset::AttrSet::from_attrs([Attr::NoReturn, Attr::Align(8)]),
-        }));
-
-        let base2_id = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![],
-            self_id: attrlist::AttrListID(1),
-            attr: attrset::AttrSet::from_attrs([Attr::NoRecurse, Attr::AlignStack(16)]),
-        }));
+        let base1_id = AttrListID::from_iter(&mut allocs, vec![], [Attr::NoReturn, Attr::Align(8)]);
+        let base2_id =
+            AttrListID::from_iter(&mut allocs, vec![], [Attr::NoRecurse, Attr::AlignStack(16)]);
 
         // 创建多继承的属性列表
-        let multi_id = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![base1_id, base2_id],
-            self_id: attrlist::AttrListID(2),
-            attr: attrset::AttrSet::from_attrs([Attr::Inline(InlineAttr::Always), Attr::Align(32)]),
-        }));
+        let multi_id = AttrListID::from_iter(
+            &mut allocs,
+            vec![base1_id, base2_id],
+            [Attr::Inline(InlineAttr::Always), Attr::Align(32)],
+        );
 
-        let merged = multi_id.merge_all(&mut alloc);
+        let merged = multi_id.merge_all(&mut allocs.attrs);
 
         assert!(merged.noreturn); // 从 base1 继承
         assert!(merged.norecurse); // 从 base2 继承
         assert_eq!(merged.align_stack, 16); // 从 base2 继承
         assert_eq!(merged.align, 32); // 自己的属性，且是最大值
         assert_eq!(merged.inline, Some(InlineAttr::Always)); // 自己的属性
-    }
-
-    #[test]
-    fn test_attrlist_cycle_detection() {
-        let mut alloc = Slab::new();
-
-        // 先插入空的属性列表
-        let id1 = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![],
-            self_id: attrlist::AttrListID(0),
-            attr: attrset::AttrSet::from_attrs([Attr::NoReturn]),
-        }));
-
-        let id2 = attrlist::AttrListID(alloc.insert(attrlist::AttrList {
-            includes: vec![],
-            self_id: attrlist::AttrListID(1),
-            attr: attrset::AttrSet::from_attrs([Attr::NoRecurse]),
-        }));
-
-        // 创建循环引用：id1 -> id2 -> id1
-        alloc[id1.0].includes.push(id2);
-        alloc[id2.0].includes.push(id1);
-
-        // 应该不会无限循环，而是正确处理
-        let merged = id1.merge_all(&mut alloc);
-
-        assert!(merged.noreturn);
-        assert!(merged.norecurse);
-        assert_eq!(merged.len(), 2);
     }
 
     #[test]

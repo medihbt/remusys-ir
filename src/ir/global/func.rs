@@ -3,7 +3,7 @@ use slab::Slab;
 use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
-        Attr, AttrList, AttrSet, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef,
+        Attr, AttrList, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef,
         IRAllocs, IRAllocsReadable, IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA,
         ITraceableValue, Module, NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
@@ -353,13 +353,11 @@ impl Func {
     }
 
     /// 检查函数是否具有特定属性（包括继承）
-    pub fn has_attr(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
+    pub fn has_attr_by_alloc(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
         self.attrs.borrow().has_attr(attr, alloc)
     }
-
-    /// 获取完整的合并属性集（包括继承）
-    pub fn get_merged_attrs(&self, alloc: &Slab<AttrList>) -> AttrSet {
-        self.attrs.borrow().get_merged_attrs(alloc)
+    pub fn has_attr(&self, attr: &Attr, allocs: &impl IRAllocsReadable) -> bool {
+        self.has_attr_by_alloc(attr, &allocs.get_allocs_ref().attrs)
     }
 
     /// 访问属性列表（只读）
@@ -417,11 +415,6 @@ impl FuncArg {
     /// 检查参数是否具有特定属性（包括继承）
     pub fn has_attr(&self, attr: &Attr, alloc: &Slab<AttrList>) -> bool {
         self.attrs.borrow().has_attr(attr, alloc)
-    }
-
-    /// 获取完整的合并属性集（包括继承）
-    pub fn get_merged_attrs(&self, alloc: &Slab<AttrList>) -> AttrSet {
-        self.attrs.borrow().get_merged_attrs(alloc)
     }
 
     /// 访问属性列表（只读）

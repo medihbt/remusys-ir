@@ -29,6 +29,15 @@ use std::{cell::RefCell, num::NonZero, rc::Rc};
 /// - `callee`: 被调用的函数（全局函数引用）
 /// - `arg0..argN`: 传递给函数的参数
 ///
+/// ## 属性布局
+///
+/// ```text
+/// [attr(Callee), attr(arg0), attr(arg1), ..., attr(argN)]
+/// ```
+///
+/// - `callee`: 被调用函数在此次调用时附加的额外属性
+/// - `arg0..argN`: 本次调用每个实参的额外属性
+///
 /// ## 设计特点
 /// - **类型安全**: 通过 `FuncTypeRef` 确保参数类型和数量正确
 /// - **可变参数**: 支持 C 风格的可变参数函数
@@ -37,9 +46,9 @@ use std::{cell::RefCell, num::NonZero, rc::Rc};
 pub struct CallOp {
     /// 指令的通用数据（父基本块、操作码、返回类型等）
     common: InstCommon,
-    /// 操作数数组：[callee, arg0, arg1, ..., argN]
+    /// 操作数数组：`[callee, arg0, arg1, ..., argN]`
     operands: Box<[Rc<Use>]>,
-    /// 属性表: [0] = attr(Callee) [1..] = attr(Args[i])
+    /// 属性表: `[attr(Callee), attr(arg0), attr(arg1), ..., attr(argN)]`
     pub attrs: Box<[RefCell<AttrList>]>,
     /// 被调用函数的类型签名
     pub callee_ty: FuncTypeRef,
@@ -318,6 +327,14 @@ impl CallOp {
     pub fn arg_attr_mut(&mut self, id: usize) -> &mut AttrList {
         assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
         self.attrs[id + 1].get_mut()
+    }
+    pub fn read_arg_attr<R>(&self, id: usize, read: impl FnOnce(&AttrList) -> R) -> R {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        read(&self.attrs[id + 1].borrow())
+    }
+    pub fn edit_arg_attr<R>(&self, id: usize, edit: impl FnOnce(&mut AttrList) -> R) -> R {
+        assert!(id < self.fixed_nargs, "Index out of bounds for CallOp args");
+        edit(&mut self.attrs[id + 1].borrow_mut())
     }
 
     /// 获取指定索引参数的 Use 对象引用

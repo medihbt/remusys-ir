@@ -1,8 +1,8 @@
 use crate::{
     base::{INullableValue, SlabRef},
     ir::{
-        FuncRef, GlobalKind, GlobalRef, IRAllocs, IRValueNumberMap, ISubValueSSA, Module, PredList,
-        UserList, ValueSSA,
+        AttrList, FuncRef, GlobalKind, GlobalRef, IRAllocs, IRValueNumberMap, ISubValueSSA, Module,
+        PredList, UserList, ValueSSA,
     },
     typing::{IValType, TypeContext, ValTypeID},
 };
@@ -233,6 +233,17 @@ impl<'a> IRWriter<'a> {
             g.fmt_ir(self).expect("Failed to write IR");
             self.wrap_indent();
         }
+
+        for (_, attr) in self.allocs.attrs.iter() {
+            self.write_global_attr(attr)
+                .expect("Failed to write global attribute");
+        }
+    }
+
+    fn write_global_attr(&self, attr: &AttrList) -> Result<(), std::io::Error> {
+        write!(self, "attributes #{} = {{", attr.self_id.0)?;
+        attr.fmt_ir(self)?;
+        self.write_str(" }")
     }
 
     pub fn write_users(&self, users: &UserList) {
