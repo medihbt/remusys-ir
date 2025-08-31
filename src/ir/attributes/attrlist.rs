@@ -147,10 +147,10 @@ impl AttrListID {
         let alloc = allocs.get_allocs_mutref();
         Self::from_alloc(&mut alloc.attrs, data)
     }
-    pub fn from_iter(
+    pub fn from_iter<'a>(
         allocs: &mut impl IRAllocsEditable,
         includes: Vec<AttrListID>,
-        attrs: impl IntoIterator<Item = Attr>,
+        attrs: impl IntoIterator<Item = Attr<'a>>,
     ) -> Self {
         let attrset = AttrSet::from_attrs(attrs);
         Self::new(allocs, AttrList::new(includes, attrset))

@@ -49,6 +49,7 @@ impl AttrSet {
             }
             Attr::Align(val) => self.align = self.align.max(val),
             Attr::TargetDependent(dep) => {
+                let dep = dep.into();
                 if !self.target_dependent.contains(&dep) {
                     self.target_dependent.push(dep);
                 }
@@ -57,7 +58,7 @@ impl AttrSet {
     }
 
     /// 从属性列表创建 AttrMergeMap
-    pub fn from_attrs(attrs: impl IntoIterator<Item = Attr>) -> Self {
+    pub fn from_attrs<'a>(attrs: impl IntoIterator<Item = Attr<'a>>) -> Self {
         let mut map = Self::default();
         for attr in attrs {
             map.merge_attr(attr);
@@ -88,7 +89,7 @@ impl AttrSet {
     }
 
     /// 转换回属性列表（用于序列化等）
-    pub fn to_attrs(&self) -> Vec<Attr> {
+    pub fn to_attrs(&self) -> Vec<Attr<'_>> {
         let mut attrs = Vec::new();
 
         if self.noreturn {
@@ -127,7 +128,7 @@ impl AttrSet {
         }
 
         for dep in &self.target_dependent {
-            attrs.push(Attr::TargetDependent(dep.clone()));
+            attrs.push(Attr::TargetDependent(dep.as_str()));
         }
 
         attrs
@@ -148,7 +149,7 @@ impl AttrSet {
             Attr::NonNull => self.nonnull,
             Attr::Dereferenceable(val) => self.dereferenceable.map_or(false, |d| d >= *val),
             Attr::Align(val) => self.align >= *val,
-            Attr::TargetDependent(dep) => self.target_dependent.contains(dep),
+            Attr::TargetDependent(dep) => self.target_dependent.contains(&dep.to_string()),
         }
     }
 
@@ -220,8 +221,8 @@ impl AttrSet {
     }
 }
 
-impl FromIterator<Attr> for AttrSet {
-    fn from_iter<T: IntoIterator<Item = Attr>>(iter: T) -> Self {
+impl<'a> FromIterator<Attr<'a>> for AttrSet {
+    fn from_iter<T: IntoIterator<Item = Attr<'a>>>(iter: T) -> Self {
         Self::from_attrs(iter)
     }
 }

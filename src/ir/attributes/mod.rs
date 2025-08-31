@@ -78,8 +78,8 @@ pub enum MergeBehavior {
 }
 
 /// 单个属性项
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Attr {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Attr<'a> {
     // 函数属性
     NoReturn,
     NoRecurse,
@@ -96,7 +96,7 @@ pub enum Attr {
     Align(u32),
 
     // 目标相关属性（字符串形式）
-    TargetDependent(String),
+    TargetDependent(&'a str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -116,7 +116,7 @@ pub enum AttrKind {
     TargetDependent,
 }
 
-impl Attr {
+impl<'a> Attr<'a> {
     pub fn get_kind(&self) -> AttrKind {
         match self {
             Attr::NoReturn => AttrKind::NoReturn,
@@ -235,9 +235,9 @@ mod tests {
         assert_eq!(attrs.inline, Some(InlineAttr::Always));
 
         // 测试目标相关属性追加去重
-        attrs.merge_attr(Attr::TargetDependent("sse2".to_string()));
-        attrs.merge_attr(Attr::TargetDependent("avx".to_string()));
-        attrs.merge_attr(Attr::TargetDependent("sse2".to_string())); // 重复
+        attrs.merge_attr(Attr::TargetDependent("sse2"));
+        attrs.merge_attr(Attr::TargetDependent("avx"));
+        attrs.merge_attr(Attr::TargetDependent("sse2")); // 重复
         assert_eq!(attrs.target_dependent.len(), 2);
     }
 
@@ -344,7 +344,7 @@ mod tests {
             Attr::NoReturn,
             Attr::Inline(InlineAttr::Always),
             Attr::Align(16),
-            Attr::TargetDependent("sse2".to_string()),
+            Attr::TargetDependent("sse2"),
         ];
 
         let attr_set = attrset::AttrSet::from_attrs(original_attrs.clone());
