@@ -218,7 +218,7 @@ pub(super) fn merge_exprs(module: &mut Module) {
             GlobalData::Var(var) => {
                 let old_init = var.get_init();
                 let new_init = value_map.get(&old_init).cloned().unwrap_or(old_init);
-                var.set_init(&allocs, new_init);
+                var.set_init(allocs, new_init);
             }
         }
     }

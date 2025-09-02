@@ -222,48 +222,48 @@ impl AmoRmwBuilder {
         }
     }
 
-    pub fn opcode(&mut self, opcode: Opcode) -> &mut Self {
+    pub fn opcode(mut self, opcode: Opcode) -> Self {
         assert_eq!(opcode.get_kind(), InstKind::AmoRmw);
         self.opcode = opcode;
         self
     }
 
-    pub fn value_ty(&mut self, value_ty: ValTypeID) -> &mut Self {
+    pub fn value_ty(mut self, value_ty: ValTypeID) -> Self {
         self.value_ty = value_ty;
         self
     }
 
-    pub fn ordering(&mut self, ordering: AmoOrdering) -> &mut Self {
+    pub fn ordering(mut self, ordering: AmoOrdering) -> Self {
         self.ordering = ordering;
         self
     }
 
-    pub fn volatile(&mut self, is_volatile: bool) -> &mut Self {
+    pub fn volatile(mut self, is_volatile: bool) -> Self {
         self.is_volatile = is_volatile;
         self
     }
 
-    pub fn align(&mut self, align: usize) -> &mut Self {
+    pub fn align(mut self, align: usize) -> Self {
         self.align_log2 = align.trailing_zeros() as u8;
         self
     }
 
-    pub fn align_log2(&mut self, align_log2: u8) -> &mut Self {
+    pub fn align_log2(mut self, align_log2: u8) -> Self {
         self.align_log2 = align_log2;
         self
     }
 
-    pub fn scope(&mut self, scope: SyncScope) -> &mut Self {
+    pub fn scope(mut self, scope: SyncScope) -> Self {
         self.scope = scope;
         self
     }
 
-    pub fn ptr_operand(&mut self, ptr_operand: impl ISubValueSSA) -> &mut Self {
+    pub fn ptr_operand(mut self, ptr_operand: impl ISubValueSSA) -> Self {
         self.ptr_operand = ptr_operand.into_ir();
         self
     }
 
-    pub fn val_operand(&mut self, val_operand: impl ISubValueSSA) -> &mut Self {
+    pub fn val_operand(mut self, val_operand: impl ISubValueSSA) -> Self {
         self.val_operand = val_operand.into_ir();
         self
     }

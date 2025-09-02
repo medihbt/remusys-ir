@@ -5,8 +5,8 @@ use crate::{
     },
     ir::{
         BlockRef, FuncRef, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue,
-        ISubValueSSA, ITerminatorInst, ITraceableValue, IUser, IUserRef, JumpTargets, ManagedInst,
-        Opcode, OperandSet, Use, UserID, UserList, ValueSSA, ValueSSAError,
+        ISubValueSSA, ITerminatorInst, ITraceableValue, IUser, IUserRef, InstKind, JumpTargets,
+        ManagedInst, Opcode, OperandSet, Use, UserID, UserList, ValueSSA, ValueSSAError,
     },
     typing::{TypeMismatchError, ValTypeID},
 };
@@ -40,7 +40,8 @@ pub use self::{
     cast::{CastOp, CastOpRef},
     cmp::{CmpOp, CmpOpRef},
     gep::{
-        GEPIndexIter, GEPRef, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset, IrGEPOffsetIter,
+        GEPBuilder, GEPIndexIter, GEPRef, GEPTypeIndexer, GEPTypeState, IndexPtr, IrGEPOffset,
+        IrGEPOffsetIter,
     },
     jump::{Jump, JumpRef},
     load::{LoadInstRef, LoadOp},
@@ -705,5 +706,8 @@ pub trait ISubInstRef: Sized + Clone {
 
     fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {
         self.to_inst(alloc).get_common().opcode
+    }
+    fn get_kind(self, allocs: &impl IRAllocsReadable) -> InstKind {
+        self.get_opcode(&allocs.get_allocs_ref().insts).get_kind()
     }
 }

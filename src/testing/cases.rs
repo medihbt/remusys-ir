@@ -4,7 +4,7 @@
 use crate::{
     base::APInt,
     ir::{
-        Attr, CmpCond, FuncRef, IRBuilder, IRBuilderFocus, InstCheckCtx, Module, Opcode, ValueSSA,
+        Attr, CmpCond, FuncRef, IRBuilder, IRFocus, InstCheckCtx, Module, Opcode, ValueSSA,
         inst::{ISubInstRef, RetRef},
         write_ir_module, write_ir_module_quiet,
     },
@@ -86,9 +86,9 @@ use crate::{
 #[allow(unused)]
 pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let mut builder = create_module_builder("test_case_cfg_deep_while_br");
-    let ri32fty = FuncTypeRef::new(builder.get_type_ctx(), ValTypeID::Int(32), false, []);
+    let ri32fty = FuncTypeRef::new(builder.type_ctx(), ValTypeID::Int(32), false, []);
     let rarrfty = FuncTypeRef::new(
-        builder.get_type_ctx(),
+        builder.type_ctx(),
         ValTypeID::Void,
         false,
         [ValTypeID::Ptr, ValTypeID::Int(64)],
@@ -111,8 +111,8 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .add_attr(Attr::NoRecurse);
 
     // set builder current focus to: `Block(main() -> block %0)`
-    let entry_block_0 = builder.get_focus_full().block;
-    builder.set_focus(IRBuilderFocus::Block(entry_block_0));
+    let entry_block_0 = builder.full_focus.block;
+    builder.set_focus(IRFocus::Block(entry_block_0));
     let (_, ret_inst) = builder.focus_set_return(APInt::new(0, 32).into()).unwrap();
     let ret_inst = RetRef::from_raw_nocheck(ret_inst);
 
@@ -135,13 +135,13 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let while_block_5 = builder.split_current_block_from_terminator().unwrap();
 
     // set up the final block
-    builder.set_focus(IRBuilderFocus::Block(final_block_19));
+    builder.set_focus(IRFocus::Block(final_block_19));
     let load_20 = builder
         .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
         .unwrap();
 
     // set up the while block
-    builder.set_focus(IRBuilderFocus::Block(while_block_5));
+    builder.set_focus(IRFocus::Block(while_block_5));
     // Create a loop
     builder.focus_set_jump_to(while_block_5).unwrap();
     // seperate the header and body
@@ -162,7 +162,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .unwrap();
 
     // set up the while body block
-    builder.set_focus(IRBuilderFocus::Block(while_body_block_8));
+    builder.set_focus(IRFocus::Block(while_body_block_8));
     // if (c < 100)
     let if_block_11 = builder.split_current_block_from_terminator().unwrap();
     let load_9 = builder
@@ -180,7 +180,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .unwrap();
 
     // set up the if block
-    builder.set_focus(IRBuilderFocus::Block(if_block_11));
+    builder.set_focus(IRFocus::Block(if_block_11));
     // c = c + d
     let load_12 = builder
         .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
@@ -210,7 +210,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .unwrap();
 
     // set up the if block
-    builder.set_focus(IRBuilderFocus::Block(if_block_15));
+    builder.set_focus(IRFocus::Block(if_block_15));
     // if (getint() == 1)
     let if_block_18 = builder.split_current_block_from_terminator().unwrap();
     let call_16 = builder.add_call_inst(getint_func, [].into_iter()).unwrap();
@@ -225,7 +225,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         .focus_set_branch_to(ValueSSA::Inst(icmp_17), if_block_18, while_block_5)
         .unwrap();
     // set up the if block
-    builder.set_focus(IRBuilderFocus::Block(if_block_18));
+    builder.set_focus(IRFocus::Block(if_block_18));
     // c = e * 2
     builder
         .add_store_inst(ValueSSA::Inst(alloca_c_1), APInt::new(168, 32).into(), 4)

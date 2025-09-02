@@ -306,3 +306,22 @@ pub enum InstKind {
     AmoRmw,
     Intrin,
 }
+
+impl InstKind {
+    pub fn is_terminator(self) -> bool {
+        matches!(
+            self,
+            InstKind::Unreachable
+                | InstKind::Ret
+                | InstKind::Jump
+                | InstKind::Br
+                | InstKind::Switch
+        )
+    }
+    pub fn is_guide_node(self) -> bool {
+        self == InstKind::ListGuideNode || self == InstKind::PhiInstEnd
+    }
+    pub fn is_normal(self) -> bool {
+        !self.is_terminator() && !self.is_guide_node()
+    }
+}

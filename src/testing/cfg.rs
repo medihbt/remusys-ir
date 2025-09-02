@@ -13,13 +13,9 @@ fn test_case_build_dfs_seq() {
     write_ir_to_file(&builder.module, "test_case_build_dfs_seq");
 
     let mut writer = std::fs::File::create("target/test_case_build_dfs_seq.dot").unwrap();
-    write_func_cfg(
-        &builder.module,
-        builder.get_focus_full().function,
-        &mut writer,
-    );
+    write_func_cfg(&builder.module, builder.full_focus.func, &mut writer);
 
-    let func = builder.get_focus_full().function;
+    let func = builder.full_focus.func;
     let module = builder.module;
     let snapshot = CfgSnapshot::new(&module.allocs, func);
     let number_map = IRValueNumberMap::new(&module.allocs, func, NumberOption::ignore_all());

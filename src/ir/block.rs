@@ -687,6 +687,11 @@ impl BlockRef {
         BlockRef::from_allocs(allocs, data)
     }
 
+    pub fn get_parent(self, allocs: &impl IRAllocsReadable) -> GlobalRef {
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks).get_parent_func()
+    }
+
     /// 从分配器获取基本块的指令列表
     ///
     /// # 参数
@@ -712,6 +717,12 @@ impl BlockRef {
     /// 直接从分配器获取可迭代的基本块指令视图
     pub fn view_insts(self, allocs: &IRAllocs) -> SlabListView<'_, InstRef> {
         self.insts_from_alloc(&allocs.blocks).view(&allocs.insts)
+    }
+
+    pub fn add_inst(self, allocs: &impl IRAllocsReadable, iref: impl ISubInstRef) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .build_add_inst(&allocs.insts, iref);
     }
 
     pub fn users(self, allocs: &IRAllocs) -> &UserList {
@@ -745,5 +756,14 @@ impl BlockRef {
         let allocs = allocs.get_allocs_ref();
         self.to_data(&allocs.blocks)
             .has_terminator_from_alloc(&allocs.insts)
+    }
+    pub fn set_terminator(
+        self,
+        allocs: &impl IRAllocsReadable,
+        terminator: InstRef,
+    ) -> Result<ManagedInst<'_>, InstError> {
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .set_terminator(allocs, terminator)
     }
 }

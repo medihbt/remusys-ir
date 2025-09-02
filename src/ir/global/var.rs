@@ -1,7 +1,7 @@
 use super::GlobalDataCommon;
 use crate::{
     ir::{
-        GlobalData, GlobalKind, GlobalRef, IRAllocs, IRWriter, ISubValueSSA, Use, UseKind,
+        GlobalData, GlobalKind, GlobalRef, IRAllocsReadable, IRWriter, ISubValueSSA, Use, UseKind,
         ValueSSA,
         global::{ISubGlobal, Linkage},
     },
@@ -106,8 +106,8 @@ impl Var {
     pub fn get_init(&self) -> ValueSSA {
         self.init[0].get_operand()
     }
-    pub fn set_init(&self, allocs: &IRAllocs, init: ValueSSA) {
-        self.init[0].set_operand(allocs, init);
+    pub fn set_init(&self, allocs: &impl IRAllocsReadable, init: ValueSSA) {
+        self.init[0].set_operand(allocs.get_allocs_ref(), init);
     }
 
     pub fn new_extern(name: String, content_ty: ValTypeID, content_align: usize) -> Self {

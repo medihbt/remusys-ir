@@ -1,9 +1,9 @@
 use crate::{
     base::INullableValue,
     ir::{
-        ConstData, FuncRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon,
-        InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind, ValueSSA,
-        ValueSSAClass, checking::ValueCheckError, inst::ISubInstRef,
+        ConstData, FuncRef, IModuleReadable, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser,
+        InstCommon, InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind,
+        ValueSSA, ValueSSAClass, checking::ValueCheckError, inst::ISubInstRef,
     },
     typing::{IValType, StructTypeRef, TypeContext, ValTypeClass, ValTypeID},
 };
@@ -168,56 +168,13 @@ impl IndexPtr {
         }
     }
 
-    /// 创建一个新的 GEP 指令, 并初始化操作数.
-    pub fn new<'a, T>(
-        type_ctx: &TypeContext,
-        allocs: &IRAllocs,
+    /// 创建一个新的 GEP 指令构建器
+    pub fn builder(
+        module: &impl IModuleReadable,
         base_ptr: ValueSSA,
         base_ty: ValTypeID,
-        indices: T,
-    ) -> Self
-    where
-        T: IntoIterator<Item = &'a ValueSSA> + 'a,
-        T::IntoIter: Clone,
-    {
-        let indices_iter = indices.into_iter();
-        let indices_vec: Vec<&ValueSSA> = indices_iter.clone().collect(); // 收集到Vec以便重用
-
-        let (last_ty, nindices) = {
-            let mut indexer = GEPTypeIndexer::new_initial(type_ctx, allocs, base_ty);
-            let mut nindices = 0;
-            for idx in indices_iter {
-                let new_state = indexer.unpack(*idx);
-                if let GEPTypeState::Ends = new_state {
-                    break;
-                }
-                nindices += 1;
-            }
-            match indexer.current_state() {
-                GEPTypeState::ItSelf(ty) => (ty, nindices),
-                GEPTypeState::Ends => {
-                    panic!("GEP indexing ended prematurely, cannot determine final type")
-                }
-                GEPTypeState::InfLenArray(_) => {
-                    panic!("GEP has no indices, cannot determine final type")
-                }
-            }
-        };
-
-        let gep = Self::new_raw(
-            base_ty,
-            last_ty,
-            nindices,
-            base_ty.get_align_log2(type_ctx),
-            last_ty.get_align_log2(type_ctx),
-        );
-
-        // 设置索引操作数
-        for (i, &idx) in indices_vec.iter().enumerate().take(nindices) {
-            gep.operands[i + 1].set_operand(allocs, *idx);
-        }
-        gep.set_base(allocs, base_ptr);
-        gep
+    ) -> GEPBuilder {
+        GEPBuilder::new(module, base_ptr, base_ty)
     }
 
     /// 计算GEP指令的最终类型
@@ -307,6 +264,104 @@ impl IndexPtr {
         allocs: &'a IRAllocs,
     ) -> IrGEPOffsetIter<'a> {
         IrGEPOffsetIter::new(self.index_iter(type_ctx, allocs))
+    }
+}
+
+pub struct GEPBuilder {
+    base_ptr: ValueSSA,
+    base_ty: ValTypeID,
+    storage_align_log2: u8,
+    ret_align_log2: Option<u8>,
+    indices: Vec<ValueSSA>,
+}
+
+impl GEPBuilder {
+    pub fn new(module: &impl IModuleReadable, base_ptr: ValueSSA, base_ty: ValTypeID) -> Self {
+        let allocs = module.get_allocs_ref();
+        let type_ctx = module.get_type_ctx();
+        assert_eq!(base_ptr.get_valtype(allocs), ValTypeID::Ptr);
+        let storage_align_log2 = base_ty.get_align_log2(type_ctx);
+        Self {
+            base_ptr,
+            base_ty,
+            storage_align_log2,
+            ret_align_log2: None,
+            indices: Vec::new(),
+        }
+    }
+
+    pub fn base_ptr(&mut self, base_ptr: ValueSSA) -> &mut Self {
+        self.base_ptr = base_ptr;
+        self
+    }
+    pub fn base_ty(&mut self, base_ty: ValTypeID) -> &mut Self {
+        self.base_ty = base_ty;
+        self
+    }
+    pub fn storage_align_log2(&mut self, align_log2: u8) -> &mut Self {
+        self.storage_align_log2 = align_log2;
+        self
+    }
+    pub fn ret_align_log2(&mut self, align_log2: u8) -> &mut Self {
+        self.ret_align_log2 = Some(align_log2);
+        self
+    }
+    pub fn add_index(&mut self, index: ValueSSA) -> &mut Self {
+        self.indices.push(index);
+        self
+    }
+
+    pub fn build(
+        &mut self,
+        module: &impl IModuleReadable,
+        indices: impl IntoIterator<Item = ValueSSA>,
+    ) -> IndexPtr {
+        let type_ctx = module.get_type_ctx();
+        let allocs = module.get_allocs_ref();
+
+        // 计算最终对齐
+        let ret_align_log2 = self
+            .ret_align_log2
+            .unwrap_or_else(|| self.base_ty.get_align_log2(type_ctx));
+
+        // 收集索引并进行类型推导
+        self.indices.extend(indices);
+        let (last_ty, nindices) = {
+            let mut indexer = GEPTypeIndexer::new_initial(type_ctx, allocs, self.base_ty);
+            let mut nindices = 0;
+            for &idx in &self.indices {
+                let new_state = indexer.unpack(idx);
+                if let GEPTypeState::Ends = new_state {
+                    break;
+                }
+                nindices += 1;
+            }
+            match indexer.current_state() {
+                GEPTypeState::ItSelf(ty) => (ty, nindices),
+                GEPTypeState::Ends => {
+                    panic!("GEP indexing ended prematurely, cannot determine final type")
+                }
+                GEPTypeState::InfLenArray(_) => {
+                    panic!("GEP has no indices, cannot determine final type")
+                }
+            }
+        };
+
+        // 创建 GEP 指令，直接使用正确的对齐参数
+        let gep = IndexPtr::new_raw(
+            self.base_ty,
+            last_ty,
+            nindices,
+            self.storage_align_log2,
+            ret_align_log2,
+        );
+
+        // 设置操作数
+        gep.set_base(allocs, self.base_ptr);
+        for (i, &idx) in self.indices[..nindices].iter().enumerate() {
+            gep.operands[i + 1].set_operand(allocs, idx);
+        }
+        gep
     }
 }
 

@@ -2,7 +2,7 @@ use crate::{
     base::{INullableValue, SlabRef},
     ir::{
         Func, FuncRef, GlobalData, GlobalRef, IRAllocsEditable, IRAllocsReadable,
-        IRValueCompactMap, IRValueMarker, ISubGlobal, ISubValueSSA, ValueSSA,
+        IRValueCompactMap, IRValueMarker, ISubGlobal, ISubValueSSA, ModuleEdit, ValueSSA,
         module::allocs::IRAllocs,
     },
     typing::{ArchInfo, TypeContext},
@@ -23,6 +23,17 @@ pub struct Module {
     pub allocs: IRAllocs,
     pub globals: RefCell<HashMap<String, GlobalRef>>,
     pub type_ctx: Rc<TypeContext>,
+}
+
+impl AsRef<Module> for Module {
+    fn as_ref(&self) -> &Module {
+        self
+    }
+}
+impl AsMut<Module> for Module {
+    fn as_mut(&mut self) -> &mut Module {
+        self
+    }
 }
 
 impl Module {
@@ -106,14 +117,21 @@ impl Module {
 pub trait IModuleReadable: IRAllocsReadable {
     fn get_type_ctx(&self) -> &Rc<TypeContext>;
 }
-pub trait IModuleEditable: IModuleReadable + IRAllocsEditable {}
+pub trait IModuleEditable: IModuleReadable + IRAllocsEditable {
+    fn edit_module(&mut self) -> ModuleEdit<'_>;
+}
 
 impl IModuleReadable for Module {
     fn get_type_ctx(&self) -> &Rc<TypeContext> {
         &self.type_ctx
     }
 }
-impl IModuleEditable for Module {}
+impl IModuleEditable for Module {
+    fn edit_module(&mut self) -> ModuleEdit<'_> {
+        let Self { allocs, type_ctx, .. } = self;
+        ModuleEdit::new(type_ctx, allocs)
+    }
+}
 
 /// 用于垃圾回收的代理引用. 在垃圾回收时会自动管理 Module 内部引用的数据结构.
 ///

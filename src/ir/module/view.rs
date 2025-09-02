@@ -59,7 +59,12 @@ impl<'a> IModuleReadable for ModuleEdit<'a> {
         self.0
     }
 }
-impl<'a> IModuleEditable for ModuleEdit<'a> {}
+impl<'a> IModuleEditable for ModuleEdit<'a> {
+    fn edit_module(&mut self) -> ModuleEdit<'_> {
+        let Self(type_ctx, allocs) = self;
+        ModuleEdit::new(type_ctx, allocs)
+    }
+}
 
 impl<'a> ModuleEdit<'a> {
     pub fn new(type_ctx: &'a Rc<TypeContext>, allocs: &'a mut IRAllocs) -> Self {

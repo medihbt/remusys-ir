@@ -258,7 +258,8 @@ impl ISubValueSSA for GlobalRef {
 }
 
 impl GlobalRef {
-    pub fn from_allocs(allocs: &mut IRAllocs, mut data: GlobalData) -> Self {
+    pub fn from_allocs(allocs: &mut impl IRAllocsEditable, mut data: GlobalData) -> Self {
+        let allocs = allocs.get_allocs_mutref();
         let ret = Self::from_handle(allocs.globals.vacant_key());
         data.common_mut().self_ref = ret;
         for user in data.users() {

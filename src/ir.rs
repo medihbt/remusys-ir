@@ -70,8 +70,8 @@ pub use self::{
     user::{IUser, IUserRef, OperandSet, UserID},
     utils::{
         builder::{
-            IRBuilder, IRBuilderError, IRBuilderExpandedFocus, IRBuilderFocus,
-            IRBuilderFocusCheckOption, inst_builders::*,
+            AmoRmwEditBuilder, GEPEditBuilder, IRBuildError, IRBuilder, IRFocus,
+            IRFocusCheckOption, IRFullFocus, IRSwitchBuilder, IRVarBuilder,
         },
         numbering::{IRValueNumberMap, NumberOption},
         writer::{IRWriter, IRWriterOption, write_ir_module, write_ir_module_quiet},

@@ -239,11 +239,11 @@ impl CallOp {
     ///
     /// # 返回
     /// 返回完全初始化的函数调用指令
-    pub fn from_allocs<'a>(
+    pub fn from_allocs(
         allocs: &IRAllocs,
         type_ctx: &TypeContext,
         callee: GlobalRef,
-        args: impl Iterator<Item = &'a ValueSSA> + Clone + 'a,
+        args: impl Iterator<Item = ValueSSA> + Clone,
     ) -> Self {
         let nargs = args.clone().count();
         let func_ty = callee.get_content_type(allocs);

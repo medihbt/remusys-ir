@@ -3,8 +3,50 @@ use std::ops::Deref;
 
 use crate::{
     base::{INullableValue, SlabRef},
-    ir::{IRAllocs, ISubInst, ISubValueSSA, InstData, InstRef},
+    ir::{IRAllocs, IRAllocsEditable, IRAllocsReadable, ISubInst, ISubValueSSA, InstData, InstRef},
 };
+
+pub enum IRAllocsZipRef<'a> {
+    Fix(&'a IRAllocs),
+    Mut(&'a mut IRAllocs),
+}
+impl<'a, T> From<&'a T> for IRAllocsZipRef<'a>
+where
+    T: IRAllocsReadable,
+{
+    fn from(value: &'a T) -> Self {
+        IRAllocsZipRef::Fix(value.get_allocs_ref())
+    }
+}
+impl<'a, T> From<&'a mut T> for IRAllocsZipRef<'a>
+where
+    T: IRAllocsEditable,
+{
+    fn from(value: &'a mut T) -> Self {
+        IRAllocsZipRef::Mut(value.get_allocs_mutref())
+    }
+}
+impl<'a> Deref for IRAllocsZipRef<'a> {
+    type Target = IRAllocs;
+
+    fn deref(&self) -> &IRAllocs {
+        self.get()
+    }
+}
+impl<'a> IRAllocsZipRef<'a> {
+    pub fn get(&self) -> &IRAllocs {
+        match self {
+            IRAllocsZipRef::Fix(allocs) => allocs,
+            IRAllocsZipRef::Mut(allocs) => &**allocs,
+        }
+    }
+    pub fn as_mut(&mut self) -> Option<&mut IRAllocs> {
+        match self {
+            IRAllocsZipRef::Fix(_) => None,
+            IRAllocsZipRef::Mut(allocs) => Some(&mut **allocs),
+        }
+    }
+}
 
 pub trait IManageableIRValue: ISubValueSSA + SlabRef {
     fn defer_cleanup_self(&self, allocs: &IRAllocs);
@@ -29,7 +71,7 @@ pub trait IManageableIRValue: ISubValueSSA + SlabRef {
 
 pub struct IRManaged<'a, T: IManageableIRValue> {
     val: T,
-    allocs: &'a IRAllocs,
+    allocs: IRAllocsZipRef<'a>,
 }
 
 pub type ManagedInst<'a> = IRManaged<'a, InstRef>;
@@ -39,7 +81,10 @@ impl<'a, T: IManageableIRValue> Drop for IRManaged<'a, T> {
         if self.val.is_null() {
             return;
         }
-        self.val.defer_cleanup_self(self.allocs);
+        self.val.defer_cleanup_self(&self.allocs);
+        if let Some(allocs) = self.allocs.as_mut() {
+            self.val.free_from_alloc(T::select_alloc_mut(allocs));
+        }
     }
 }
 
@@ -53,8 +98,11 @@ impl<'a, T: IManageableIRValue> Deref for IRManaged<'a, T> {
 }
 
 impl<'a, T: IManageableIRValue> IRManaged<'a, T> {
-    pub fn new(val: T, allocs: &'a IRAllocs) -> Self {
-        Self { val, allocs }
+    pub fn new<AllocRef>(val: T, allocs: AllocRef) -> Self
+    where
+        IRAllocsZipRef<'a>: From<AllocRef>,
+    {
+        Self { val, allocs: allocs.into() }
     }
 
     pub fn release(mut self) -> T {
@@ -66,6 +114,10 @@ impl<'a, T: IManageableIRValue> IRManaged<'a, T> {
     }
     pub fn is_nonnull(&self) -> bool {
         !self.is_null()
+    }
+
+    pub fn get_allocs(&self) -> &IRAllocs {
+        &self.allocs
     }
 }
 

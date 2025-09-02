@@ -11,7 +11,7 @@ use std::{
     rc::Rc,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PhiError {
     IncomeBBNotFound(BlockRef),
     DuplicatedIncomeBB(BlockRef),
