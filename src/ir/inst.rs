@@ -36,7 +36,7 @@ pub use self::{
     amormw::{AmoOrdering, AmoRmw, AmoRmwBuilder, AmoRmwRef, SyncScope},
     binop::{BinOp, BinOpRef},
     br::{Br, BrRef},
-    call::{CallOp, CallOpRef},
+    call::{CallArgID, CallOp, CallOpRef},
     cast::{CastOp, CastOpRef},
     cmp::{CmpOp, CmpOpRef},
     gep::{

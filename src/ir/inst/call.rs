@@ -1,8 +1,9 @@
 use crate::{
     base::INullableValue,
     ir::{
-        AttrList, FuncUser, GlobalRef, IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData,
-        InstRef, Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        AttrList, FuncUser, GlobalRef, IAttrHolderValue, IRAllocs, IRAllocsEditable,
+        IRAllocsReadable, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Module, Opcode,
+        OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
@@ -375,7 +376,7 @@ impl CallOp {
     ///
     /// # Panics
     /// 如果索引超出固定参数范围则会 panic
-    pub fn set_arg(&mut self, allocs: &IRAllocs, index: usize, value: ValueSSA) {
+    pub fn set_arg(&self, allocs: &IRAllocs, index: usize, value: ValueSSA) {
         assert!(
             index < self.fixed_nargs,
             "Index out of bounds for CallOp args"
@@ -387,6 +388,17 @@ impl CallOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CallOpRef(InstRef);
 
+impl IAttrHolderValue for CallOpRef {
+    fn attrs(self, allocs: &impl IRAllocsReadable) -> &RefCell<AttrList> {
+        let call_inst = self.to_inst(&allocs.get_allocs_ref().insts);
+        call_inst.callee_attrs()
+    }
+    fn attrs_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut AttrList {
+        let call_inst = self.to_inst_mut(&mut allocs.get_allocs_mutref().insts);
+        call_inst.callee_attrs_mut()
+    }
+}
+
 impl ISubInstRef for CallOpRef {
     type InstDataT = CallOp;
 
@@ -395,5 +407,36 @@ impl ISubInstRef for CallOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CallArgID(pub CallOpRef, pub usize);
+
+impl IAttrHolderValue for CallArgID {
+    fn attrs(self, allocs: &impl IRAllocsReadable) -> &RefCell<AttrList> {
+        let call_inst = self.0.to_inst(&allocs.get_allocs_ref().insts);
+        call_inst.arg_attr(self.1)
+    }
+    fn attrs_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut AttrList {
+        let call_inst = self.0.to_inst_mut(&mut allocs.get_allocs_mutref().insts);
+        call_inst.arg_attr_mut(self.1)
+    }
+}
+
+impl CallArgID {
+    pub fn get_use(self, allocs: &impl IRAllocsReadable) -> &Rc<Use> {
+        let call_inst = self.0.to_inst(&allocs.get_allocs_ref().insts);
+        call_inst.ref_arg(self.1)
+    }
+
+    pub fn get_value(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.get_use(allocs).get_operand()
+    }
+
+    pub fn set_value(self, allocs: &impl IRAllocsReadable, value: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        let call_inst = self.0.to_inst(&allocs.insts);
+        call_inst.set_arg(allocs, self.1, value);
     }
 }

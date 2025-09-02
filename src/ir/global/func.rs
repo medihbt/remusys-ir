@@ -4,8 +4,9 @@ use crate::{
     base::{INullableValue, SlabListError, SlabListRes, SlabRef, SlabRefList},
     ir::{
         Attr, AttrList, BlockRef, GlobalData, GlobalDataCommon, GlobalKind, GlobalRef,
-        IRAllocs, IRAllocsReadable, IRValueNumberMap, IRWriter, IReferenceValue, ISubValueSSA,
-        ITraceableValue, Module, NumberOption, PtrStorage, PtrUser, UserList, ValueSSA,
+        IAttrHolderValue, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRValueNumberMap, IRWriter,
+        IReferenceValue, ISubValueSSA, ITraceableValue, Module, NumberOption, PtrStorage, PtrUser,
+        UserList, ValueSSA,
         global::{ISubGlobal, Linkage},
     },
     typing::{FuncTypeRef, TypeContext, ValTypeID},
@@ -449,6 +450,18 @@ impl IReferenceValue for FuncArgRef {
     }
 }
 
+impl IAttrHolderValue for FuncArgRef {
+    fn attrs(self, allocs: &impl IRAllocsReadable) -> &RefCell<AttrList> {
+        self.attrs_from_alloc(&allocs.get_allocs_ref().globals)
+    }
+
+    fn attrs_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut AttrList {
+        self.to_data_mut(&mut allocs.get_allocs_mutref().globals)
+            .attrs
+            .get_mut()
+    }
+}
+
 impl FuncArgRef {
     pub fn get_func(self) -> GlobalRef {
         self.0
@@ -503,10 +516,26 @@ impl FuncArgRef {
     pub fn get_users(self, alloc: &Slab<GlobalData>) -> &UserList {
         self.to_data(alloc).users()
     }
+
+    pub fn attrs_from_alloc(self, alloc: &Slab<GlobalData>) -> &RefCell<AttrList> {
+        &self.to_data(alloc).attrs
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FuncRef(pub GlobalRef);
+
+impl IAttrHolderValue for FuncRef {
+    fn attrs(self, allocs: &impl IRAllocsReadable) -> &RefCell<AttrList> {
+        self.attrs_from_alloc(&allocs.get_allocs_ref().globals)
+    }
+
+    fn attrs_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut AttrList {
+        self.to_data_mut(&mut allocs.get_allocs_mutref().globals)
+            .attrs
+            .get_mut()
+    }
+}
 
 impl FuncRef {
     pub fn as_data<'a>(&self, alloc: &'a Slab<GlobalData>) -> Option<&'a Func> {
@@ -591,5 +620,9 @@ impl FuncRef {
     }
     pub fn get_entry(self, allocs: &impl IRAllocsReadable) -> BlockRef {
         self.get_entry_from_alloc(&allocs.get_allocs_ref().globals)
+    }
+
+    pub fn attrs_from_alloc(self, alloc: &Slab<GlobalData>) -> &RefCell<AttrList> {
+        &self.to_data(alloc).attrs
     }
 }

@@ -1,4 +1,9 @@
-use crate::{ir::IRWriter, typing::ValTypeID};
+use std::cell::{Ref, RefCell, RefMut};
+
+use crate::{
+    ir::{AttrList, IRAllocsEditable, IRAllocsReadable, IRWriter},
+    typing::ValTypeID,
+};
 
 pub(super) mod attrlist;
 pub(super) mod attrset;
@@ -188,6 +193,29 @@ impl<'a> Attr<'a> {
             Attr::Align(val) => write!(f, "align({val})"),
             Attr::TargetDependent(dep) => f.write_str(&format!("target-dependent \"{dep}\"")),
         }
+    }
+}
+
+pub trait IAttrHolderValue: Sized + Copy {
+    fn attrs(self, allocs: &impl IRAllocsReadable) -> &RefCell<AttrList>;
+    fn attrs_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut AttrList;
+
+    fn borrow_attrs(self, allocs: &impl IRAllocsReadable) -> Ref<'_, AttrList> {
+        self.attrs(allocs).borrow()
+    }
+    fn borrow_attrs_mut(self, allocs: &impl IRAllocsReadable) -> RefMut<'_, AttrList> {
+        self.attrs(allocs).borrow_mut()
+    }
+    fn has_attr(self, attr: &Attr, allocs: &impl IRAllocsReadable) -> bool {
+        self.borrow_attrs(allocs)
+            .has_attr(attr, &allocs.get_allocs_ref().attrs)
+    }
+    fn add_attr(self, attr: Attr, allocs: &impl IRAllocsReadable) {
+        self.borrow_attrs_mut(allocs.get_allocs_ref())
+            .add_attr(attr);
+    }
+    fn mut_add_attr(self, attr: Attr, allocs: &mut impl IRAllocsEditable) {
+        self.attrs_mut(allocs).add_attr(attr);
     }
 }
 

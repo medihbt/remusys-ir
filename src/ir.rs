@@ -30,7 +30,7 @@ pub mod inst;
 
 pub use self::{
     attributes::{
-        Attr, AttrKind, CodeTempAttr, InlineAttr, IntExtAttr, MergeBehavior,
+        Attr, IAttrHolderValue, AttrKind, CodeTempAttr, InlineAttr, IntExtAttr, MergeBehavior,
         attrlist::{AttrList, AttrListID},
         attrset::AttrSet,
     },
