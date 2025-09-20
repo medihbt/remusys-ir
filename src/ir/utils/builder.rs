@@ -253,25 +253,22 @@ impl<'a> IRVarBuilder<'a> {
         }
     }
 
-    pub fn content_ty(&mut self, content_ty: ValTypeID) -> &mut Self {
+    pub fn content_ty(mut self, content_ty: ValTypeID) -> Self {
         self.content_ty = content_ty;
         self
     }
-    pub fn set_const(&mut self, is_const: bool) -> &mut Self {
+    pub fn set_const(mut self, is_const: bool) -> Self {
         self.is_const = is_const;
         self
     }
-    pub fn linkage(&mut self, linkage: Linkage) -> &mut Self {
+    pub fn linkage(mut self, linkage: Linkage) -> Self {
         self.linkage = linkage;
         self
     }
 
     pub fn build_extern(self) -> GlobalRef {
-        let var = Var::new_extern(
-            self.name.into(),
-            self.content_ty,
-            self.content_ty.get_align(&self.module.type_ctx).max(8),
-        );
+        let content_align = self.content_ty.get_align(&self.module.type_ctx).max(8);
+        let var = Var::new_extern(self.name, self.content_ty, content_align);
         var.set_readonly(self.is_const);
         let var = GlobalRef::from_allocs(self.module, var.into_ir());
         var.register_to_symtab(self.module);
@@ -281,11 +278,8 @@ impl<'a> IRVarBuilder<'a> {
         if let Some(&global) = self.module.globals.get_mut().get(&self.name) {
             return Err(IRBuildError::GlobalDefExists(self.name, global));
         }
-        let var = Var::new_extern(
-            self.name.into(),
-            self.content_ty,
-            self.content_ty.get_align(&self.module.type_ctx).max(8),
-        );
+        let content_align = self.content_ty.get_align(&self.module.type_ctx).max(8);
+        let var = Var::new_extern(self.name.into(), self.content_ty, content_align);
         var.set_readonly(self.is_const);
         var.set_init(self.module, initval);
         let var = GlobalRef::from_allocs(self.module, var.into_ir());
@@ -347,9 +341,10 @@ impl<'a, M: AsMut<Module> + AsRef<Module>> IRSwitchBuilder<'a, M> {
         self
     }
 
-    pub fn build(self) -> IRBuildRes<(IRManaged<'a, InstRef>, SwitchRef)> {
+    pub fn build(&'a mut self) -> IRBuildRes<(IRManaged<'a, InstRef>, SwitchRef)> {
         let Self { editor, cond, default, cases } = self;
-        let (old, new) = editor.focus_set_switch(cond, default, cases.into_iter())?;
+        let (old, new) =
+            editor.focus_set_switch(*cond, *default, cases.iter().map(|(k, v)| (*k, *v)))?;
         let new = SwitchRef::from_raw_nocheck(new);
         Ok((old, new))
     }
@@ -761,10 +756,10 @@ impl<'a, M: AsMut<Module> + AsRef<Module>> PhiBuilder<'a, M> {
         self
     }
 
-    pub fn build(self) -> IRBuildRes<InstRef> {
+    pub fn build(&mut self) -> IRBuildRes<InstRef> {
         let Self { editor, dest, incomings } = self;
-        let phi = PhiNode::new(dest);
-        for (bb, val) in incomings {
+        let phi = PhiNode::new(*dest);
+        for (&bb, &mut val) in incomings {
             phi.set_income(editor.get_allocs(), bb, val)
                 .map_err(IRBuildError::PhiNodeError)?;
         }
