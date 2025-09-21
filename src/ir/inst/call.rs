@@ -1,9 +1,7 @@
 use crate::{
     base::INullableValue,
     ir::{
-        AttrList, FuncUser, GlobalRef, IAttrHolderValue, IRAllocs, IRAllocsEditable,
-        IRAllocsReadable, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Module, Opcode,
-        OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        inst::ISubInstRef, AttrList, FuncUser, GlobalRef, IAttrHolderValue, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef, Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA
     },
     typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };
@@ -129,7 +127,10 @@ impl ISubInst for CallOp {
                 writer.write_str(", ")?;
             }
             let type_ctx = writer.type_ctx;
-            let arg_ty = self.callee_ty.get_arg(type_ctx, index);
+            let arg_ty = self
+                .callee_ty
+                .try_get_arg(type_ctx, index)
+                .unwrap_or(arg.get_operand().get_valtype(writer.allocs));
             writer.write_type(arg_ty)?;
             writer.write_str(" ")?;
             writer.write_operand(arg.get_operand())?;
