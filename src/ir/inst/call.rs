@@ -215,15 +215,11 @@ impl CallOp {
         let fixed_nargs = func_ty.nargs(type_ctx);
 
         if is_vararg && nargs < fixed_nargs {
-            panic!(
-                "Vararg {:?} expects at least {fixed_nargs} arguments, but got {nargs}",
-                ValTypeID::Func(func_ty).get_display_name(type_ctx)
-            );
-        } else if nargs != fixed_nargs {
-            panic!(
-                "FuncType {:?} expects exactly {fixed_nargs} arguments, but got {nargs}",
-                ValTypeID::Func(func_ty).get_display_name(type_ctx)
-            );
+            let fname = func_ty.get_display_name(type_ctx);
+            panic!("Vararg {fname:?} expects at least {fixed_nargs} arguments, but got {nargs}");
+        } else if !is_vararg && nargs != fixed_nargs {
+            let fname = func_ty.get_display_name(type_ctx);
+            panic!("FuncType {fname:?} expects exactly {fixed_nargs} arguments, but got {nargs}",);
         }
     }
 
