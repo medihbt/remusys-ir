@@ -79,7 +79,7 @@ impl ISubGlobal for Var {
 
     fn fmt_ir(&self, _: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
         let name = self.common.name.as_str();
-        let prefix = self.get_kind().get_ir_prefix(self.get_linkage());
+        let prefix = self.get_prefix();
         write!(writer, "@{name} = {prefix} ")?;
         writer.write_type(self.common.content_ty)?;
 
@@ -111,6 +111,21 @@ impl Var {
             common: GlobalDataCommon::new(name, content_ty, content_align),
             init: [Use::new(UseKind::GlobalInit)],
             inner: Cell::new(VarInner { readonly: false }),
+        }
+    }
+
+    fn get_prefix(&self) -> &'static str {
+        let is_extern = matches!(self.get_init(), ValueSSA::None);
+        let is_const = self.is_readonly();
+        let linkage = if is_extern { Linkage::Extern } else { self.common.linkage.get() };
+
+        match (is_const, linkage) {
+            (true, Linkage::Extern) => "external constant",
+            (true, Linkage::DSOLocal) => "dso_local constant",
+            (true, Linkage::Private) => "internal constant",
+            (false, Linkage::Extern) => "extern global",
+            (false, Linkage::DSOLocal) => "dso_local global",
+            (false, Linkage::Private) => "internal global",
         }
     }
 }
