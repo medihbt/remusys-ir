@@ -2,10 +2,10 @@ use std::rc::Rc;
 
 use crate::{
     ir::{
-        ExprCommon, IRAllocs, IRWriter, ISubExpr, ISubValueSSA, IUser, OperandSet, Use, UseKind,
-        ValueSSA,
+        ConstData, ExprCommon, IRAllocs, IRWriter, ISubExpr, ISubValueSSA, IUser, OperandSet, Use,
+        UseKind, ValueSSA,
     },
-    typing::{ArrayTypeRef, TypeContext},
+    typing::{ArrayTypeRef, TypeContext, ValTypeID},
 };
 
 #[derive(Debug, Clone)]
@@ -41,23 +41,10 @@ impl ISubExpr for Array {
         if self.is_zero(&writer.allocs) {
             return write!(writer.output.borrow_mut(), "zeroinitializer");
         }
-        let elemty = self.arrty.get_element_type(&writer.type_ctx);
-        writer.write_str("[")?;
-        for (i, elem) in self.elems.iter().enumerate() {
-            if i > 0 {
-                writer.write_str(", ")?;
-            }
-            debug_assert_eq!(
-                elemty,
-                elem.get_operand().get_valtype(&writer.allocs),
-                "Element type mismatch",
-            );
-            // 写入元素类型和操作数
-            writer.write_type(elemty)?;
-            writer.write_str(" ")?;
-            writer.write_operand(elem.get_operand())?;
+        if self.try_fmt_str_literal(writer)? {
+            return Ok(());
         }
-        writer.write_str("]")
+        self.fmt_array_literal(writer)
     }
 }
 
@@ -97,5 +84,59 @@ impl Array {
         let nelems = arrty.get_num_elements(type_ctx);
         let elem0 = ValueSSA::new_zero(elemty);
         Self::new(arrty, allocs, std::iter::repeat(elem0).take(nelems))
+    }
+
+    fn fmt_array_literal(&self, writer: &IRWriter) -> std::io::Result<()> {
+        let elemty = self.arrty.get_element_type(&writer.type_ctx);
+        writer.write_str("[")?;
+        for (i, elem) in self.elems.iter().enumerate() {
+            if i > 0 {
+                writer.write_str(", ")?;
+            }
+            debug_assert_eq!(
+                elemty,
+                elem.get_operand().get_valtype(&writer.allocs),
+                "Element type mismatch",
+            );
+            // 写入元素类型和操作数
+            writer.write_type(elemty)?;
+            writer.write_str(" ")?;
+            writer.write_operand(elem.get_operand())?;
+        }
+        writer.write_str("]")
+    }
+    fn try_fmt_str_literal(&self, writer: &IRWriter) -> std::io::Result<bool> {
+        // 仅当元素类型为 i8 且所有元素均为常量时，才尝试格式化为字符串字面量
+        // 其他情况均格式化为数组字面量
+        let ValTypeID::Int(8) = self.arrty.get_element_type(&writer.type_ctx) else {
+            return Ok(false);
+        };
+        let bytes = {
+            use std::fmt::Write;
+            let mut bytes = String::with_capacity(self.elems.len() + 4);
+            bytes.push_str("c\"");
+            for elem in &self.elems {
+                let val = elem.get_operand();
+                // 仅当元素为常量时，才尝试格式化为字符串字面量
+                // 非常量元素会导致整个数组无法格式化为字符串字面量
+                let ValueSSA::ConstData(cx) = val else {
+                    return Ok(false);
+                };
+                let ch = match cx {
+                    ConstData::Zero(_) => 0u8,
+                    ConstData::Int(x) => x.as_signed() as u8,
+                    // 非整数常量，无法格式化为字符串
+                    _ => return Ok(false),
+                };
+                match ch {
+                    x if x.is_ascii_graphic() => bytes.push(x as char),
+                    _ => write!(bytes, "\\x{:02x}", ch).unwrap(),
+                }
+            }
+            bytes.push('"');
+            bytes
+        };
+        writer.write_str(&bytes)?;
+        Ok(true)
     }
 }

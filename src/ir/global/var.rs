@@ -52,7 +52,7 @@ impl ISubGlobal for Var {
 
     fn get_kind(&self) -> GlobalKind {
         let is_extern = self.is_extern();
-        let is_const = self.is_extern();
+        let is_const = self.is_readonly();
         match (is_extern, is_const) {
             (true, true) => GlobalKind::ExternConst,
             (true, false) => GlobalKind::ExternVar,
@@ -78,16 +78,12 @@ impl ISubGlobal for Var {
     }
 
     fn fmt_ir(&self, _: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
-        write!(
-            writer,
-            "@{} = {} ",
-            self.common.name,
-            self.get_kind().get_ir_prefix(self.get_linkage())
-        )?;
+        let name = self.common.name.as_str();
+        let prefix = self.get_kind().get_ir_prefix(self.get_linkage());
+        write!(writer, "@{name} = {prefix} ")?;
         writer.write_type(self.common.content_ty)?;
 
-        if let ValueSSA::None = self.get_init() {
-        } else {
+        if self.get_init() != ValueSSA::None {
             write!(writer, " ")?;
             self.get_init().fmt_ir(writer)?;
         }
