@@ -130,7 +130,7 @@ impl Array {
                 };
                 match ch {
                     x if x.is_ascii_graphic() => bytes.push(x as char),
-                    _ => write!(bytes, "\\x{:02x}", ch).unwrap(),
+                    _ => write!(bytes, "\\{:02x}", ch).unwrap(),
                 }
             }
             bytes.push('"');
