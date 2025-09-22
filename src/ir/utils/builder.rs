@@ -274,13 +274,17 @@ impl<'a> IRVarBuilder<'a> {
         var.register_to_symtab(self.module);
         var
     }
-    pub fn build_define(self, initval: ValueSSA) -> IRBuildRes<GlobalRef> {
+    pub fn build_define(mut self, initval: ValueSSA) -> IRBuildRes<GlobalRef> {
+        if self.linkage == Linkage::Extern {
+            self.linkage = Linkage::DSOLocal;
+        }
         if let Some(&global) = self.module.globals.get_mut().get(&self.name) {
             return Err(IRBuildError::GlobalDefExists(self.name, global));
         }
         let content_align = self.content_ty.get_align(&self.module.type_ctx).max(8);
         let var = Var::new_extern(self.name.into(), self.content_ty, content_align);
         var.set_readonly(self.is_const);
+        var.set_linkage(self.linkage);
         var.set_init(self.module, initval);
         let var = GlobalRef::from_allocs(self.module, var.into_ir());
         var.register_to_symtab(self.module);

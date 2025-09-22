@@ -220,11 +220,112 @@ pub trait ITraceableValue {
         }
         false
     }
+
+    fn replace_user_operand_with(&self, allocs: &IRAllocs, new_operand: ValueSSA) {
+        let users = self.users();
+        let Some(mut current) = users.front() else {
+            return;
+        };
+        loop {
+            let next = current.get_next();
+            if current.get_operand() == new_operand {
+                return; // No change
+            }
+            // 这里如果 set 了一个新的 operand, 那会出现两种情况:
+            //
+            // 1. 如果 new_operand 是 traceable 的, 那 current 会被 detach() 然后 attach 到 new_operand 上.
+            // 2. 如果 new_operand 不是 traceable 的, 那 current 会被 detach() 然后不 attach 到任何地方.
+            //
+            // 由于 next 已经被提前获取, 所以不会影响循环. 下一次循环时, current 会被更新为 next, 因此在 loop 第一行之后
+            // 所有对 current 的操作都不会影响链表的后续部分.
+            current.set_operand(allocs, new_operand);
+            let next = next.upgrade().expect("next Use should not be dropped");
+            if next.is_sentinel() {
+                break;
+            }
+            current = next;
+        }
+    }
 }
 
 impl Drop for Use {
     /// 当 Use 被销毁时，自动将其从所属的用户列表中移除
     fn drop(&mut self) {
         self.detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        base::{APInt, SlabRef},
+        ir::{ConstData, FuncArgRef, FuncRef, IRBuilder, IRFocus, IUser, Opcode},
+        typing::{FuncTypeRef, ValTypeID},
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_use_set_operand() {
+        let mut builder = IRBuilder::new_host("demo");
+        let main_functy = FuncTypeRef::new(
+            builder.type_ctx(),
+            ValTypeID::Int(32),
+            false,
+            [ValTypeID::Int(32), ValTypeID::Ptr],
+        );
+        let main_func = builder
+            .define_function_with_unreachable("main", main_functy)
+            .unwrap();
+        let main_func = FuncRef(main_func);
+        let entry = main_func.get_entry(builder.get_allocs()).unwrap();
+        builder.set_focus(IRFocus::Block(entry));
+
+        /*
+        %2:
+            %3 = add i32 %0, 1
+            %4 = sub i32 %0, 1
+            %5 = mul i32 %3, %4
+            ret i32 %5
+         */
+        let add_inst = builder
+            .add_binop_inst(
+                Opcode::Add,
+                ValueSSA::FuncArg(main_func.into_ir(), 0),
+                ValueSSA::ConstData(ConstData::Int(APInt::from(1))),
+            )
+            .unwrap();
+        let sub_inst = builder
+            .add_binop_inst(
+                Opcode::Sub,
+                ValueSSA::FuncArg(main_func.into_ir(), 0),
+                ValueSSA::ConstData(ConstData::Int(APInt::from(1))),
+            )
+            .unwrap();
+        let mul_inst = builder
+            .add_binop_inst(
+                Opcode::Mul,
+                ValueSSA::Inst(add_inst),
+                ValueSSA::Inst(sub_inst),
+            )
+            .unwrap();
+        let _ret_inst = builder
+            .focus_set_return(ValueSSA::Inst(mul_inst))
+            .unwrap()
+            .1;
+        FuncArgRef(main_func.into_ir(), 0)
+            .to_data(&builder.get_allocs().globals)
+            .replace_user_operand_with(
+                builder.get_allocs(),
+                ValueSSA::ConstData(ConstData::Int(APInt::from(42))),
+            );
+        assert_eq!(
+            add_inst.to_data(&builder.get_allocs().insts).get_operand(0),
+            ValueSSA::ConstData(ConstData::Int(APInt::from(42)))
+        );
+        assert_eq!(
+            sub_inst.to_data(&builder.get_allocs().insts).get_operand(0),
+            ValueSSA::ConstData(ConstData::Int(APInt::from(42)))
+        );
     }
 }

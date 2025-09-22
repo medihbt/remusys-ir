@@ -364,8 +364,11 @@ impl BlockData {
         range.calc_length(alloc) > 0
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn is_invalid(&self) -> bool {
         !self.insts.is_valid() || self.insts.is_empty()
+    }
+    pub fn is_valid(&self) -> bool {
+        self.insts.is_valid() && !self.insts.is_empty()
     }
 
     /// 检查基本块是否有多个前驱基本块
@@ -765,5 +768,20 @@ impl BlockRef {
         let allocs = allocs.get_allocs_ref();
         self.to_data(&allocs.blocks)
             .set_terminator(allocs, terminator)
+    }
+
+    /// 这个基本块是不是一点作用都没有的空块.
+    pub fn is_uselessly_empty(self, allocs: &impl IRAllocsReadable) -> bool {
+        let allocs = allocs.get_allocs_ref();
+        let data = self.to_data(&allocs.blocks);
+        if data.is_invalid() {
+            return true;
+        }
+        // 只有 PhiEnd 和一个终结指令的才有可能满足条件
+        if data.insts.len() > 2 {
+            return false;
+        }
+        let terminator = data.get_terminator(allocs);
+        matches!(terminator, TerminatorRef::Jump(_))
     }
 }
