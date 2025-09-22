@@ -11,7 +11,7 @@ use crate::{
     typing::{TypeMismatchError, ValTypeID},
 };
 use slab::Slab;
-use std::{cell::Cell, fmt::Debug, rc::Rc};
+use std::{cell::Cell, fmt::Debug, hash::Hash, rc::Rc};
 
 pub(crate) mod usedef;
 
@@ -662,7 +662,7 @@ impl InstRef {
     }
 }
 
-pub trait ISubInstRef: Sized + Clone {
+pub trait ISubInstRef: Sized + Copy + Ord + Hash {
     type InstDataT: ISubInst;
 
     fn from_raw_nocheck(inst_ref: InstRef) -> Self;

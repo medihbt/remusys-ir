@@ -203,7 +203,7 @@ impl CmpOp {
 ///
 /// 包装 `InstRef` 提供类型安全的比较指令引用，
 /// 确保引用指向的确实是比较指令而非其他类型的指令。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CmpOpRef(InstRef);
 
 impl ISubInstRef for CmpOpRef {

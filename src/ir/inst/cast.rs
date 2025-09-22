@@ -113,7 +113,7 @@ impl CastOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CastOpRef(InstRef);
 
 impl ISubInstRef for CastOpRef {

@@ -119,7 +119,7 @@ impl Ret {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RetRef(InstRef);
 
 impl ISubInstRef for RetRef {

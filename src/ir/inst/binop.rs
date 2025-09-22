@@ -208,7 +208,7 @@ impl BinOp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BinOpRef(InstRef);
 
 impl ISubInstRef for BinOpRef {

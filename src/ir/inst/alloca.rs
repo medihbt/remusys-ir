@@ -101,7 +101,7 @@ impl Alloca {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllocaRef(InstRef);
 
 impl ISubInstRef for AllocaRef {

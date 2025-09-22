@@ -173,7 +173,7 @@ impl SelectOp {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SelectOpRef(InstRef);
 
 impl ISubInstRef for SelectOpRef {

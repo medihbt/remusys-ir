@@ -368,7 +368,7 @@ impl Switch {
 ///
 /// 这是对 `InstRef` 的类型安全封装，确保引用的指令确实是 Switch 类型。
 /// 提供了类型安全的方法来访问和操作 Switch 指令。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SwitchRef(InstRef);
 
 impl ISubInstRef for SwitchRef {

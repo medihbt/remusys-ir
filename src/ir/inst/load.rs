@@ -268,7 +268,7 @@ impl LoadOp {
 /// let load_ref = LoadInstRef::from_raw_nocheck(inst_ref);
 /// // 现在可以安全地访问 LoadOp 的特定方法
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LoadInstRef(InstRef);
 
 impl ISubInstRef for LoadInstRef {

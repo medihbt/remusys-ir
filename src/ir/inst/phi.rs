@@ -458,7 +458,7 @@ impl<'a> IntoIterator for &'a PhiNode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PhiRef(pub InstRef);
 
 impl ISubInstRef for PhiRef {

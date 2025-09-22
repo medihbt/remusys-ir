@@ -598,7 +598,7 @@ impl<'a> Iterator for GEPIndexIter<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GEPRef(InstRef);
 
 impl ISubInstRef for GEPRef {
