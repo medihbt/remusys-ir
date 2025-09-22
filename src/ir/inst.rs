@@ -45,7 +45,7 @@ pub use self::{
     },
     jump::{Jump, JumpRef},
     load::{LoadInstRef, LoadOp},
-    phi::{PhiError, PhiNode, PhiRef},
+    phi::{PhiError, PhiNode, PhiRef, PhiRes},
     ret::{Ret, RetRef},
     select::{SelectOp, SelectOpRef},
     store::{StoreOp, StoreOpRef},
@@ -677,6 +677,17 @@ pub trait ISubInstRef: Sized + Copy + Ord + Hash {
     }
     fn from_inst(inst: InstRef, alloc: &Slab<InstData>) -> Self {
         Self::try_from_inst(inst, alloc).expect("Expected a valid instruction reference")
+    }
+
+    /// 从堆上分配一个新的指令对象, 并返回其引用.
+    fn from_alloc(alloc: &mut Slab<InstData>, data: Self::InstDataT) -> Self {
+        let inst_ref = InstRef::from_alloc(alloc, data.into_ir());
+        Self::from_raw_nocheck(inst_ref)
+    }
+    /// 从堆上分配一个新的指令对象, 并返回其引用.
+    fn new(allocs: &mut impl IRAllocsEditable, data: Self::InstDataT) -> Self {
+        let allocs = allocs.get_allocs_mutref();
+        Self::from_alloc(&mut allocs.insts, data)
     }
 
     fn as_inst(self, alloc: &Slab<InstData>) -> Option<&Self::InstDataT> {

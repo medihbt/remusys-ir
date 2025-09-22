@@ -18,6 +18,8 @@ pub enum PhiError {
     InvalidUseType,
 }
 
+pub type PhiRes<T = ()> = Result<T, PhiError>;
+
 /// Phi 节点：实现 SSA 形式中的 φ 函数
 ///
 /// ## LLVM IR 语法
@@ -199,7 +201,7 @@ impl PhiNode {
         allocs: &IRAllocs,
         block: BlockRef,
         value: ValueSSA,
-    ) -> Result<(), PhiError> {
+    ) -> PhiRes {
         let Some(group) = self.find_income(block) else {
             return Err(PhiError::IncomeBBNotFound(block));
         };
@@ -213,12 +215,7 @@ impl PhiNode {
 
     /// 为指定前驱基本块设置一个传入值, 如果该基本块已经存在传入值则覆盖.
     /// 如果该基本块不存在传入值则新增一对传入值和传入基本块操作数.
-    pub fn set_income(
-        &self,
-        allocs: &IRAllocs,
-        block: BlockRef,
-        value: ValueSSA,
-    ) -> Result<(), PhiError> {
+    pub fn set_income(&self, allocs: &IRAllocs, block: BlockRef, value: ValueSSA) -> PhiRes {
         match self.set_existing_income(allocs, block, value) {
             Ok(()) => return Ok(()),
             Err(PhiError::IncomeBBNotFound(_)) => {}
@@ -245,7 +242,7 @@ impl PhiNode {
     /// 移除指定前驱基本块的传入值, 如果该基本块不存在传入值则返回错误.
     /// 移除时会保持操作数列表的紧凑性, 通过与末尾元素交换并弹出末尾元素来实现.
     /// 这种方式会改变被交换元素的索引, 因此需要更新它们的 UseKind 以反映新的索引.
-    pub fn remove_income(&self, block: BlockRef) -> Result<(), PhiError> {
+    pub fn remove_income(&self, block: BlockRef) -> PhiRes {
         let Some(group_index) = self.locate_income_group(block) else {
             return Err(PhiError::IncomeBBNotFound(block));
         };
@@ -364,7 +361,7 @@ impl PhiNode {
         &self,
         income_bb_use: &Rc<Use>,
         new_block: BlockRef,
-    ) -> Result<(), PhiError> {
+    ) -> PhiRes {
         self.do_redirect_income(RedirectAction::SetOnly, income_bb_use, new_block)
     }
 
@@ -373,7 +370,7 @@ impl PhiNode {
         action: RedirectAction,
         income_bb_use: &Rc<Use>,
         new_block: BlockRef,
-    ) -> Result<(), PhiError> {
+    ) -> PhiRes {
         // 检查新基本块是否已经存在于 Phi 节点中. 每个前驱基本块在 Phi 节点中只能有一个对应的传入值
         // 就算 redirect_income 是为了合并两个分支也不行, 因为这时两个 income value 有冲突, PhiNode
         // 自身无法解决.
@@ -468,5 +465,101 @@ impl ISubInstRef for PhiRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl PhiRef {
+    /// 获取所有传入的基本块和对应的值
+    pub fn incoming_uses(self, allocs: &IRAllocs) -> Ref<'_, [[Rc<Use>; 2]]> {
+        self.to_inst(&allocs.insts).incoming_uses()
+    }
+
+    /// 定位指定基本块在传入列表中的索引
+    pub fn locate_income_group(self, allocs: &IRAllocs, block: BlockRef) -> Option<usize> {
+        self.to_inst(&allocs.insts).locate_income_group(block)
+    }
+
+    /// 定位指定基本块在传入列表中的值和基本块操作数索引
+    pub fn locate_incomes(self, allocs: &IRAllocs, block: BlockRef) -> Option<(usize, usize)> {
+        self.to_inst(&allocs.insts).locate_incomes(block)
+    }
+
+    /// 查找指定基本块的传入值和基本块操作数
+    pub fn find_income(self, allocs: &IRAllocs, block: BlockRef) -> Option<Ref<'_, [Rc<Use>; 2]>> {
+        self.to_inst(&allocs.insts).find_income(block)
+    }
+
+    /// 检查指定基本块是否存在传入值
+    pub fn has_income(self, allocs: &IRAllocs, block: BlockRef) -> bool {
+        self.to_inst(&allocs.insts).has_income(block)
+    }
+
+    /// 获取指定基本块的传入基本块操作数引用
+    pub fn get_income_block_use(self, allocs: &IRAllocs, block: BlockRef) -> Option<Rc<Use>> {
+        self.to_inst(&allocs.insts).get_income_block_use(block)
+    }
+
+    /// 获取指定基本块的传入值操作数引用
+    pub fn get_income_value_use(self, allocs: &IRAllocs, block: BlockRef) -> Option<Rc<Use>> {
+        self.to_inst(&allocs.insts).get_income_value_use(block)
+    }
+
+    /// 获取指定基本块的传入值
+    pub fn get_income_value(self, allocs: &IRAllocs, block: BlockRef) -> Option<ValueSSA> {
+        self.to_inst(&allocs.insts).get_income_value(block)
+    }
+
+    /// 获取指定索引处的传入基本块
+    pub fn income_block_at(self, allocs: &IRAllocs, index: usize) -> BlockRef {
+        self.to_inst(&allocs.insts).income_block_at(index)
+    }
+
+    /// 获取指定索引处的传入值
+    pub fn income_value_at(self, allocs: &IRAllocs, index: usize) -> ValueSSA {
+        self.to_inst(&allocs.insts).income_value_at(index)
+    }
+
+    /// 为指定前驱基本块设置一个传入值, 要求该基本块已经存在传入值.
+    pub fn set_existing_income(
+        self,
+        allocs: &IRAllocs,
+        block: BlockRef,
+        value: ValueSSA,
+    ) -> PhiRes {
+        self.to_inst(&allocs.insts)
+            .set_existing_income(allocs, block, value)
+    }
+
+    /// 为指定前驱基本块设置一个传入值, 如果该基本块已经存在传入值则覆盖.
+    pub fn set_income(self, allocs: &IRAllocs, block: BlockRef, value: ValueSSA) -> PhiRes {
+        self.to_inst(&allocs.insts).set_income(allocs, block, value)
+    }
+
+    /// 移除指定前驱基本块的传入值, 要求该基本块已经存在传入值.
+    pub fn remove_income(self, allocs: &IRAllocs, block: BlockRef) -> PhiRes {
+        self.to_inst(&allocs.insts).remove_income(block)
+    }
+
+    /// 移除指定组索引下的基本块传入值.
+    /// 移除时会保持操作数列表的紧凑性, 通过与末尾元素交换并弹出末尾元素来实现.
+    /// 这种方式会改变被交换元素的索引, 因此需要更新它们的 UseKind 以反映新的索引.
+    pub fn remove_income_index(self, allocs: &IRAllocs, group_index: usize) {
+        self.to_inst(&allocs.insts).remove_income_index(group_index);
+    }
+
+    /// 移除所有引用了无效基本块的传入值对
+    pub fn retain_valid_income(self, allocs: &IRAllocs) {
+        self.to_inst(&allocs.insts).retain_valid_income();
+    }
+
+    /// 重定向 Phi 节点中某个前驱基本块的引用到新的基本块
+    pub fn redirect_income(
+        self,
+        allocs: &IRAllocs,
+        income_bb_use: &Rc<Use>,
+        new_block: BlockRef,
+    ) -> PhiRes {
+        self.to_inst(&allocs.insts)
+            .redirect_income(allocs, income_bb_use, new_block)
     }
 }
