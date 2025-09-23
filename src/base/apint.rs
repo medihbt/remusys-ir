@@ -1,6 +1,6 @@
 use std::ops::{
     Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, DivAssign,
-    Mul, MulAssign, Not, Rem, RemAssign, Sub, SubAssign,
+    Mul, MulAssign, Not, Rem, RemAssign, Shl, ShlAssign, Shr, Sub, SubAssign,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -148,6 +148,53 @@ impl APInt {
 
     pub fn is_boolean(&self) -> bool {
         self.bits == 1
+    }
+
+    pub fn lshr(self, shift: impl IIntoU128) -> Self {
+        let shift = shift.into_u128() as u64;
+        if shift >= 128 {
+            return Self::new(0u128, self.bits);
+        }
+        let value = self.as_unsigned();
+        Self::new(value.wrapping_shr(shift as u32), self.bits)
+    }
+    pub fn ashr(self, shift: impl IIntoU128) -> Self {
+        let shift = shift.into_u128() as u64;
+        if shift >= 128 {
+            if self.is_negative() {
+                return Self::new_full(self.signed_bitmask(), self.bits);
+            } else {
+                return Self::new(0u128, self.bits);
+            }
+        }
+        let value = self.as_signed();
+        Self::new((value.wrapping_shr(shift as u32)) as u128, self.bits)
+    }
+
+    pub fn lshr_with(self, rhs: impl Into<APInt>) -> Self {
+        self.lshr(rhs.into().as_unsigned() as u8)
+    }
+    pub fn ashr_with(self, rhs: impl Into<APInt>) -> Self {
+        self.ashr(rhs.into().as_unsigned() as u8)
+    }
+
+    pub fn rotate_left(self, shift: APInt) -> Self {
+        let shift = shift.as_unsigned() % (self.bits as u128);
+        if shift == 0 {
+            return self;
+        }
+        let value = self.value_raw();
+        let rotated = (value << shift) | (value >> (self.bits as u128 - shift));
+        Self::new(rotated, self.bits)
+    }
+    pub fn rotate_right(self, shift: APInt) -> Self {
+        let shift = shift.as_unsigned() % (self.bits as u128);
+        if shift == 0 {
+            return self;
+        }
+        let value = self.value_raw();
+        let rotated = (value >> shift) | (value << (self.bits as u128 - shift));
+        Self::new(rotated, self.bits)
     }
 }
 
@@ -304,6 +351,24 @@ impl Not for APInt {
     fn not(self) -> Self {
         let Self { value: [v0, v1, v2, v3], bits } = self;
         Self { value: [!v0, !v1, !v2, !v3], bits }
+    }
+}
+
+impl Shl<APInt> for APInt {
+    type Output = Self;
+
+    fn shl(self, other: APInt) -> Self {
+        let shift = other.as_unsigned() as u64;
+        if shift >= 128 {
+            return Self::new(0u128, self.bits);
+        }
+        let value = self.value_raw();
+        Self::new(value.wrapping_shl(shift as u32), self.bits)
+    }
+}
+impl ShlAssign<APInt> for APInt {
+    fn shl_assign(&mut self, other: APInt) {
+        *self = self.shl(other);
     }
 }
 
@@ -464,6 +529,116 @@ macro_rules! impl_add_from_uints {
                     lhs.bitand(rhs)
                 }
             }
+            impl BitAnd<$t> for APInt {
+                type Output = APInt;
+
+                fn bitand(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    self.bitand(rhs)
+                }
+            }
+            impl BitAndAssign<$t> for APInt {
+                fn bitand_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    *self &= rhs;
+                }
+            }
+
+            impl BitOr<APInt> for $t {
+                type Output = APInt;
+
+                fn bitor(self, other: APInt) -> APInt {
+                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitor(rhs)
+                }
+            }
+            impl BitOr<$t> for APInt {
+                type Output = APInt;
+
+                fn bitor(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    self.bitor(rhs)
+                }
+            }
+            impl BitOrAssign<$t> for APInt {
+                fn bitor_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    *self |= rhs;
+                }
+            }
+
+            impl BitXor<APInt> for $t {
+                type Output = APInt;
+
+                fn bitxor(self, other: APInt) -> APInt {
+                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitxor(rhs)
+                }
+            }
+            impl BitXor<$t> for APInt {
+                type Output = APInt;
+
+                fn bitxor(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    self.bitxor(rhs)
+                }
+            }
+            impl BitXorAssign<$t> for APInt {
+                fn bitxor_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).zext_to(self.bits);
+                    *self ^= rhs;
+                }
+            }
+
+            impl Shl<APInt> for $t {
+                type Output = $t;
+
+                fn shl(self, other: APInt) -> $t {
+                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let shift = rhs.as_unsigned() as u64;
+                    if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return 0;
+                    }
+                    self.wrapping_shl(shift as u32)
+                }
+            }
+            impl Shl<$t> for APInt {
+                type Output = APInt;
+
+                fn shl(self, other: $t) -> APInt {
+                    let lhs = self.as_unsigned();
+                    if other as u64 >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return APInt::new(0u128, self.bits);
+                    }
+                    let shift = other as u32;
+                    APInt::new(lhs.wrapping_shl(shift), self.bits)
+                }
+            }
+            impl ShlAssign<$t> for APInt {
+                fn shl_assign(&mut self, other: $t) {
+                    *self = self.shl(other);
+                }
+            }
+            impl ShlAssign<APInt> for $t {
+                fn shl_assign(&mut self, other: APInt) {
+                    *self = self.shl(other);
+                }
+            }
+
+            impl Shr<APInt> for $t {
+                type Output = $t;
+
+                fn shr(self, other: APInt) -> $t {
+                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let shift = rhs.as_unsigned() as u64;
+                    if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return 0;
+                    }
+                    self.wrapping_shr(shift as u32)
+                }
+            }
 
             impl PartialEq<APInt> for $t {
                 fn eq(&self, other: &APInt) -> bool {
@@ -597,6 +772,116 @@ macro_rules! impl_add_from_sints {
                     let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
                     let lhs = APInt::from(self);
                     lhs.bitand(rhs)
+                }
+            }
+            impl BitAnd<$t> for APInt {
+                type Output = APInt;
+
+                fn bitand(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    self.bitand(rhs)
+                }
+            }
+            impl BitAndAssign<$t> for APInt {
+                fn bitand_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    *self &= rhs;
+                }
+            }
+
+            impl BitOr<APInt> for $t {
+                type Output = APInt;
+
+                fn bitor(self, other: APInt) -> APInt {
+                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitor(rhs)
+                }
+            }
+            impl BitOr<$t> for APInt {
+                type Output = APInt;
+
+                fn bitor(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    self.bitor(rhs)
+                }
+            }
+            impl BitOrAssign<$t> for APInt {
+                fn bitor_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    *self |= rhs;
+                }
+            }
+
+            impl BitXor<APInt> for $t {
+                type Output = APInt;
+
+                fn bitxor(self, other: APInt) -> APInt {
+                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let lhs = APInt::from(self);
+                    lhs.bitxor(rhs)
+                }
+            }
+            impl BitXor<$t> for APInt {
+                type Output = APInt;
+
+                fn bitxor(self, other: $t) -> APInt {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    self.bitxor(rhs)
+                }
+            }
+            impl BitXorAssign<$t> for APInt {
+                fn bitxor_assign(&mut self, other: $t) {
+                    let rhs = APInt::from(other).sext_to(self.bits);
+                    *self ^= rhs;
+                }
+            }
+
+            impl Shl<APInt> for $t {
+                type Output = $t;
+
+                fn shl(self, other: APInt) -> $t {
+                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let shift = rhs.as_unsigned() as u64;
+                    if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return 0;
+                    }
+                    self.wrapping_shl(shift as u32)
+                }
+            }
+            impl Shl<$t> for APInt {
+                type Output = APInt;
+
+                fn shl(self, other: $t) -> APInt {
+                    let lhs = self.as_unsigned();
+                    if other as u64 >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return APInt::new(0u128, self.bits);
+                    }
+                    let shift = other as u32;
+                    APInt::new(lhs.wrapping_shl(shift), self.bits)
+                }
+            }
+            impl ShlAssign<$t> for APInt {
+                fn shl_assign(&mut self, other: $t) {
+                    *self = self.shl(other);
+                }
+            }
+            impl ShlAssign<APInt> for $t {
+                fn shl_assign(&mut self, other: APInt) {
+                    *self = self.shl(other);
+                }
+            }
+
+            impl Shr<APInt> for $t {
+                type Output = $t;
+
+                fn shr(self, other: APInt) -> $t {
+                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let shift = rhs.as_unsigned() as u64;
+                    if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
+                        return 0;
+                    }
+                    self.wrapping_shr(shift as u32)
                 }
             }
 
@@ -843,6 +1128,28 @@ mod testing {
         let l = APInt::new(20_u128, 8);
         let overflow_product = k * l;
         println!("{} * {} = {} (溢出情况)", k, l, overflow_product);
+    }
+
+    #[test]
+    fn test_shift_operations() {
+        println!("\n=== 位移运算测试 ===");
+
+        let a = APInt::new(0b0001_1111_u128, 32);
+        let left_shift = a << APInt::new(2_u128, 8);
+        let right_shift = a.lshr_with(APInt::new(2_u128, 8));
+        println!("{} << 2 = {}", a, left_shift);
+        println!("{} >> 2 = {}", a, right_shift);
+
+        let left_shift = a << 10u32;
+        let right_shift = a.lshr(10u32);
+        println!("{} << 10 = {}", a, left_shift);
+        println!("{} >> 10 = {}", a, right_shift);
+
+        let a = APInt::from(2u8);
+        let left_shift = 10u8 << a;
+        let right_shift = 10u8 >> a;
+        println!("10u8 << {} = {}", a, left_shift);
+        println!("10u8 >> {} = {}", a, right_shift);
     }
 
     #[test]
