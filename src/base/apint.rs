@@ -1,6 +1,6 @@
 use std::ops::{
     Add, AddAssign, BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Div, DivAssign,
-    Mul, MulAssign, Not, Rem, RemAssign, Shl, ShlAssign, Shr, Sub, SubAssign,
+    Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, Sub, SubAssign,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -145,6 +145,9 @@ impl APInt {
         let result = self.as_unsigned() % other.as_unsigned();
         Self::new(result, self.bits)
     }
+    // pub fn neg(&self) -> Self {
+    //     Self::new_full((-(self.as_signed())) as u128, self.bits)
+    // }
 
     pub fn is_boolean(&self) -> bool {
         self.bits == 1
@@ -195,6 +198,37 @@ impl APInt {
         let value = self.value_raw();
         let rotated = (value >> shift) | (value << (self.bits as u128 - shift));
         Self::new(rotated, self.bits)
+    }
+
+    pub const fn as_power_of_two(&self) -> Option<u32> {
+        let value = self.as_unsigned();
+        if value.is_power_of_two() { Some(value.trailing_zeros()) } else { None }
+    }
+    pub const fn is_power_of_two(&self) -> bool {
+        self.as_unsigned().is_power_of_two()
+    }
+
+    pub const fn count_ones(&self) -> u32 {
+        self.as_unsigned().count_ones()
+    }
+    pub const fn count_zeros(&self) -> u32 {
+        self.bits as u32 - self.count_ones()
+    }
+
+    pub const fn trailing_zeros(&self) -> u32 {
+        let value = self.as_unsigned();
+        if value == 0 { self.bits as u32 } else { value.trailing_zeros() }
+    }
+    pub const fn trailing_ones(&self) -> u32 {
+        self.as_unsigned().trailing_ones()
+    }
+    pub const fn leading_zeros(&self) -> u32 {
+        let value = self.as_unsigned() << (128 - self.bits as u32);
+        value.leading_zeros()
+    }
+    pub const fn leading_ones(&self) -> u32 {
+        let value = self.as_unsigned() << (128 - self.bits as u32);
+        value.leading_ones()
     }
 }
 
@@ -263,6 +297,14 @@ impl Sub<APInt> for APInt {
 impl SubAssign<APInt> for APInt {
     fn sub_assign(&mut self, other: APInt) {
         *self = self.sub(other);
+    }
+}
+
+impl Neg for APInt {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self::new_full((-(self.as_signed())) as u128, self.bits)
     }
 }
 
