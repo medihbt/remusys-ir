@@ -1,7 +1,9 @@
 use crate::{
     base::INullableValue,
     ir::{
-        inst::ISubInstRef, AttrList, FuncUser, GlobalRef, IAttrHolderValue, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef, Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA
+        AttrList, FuncUser, GlobalRef, IAttrHolderValue, IRAllocs, IRAllocsEditable,
+        IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef,
+        Module, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
 };

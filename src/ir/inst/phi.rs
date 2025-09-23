@@ -2,7 +2,7 @@ use crate::{
     base::INullableValue,
     ir::{
         BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef,
-        Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        Opcode, OperandSet, Use, UseKind, UserID, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -113,6 +113,7 @@ impl ISubInst for PhiNode {
         let opcode = self.get_opcode().get_name();
         write!(writer, "%{} = {} ", id, opcode)?;
         writer.write_type(self.common.ret_type)?;
+        writer.write_str(" ")?;
 
         // 写入所有 incoming values: [ <value>, %<label> ], ...
         let incomes = self.incoming_uses();
@@ -229,6 +230,12 @@ impl PhiNode {
         // group_index 用于在删除时快速定位配对的操作数
         let value_use = Use::new(UseKind::PhiIncomingValue(group_index as u32));
         let block_use = Use::new(UseKind::PhiIncomingBlock(group_index as u32));
+
+        // 维护 use-def 的反向引用关系
+        let self_id = self.get_self_ref();
+        let self_id = if self_id.is_null() { UserID::None } else { UserID::Inst(self_id) };
+        value_use.user.set(self_id);
+        block_use.user.set(self_id);
 
         value_use.set_operand(allocs, value);
         block_use.set_operand(allocs, ValueSSA::Block(block));

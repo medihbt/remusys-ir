@@ -1,6 +1,7 @@
 use std::{cell::Ref, ops::Deref, rc::Rc, usize};
 
 use crate::{
+    base::INullableValue,
     ir::{
         ExprRef, GlobalRef, IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter,
         IReferenceValue, ISubValueSSA, InstRef, Use, ValueSSA,
@@ -115,6 +116,21 @@ pub enum UserID {
     Inst(InstRef),
     Expr(ExprRef),
     Global(GlobalRef),
+}
+
+impl INullableValue for UserID {
+    fn new_null() -> Self {
+        UserID::None
+    }
+
+    fn is_null(&self) -> bool {
+        match self {
+            UserID::None => true,
+            UserID::Inst(inst_ref) => inst_ref.is_null(),
+            UserID::Expr(expr_ref) => expr_ref.is_null(),
+            UserID::Global(global_ref) => global_ref.is_null(),
+        }
+    }
 }
 
 impl From<InstRef> for UserID {
