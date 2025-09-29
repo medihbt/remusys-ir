@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Opcode, OperandSet,
-        PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef,
+        Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{IValType, TypeContext, ValTypeID},
 };
@@ -116,6 +116,8 @@ impl PtrUser for LoadOp {
 }
 
 impl LoadOp {
+    pub const OP_SOURCE: usize = 0;
+
     /// 创建一个未初始化操作数的 LoadOp 指令
     ///
     /// 此方法创建一个"原始"的 Load 指令，操作数需要后续手动设置。
@@ -244,7 +246,7 @@ impl LoadOp {
     ///
     /// * `allocs` - IR 分配器，用于管理 Use-Def 链
     /// * `source` - 新的源地址 SSA 值
-    pub fn set_source(&mut self, allocs: &IRAllocs, source: ValueSSA) {
+    pub fn set_source(&self, allocs: &IRAllocs, source: ValueSSA) {
         self.operands[0].set_operand(allocs, source);
     }
 }
@@ -279,5 +281,15 @@ impl ISubInstRef for LoadInstRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl LoadInstRef {
+    pub fn get_source(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_source()
+    }
+    pub fn set_source(self, allocs: &impl IRAllocsReadable, source: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_source(allocs, source);
     }
 }

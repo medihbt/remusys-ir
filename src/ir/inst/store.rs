@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef, Opcode,
-        OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
+        InstRef, Opcode, OperandSet, PtrUser, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::{IValType, TypeContext, ValTypeID},
 };
@@ -95,6 +95,9 @@ impl PtrUser for StoreOp {
 }
 
 impl StoreOp {
+    pub const OP_SOURCE: usize = 0;
+    pub const OP_TARGET: usize = 1;
+
     pub fn new_raw(source_ty: ValTypeID, align_log2: u8) -> Self {
         Self {
             common: InstCommon::new(Opcode::Store, ValTypeID::Void),
@@ -136,10 +139,10 @@ impl StoreOp {
         self.target_use().get_operand()
     }
 
-    pub fn set_source(&mut self, allocs: &IRAllocs, source: ValueSSA) {
+    pub fn set_source(&self, allocs: &IRAllocs, source: ValueSSA) {
         self.source_use().set_operand(allocs, source);
     }
-    pub fn set_target(&mut self, allocs: &IRAllocs, target: ValueSSA) {
+    pub fn set_target(&self, allocs: &IRAllocs, target: ValueSSA) {
         self.target_use().set_operand(allocs, target);
     }
 }
@@ -155,5 +158,23 @@ impl ISubInstRef for StoreOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl StoreOpRef {
+    pub fn get_source(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_source()
+    }
+    pub fn get_target(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_target()
+    }
+
+    pub fn set_source(self, allocs: &impl IRAllocsReadable, source: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_source(allocs, source);
+    }
+    pub fn set_target(self, allocs: &impl IRAllocsReadable, target: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_target(allocs, target);
     }
 }

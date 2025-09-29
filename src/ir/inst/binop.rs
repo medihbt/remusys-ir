@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind, InstRef,
-        Opcode, OperandSet, Use, UseKind, ValueSSA,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
+        InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA,
         checking::{self, ValueCheckError},
         inst::ISubInstRef,
     },
@@ -70,6 +70,9 @@ impl ISubInst for BinOp {
 }
 
 impl BinOp {
+    pub const OP_LHS: usize = 0;
+    pub const OP_RHS: usize = 1;
+
     pub fn new_raw(opcode: Opcode, ret_type: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(opcode, ret_type),
@@ -218,5 +221,25 @@ impl ISubInstRef for BinOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl BinOpRef {
+    pub fn get_lhs(&self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).get_lhs()
+    }
+    pub fn set_lhs(&self, allocs: &impl IRAllocsReadable, lhs: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_lhs(allocs, lhs);
+    }
+
+    pub fn get_rhs(&self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).get_rhs()
+    }
+    pub fn set_rhs(&self, allocs: &impl IRAllocsReadable, rhs: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_rhs(allocs, rhs);
     }
 }

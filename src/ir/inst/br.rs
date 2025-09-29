@@ -1,8 +1,8 @@
 use crate::{
     ir::{
-        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon,
-        InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet, Use,
-        UseKind, ValueSSA, inst::ISubInstRef,
+        BlockData, BlockRef, IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst,
+        IUser, InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode,
+        OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -129,12 +129,16 @@ impl Br {
     pub fn get_cond(&self) -> ValueSSA {
         self.cond[0].get_operand()
     }
-    pub fn set_cond(&mut self, allocs: &IRAllocs, cond: ValueSSA) {
+    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
         self.cond[0].set_operand(allocs, cond);
     }
 }
 
 impl Br {
+    pub const OP_COND: usize = 0;
+    pub const TARGET_THEN: usize = 0;
+    pub const TARGET_ELSE: usize = 1;
+
     pub fn jump_targets(&self) -> &[Rc<JumpTarget>] {
         &self.targets
     }
@@ -145,7 +149,7 @@ impl Br {
     pub fn get_if_true(&self) -> BlockRef {
         self.targets[0].get_block()
     }
-    pub fn set_if_true(&mut self, alloc: &Slab<BlockData>, block: BlockRef) {
+    pub fn set_if_true(&self, alloc: &Slab<BlockData>, block: BlockRef) {
         self.targets[0].set_block(alloc, block);
     }
 
@@ -155,7 +159,7 @@ impl Br {
     pub fn get_if_false(&self) -> BlockRef {
         self.targets[1].get_block()
     }
-    pub fn set_if_false(&mut self, alloc: &Slab<BlockData>, block: BlockRef) {
+    pub fn set_if_false(&self, alloc: &Slab<BlockData>, block: BlockRef) {
         self.targets[1].set_block(alloc, block);
     }
 }
@@ -171,5 +175,32 @@ impl ISubInstRef for BrRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl BrRef {
+    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+    }
+    pub fn get_if_true(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_if_true()
+    }
+    pub fn get_if_false(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_if_false()
+    }
+
+    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_cond(allocs, cond);
+    }
+    pub fn set_if_true(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts)
+            .set_if_true(&allocs.blocks, block);
+    }
+    pub fn set_if_false(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts)
+            .set_if_false(&allocs.blocks, block);
     }
 }

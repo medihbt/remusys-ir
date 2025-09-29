@@ -142,6 +142,9 @@ impl ISubInst for CallOp {
 }
 
 impl CallOp {
+    pub const OP_CALLEE: usize = 0;
+    pub const OP_ARG_BEGIN: usize = 1;
+
     /// 创建固定参数函数的调用指令
     ///
     /// 用于调用参数数量固定的函数，自动根据函数类型确定参数数量。
@@ -284,7 +287,7 @@ impl CallOp {
     /// # 参数
     /// - `allocs`: IR 分配器，用于更新 Use-Def 关系
     /// - `callee`: 新的被调用函数
-    pub fn set_callee(&mut self, allocs: &IRAllocs, callee: ValueSSA) {
+    pub fn set_callee(&self, allocs: &IRAllocs, callee: ValueSSA) {
         self.callee().set_operand(allocs, callee);
     }
 
@@ -406,6 +409,30 @@ impl ISubInstRef for CallOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl CallOpRef {
+    pub fn get_callee(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_callee()
+    }
+    pub fn set_callee(self, allocs: &impl IRAllocsReadable, callee: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_callee(allocs, callee);
+    }
+
+    pub fn arg_uses(self, allocs: &impl IRAllocsReadable) -> &[Rc<Use>] {
+        self.to_inst(&allocs.get_allocs_ref().insts).args()
+    }
+    pub fn arg_count(self, allocs: &impl IRAllocsReadable) -> usize {
+        self.to_inst(&allocs.get_allocs_ref().insts).args().len()
+    }
+    pub fn get_arg(self, allocs: &impl IRAllocsReadable, index: usize) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_arg(index)
+    }
+    pub fn set_arg(self, allocs: &impl IRAllocsReadable, index: usize, value: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_arg(allocs, index, value);
     }
 }
 

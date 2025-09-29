@@ -1,9 +1,10 @@
 use crate::{
     base::INullableValue,
     ir::{
-        ConstData, FuncRef, IModuleReadable, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser,
-        InstCommon, InstData, InstRef, Opcode, OperandSet, PtrStorage, PtrUser, Use, UseKind,
-        ValueSSA, ValueSSAClass, checking::ValueCheckError, inst::ISubInstRef,
+        ConstData, FuncRef, IModuleReadable, IRAllocs, IRAllocsReadable, IRWriter, ISubInst,
+        ISubValueSSA, IUser, InstCommon, InstData, InstRef, Opcode, OperandSet, PtrStorage,
+        PtrUser, Use, UseKind, ValueSSA, ValueSSAClass, checking::ValueCheckError,
+        inst::ISubInstRef,
     },
     typing::{IValType, StructTypeRef, TypeContext, ValTypeClass, ValTypeID},
 };
@@ -142,6 +143,9 @@ impl PtrUser for IndexPtr {
 }
 
 impl IndexPtr {
+    pub const OP_BASE: usize = 0;
+    pub const OP_INDEX_BEGIN: usize = 1;
+
     /// 创建一个未初始化操作数的 GEP 指令
     pub fn new_raw(
         base_ty: ValTypeID,
@@ -598,20 +602,6 @@ impl<'a> Iterator for GEPIndexIter<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GEPRef(InstRef);
-
-impl ISubInstRef for GEPRef {
-    type InstDataT = IndexPtr;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
-    }
-    fn into_raw(self) -> InstRef {
-        self.0
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IrGEPOffset {
     /// Immediate offset
@@ -713,5 +703,43 @@ impl<'a> Iterator for IrGEPOffsetIter<'a> {
         };
         self.last_ty = Some(elemty);
         Some(offset)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GEPRef(InstRef);
+
+impl ISubInstRef for GEPRef {
+    type InstDataT = IndexPtr;
+
+    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
+        Self(inst_ref)
+    }
+    fn into_raw(self) -> InstRef {
+        self.0
+    }
+}
+
+impl GEPRef {
+    pub fn get_base(&self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).get_base()
+    }
+    pub fn set_base(&self, allocs: &impl IRAllocsReadable, value: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_base(allocs, value);
+    }
+
+    pub fn index_uses(self, allocs: &impl IRAllocsReadable) -> &[Rc<Use>] {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).index_uses()
+    }
+    pub fn get_index(&self, allocs: &impl IRAllocsReadable, index: usize) -> ValueSSA {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).get_index(index)
+    }
+    pub fn set_index(&self, allocs: &impl IRAllocsReadable, index: usize, value: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_index(allocs, index, value);
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind, InstRef,
-        Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
+        InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -103,7 +103,7 @@ impl CastOp {
     pub fn get_from(&self) -> ValueSSA {
         self.fromop[0].get_operand()
     }
-    pub fn set_from(&mut self, allocs: &IRAllocs, from: ValueSSA) {
+    pub fn set_from(&self, allocs: &IRAllocs, from: ValueSSA) {
         if self.fromty != from.get_valtype(allocs) {
             let fromty = self.fromty;
             let new_fromty = from.get_valtype(allocs);
@@ -124,5 +124,18 @@ impl ISubInstRef for CastOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl CastOpRef {
+    pub fn get_to_type(self, allocs: &impl IRAllocsReadable) -> ValTypeID {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_to_type()
+    }
+    pub fn get_from(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_from()
+    }
+    pub fn set_from(self, allocs: &impl IRAllocsReadable, from: ValueSSA) {
+        self.to_inst(&allocs.get_allocs_ref().insts)
+            .set_from(allocs.get_allocs_ref(), from);
     }
 }

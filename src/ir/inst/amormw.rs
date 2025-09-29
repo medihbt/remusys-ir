@@ -145,6 +145,9 @@ impl ISubInst for AmoRmw {
 }
 
 impl AmoRmw {
+    pub const OP_PTR: usize = 0;
+    pub const OP_VAL: usize = 1;
+
     fn subop_get_name(opcode: Opcode) -> &'static str {
         match opcode {
             Opcode::AmoXchg => "xchg",

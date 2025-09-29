@@ -243,6 +243,11 @@ impl<T: SlabListNodeRef> SlabRefList<T> {
             Some(node) => node,
             None => return Err(SlabListError::InvalidRef),
         };
+        debug_assert_ne!(
+            Some(next_ref.get_handle()),
+            node.get_next(),
+            "Node already has the given next node"
+        );
         let next_node = match next_ref.as_data(alloc) {
             Some(node) => node,
             None => return Err(SlabListError::InvalidRef),
@@ -284,6 +289,11 @@ impl<T: SlabListNodeRef> SlabRefList<T> {
             Some(node) => node,
             None => return Err(SlabListError::InvalidRef),
         };
+        debug_assert_ne!(
+            Some(prev_ref.get_handle()),
+            node.get_prev(),
+            "Node already has the given previous node"
+        );
         let prev_node = match prev_ref.as_data(alloc) {
             Some(node) => node,
             None => return Err(SlabListError::InvalidRef),

@@ -700,6 +700,12 @@ pub trait ISubInstRef: Sized + Copy + Ord + Hash {
             .as_data_mut(alloc)
             .and_then(|data| Self::InstDataT::try_from_ir_mut(data))
     }
+    fn try_deref(self, allocs: &impl IRAllocsReadable) -> Option<&Self::InstDataT> {
+        self.as_inst(&allocs.get_allocs_ref().insts)
+    }
+    fn try_deref_mut(self, allocs: &mut impl IRAllocsEditable) -> Option<&mut Self::InstDataT> {
+        self.as_inst_mut(&mut allocs.get_allocs_mutref().insts)
+    }
     fn to_inst(self, alloc: &Slab<InstData>) -> &Self::InstDataT {
         let Some(data) = self.clone().as_inst(alloc) else {
             let raw = self.into_raw();
@@ -713,6 +719,12 @@ pub trait ISubInstRef: Sized + Copy + Ord + Hash {
             panic!("Expected a valid instruction data reference for {raw:?}");
         };
         data
+    }
+    fn deref(self, allocs: &impl IRAllocsReadable) -> &Self::InstDataT {
+        self.to_inst(&allocs.get_allocs_ref().insts)
+    }
+    fn deref_mut(self, allocs: &mut impl IRAllocsEditable) -> &mut Self::InstDataT {
+        self.to_inst_mut(&mut allocs.get_allocs_mutref().insts)
     }
 
     fn get_opcode(self, alloc: &Slab<InstData>) -> Opcode {

@@ -3,9 +3,9 @@ use slab::Slab;
 use crate::{
     base::INullableValue,
     ir::{
-        BlockData, BlockRef, IRAllocs, IRWriter, ISubInst, ISubValueSSA, ITerminatorInst, IUser,
-        InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode, OperandSet, Use,
-        UseKind, ValueSSA, block::jump_target::JumpTargets, inst::ISubInstRef,
+        BlockData, BlockRef, IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA,
+        ITerminatorInst, IUser, InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode,
+        OperandSet, Use, UseKind, ValueSSA, block::jump_target::JumpTargets, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -165,6 +165,10 @@ impl ITerminatorInst for Switch {
 }
 
 impl Switch {
+    pub const OP_COND: usize = 0;
+    pub const TARGET_DEFAULT: usize = 0;
+    pub const TARGET_CASE_BEGIN: usize = 1;
+
     /// 创建一个新的 Switch 指令
     ///
     /// # 参数
@@ -174,7 +178,7 @@ impl Switch {
     /// # Panics
     /// 如果条件操作数不是整数类型则会 panic
     pub fn new(allocs: &IRAllocs, cond: ValueSSA, default: BlockRef) -> Self {
-        let mut switch = Self::new_empty(Opcode::Switch);
+        let switch = Self::new_empty(Opcode::Switch);
         switch.set_cond(allocs, cond);
         switch.set_default(&allocs.blocks, default);
         switch
@@ -193,12 +197,12 @@ impl Switch {
     /// 设置条件操作数
     ///
     /// # 参数
-    /// - `allocs`: IR 分配器，用于类型检查
+    /// - `allocs`: IR 分配器，用于维护 use-def 链
     /// - `cond`: 新的条件操作数
     ///
     /// # Panics
     /// 如果条件操作数不是整数类型则会 panic
-    pub fn set_cond(&mut self, allocs: &IRAllocs, cond: ValueSSA) {
+    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
         if cond != ValueSSA::None && !matches!(cond.get_valtype(allocs), ValTypeID::Int(_)) {
             panic!(
                 "Switch condition must be an integer type, got: {:?}",
@@ -378,5 +382,46 @@ impl ISubInstRef for SwitchRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl SwitchRef {
+    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+    }
+    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
+        self.to_inst(&allocs.get_allocs_ref().insts)
+            .set_cond(&allocs.get_allocs_ref(), cond);
+    }
+
+    pub fn get_default(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_default()
+    }
+    pub fn set_default(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts)
+            .set_default(&allocs.blocks, block);
+    }
+
+    pub fn get_case<T: Into<i128>>(
+        self,
+        allocs: &impl IRAllocsReadable,
+        case: T,
+    ) -> Option<BlockRef> {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_case(case)
+    }
+    pub fn set_case<T: Into<i128>>(
+        self,
+        allocs: &impl IRAllocsReadable,
+        case: T,
+        block: BlockRef,
+    ) -> Rc<JumpTarget> {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts)
+            .set_case(&allocs.blocks, case, block)
+    }
+    pub fn remove_case<T: Into<i128>>(self, allocs: &impl IRAllocsReadable, case: T) -> bool {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).remove_case(case)
     }
 }

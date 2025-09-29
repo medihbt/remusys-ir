@@ -4,9 +4,9 @@ use slab::Slab;
 
 use crate::{
     ir::{
-        BlockData, BlockRef, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon, InstData,
-        InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet, Use,
-        inst::ISubInstRef,
+        BlockData, BlockRef, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst, IUser,
+        InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet,
+        Use, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -113,7 +113,7 @@ impl Jump {
     pub fn get_target(&self) -> BlockRef {
         self.target[0].get_block()
     }
-    pub fn set_target(&mut self, alloc: &Slab<BlockData>, target: BlockRef) {
+    pub fn set_target(&self, alloc: &Slab<BlockData>, target: BlockRef) {
         self.target[0].set_block(alloc, target);
     }
 }
@@ -128,5 +128,16 @@ impl ISubInstRef for JumpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl JumpRef {
+    pub fn get_target(self, allocs: &impl IRAllocsReadable) -> BlockRef {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_target()
+    }
+    pub fn set_target(self, allocs: &impl IRAllocsReadable, target: BlockRef) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts)
+            .set_target(&allocs.blocks, target);
     }
 }

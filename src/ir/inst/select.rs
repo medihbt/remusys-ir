@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstRef, Opcode,
-        OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
+        InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -79,6 +79,10 @@ impl ISubInst for SelectOp {
 }
 
 impl SelectOp {
+    pub const OP_COND: usize = 0;
+    pub const OP_TRUE: usize = 1;
+    pub const OP_FALSE: usize = 2;
+
     pub fn new_raw(ret_type: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Select, ret_type),
@@ -184,5 +188,30 @@ impl ISubInstRef for SelectOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl SelectOpRef {
+    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+    }
+    pub fn get_true_val(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_true_val()
+    }
+    pub fn get_false_val(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_false_val()
+    }
+
+    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_cond(allocs, cond);
+    }
+    pub fn set_true_val(self, allocs: &impl IRAllocsReadable, true_val: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_true_val(allocs, true_val);
+    }
+    pub fn set_false_val(self, allocs: &impl IRAllocsReadable, false_val: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_false_val(allocs, false_val);
     }
 }

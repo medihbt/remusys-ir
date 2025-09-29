@@ -1,8 +1,8 @@
 use crate::{
     ir::{
-        IRAllocs, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon, InstData, InstRef,
-        JumpTarget, Opcode, OperandSet, Use, UseKind, ValueSSA, block::jump_target::JumpTargets,
-        inst::ISubInstRef,
+        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon,
+        InstData, InstRef, JumpTarget, Opcode, OperandSet, Use, UseKind, ValueSSA,
+        block::jump_target::JumpTargets, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -93,6 +93,8 @@ impl ITerminatorInst for Ret {
 }
 
 impl Ret {
+    pub const OP_RETVAL: usize = 0;
+
     pub fn new_raw(ret_ty: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Ret, ret_ty),
@@ -111,7 +113,7 @@ impl Ret {
     pub fn get_retval(&self) -> ValueSSA {
         self.operands[0].get_operand()
     }
-    pub fn set_retval(&mut self, allocs: &IRAllocs, ret_value: ValueSSA) {
+    pub fn set_retval(&self, allocs: &IRAllocs, ret_value: ValueSSA) {
         self.operands[0].set_operand(allocs, ret_value);
     }
     pub fn has_retval(&self) -> bool {
@@ -129,5 +131,18 @@ impl ISubInstRef for RetRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl RetRef {
+    pub fn get_retval(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_retval()
+    }
+    pub fn set_retval(self, allocs: &impl IRAllocsReadable, ret_value: ValueSSA) {
+        let allocs = allocs.get_allocs_ref();
+        self.to_inst(&allocs.insts).set_retval(allocs, ret_value);
+    }
+    pub fn has_retval(&self, allocs: &impl IRAllocsReadable) -> bool {
+        self.to_inst(&allocs.get_allocs_ref().insts).has_retval()
     }
 }

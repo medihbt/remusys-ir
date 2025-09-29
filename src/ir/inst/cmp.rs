@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        CmpCond, IRAllocs, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData, InstKind,
-        InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        CmpCond, IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon,
+        InstData, InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
     },
     typing::ValTypeID,
 };
@@ -91,6 +91,9 @@ impl ISubInst for CmpOp {
 }
 
 impl CmpOp {
+    pub const OP_LHS: usize = 0;
+    pub const OP_RHS: usize = 1;
+
     /// 创建一个未初始化操作数的比较指令
     ///
     /// # 参数
@@ -214,5 +217,27 @@ impl ISubInstRef for CmpOpRef {
     }
     fn into_raw(self) -> InstRef {
         self.0
+    }
+}
+
+impl CmpOpRef {
+    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> CmpCond {
+        self.to_inst(&allocs.get_allocs_ref().insts).cond
+    }
+
+    pub fn get_lhs(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_lhs()
+    }
+    pub fn set_lhs(self, allocs: &impl IRAllocsReadable, lhs: ValueSSA) {
+        self.to_inst(&allocs.get_allocs_ref().insts)
+            .set_lhs(allocs.get_allocs_ref(), lhs);
+    }
+
+    pub fn get_rhs(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
+        self.to_inst(&allocs.get_allocs_ref().insts).get_rhs()
+    }
+    pub fn set_rhs(self, allocs: &impl IRAllocsReadable, rhs: ValueSSA) {
+        self.to_inst(&allocs.get_allocs_ref().insts)
+            .set_rhs(allocs.get_allocs_ref(), rhs);
     }
 }
