@@ -2,6 +2,8 @@
 //!
 //! Copyright (c) 2025 Medi H.B.T.
 
+pub use {slab, thiserror};
+
 pub mod base;
 pub mod ir;
 pub mod mir;

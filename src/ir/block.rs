@@ -727,6 +727,32 @@ impl BlockRef {
         self.to_data(&allocs.blocks)
             .build_add_inst(&allocs.insts, iref);
     }
+    pub fn add_inst_prev(
+        self,
+        allocs: &impl IRAllocsReadable,
+        curr: impl ISubInstRef,
+        prev: impl ISubInstRef,
+    ) -> Result<(), SlabListError> {
+        let curr = curr.into_raw();
+        let new_prev = prev.into_raw();
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .insts
+            .node_add_prev(&allocs.insts, curr, new_prev)
+    }
+    pub fn add_inst_next(
+        self,
+        allocs: &impl IRAllocsReadable,
+        curr: impl ISubInstRef,
+        next: impl ISubInstRef,
+    ) -> Result<(), SlabListError> {
+        let curr = curr.into_raw();
+        let new_next = next.into_raw();
+        let allocs = allocs.get_allocs_ref();
+        self.to_data(&allocs.blocks)
+            .insts
+            .node_add_next(&allocs.insts, curr, new_next)
+    }
 
     pub fn users(self, allocs: &IRAllocs) -> &UserList {
         self.to_data(&allocs.blocks).users()

@@ -67,7 +67,12 @@ impl APInt {
     }
 
     pub const fn is_negative(&self) -> bool {
-        self.as_signed() < 0
+        let bits = self.as_unsigned();
+        (bits & self.sign_bitmask()) != 0
+    }
+    /// 是否是该位宽下的最小负数
+    pub const fn is_min_negative(&self) -> bool {
+        self.as_unsigned() == self.sign_bitmask()
     }
 
     pub const fn signed_bitmask(&self) -> u128 {
