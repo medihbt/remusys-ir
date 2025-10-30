@@ -118,11 +118,11 @@ impl IValType for PtrType {
     }
 
     fn try_get_size_full(self, _: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        Some(tctx.arch.ptr_nbits.div_ceil(8))
+        Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
     fn try_get_align_full(self, _: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        Some(tctx.arch.ptr_nbits.div_ceil(8))
+        Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
     fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {

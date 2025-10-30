@@ -1,18 +1,13 @@
-use crate::typing::{
-    IValType, ScalarType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes,
-    ValTypeClass, ValTypeID,
-};
-use std::io::Write;
+use crate::typing::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FixVecType(pub ScalarType, pub u32);
+pub struct FixVecType(pub ScalarType, pub u8);
 
 impl IValType for FixVecType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
-        if let ValTypeID::FixVec(fv) = ty {
-            Ok(fv)
-        } else {
-            Err(TypeMismatchError::NotClass(ty, ValTypeClass::FixVec))
+        match ty {
+            ValTypeID::FixVec(FixVecType(scalar, len_log2)) => Ok(FixVecType(scalar, len_log2)),
+            _ => Err(TypeMismatchError::NotClass(ty, ValTypeClass::FixVec)),
         }
     }
 
@@ -29,54 +24,42 @@ impl IValType for FixVecType {
     }
 
     fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
-        let Self(elemty, nelems) = self;
-        write!(f, "<")?;
-        elemty.serialize(f)?;
-        write!(f, ", {nelems}>")?;
-        Ok(())
+        f.write_str("<")?;
+        self.0.serialize(f)?;
+        write!(f, "x {}>", 1 << self.1)
     }
 
     fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        let Self(elemty, nelems) = self;
-        let elemsize = elemty.try_get_size_full(alloc, tctx)?;
-        Some(elemsize * nelems as usize)
+        let scalar_size = self.0.try_get_size_full(alloc, tctx)?;
+        Some(scalar_size.checked_mul(1 << self.1)?)
     }
 
     fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        let Self(elemty, nelems) = self;
-        let elemsize = elemty.try_get_align_full(alloc, tctx)?;
-        Some(elemsize * nelems as usize)
+        let elem_align = self.0.try_get_align_full(alloc, tctx)?;
+        elem_align.checked_mul(1 << self.1)
     }
 }
 
 impl FixVecType {
-    pub fn get_elemty(self) -> ScalarType {
+    pub fn get_len(self) -> usize {
+        1 << self.1
+    }
+    pub fn get_len_log2(self) -> u8 {
+        self.1
+    }
+    pub fn get_elem(self) -> ScalarType {
         self.0
     }
 
-    pub fn num_elems(self) -> u32 {
-        self.1
-    }
-
-    pub fn try_num_elems_log2(self) -> Result<u8, u32> {
-        let Self(_, n) = self;
-        if n.is_power_of_two() { Ok(n.ilog2() as u8) } else { Err(n) }
-    }
-    pub fn num_elems_log2(self) -> u8 {
-        self.try_num_elems_log2()
-            .expect("Number of elements in FixVecType is not a power of two")
-    }
-
-    pub fn try_get_offset(self, index: u32, tctx: &TypeContext) -> Option<usize> {
-        if index >= self.1 {
+    pub fn try_get_offset(self, index: usize, tctx: &TypeContext) -> Option<usize> {
+        if index >= self.get_len() {
             return None;
         }
-        let elemty = self.0;
-        let elemsize = elemty.try_get_size(tctx)?;
-        Some((index as usize) * elemsize)
+        let elem_size = self.get_elem().get_size(tctx);
+        Some(elem_size.checked_mul(index)?)
     }
-    pub fn get_offset(self, index: u32, tctx: &TypeContext) -> usize {
+    pub fn get_offset(self, index: usize, tctx: &TypeContext) -> usize {
         self.try_get_offset(index, tctx)
-            .expect("Failed to get offset from FixVecType")
+            .expect("Index out of bounds or size overflow")
     }
 }

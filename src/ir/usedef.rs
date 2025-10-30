@@ -1,0 +1,400 @@
+use crate::ir::{
+    ExprID, GlobalID, IRAllocs, InstID, ValueClass, ValueSSA, constant::expr::ISubExprID,
+    global::ISubGlobalID, inst::ISubInstID,
+};
+use mtb_entity::{
+    EntityAlloc, EntityListHead, EntityRingList, EntityRingListReadIter, IEntityAllocID,
+    IEntityRingListNode, PtrID,
+};
+use std::{
+    cell::{Cell, Ref},
+    ops::Deref,
+};
+
+pub enum OperandSet<'ir> {
+    Fixed(&'ir [UseID]),
+    Celled(Ref<'ir, [UseID]>),
+    Phi(Ref<'ir, [[UseID; 2]]>),
+}
+impl<'ir> Clone for OperandSet<'ir> {
+    fn clone(&self) -> Self {
+        use OperandSet::*;
+        match self {
+            Fixed(slice) => Fixed(slice),
+            Celled(cs) => Celled(Ref::clone(cs)),
+            Phi(ps) => Phi(Ref::clone(ps)),
+        }
+    }
+}
+impl<'ir> Deref for OperandSet<'ir> {
+    type Target = [UseID];
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+impl<'ops: 'ir, 'ir> IntoIterator for &'ops OperandSet<'ir> {
+    type Item = &'ops UseID;
+    type IntoIter = std::slice::Iter<'ops, UseID>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+impl<'ir> OperandSet<'ir> {
+    pub fn as_slice(&self) -> &[UseID] {
+        use OperandSet::*;
+        match self {
+            Fixed(slice) => slice,
+            Celled(cs) => cs.as_ref(),
+            Phi(ps) => ps.as_flattened(),
+        }
+    }
+}
+
+pub struct OperandUseIter<'ir> {
+    operands: OperandSet<'ir>,
+    index: usize,
+}
+impl<'ir> Iterator for OperandUseIter<'ir> {
+    type Item = UseID;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let slice = self.operands.as_slice();
+        if self.index >= slice.len() {
+            return None;
+        }
+        let ret = slice[self.index];
+        self.index += 1;
+        Some(ret)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.operands.as_slice().len();
+        let remaining = len.saturating_sub(self.index);
+        (remaining, Some(remaining))
+    }
+}
+impl<'ir> ExactSizeIterator for OperandUseIter<'ir> {
+    fn len(&self) -> usize {
+        let len = self.operands.as_slice().len();
+        len.saturating_sub(self.index)
+    }
+}
+impl<'ir> DoubleEndedIterator for OperandUseIter<'ir> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let slice = self.operands.as_slice();
+        if self.index >= slice.len() {
+            return None;
+        }
+        self.index += 1;
+        Some(slice[slice.len() - self.index])
+    }
+}
+impl<'ir> IntoIterator for OperandSet<'ir> {
+    type Item = UseID;
+    type IntoIter = OperandUseIter<'ir>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OperandUseIter { operands: self, index: 0 }
+    }
+}
+
+pub trait IUser: Sized {
+    /// 获取该用户的所有操作数.
+    fn get_operands(&self) -> OperandSet<'_>;
+
+    /// 获取该用户的所有操作数的可变引用.
+    fn operands_mut(&mut self) -> &mut [UseID];
+
+    /// 获取指定索引处的操作数对应的 SSA 值.
+    fn get_operand(&self, allocs: &IRAllocs, index: usize) -> ValueSSA {
+        let Some(&use_id) = self.get_operands().as_slice().get(index) else {
+            return ValueSSA::None;
+        };
+        use_id.get_operand(allocs)
+    }
+
+    fn operands_iter(&self) -> OperandUseIter<'_> {
+        self.get_operands().into_iter()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UserID {
+    Expr(ExprID),
+    Inst(InstID),
+    Global(GlobalID),
+}
+
+impl From<ExprID> for UserID {
+    fn from(id: ExprID) -> Self {
+        UserID::Expr(id)
+    }
+}
+impl From<InstID> for UserID {
+    fn from(id: InstID) -> Self {
+        UserID::Inst(id)
+    }
+}
+impl From<GlobalID> for UserID {
+    fn from(id: GlobalID) -> Self {
+        UserID::Global(id)
+    }
+}
+
+impl UserID {
+    pub fn get_operands(self, allocs: &IRAllocs) -> OperandSet<'_> {
+        match self {
+            UserID::Expr(id) => id.deref_ir(allocs).get_operands(),
+            UserID::Inst(id) => id.deref_ir(allocs).get_operands(),
+            UserID::Global(id) => id.deref_ir(allocs).get_operands(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UseKind {
+    Sentinal,
+    BinOpLhs,
+    BinOpRhs,
+    CallOpCallee,
+    CallOpArg(u32),
+    CastOpFrom,
+    CmpLhs,
+    CmpRhs,
+    GepBase,
+    GepIndex(u32),
+    LoadSource,
+    StoreSource,
+    StoreTarget,
+
+    /// PHI 指令的 incoming block. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    PhiIncomingBlock(u32),
+
+    /// PHI 指令的 incoming SSA 值. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    PhiIncomingValue(u32),
+
+    SelectCond,
+    SelectTrue,
+    SelectFalse,
+    BranchCond,
+    SwitchCond,
+    RetValue,
+
+    AmoRmwPtr,
+    AmoRmwVal,
+
+    // 以下为非指令操作数
+    GlobalInit,
+    ArrayElem(usize),
+    StructField(usize),
+    VecElem(usize),
+}
+
+impl UseKind {
+    pub fn is_phi_incoming(&self) -> bool {
+        matches!(
+            self,
+            UseKind::PhiIncomingBlock(_) | UseKind::PhiIncomingValue(_)
+        )
+    }
+    pub fn is_inst_operand(&self) -> bool {
+        match self {
+            UseKind::Sentinal
+            | UseKind::GlobalInit
+            | UseKind::ArrayElem(_)
+            | UseKind::StructField(_)
+            | UseKind::VecElem(_) => false,
+            _ => true,
+        }
+    }
+    pub fn get_user_kind(&self) -> ValueClass {
+        match self {
+            Self::GlobalInit => ValueClass::Global,
+            Self::ArrayElem(_) | Self::StructField(_) | Self::VecElem(_) => ValueClass::ConstExpr,
+            _ => ValueClass::Inst,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Use {
+    list_head: Cell<EntityListHead<Use>>,
+    pub kind: Cell<UseKind>,
+    pub user: Cell<Option<UserID>>,
+    pub operand: Cell<ValueSSA>,
+}
+
+impl IEntityRingListNode for Use {
+    fn load_head(&self) -> EntityListHead<Self> {
+        self.list_head.get()
+    }
+    fn store_head(&self, head: EntityListHead<Self>) {
+        self.list_head.set(head);
+    }
+
+    fn is_sentinal(&self) -> bool {
+        matches!(self.kind.get(), UseKind::Sentinal)
+    }
+
+    fn new_sentinal() -> Self {
+        Self {
+            list_head: Cell::new(EntityListHead::none()),
+            kind: Cell::new(UseKind::Sentinal),
+            user: Cell::new(None),
+            operand: Cell::new(ValueSSA::None),
+        }
+    }
+
+    fn ring_list_node_dispose(&self, alloc: &EntityAlloc<Self>) {
+        self.detach(alloc)
+            .expect("Use ring list node dispose detach failed");
+        self.user.set(None);
+        self.operand.set(ValueSSA::None);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UseID(pub PtrID<Use>);
+
+impl std::fmt::Debug for UseID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ptr = unsafe { self.0.direct_deref() as *const _ };
+        write!(f, "UseID({ptr:p})")
+    }
+}
+impl UseID {
+    pub fn inner(self) -> PtrID<Use> {
+        self.0
+    }
+
+    pub fn deref_ir(self, allocs: &IRAllocs) -> &Use {
+        self.inner().deref(&allocs.uses)
+    }
+
+    pub fn get_kind(self, allocs: &IRAllocs) -> UseKind {
+        self.deref_ir(allocs).kind.get()
+    }
+    pub fn set_kind(self, allocs: &IRAllocs, kind: UseKind) {
+        self.deref_ir(allocs).kind.set(kind);
+    }
+    pub fn is_phi_incoming(self, allocs: &IRAllocs) -> bool {
+        self.get_kind(allocs).is_phi_incoming()
+    }
+
+    pub fn get_user(self, allocs: &IRAllocs) -> Option<UserID> {
+        self.deref_ir(allocs).user.get()
+    }
+    pub fn set_user(self, allocs: &IRAllocs, user: Option<UserID>) {
+        self.deref_ir(allocs).user.set(user);
+    }
+
+    pub fn get_operand(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).operand.get()
+    }
+    pub fn raw_set_operand(self, allocs: &IRAllocs, operand: ValueSSA) {
+        self.deref_ir(allocs).operand.set(operand);
+    }
+    pub fn set_operand(self, allocs: &IRAllocs, operand: ValueSSA) {
+        let obj = self.deref_ir(allocs);
+        if obj.operand.get() == operand {
+            return;
+        }
+        todo!("Wait until `ITraceableValue` is implemented");
+    }
+    pub fn clean_operand(self, allocs: &IRAllocs) {
+        let obj = self.deref_ir(allocs);
+        if obj.operand.get() == ValueSSA::None {
+            return;
+        }
+        obj.detach(&allocs.uses)
+            .expect("Use clean_operand detach failed");
+        obj.operand.set(ValueSSA::None);
+    }
+
+    pub fn new(kind: UseKind, allocs: &IRAllocs) -> Self {
+        let obj = Use {
+            list_head: Cell::new(EntityListHead::none()),
+            kind: Cell::new(kind),
+            user: Cell::new(None),
+            operand: Cell::new(ValueSSA::None),
+        };
+        UseID(allocs.uses.allocate(obj))
+    }
+}
+
+pub struct UseIter<'ir>(EntityRingListReadIter<'ir, Use>);
+
+impl<'ir> Iterator for UseIter<'ir> {
+    type Item = (UseID, &'ir Use);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, obj)| (UseID(id), obj))
+    }
+}
+
+pub type UserList = EntityRingList<Use>;
+
+pub trait ITraceableValue {
+    fn try_get_users(&self) -> Option<&UserList> {
+        Some(self.users())
+    }
+
+    /// 这个 Value 的用户列表.
+    ///
+    /// 注意, 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者.
+    /// 对于 `ConstExpr` 等不可变值, 使用者将分散在多个实例的不同 `UserList` 中.
+    fn users(&self) -> &UserList;
+
+    /// 获取该 Value 的所有使用者迭代器.
+    fn user_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> UseIter<'ir> {
+        UseIter(self.users().iter(&allocs.uses))
+    }
+
+    /// 这个 Value 是否具有引用唯一性.
+    fn has_single_reference_semantics(&self) -> bool;
+
+    fn add_user(&self, new_use: UseID, allocs: &IRAllocs) {
+        self.users()
+            .push_back_id(new_use.inner(), &allocs.uses)
+            .expect("ITraceableValue add_user failed");
+    }
+
+    fn has_users(&self, allocs: &IRAllocs) -> bool {
+        !self.users().is_empty(&allocs.uses)
+    }
+    fn has_single_user(&self, allocs: &IRAllocs) -> bool {
+        self.users().is_single(&allocs.uses)
+    }
+    fn user_count(&self, allocs: &IRAllocs) -> usize {
+        self.users().len(&allocs.uses)
+    }
+
+    /// 检查是否有多个不同的用户指令使用了该值
+    ///
+    /// ### 返回
+    ///
+    /// - `true` - 如果有多个不同的用户指令
+    /// - `false` - 如果没有用户或只有一个用户指令
+    ///
+    /// ### 注意
+    ///
+    /// * 即使一个指令多次使用了该值 (例如作为多个操作数), 只要该指令是唯一的用户，
+    ///   仍然返回 `false`.
+    /// * 只有当 Value 具有引用唯一性时, 这个列表才能反映该 Value 的所有使用者.
+    ///   对于 `ConstExpr` 等不可变值, 使用者可能分散在多个实例的不同 `UserList` 中,
+    ///   该函数可能导致结果误报.
+    fn has_multiple_users(&self, allocs: &IRAllocs) -> bool {
+        let users = self.users();
+        let mut first_user = None;
+        for (_, u) in users.iter(&allocs.uses) {
+            let user = u.user.get();
+            match (first_user, user) {
+                (None, Some(u)) => first_user = Some(u),
+                (Some(x), Some(u)) if x != u => return true,
+                _ => continue,
+            }
+        }
+        false
+    }
+}

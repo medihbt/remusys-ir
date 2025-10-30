@@ -1,131 +1,51 @@
-use super::GlobalDataCommon;
-use crate::{
-    ir::{
-        GlobalData, GlobalKind, GlobalRef, IRAllocsReadable, IRWriter, ISubValueSSA, Use, UseKind,
-        ValueSSA,
-        global::{ISubGlobal, Linkage},
-    },
-    typing::ValTypeID,
+use crate::ir::{
+    IUser, OperandSet, UseID,
+    global::{GlobalCommon, GlobalObj, ISubGlobal},
 };
-use std::{cell::Cell, rc::Rc};
+use std::cell::Cell;
 
-/// 全局变量
-///
-/// ### LLVM IR 语法
-///
-/// ```llvm
-/// @var_name = external constant <type>, align <align> ; 外部常量
-/// @var_name = extern global <type>, align <align> ; 外部变量
-/// @var_name = dso_local global <type> <initval>, align <align> ; 全局变量
-/// @var_name = dso_local constant <type> <initval>, align <align> ; 全局常量
-/// ```
-#[derive(Debug)]
-pub struct Var {
-    pub common: GlobalDataCommon,
-    /// Initializer.
-    pub init: [Rc<Use>; 1],
-    pub inner: Cell<VarInner>,
+#[derive(Clone)]
+pub struct GlobalVar {
+    pub common: GlobalCommon,
+    pub initval: [UseID; 1],
+    pub readonly: Cell<bool>,
 }
-
-#[derive(Debug, Clone, Copy)]
-pub struct VarInner {
-    pub readonly: bool,
-}
-
-impl ISubGlobal for Var {
-    fn from_ir(data: &GlobalData) -> Option<&Self> {
-        match data {
-            GlobalData::Var(var) => Some(var),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> GlobalData {
-        GlobalData::Var(self)
+impl IUser for GlobalVar {
+    fn get_operands(&self) -> OperandSet<'_> {
+        OperandSet::Fixed(&self.initval)
     }
 
-    fn get_common(&self) -> &GlobalDataCommon {
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut self.initval
+    }
+}
+impl ISubGlobal for GlobalVar {
+    fn get_common(&self) -> &GlobalCommon {
         &self.common
     }
-    fn common_mut(&mut self) -> &mut GlobalDataCommon {
+    fn common_mut(&mut self) -> &mut GlobalCommon {
         &mut self.common
     }
 
-    fn get_kind(&self) -> GlobalKind {
-        let is_extern = self.is_extern();
-        let is_const = self.is_readonly();
-        match (is_extern, is_const) {
-            (true, true) => GlobalKind::ExternConst,
-            (true, false) => GlobalKind::ExternVar,
-            (false, true) => GlobalKind::Const,
-            (false, false) => GlobalKind::Var,
+    fn try_from_ir_ref(g: &GlobalObj) -> Option<&Self> {
+        match g {
+            GlobalObj::Var(v) => Some(v),
+            _ => None,
         }
     }
-
-    fn is_readonly(&self) -> bool {
-        self.inner.get().readonly
-    }
-    fn is_extern(&self) -> bool {
-        matches!(self.get_init(), ValueSSA::None)
-    }
-    fn get_linkage(&self) -> Linkage {
-        if self.is_extern() { Linkage::Extern } else { self.common.linkage.get() }
-    }
-    fn set_linkage(&self, linkage: Linkage) {
-        self.common.linkage.set(linkage);
-        if linkage == Linkage::Extern {
-            self.init[0].clean_operand();
+    fn try_from_ir_mut(g: &mut GlobalObj) -> Option<&mut Self> {
+        match g {
+            GlobalObj::Var(v) => Some(v),
+            _ => None,
         }
     }
-
-    fn fmt_ir(&self, _: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
-        let name = self.common.name.as_str();
-        let prefix = self.get_prefix();
-        write!(writer, "@{name} = {prefix} ")?;
-        writer.write_type(self.common.content_ty)?;
-
-        if self.get_init() != ValueSSA::None {
-            write!(writer, " ")?;
-            self.get_init().fmt_ir(writer)?;
-        }
-
-        write!(writer, ", align {}", self.common.content_align)
-    }
-}
-
-impl Var {
-    pub fn set_readonly(&self, readonly: bool) {
-        let mut inner = self.inner.get();
-        inner.readonly = readonly;
-        self.inner.set(inner);
-    }
-
-    pub fn get_init(&self) -> ValueSSA {
-        self.init[0].get_operand()
-    }
-    pub fn set_init(&self, allocs: &impl IRAllocsReadable, init: ValueSSA) {
-        self.init[0].set_operand(allocs.get_allocs_ref(), init);
-    }
-
-    pub fn new_extern(name: String, content_ty: ValTypeID, content_align: usize) -> Self {
-        Self {
-            common: GlobalDataCommon::new(name, content_ty, content_align),
-            init: [Use::new(UseKind::GlobalInit)],
-            inner: Cell::new(VarInner { readonly: false }),
+    fn try_from_ir(g: GlobalObj) -> Option<Self> {
+        match g {
+            GlobalObj::Var(v) => Some(v),
+            _ => None,
         }
     }
-
-    fn get_prefix(&self) -> &'static str {
-        let is_extern = matches!(self.get_init(), ValueSSA::None);
-        let is_const = self.is_readonly();
-        let linkage = if is_extern { Linkage::Extern } else { self.common.linkage.get() };
-
-        match (is_const, linkage) {
-            (true, Linkage::Extern) => "external constant",
-            (true, Linkage::DSOLocal) => "dso_local constant",
-            (true, Linkage::Private) => "internal constant",
-            (false, Linkage::Extern) => "extern global",
-            (false, Linkage::DSOLocal) => "dso_local global",
-            (false, Linkage::Private) => "internal global",
-        }
+    fn into_ir(self) -> GlobalObj {
+        GlobalObj::Var(self)
     }
 }
