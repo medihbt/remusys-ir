@@ -1,5 +1,6 @@
 use crate::ir::{
-    BlockID, BlockObj, ExprID, ExprObj, GlobalID, GlobalObj, InstID, InstObj, Use, UseID,
+    BlockID, BlockObj, ExprID, ExprObj, GlobalID, GlobalObj, ISubExprID, ISubGlobalID, ISubInstID,
+    InstID, InstObj, JumpTarget, JumpTargetID, Use, UseID,
 };
 use mtb_entity::{EntityAlloc, PtrID};
 
@@ -9,6 +10,7 @@ pub struct IRAllocs {
     pub globals: EntityAlloc<GlobalObj>,
     pub blocks: EntityAlloc<BlockObj>,
     pub uses: EntityAlloc<Use>,
+    pub jts: EntityAlloc<JumpTarget>,
 }
 
 impl IRAllocs {
@@ -19,6 +21,7 @@ impl IRAllocs {
             globals: EntityAlloc::new(),
             blocks: EntityAlloc::new(),
             uses: EntityAlloc::new(),
+            jts: EntityAlloc::new(),
         }
     }
 
@@ -27,8 +30,9 @@ impl IRAllocs {
             exprs: EntityAlloc::with_capacity(base_cap * 4),
             insts: EntityAlloc::with_capacity(base_cap * 4),
             globals: EntityAlloc::with_capacity(base_cap),
-            blocks: EntityAlloc::with_capacity(base_cap * 2),
-            uses: EntityAlloc::with_capacity(base_cap * 8),
+            blocks: EntityAlloc::with_capacity(base_cap),
+            uses: EntityAlloc::with_capacity(base_cap * 12),
+            jts: EntityAlloc::with_capacity(base_cap * 4),
         }
     }
 }
@@ -41,6 +45,8 @@ pub trait IPoolAllocated: Sized {
 
     fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID;
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self>;
+
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs);
 }
 
 impl IPoolAllocated for BlockObj {
@@ -59,6 +65,9 @@ impl IPoolAllocated for BlockObj {
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id.0
     }
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
+        id.dispose(ir_allocs);
+    }
 }
 impl IPoolAllocated for InstObj {
     type ModuleID = InstID;
@@ -75,6 +84,9 @@ impl IPoolAllocated for InstObj {
     }
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id
+    }
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
+        id.dispose(ir_allocs);
     }
 }
 impl IPoolAllocated for ExprObj {
@@ -93,6 +105,9 @@ impl IPoolAllocated for ExprObj {
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id
     }
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
+        id.dispose(ir_allocs);
+    }
 }
 impl IPoolAllocated for GlobalObj {
     type ModuleID = GlobalID;
@@ -110,6 +125,9 @@ impl IPoolAllocated for GlobalObj {
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id
     }
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
+        id.dispose(ir_allocs);
+    }
 }
 impl IPoolAllocated for Use {
     type ModuleID = UseID;
@@ -126,5 +144,48 @@ impl IPoolAllocated for Use {
     }
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id.0
+    }
+    fn dispose_id(id: Self::ModuleID, allocs: &IRAllocs) {
+        id.deref_ir(allocs).dispose(allocs);
+    }
+}
+impl IPoolAllocated for JumpTarget {
+    type ModuleID = JumpTargetID;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.jts
+    }
+    fn alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.jts
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID {
+        JumpTargetID(raw)
+    }
+    fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
+        id.0
+    }
+    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
+        id.dispose(ir_allocs);
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PoolAllocatedValue {
+    Block(BlockID),
+    Inst(InstID),
+    Expr(ExprID),
+    Global(GlobalID),
+    Use(UseID),
+    JumpTarget(JumpTargetID),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thread_safety() {
+        fn assert_send<T: Send>() {}
+        assert_send::<IRAllocs>();
     }
 }

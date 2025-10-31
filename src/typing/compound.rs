@@ -90,6 +90,16 @@ pub enum AggrType {
     Alias(StructAliasID),
     FixVec(FixVecType),
 }
+impl Debug for AggrType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AggrType::Array(id) => id.fmt(f),
+            AggrType::Struct(id) => id.fmt(f),
+            AggrType::Alias(id) => id.fmt(f),
+            AggrType::FixVec(fv) => fv.fmt(f),
+        }
+    }
+}
 
 impl INullableValue for AggrType {
     fn new_null() -> Self {

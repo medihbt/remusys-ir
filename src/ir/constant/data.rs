@@ -1,6 +1,6 @@
 use crate::{
     base::APInt,
-    ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
+    ir::{IRAllocs, ISubValueSSA, UserList, ValueClass, ValueSSA},
     typing::{FPKind, IValType, ScalarType, ValTypeID},
 };
 use std::{
@@ -62,9 +62,12 @@ impl Eq for ConstData {
 }
 
 impl ISubValueSSA for ConstData {
-    fn try_from_ir(value: ValueSSA) -> Option<Self> {
-        match value {
-            ValueSSA::ConstData(data) => Some(data),
+    fn get_class(self) -> ValueClass {
+        ValueClass::ConstData
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::ConstData(cd) => Some(cd),
             _ => None,
         }
     }
@@ -82,33 +85,11 @@ impl ISubValueSSA for ConstData {
         }
     }
 
-    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
-        Some((&self).get_valtype_noalloc())
+    fn can_trace(self) -> bool {
+        false
     }
-
-    fn is_zero(&self, _: &IRAllocs) -> bool {
-        self.is_zero()
-    }
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        match self {
-            ConstData::Undef(_) => writer.write_str("undef"),
-            ConstData::Zero(ty) => match ty {
-                ScalarType::Ptr => writer.write_str("null"),
-                ScalarType::Int(_) => writer.write_str("0"),
-                ScalarType::Float(_) => writer.write_str("0.0"),
-            },
-            ConstData::PtrNull(_) => writer.write_str("null"),
-            ConstData::Int(apint) => {
-                write!(writer.output.borrow_mut(), "{}", apint.as_signed())
-            }
-            ConstData::Float(FPKind::Ieee32, fp) => {
-                write!(writer.output.borrow_mut(), "{:.20e}", *fp as f32)
-            }
-            ConstData::Float(FPKind::Ieee64, fp) => {
-                write!(writer.output.borrow_mut(), "{:.20e}", *fp)
-            }
-        }
+    fn try_get_users(self, _allocs: &IRAllocs) -> Option<&UserList> {
+        None
     }
 }
 

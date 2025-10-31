@@ -5,7 +5,10 @@ use crate::{
         ValTypeClass, ValTypeID,
     },
 };
-use std::{cell::{Cell, Ref}, io::Write};
+use std::{
+    cell::{Cell, Ref},
+    io::Write,
+};
 
 #[derive(Debug, Clone)]
 pub struct ArrayTypeObj {

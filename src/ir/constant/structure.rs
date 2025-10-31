@@ -1,10 +1,12 @@
 use crate::{
+    impl_traceable_from_common,
     ir::{
-        ExprObj, IRAllocs, IUser, OperandSet, UseID, UseKind,
+        ExprID, ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
         constant::expr::{ExprCommon, ISubExpr},
     },
-    typing::{StructTypeID, TypeContext},
+    typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
+use mtb_entity::PtrID;
 
 #[derive(Clone)]
 pub struct StructExpr {
@@ -12,6 +14,7 @@ pub struct StructExpr {
     pub structty: StructTypeID,
     pub fields: Box<[UseID]>,
 }
+impl_traceable_from_common!(StructExpr, false);
 impl IUser for StructExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.fields)
@@ -26,6 +29,9 @@ impl ISubExpr for StructExpr {
     }
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        self.structty.into_ir()
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
         if let ExprObj::Struct(struc) = expr { Some(struc) } else { None }
@@ -53,5 +59,32 @@ impl StructExpr {
             fields.into_boxed_slice()
         };
         Self { common: ExprCommon::none(), structty, fields }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructExprID(pub ExprID);
+
+impl ISubExprID for StructExprID {
+    type ExprObjT = StructExpr;
+
+    fn raw_from_ir(id: PtrID<ExprObj>) -> Self {
+        StructExprID(id)
+    }
+    fn into_ir(self) -> PtrID<ExprObj> {
+        self.0
+    }
+}
+impl StructExprID {
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, structty: StructTypeID) -> Self {
+        let expr = StructExpr::new_uninit(allocs, tctx, structty);
+        Self::new(allocs, expr)
+    }
+
+    pub fn get_struct_type(self, allocs: &IRAllocs) -> StructTypeID {
+        self.deref_ir(allocs).structty
+    }
+    pub fn get_fields(self, allocs: &IRAllocs) -> &[UseID] {
+        &self.deref_ir(allocs).fields
     }
 }

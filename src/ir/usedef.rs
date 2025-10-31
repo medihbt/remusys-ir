@@ -1,6 +1,9 @@
-use crate::ir::{
-    ExprID, GlobalID, IRAllocs, InstID, ValueClass, ValueSSA, constant::expr::ISubExprID,
-    global::ISubGlobalID, inst::ISubInstID,
+use crate::{
+    ir::{
+        ExprID, GlobalID, IRAllocs, ISubValueSSA, InstID, ValueClass, ValueSSA,
+        constant::expr::ISubExprID, global::ISubGlobalID, inst::ISubInstID,
+    },
+    typing::ValTypeID,
 };
 use mtb_entity::{
     EntityAlloc, EntityListHead, EntityRingList, EntityRingListReadIter, IEntityAllocID,
@@ -99,7 +102,7 @@ impl<'ir> IntoIterator for OperandSet<'ir> {
     }
 }
 
-pub trait IUser: Sized {
+pub trait IUser: ITraceableValue {
     /// 获取该用户的所有操作数.
     fn get_operands(&self) -> OperandSet<'_>;
 
@@ -116,6 +119,22 @@ pub trait IUser: Sized {
 
     fn operands_iter(&self) -> OperandUseIter<'_> {
         self.get_operands().into_iter()
+    }
+
+    fn user_dispose(&self, allocs: &IRAllocs) {
+        let operands = self.get_operands();
+        for use_id in operands.into_iter() {
+            use_id.clean_operand(allocs);
+        }
+        self.traceable_dispose(allocs);
+    }
+    fn user_init_self_id(&self, allocs: &IRAllocs, id: impl Into<UserID>) {
+        let user_id = id.into();
+        self.traceable_init_self_id(allocs, user_id.into());
+        let operands = self.get_operands();
+        for use_id in operands.into_iter() {
+            use_id.set_user(allocs, Some(user_id));
+        }
     }
 }
 
@@ -141,7 +160,58 @@ impl From<GlobalID> for UserID {
         UserID::Global(id)
     }
 }
+impl Into<ValueSSA> for UserID {
+    fn into(self) -> ValueSSA {
+        match self {
+            UserID::Expr(id) => ValueSSA::ConstExpr(id),
+            UserID::Inst(id) => ValueSSA::Inst(id),
+            UserID::Global(id) => ValueSSA::Global(id),
+        }
+    }
+}
+impl ISubValueSSA for UserID {
+    fn get_class(self) -> ValueClass {
+        match self {
+            UserID::Expr(_) => ValueClass::ConstExpr,
+            UserID::Inst(_) => ValueClass::Inst,
+            UserID::Global(_) => ValueClass::Global,
+        }
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::ConstExpr(id) => Some(UserID::Expr(id)),
+            ValueSSA::Inst(id) => Some(UserID::Inst(id)),
+            ValueSSA::Global(id) => Some(UserID::Global(id)),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> ValueSSA {
+        match self {
+            UserID::Expr(id) => ValueSSA::ConstExpr(id),
+            UserID::Inst(id) => ValueSSA::Inst(id),
+            UserID::Global(id) => ValueSSA::Global(id),
+        }
+    }
 
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
+        match self {
+            UserID::Expr(id) => id.get_valtype(allocs),
+            UserID::Inst(id) => id.get_valtype(allocs),
+            UserID::Global(id) => id.get_valtype(allocs),
+        }
+    }
+
+    fn can_trace(self) -> bool {
+        true
+    }
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        match self {
+            UserID::Expr(id) => id.try_get_users(allocs),
+            UserID::Inst(id) => id.try_get_users(allocs),
+            UserID::Global(id) => id.try_get_users(allocs),
+        }
+    }
+}
 impl UserID {
     pub fn get_operands(self, allocs: &IRAllocs) -> OperandSet<'_> {
         match self {
@@ -154,7 +224,7 @@ impl UserID {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum UseKind {
-    Sentinal,
+    Sentinel,
     BinOpLhs,
     BinOpRhs,
     CallOpCallee,
@@ -200,7 +270,7 @@ impl UseKind {
     }
     pub fn is_inst_operand(&self) -> bool {
         match self {
-            UseKind::Sentinal
+            UseKind::Sentinel
             | UseKind::GlobalInit
             | UseKind::ArrayElem(_)
             | UseKind::StructField(_)
@@ -233,14 +303,14 @@ impl IEntityRingListNode for Use {
         self.list_head.set(head);
     }
 
-    fn is_sentinal(&self) -> bool {
-        matches!(self.kind.get(), UseKind::Sentinal)
+    fn is_sentinel(&self) -> bool {
+        matches!(self.kind.get(), UseKind::Sentinel)
     }
 
-    fn new_sentinal() -> Self {
+    fn new_sentinel() -> Self {
         Self {
             list_head: Cell::new(EntityListHead::none()),
-            kind: Cell::new(UseKind::Sentinal),
+            kind: Cell::new(UseKind::Sentinel),
             user: Cell::new(None),
             operand: Cell::new(ValueSSA::None),
         }
@@ -249,6 +319,14 @@ impl IEntityRingListNode for Use {
     fn ring_list_node_dispose(&self, alloc: &EntityAlloc<Self>) {
         self.detach(alloc)
             .expect("Use ring list node dispose detach failed");
+        self.user.set(None);
+        self.operand.set(ValueSSA::None);
+    }
+}
+impl Use {
+    pub fn dispose(&self, allocs: &IRAllocs) {
+        self.detach(&allocs.uses)
+            .expect("Use dispose detach failed");
         self.user.set(None);
         self.operand.set(ValueSSA::None);
     }
@@ -295,12 +373,15 @@ impl UseID {
     pub fn raw_set_operand(self, allocs: &IRAllocs, operand: ValueSSA) {
         self.deref_ir(allocs).operand.set(operand);
     }
-    pub fn set_operand(self, allocs: &IRAllocs, operand: ValueSSA) {
+    pub fn set_operand(self, allocs: &IRAllocs, operand: ValueSSA) -> bool {
         let obj = self.deref_ir(allocs);
         if obj.operand.get() == operand {
-            return;
+            return true;
         }
-        todo!("Wait until `ITraceableValue` is implemented");
+        obj.detach(&allocs.uses)
+            .expect("Use set_operand detach failed");
+        obj.operand.set(operand);
+        operand.try_add_user(allocs, self)
     }
     pub fn clean_operand(self, allocs: &IRAllocs) {
         let obj = self.deref_ir(allocs);
@@ -352,7 +433,7 @@ pub trait ITraceableValue {
     }
 
     /// 这个 Value 是否具有引用唯一性.
-    fn has_single_reference_semantics(&self) -> bool;
+    fn has_unique_ref_semantics(&self) -> bool;
 
     fn add_user(&self, new_use: UseID, allocs: &IRAllocs) {
         self.users()
@@ -397,4 +478,44 @@ pub trait ITraceableValue {
         }
         false
     }
+
+    fn traceable_dispose(&self, allocs: &IRAllocs) {
+        let Some(users) = self.try_get_users() else {
+            return;
+        };
+        users.clean(&allocs.uses);
+        let sentinel = users.sentinel.deref(&allocs.uses);
+        sentinel.operand.set(ValueSSA::None);
+    }
+    fn traceable_init_self_id(&self, allocs: &IRAllocs, id: ValueSSA) {
+        self.users().forall_with_sentinel(&allocs.uses, |_, u| {
+            u.operand.set(id);
+            true
+        });
+    }
+}
+
+#[macro_export]
+macro_rules! impl_traceable_from_common {
+    ($TyName:ident, $has_unique_ref_semantics:expr) => {
+        impl $crate::ir::ITraceableValue for $TyName {
+            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
+                self.get_common().users.as_ref()
+            }
+
+            fn users(&self) -> &$crate::ir::UserList {
+                let Some(users) = &self.get_common().users else {
+                    panic!(concat!(
+                        stringify!($TyName),
+                        " users list is not initialized"
+                    ));
+                };
+                users
+            }
+
+            fn has_unique_ref_semantics(&self) -> bool {
+                $has_unique_ref_semantics
+            }
+        }
+    };
 }

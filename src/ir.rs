@@ -1,32 +1,53 @@
-mod attributes {}
+//! ## Remusys IR subsystem
+//!
+//! Core IR structures and utilities.
+
+mod attributes;
 mod block;
 mod cmp_cond;
 mod constant;
 mod global;
-mod managed {}
+mod jumping;
+mod managed;
 mod module;
 mod opcode;
 mod usedef;
-mod utils {}
+mod utils;
 
-pub mod checking {}
+pub mod checking {
+    //! IR checking utilities.
+}
 pub mod inst;
-pub mod snap_ir {}
+pub mod snap_ir {
+    //! Compact snapshot of IR structures for serialization and transmission.
+}
 
-use crate::typing::AggrType;
+use crate::{
+    base::INullableValue,
+    typing::{AggrType, IValType, ValTypeID},
+};
 
 pub use self::{
     block::{BlockID, BlockObj},
     cmp_cond::CmpCond,
     constant::{
-        array::ArrayExpr,
+        array::{ArrayExpr, ArrayExprID},
         data::ConstData,
-        expr::{ExprID, ExprObj, ISubExpr, ISubExprID},
-        structure::StructExpr,
+        expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
+        structure::{StructExpr, StructExprID},
+        vec::{FixVec, FixVecID},
     },
-    global::{GlobalID, GlobalObj, ISubGlobal, ISubGlobalID, var::GlobalVar},
+    global::{
+        GlobalCommon, GlobalID, GlobalObj, ISubGlobal, ISubGlobalID,
+        func::{FuncArg, FuncArgID, FuncID, FuncObj, IFuncUniqueUser, IFuncValue},
+        var::{GlobalVar, GlobalVarID},
+    },
     inst::{ISubInst, ISubInstID, InstID, InstObj},
-    module::{IPoolAllocated, IRAllocs},
+    jumping::{
+        ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
+        PredList,
+    },
+    module::{IPoolAllocated, IRAllocs, PoolAllocatedValue},
     opcode::{InstKind, Opcode},
     usedef::{
         ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,
@@ -46,14 +67,110 @@ pub enum ValueClass {
     Global,
 }
 
+pub trait ISubValueSSA: Copy {
+    fn get_class(self) -> ValueClass;
+    fn try_from_ir(ir: ValueSSA) -> Option<Self>;
+    fn into_ir(self) -> ValueSSA;
+    fn from_ir(ir: ValueSSA) -> Self {
+        match Self::try_from_ir(ir) {
+            Some(v) => v,
+            None => panic!(
+                "Invalid ValueSSA type for {}",
+                std::any::type_name::<Self>()
+            ),
+        }
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID;
+
+    fn can_trace(self) -> bool;
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList>;
+    fn try_add_user(self, allocs: &IRAllocs, user_use: UseID) -> bool {
+        let Some(users) = self.try_get_users(allocs) else {
+            return false;
+        };
+        users
+            .push_back_id(user_use.inner(), &allocs.uses)
+            .expect("Failed to add User to ValueSSA users");
+        true
+    }
+}
+pub trait IPtrValue {
+    fn get_ptr_pointee_type(&self) -> ValTypeID;
+    fn get_ptr_pointee_align(&self) -> u32;
+}
+pub trait IPtrUniqueUser: IUser {
+    fn get_operand_pointee_type(&self) -> ValTypeID;
+    fn get_operand_pointee_align(&self) -> u32;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueSSA {
     None,
     ConstData(ConstData),
     ConstExpr(ExprID),
     AggrZero(AggrType),
-    FuncArg(GlobalID, u32),
+    FuncArg(FuncID, u32),
     Block(BlockID),
     Inst(InstID),
     Global(GlobalID),
+}
+
+impl INullableValue for ValueSSA {
+    fn new_null() -> Self {
+        Self::None
+    }
+    fn is_null(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+impl ISubValueSSA for ValueSSA {
+    fn get_class(self) -> ValueClass {
+        match self {
+            Self::None => ValueClass::None,
+            Self::ConstData(_) => ValueClass::ConstData,
+            Self::ConstExpr(_) => ValueClass::ConstExpr,
+            Self::AggrZero(_) => ValueClass::AggrZero,
+            Self::FuncArg(..) => ValueClass::FuncArg,
+            Self::Block(_) => ValueClass::Block,
+            Self::Inst(_) => ValueClass::Inst,
+            Self::Global(_) => ValueClass::Global,
+        }
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        Some(ir)
+    }
+    fn into_ir(self) -> ValueSSA {
+        self
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
+        use ValueSSA::*;
+        match self {
+            None => ValTypeID::Void,
+            ConstData(data) => data.get_valtype(allocs),
+            ConstExpr(expr) => expr.get_valtype(allocs),
+            AggrZero(aggr) => aggr.into_ir(),
+            FuncArg(func, id) => FuncArg(func, id).get_valtype(allocs),
+            Block(_) => ValTypeID::Void,
+            Inst(inst) => inst.get_valtype(allocs),
+            Global(_) => ValTypeID::Ptr,
+        }
+    }
+
+    fn can_trace(self) -> bool {
+        use ValueSSA::*;
+        matches!(self, ConstExpr(_) | Block(_) | Inst(_) | Global(_))
+    }
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        use ValueSSA::*;
+        match self {
+            ConstExpr(expr) => expr.try_get_users(allocs),
+            FuncArg(func, id) => FuncArg(func, id).try_get_users(allocs),
+            Block(block) => block.try_get_users(allocs),
+            Inst(inst) => inst.try_get_users(allocs),
+            Global(global) => global.try_get_users(allocs),
+            _ => Option::None,
+        }
+    }
 }

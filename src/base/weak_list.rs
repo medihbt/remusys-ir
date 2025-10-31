@@ -74,7 +74,7 @@ pub trait IWeakListNode: Sized {
 }
 
 pub struct WeakList<T: IWeakListNode> {
-    pub sentinal: Rc<T>,
+    pub sentinel: Rc<T>,
 }
 
 impl<T: IWeakListNode + Debug> Debug for WeakList<T> {
@@ -86,9 +86,9 @@ impl<T: IWeakListNode + Debug> Debug for WeakList<T> {
 impl<T: IWeakListNode> Drop for WeakList<T> {
     fn drop(&mut self) {
         // 在链表析构时通知所有节点
-        let mut current = self.sentinal.get_next();
-        let sentinal_weak = Rc::downgrade(&self.sentinal);
-        while !current.ptr_eq(&sentinal_weak) {
+        let mut current = self.sentinel.get_next();
+        let sentinel_weak = Rc::downgrade(&self.sentinel);
+        while !current.ptr_eq(&sentinel_weak) {
             let Some(current_strong) = current.upgrade() else {
                 panic!("Found a non-existing node in WeakList during drop");
             };
@@ -104,32 +104,32 @@ impl<T: IWeakListNode> Drop for WeakList<T> {
 
 impl<T: IWeakListNode> WeakList<T> {
     pub fn new_empty() -> Self {
-        let sentinal = T::new_sentinel();
-        sentinal.set_prev(Rc::downgrade(&sentinal));
-        sentinal.set_next(Rc::downgrade(&sentinal));
-        WeakList { sentinal }
+        let sentinel = T::new_sentinel();
+        sentinel.set_prev(Rc::downgrade(&sentinel));
+        sentinel.set_next(Rc::downgrade(&sentinel));
+        WeakList { sentinel }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.sentinal
+        self.sentinel
             .get_next()
-            .ptr_eq(&Rc::downgrade(&self.sentinal))
+            .ptr_eq(&Rc::downgrade(&self.sentinel))
     }
     pub fn is_single(&self) -> bool {
-        let next = self.sentinal.get_next();
-        let prev = self.sentinal.get_prev();
-        let weak_sentinal = Rc::downgrade(&self.sentinal);
-        next.ptr_eq(&prev) && !next.ptr_eq(&weak_sentinal)
+        let next = self.sentinel.get_next();
+        let prev = self.sentinel.get_prev();
+        let weak_sentinel = Rc::downgrade(&self.sentinel);
+        next.ptr_eq(&prev) && !next.ptr_eq(&weak_sentinel)
     }
     pub fn is_multiple(&self) -> bool {
-        let next = self.sentinal.get_next();
-        let prev = self.sentinal.get_prev();
-        let weak_sentinal = Rc::downgrade(&self.sentinal);
-        !next.ptr_eq(&prev) && !next.ptr_eq(&weak_sentinal)
+        let next = self.sentinel.get_next();
+        let prev = self.sentinel.get_prev();
+        let weak_sentinel = Rc::downgrade(&self.sentinel);
+        !next.ptr_eq(&prev) && !next.ptr_eq(&weak_sentinel)
     }
 
     pub fn iter(&self) -> WeakListIter<T> {
-        WeakListIter { current: self.sentinal.get_next() }
+        WeakListIter { current: self.sentinel.get_next() }
     }
 
     pub fn push_front_rc(&self, node: &Rc<T>) {
@@ -142,7 +142,7 @@ impl<T: IWeakListNode> WeakList<T> {
         if node_rc.is_attached() {
             panic!("Tried to push an already attached node to WeakList");
         }
-        node_rc.attach(Rc::downgrade(&self.sentinal), self.sentinal.get_next());
+        node_rc.attach(Rc::downgrade(&self.sentinel), self.sentinel.get_next());
     }
 
     pub fn push_back_rc(&self, node: &Rc<T>) {
@@ -155,17 +155,17 @@ impl<T: IWeakListNode> WeakList<T> {
         if node_rc.is_attached() {
             panic!("Tried to push an already attached node to WeakList");
         }
-        node_rc.attach(self.sentinal.get_prev(), Rc::downgrade(&self.sentinal));
+        node_rc.attach(self.sentinel.get_prev(), Rc::downgrade(&self.sentinel));
     }
 
     pub fn len(&self) -> usize {
         self.iter().count()
     }
     pub fn clear(&self) {
-        let node = self.sentinal.get_next();
-        let sentinal_weak = Rc::downgrade(&self.sentinal);
+        let node = self.sentinel.get_next();
+        let sentinel_weak = Rc::downgrade(&self.sentinel);
         let mut current = node;
-        while !current.ptr_eq(&sentinal_weak) {
+        while !current.ptr_eq(&sentinel_weak) {
             if let Some(current_strong) = current.upgrade() {
                 let next = current_strong.get_next();
                 current_strong.detach();
@@ -179,21 +179,21 @@ impl<T: IWeakListNode> WeakList<T> {
         self.iter().any(|n| Rc::ptr_eq(&n, node))
     }
     pub fn front_weak(&self) -> Option<Weak<T>> {
-        let next = self.sentinal.get_next();
-        if next.ptr_eq(&Rc::downgrade(&self.sentinal)) { None } else { Some(next) }
+        let next = self.sentinel.get_next();
+        if next.ptr_eq(&Rc::downgrade(&self.sentinel)) { None } else { Some(next) }
     }
     pub fn front(&self) -> Option<Rc<T>> {
-        self.sentinal
+        self.sentinel
             .get_next()
             .upgrade()
             .and_then(|n| if n.is_sentinel() { None } else { Some(n) })
     }
     pub fn back_weak(&self) -> Option<Weak<T>> {
-        let prev = self.sentinal.get_prev();
-        if prev.ptr_eq(&Rc::downgrade(&self.sentinal)) { None } else { Some(prev) }
+        let prev = self.sentinel.get_prev();
+        if prev.ptr_eq(&Rc::downgrade(&self.sentinel)) { None } else { Some(prev) }
     }
     pub fn back(&self) -> Option<Rc<T>> {
-        self.sentinal
+        self.sentinel
             .get_prev()
             .upgrade()
             .and_then(|n| if n.is_sentinel() { None } else { Some(n) })
@@ -201,29 +201,29 @@ impl<T: IWeakListNode> WeakList<T> {
 
     /// 克隆一个视图, 但不克隆节点. UseList 在设计上就不支持深拷贝.
     pub fn clone_view(&self) -> Self {
-        WeakList { sentinal: self.sentinal.clone() }
+        WeakList { sentinel: self.sentinel.clone() }
     }
 
     /// 移动所有节点到另一个列表, 并清空自己.
     pub fn move_all_to(&self, other: &WeakList<T>, mut on_move: impl FnMut(&Rc<T>)) {
-        if Rc::ptr_eq(&self.sentinal, &other.sentinal) {
+        if Rc::ptr_eq(&self.sentinel, &other.sentinel) {
             return;
         }
-        let self_front = self.sentinal.get_next(); // 链表头
-        let self_back = self.sentinal.get_prev(); // 链表尾
+        let self_front = self.sentinel.get_next(); // 链表头
+        let self_back = self.sentinel.get_prev(); // 链表尾
 
-        if self_front.ptr_eq(&Rc::downgrade(&self.sentinal)) {
+        if self_front.ptr_eq(&Rc::downgrade(&self.sentinel)) {
             // 自己是空的, 没什么可搬的.
             return;
         }
 
         // 清空自己.
-        self.sentinal.set_next(Rc::downgrade(&self.sentinal));
-        self.sentinal.set_prev(Rc::downgrade(&self.sentinal));
+        self.sentinel.set_next(Rc::downgrade(&self.sentinel));
+        self.sentinel.set_prev(Rc::downgrade(&self.sentinel));
 
-        let other_back = other.sentinal.get_prev();
-        // 把自己的链表尾接到 other 的最后面 -- `sentinal.prev`.
-        other.sentinal.set_prev(self_back.clone());
+        let other_back = other.sentinel.get_prev();
+        // 把自己的链表尾接到 other 的最后面 -- `sentinel.prev`.
+        other.sentinel.set_prev(self_back.clone());
 
         // 把自己的链表头接到 other 表尾的后面 -- `other_back.next`.
         other_back.upgrade().map(|p| p.set_next(self_front.clone()));
@@ -231,14 +231,14 @@ impl<T: IWeakListNode> WeakList<T> {
         // 修正被转移链表的边界连接
         self_back
             .upgrade()
-            .map(|p| p.set_next(Rc::downgrade(&other.sentinal)));
+            .map(|p| p.set_next(Rc::downgrade(&other.sentinel)));
         self_front.upgrade().map(|p| p.set_prev(other_back.clone()));
 
         // 旧链表结点的前后指针不需要修正——头尾结点已经接到 new_list 上了, 中间结点的 prev/next 仍然有效.
 
         // 遍历所有被转移的结点, 调用 `on_move` 处理其他操作.
         let mut current = self_front;
-        let target_sentinel = Rc::downgrade(&other.sentinal);
+        let target_sentinel = Rc::downgrade(&other.sentinel);
         while !current.ptr_eq(&target_sentinel) {
             let Some(current_strong) = current.upgrade() else {
                 panic!("Found a non-existing node in WeakList during move_to");
@@ -258,12 +258,12 @@ impl<T: IWeakListNode> WeakList<T> {
         mut predicate: impl FnMut(&Rc<T>) -> bool,
         mut on_move: impl FnMut(&Rc<T>),
     ) {
-        if Rc::ptr_eq(&self.sentinal, &other.sentinal) {
+        if Rc::ptr_eq(&self.sentinel, &other.sentinel) {
             return;
         }
 
-        let mut current = self.sentinal.get_next();
-        let self_sentinel_weak = Rc::downgrade(&self.sentinal);
+        let mut current = self.sentinel.get_next();
+        let self_sentinel_weak = Rc::downgrade(&self.sentinel);
 
         while !current.ptr_eq(&self_sentinel_weak) {
             let Some(current_strong) = current.upgrade() else {

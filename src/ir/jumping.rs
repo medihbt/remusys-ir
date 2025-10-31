@@ -1,0 +1,225 @@
+use crate::{
+    base::MixRef,
+    ir::{BlockID, IRAllocs, ISubInst, ISubInstID, InstID},
+};
+use mtb_entity::{EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID};
+use std::{
+    cell::Cell,
+    collections::{BTreeSet, HashSet},
+};
+
+/// 跳转目标的类型，用于区分不同的控制流转移
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum JumpTargetKind {
+    /// 无效/哨兵类型，用于链表哨兵节点
+    None,
+    /// 无条件跳转
+    Jump,
+    /// 条件分支的真分支
+    BrTrue,
+    /// 条件分支的假分支
+    BrFalse,
+    /// Switch 语句的默认分支
+    SwitchDefault,
+    /// Switch 语句的具体 case 分支，值为 case 常量
+    SwitchCase(i64),
+}
+
+/// 跳转目标对象，连接终结指令和目标基本块
+///
+/// 每个跳转目标表示控制流图中的一条边，包含：
+/// - 跳转类型（无条件跳转、条件分支等）
+/// - 源终结指令的引用
+/// - 目标基本块的引用
+///
+/// 跳转目标通过弱引用链表连接，避免循环引用问题。
+pub struct JumpTarget {
+    node_head: Cell<EntityListHead<JumpTarget>>,
+    /// 跳转目标的类型
+    pub kind: JumpTargetKind,
+    /// 源终结指令的引用
+    pub terminator: Cell<Option<InstID>>,
+    /// 目标基本块的引用
+    pub block: Cell<Option<BlockID>>,
+}
+impl IEntityRingListNode for JumpTarget {
+    fn load_head(&self) -> EntityListHead<Self> {
+        self.node_head.get()
+    }
+    fn store_head(&self, head: EntityListHead<Self>) {
+        self.node_head.set(head);
+    }
+
+    fn is_sentinel(&self) -> bool {
+        self.kind == JumpTargetKind::None
+    }
+    fn new_sentinel() -> Self {
+        JumpTarget {
+            node_head: Cell::new(EntityListHead::none()),
+            kind: JumpTargetKind::None,
+            terminator: Cell::new(None),
+            block: Cell::new(None),
+        }
+    }
+}
+impl JumpTarget {
+    pub fn new(kind: JumpTargetKind) -> Self {
+        JumpTarget {
+            node_head: Cell::new(EntityListHead::none()),
+            kind,
+            terminator: Cell::new(None),
+            block: Cell::new(None),
+        }
+    }
+
+    pub fn dispose(&self, allocs: &IRAllocs) {
+        if self.block.get().is_none() {
+            return;
+        }
+        self.detach(&allocs.jts)
+            .expect("JumpTarget dispose detach failed");
+        self.terminator.set(None);
+        self.block.set(None);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct JumpTargetID(pub PtrID<JumpTarget>);
+
+impl JumpTargetID {
+    pub fn inner(self) -> PtrID<JumpTarget> {
+        self.0
+    }
+
+    pub fn deref(self, allocs: &IRAllocs) -> &JumpTarget {
+        self.0.deref(&allocs.jts)
+    }
+
+    pub fn get_kind(self, allocs: &IRAllocs) -> JumpTargetKind {
+        self.deref(allocs).kind
+    }
+    pub fn get_terminator(self, allocs: &IRAllocs) -> Option<InstID> {
+        self.deref(allocs).terminator.get()
+    }
+    pub fn set_terminator(self, allocs: &IRAllocs, inst: InstID) {
+        self.deref(allocs).terminator.set(Some(inst));
+    }
+
+    pub fn get_block(self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.deref(allocs).block.get()
+    }
+    pub fn raw_set_block(self, allocs: &IRAllocs, block: BlockID) {
+        self.deref(allocs).block.set(Some(block));
+    }
+    pub fn set_block(self, allocs: &IRAllocs, block: BlockID) {
+        let jt_obj = self.deref(allocs);
+        if jt_obj.block.get() == Some(block) {
+            return;
+        }
+        jt_obj
+            .detach(&allocs.jts)
+            .expect("Failed to detach JumpTarget from its previous block");
+        jt_obj.block.set(Some(block));
+        block.deref_ir(allocs).add_jump_target(allocs, self);
+    }
+    pub fn clean_block(self, allocs: &IRAllocs) {
+        let obj = self.deref(allocs);
+        if let None = obj.block.get() {
+            return;
+        }
+        obj.block.set(None);
+        obj.detach(&allocs.jts)
+            .expect("Failed to detach JumpTarget from its block");
+    }
+
+    pub fn new(allocs: &IRAllocs, kind: JumpTargetKind) -> Self {
+        JumpTargetID(allocs.jts.allocate(JumpTarget::new(kind)))
+    }
+
+    pub fn dispose(self, allocs: &IRAllocs) {
+        self.deref(allocs).dispose(allocs);
+    }
+}
+
+pub type PredList = EntityRingList<JumpTarget>;
+pub type JumpTargets<'ir> = MixRef<'ir, [JumpTargetID]>;
+
+pub trait ITerminatorInst: ISubInst {
+    fn get_jts(&self) -> JumpTargets<'_>;
+    fn jts_mut(&mut self) -> &mut [JumpTargetID];
+    fn terminates_function(&self) -> bool {
+        self.get_jts().is_empty()
+    }
+
+    fn n_jump_targets(&self) -> usize {
+        self.get_jts().len()
+    }
+    fn blocks_iter<'ir>(
+        &'ir self,
+        allocs: &'ir IRAllocs,
+    ) -> impl Iterator<Item = Option<BlockID>> + 'ir {
+        self.get_jts()
+            .into_iter()
+            .map(|jt_id| jt_id.get_block(allocs))
+    }
+
+    fn dedup_dump_blocks(&self, allocs: &IRAllocs, sorts: bool) -> Vec<Option<BlockID>> {
+        let self_iter = self.blocks_iter(allocs);
+        if sorts {
+            let blocks = BTreeSet::from_iter(self_iter);
+            blocks.into_iter().collect()
+        } else {
+            let mut blocks = HashSet::new();
+            let mut has_none = false;
+            for b in self_iter {
+                match b {
+                    Some(b) => {
+                        blocks.insert(b);
+                    }
+                    None => {
+                        has_none = true;
+                    }
+                }
+            }
+            let mut res = Vec::with_capacity(blocks.len() + if has_none { 1 } else { 0 });
+            if has_none {
+                res.push(None);
+            }
+            res.extend(blocks.into_iter().map(Some));
+            res
+        }
+    }
+
+    fn has_multiple_blocks(&self, allocs: &IRAllocs) -> bool {
+        let mut first = None;
+        for b in self.blocks_iter(allocs) {
+            match first {
+                Some(f) if f != b => return true,
+                None => first = Some(b),
+                _ => continue,
+            }
+        }
+        false
+    }
+}
+
+pub trait ITerminatorID: ISubInstID<InstObjT: ITerminatorInst> {
+    fn get_jts(self, allocs: &IRAllocs) -> JumpTargets<'_> {
+        self.deref_ir(allocs).get_jts()
+    }
+    fn jts_mut(self, allocs: &mut IRAllocs) -> &mut [JumpTargetID] {
+        self.deref_ir_mut(allocs).jts_mut()
+    }
+    fn blocks_iter<'ir>(
+        self,
+        allocs: &'ir IRAllocs,
+    ) -> impl Iterator<Item = Option<BlockID>> + 'ir {
+        self.deref_ir(allocs).blocks_iter(allocs)
+    }
+    fn dedup_dump_blocks(self, allocs: &IRAllocs, sorts: bool) -> Vec<Option<BlockID>> {
+        self.deref_ir(allocs).dedup_dump_blocks(allocs, sorts)
+    }
+    fn has_multiple_blocks(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).has_multiple_blocks(allocs)
+    }
+}

@@ -1,6 +1,10 @@
-use crate::ir::{
-    IRAllocs, ITraceableValue, IUser, OperandSet, UseID, UserList,
-    constant::{array::ArrayExpr, structure::StructExpr},
+use crate::{
+    impl_traceable_from_common,
+    ir::{
+        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        constant::{array::ArrayExpr, structure::StructExpr},
+    },
+    typing::ValTypeID,
 };
 use mtb_entity::{IEntityAllocID, PtrID};
 
@@ -28,9 +32,13 @@ pub trait ISubExpr: IUser {
     fn get_common(&self) -> &ExprCommon;
     fn common_mut(&mut self) -> &mut ExprCommon;
 
+    fn get_valtype(&self) -> ValTypeID;
+
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self>;
     fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self>;
-    fn try_from_ir(expr: ExprObj) -> Option<Self>;
+    fn try_from_ir(expr: ExprObj) -> Option<Self>
+    where
+        Self: Sized;
     fn into_ir(self) -> ExprObj;
 
     fn from_ir_ref(expr: &ExprObj) -> &Self {
@@ -39,16 +47,15 @@ pub trait ISubExpr: IUser {
     fn from_ir_mut(expr: &mut ExprObj) -> &mut Self {
         Self::try_from_ir_mut(expr).expect("Invalid ExprObj type for ISubExpr")
     }
-    fn from_ir(expr: ExprObj) -> Self {
+    fn from_ir(expr: ExprObj) -> Self
+    where
+        Self: Sized,
+    {
         Self::try_from_ir(expr).expect("Invalid ExprObj type for ISubExpr")
     }
-}
-impl<T: ISubExpr> ITraceableValue for T {
-    fn users(&self) -> &UserList {
-        self.get_common().users.as_ref().unwrap()
-    }
-    fn has_single_reference_semantics(&self) -> bool {
-        false
+
+    fn dispose(&self, allocs: &IRAllocs) {
+        self.user_dispose(allocs);
     }
 }
 
@@ -79,21 +86,28 @@ pub trait ISubExprID: Copy {
         let id = allocs.exprs.allocate(obj);
         Self::raw_from_ir(id)
     }
+
+    fn dispose(self, allocs: &IRAllocs) {
+        self.deref_ir(allocs).dispose(allocs);
+    }
 }
 
 #[derive(Clone)]
 pub enum ExprObj {
     Array(ArrayExpr),
     Struct(StructExpr),
+    FixVec(FixVec),
 }
 pub type ExprID = PtrID<ExprObj>;
 
+impl_traceable_from_common!(ExprObj, false);
 impl IUser for ExprObj {
     fn get_operands(&self) -> OperandSet<'_> {
         use ExprObj::*;
         match self {
             Array(arr) => arr.get_operands(),
             Struct(struc) => struc.get_operands(),
+            FixVec(vec) => vec.get_operands(),
         }
     }
     fn operands_mut(&mut self) -> &mut [UseID] {
@@ -101,6 +115,7 @@ impl IUser for ExprObj {
         match self {
             Array(arr) => arr.operands_mut(),
             Struct(struc) => struc.operands_mut(),
+            FixVec(vec) => vec.operands_mut(),
         }
     }
 }
@@ -110,6 +125,7 @@ impl ISubExpr for ExprObj {
         match self {
             Array(arr) => &arr.common,
             Struct(struc) => &struc.common,
+            FixVec(vec) => &vec.common,
         }
     }
     fn common_mut(&mut self) -> &mut ExprCommon {
@@ -117,6 +133,15 @@ impl ISubExpr for ExprObj {
         match self {
             Array(arr) => &mut arr.common,
             Struct(struc) => &mut struc.common,
+            FixVec(vec) => &mut vec.common,
+        }
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        use ExprObj::*;
+        match self {
+            Array(arr) => arr.get_valtype(),
+            Struct(struc) => struc.get_valtype(),
+            FixVec(vec) => vec.get_valtype(),
         }
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -140,5 +165,30 @@ impl ISubExprID for ExprID {
     }
     fn into_ir(self) -> PtrID<ExprObj> {
         self
+    }
+}
+impl ISubValueSSA for ExprID {
+    fn get_class(self) -> ValueClass {
+        ValueClass::ConstExpr
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::ConstExpr(id) => Some(id),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::ConstExpr(self)
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).get_valtype()
+    }
+
+    fn can_trace(self) -> bool {
+        true
+    }
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        Some(&self.deref_ir(allocs).get_common().users.as_ref().unwrap())
     }
 }
