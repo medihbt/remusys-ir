@@ -1,6 +1,9 @@
 use crate::{
     impl_traceable_from_common,
-    ir::{ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID, UseKind},
+    ir::{
+        ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID,
+        UseKind,
+    },
     typing::{FixVecType, IValType, ValTypeID},
 };
 use mtb_entity::PtrID;

@@ -1,7 +1,7 @@
 use crate::{
     ir::{
         GlobalID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-        JumpTargetID, JumpTargets, PredList, UserList, ValueClass, ValueSSA,
+        JumpTargetID, JumpTargets, PredList, TerminatorID, UserList, ValueClass, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -158,6 +158,18 @@ impl BlockObj {
             .push_back_id(inst_id, &allocs.insts)
             .expect("Failed to add new terminator InstID to BlockObj insts");
         old_terminator
+    }
+    pub fn get_terminator(&self, allocs: &IRAllocs) -> TerminatorID {
+        let back = self
+            .get_body()
+            .insts
+            .get_back_id(&allocs.insts)
+            .expect("Attempted to get terminator of BlockObj without terminator");
+        TerminatorID::try_from_ir(allocs, back)
+            .expect("Terminator InstID of BlockObj is not a valid TerminatorID")
+    }
+    pub fn set_terminator(&self, allocs: &IRAllocs, term_id: TerminatorID) -> Option<InstID> {
+        self.set_terminator_inst(allocs, term_id.into_ir())
     }
 
     pub fn try_get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {

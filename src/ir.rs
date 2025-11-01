@@ -18,9 +18,6 @@ pub mod checking {
     //! IR checking utilities.
 }
 pub mod inst;
-pub mod snap_ir {
-    //! Compact snapshot of IR structures for serialization and transmission.
-}
 
 use crate::{
     base::INullableValue,
@@ -42,12 +39,15 @@ pub use self::{
         func::{FuncArg, FuncArgID, FuncID, FuncObj, IFuncUniqueUser, IFuncValue},
         var::{GlobalVar, GlobalVarID},
     },
-    inst::{ISubInst, ISubInstID, InstID, InstObj},
+    inst::{ISubInst, ISubInstID, InstCommon, InstID, InstObj},
     jumping::{
         ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
-        PredList,
+        JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
-    module::{IPoolAllocated, IRAllocs, PoolAllocatedValue},
+    module::{
+        Module,
+        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedValue},
+    },
     opcode::{InstKind, Opcode},
     usedef::{
         ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,

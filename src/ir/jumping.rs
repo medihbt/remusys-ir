@@ -1,6 +1,12 @@
 use crate::{
-    base::MixRef,
-    ir::{BlockID, IRAllocs, ISubInst, ISubInstID, InstID},
+    base::{MixRef, MixRefIter},
+    ir::{
+        BlockID, IRAllocs, ISubInst, ISubInstID, InstID, InstObj,
+        inst::{
+            BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
+            UnreachableInst, UnreachableInstID,
+        },
+    },
 };
 use mtb_entity::{EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID};
 use std::{
@@ -144,6 +150,27 @@ impl JumpTargetID {
 pub type PredList = EntityRingList<JumpTarget>;
 pub type JumpTargets<'ir> = MixRef<'ir, [JumpTargetID]>;
 
+#[derive(Clone)]
+pub struct JumpTargetsBlockIter<'ir> {
+    jts: MixRefIter<'ir, JumpTargetID>,
+    allocs: &'ir IRAllocs,
+}
+impl<'ir> Iterator for JumpTargetsBlockIter<'ir> {
+    type Item = Option<BlockID>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.jts.next().map(|jt_id| jt_id.get_block(self.allocs))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.jts.size_hint()
+    }
+}
+impl<'ir> JumpTargetsBlockIter<'ir> {
+    pub fn new(jts: JumpTargets<'ir>, allocs: &'ir IRAllocs) -> Self {
+        JumpTargetsBlockIter { jts: jts.into_iter(), allocs }
+    }
+}
+
 pub trait ITerminatorInst: ISubInst {
     fn get_jts(&self) -> JumpTargets<'_>;
     fn jts_mut(&mut self) -> &mut [JumpTargetID];
@@ -154,13 +181,8 @@ pub trait ITerminatorInst: ISubInst {
     fn n_jump_targets(&self) -> usize {
         self.get_jts().len()
     }
-    fn blocks_iter<'ir>(
-        &'ir self,
-        allocs: &'ir IRAllocs,
-    ) -> impl Iterator<Item = Option<BlockID>> + 'ir {
-        self.get_jts()
-            .into_iter()
-            .map(|jt_id| jt_id.get_block(allocs))
+    fn blocks_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> JumpTargetsBlockIter<'ir> {
+        JumpTargetsBlockIter::new(self.get_jts(), allocs)
     }
 
     fn dedup_dump_blocks(&self, allocs: &IRAllocs, sorts: bool) -> Vec<Option<BlockID>> {
@@ -210,10 +232,7 @@ pub trait ITerminatorID: ISubInstID<InstObjT: ITerminatorInst> {
     fn jts_mut(self, allocs: &mut IRAllocs) -> &mut [JumpTargetID] {
         self.deref_ir_mut(allocs).jts_mut()
     }
-    fn blocks_iter<'ir>(
-        self,
-        allocs: &'ir IRAllocs,
-    ) -> impl Iterator<Item = Option<BlockID>> + 'ir {
+    fn blocks_iter(self, allocs: &IRAllocs) -> JumpTargetsBlockIter<'_> {
         self.deref_ir(allocs).blocks_iter(allocs)
     }
     fn dedup_dump_blocks(self, allocs: &IRAllocs, sorts: bool) -> Vec<Option<BlockID>> {
@@ -221,5 +240,70 @@ pub trait ITerminatorID: ISubInstID<InstObjT: ITerminatorInst> {
     }
     fn has_multiple_blocks(self, allocs: &IRAllocs) -> bool {
         self.deref_ir(allocs).has_multiple_blocks(allocs)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TerminatorID {
+    Unreachable(UnreachableInstID),
+    Ret(RetInstID),
+    Jump(JumpInstID),
+    Br(BrInstID),
+    Switch(SwitchInstID),
+}
+#[derive(Clone, Copy)]
+pub enum TerminatorObj<'ir> {
+    Unreachable(&'ir UnreachableInst),
+    Ret(&'ir RetInst),
+    Jump(&'ir JumpInst),
+    Br(&'ir BrInst),
+    Switch(&'ir SwitchInst),
+}
+impl TerminatorID {
+    pub fn try_from_ir(allocs: &IRAllocs, inst_id: impl ISubInstID) -> Option<Self> {
+        use TerminatorID::*;
+        let inst_id = inst_id.into_ir();
+        match inst_id.deref_ir(allocs) {
+            InstObj::Unreachable(_) => Some(Unreachable(UnreachableInstID(inst_id))),
+            InstObj::Ret(_) => Some(Ret(RetInstID(inst_id))),
+            InstObj::Jump(_) => Some(Jump(JumpInstID(inst_id))),
+            InstObj::Br(_) => Some(Br(BrInstID(inst_id))),
+            InstObj::Switch(_) => Some(Switch(SwitchInstID(inst_id))),
+            _ => None,
+        }
+    }
+    pub fn into_ir(self) -> InstID {
+        use TerminatorID::*;
+        match self {
+            Unreachable(id) => id.into_ir(),
+            Ret(id) => id.into_ir(),
+            Jump(id) => id.into_ir(),
+            Br(id) => id.into_ir(),
+            Switch(id) => id.into_ir(),
+        }
+    }
+
+    pub fn deref_ir(self, allocs: &IRAllocs) -> TerminatorObj<'_> {
+        use TerminatorID::*;
+        match self {
+            Unreachable(id) => TerminatorObj::Unreachable(id.deref_ir(allocs)),
+            Ret(id) => TerminatorObj::Ret(id.deref_ir(allocs)),
+            Jump(id) => TerminatorObj::Jump(id.deref_ir(allocs)),
+            Br(id) => TerminatorObj::Br(id.deref_ir(allocs)),
+            Switch(id) => TerminatorObj::Switch(id.deref_ir(allocs)),
+        }
+    }
+
+    pub fn get_jts(self, allocs: &IRAllocs) -> JumpTargets<'_> {
+        match self.deref_ir(allocs) {
+            TerminatorObj::Unreachable(inst) => inst.get_jts(),
+            TerminatorObj::Ret(inst) => inst.get_jts(),
+            TerminatorObj::Jump(inst) => inst.get_jts(),
+            TerminatorObj::Br(inst) => inst.get_jts(),
+            TerminatorObj::Switch(inst) => inst.get_jts(),
+        }
+    }
+    pub fn blocks_iter(self, allocs: &IRAllocs) -> JumpTargetsBlockIter<'_> {
+        JumpTargetsBlockIter::new(self.get_jts(allocs), allocs)
     }
 }

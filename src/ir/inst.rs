@@ -36,8 +36,8 @@ mod phi;
 mod select;
 
 pub use self::{
-    alloca::*, amormw::*, binop::*, br::*, call::*, cast::*, cmp::*, jump::*, load::*, phi::*,
-    ret::*, select::*, store::*, switch::*, unreachable::*,
+    alloca::*, amormw::*, binop::*, br::*, call::*, cast::*, cmp::*, gep::*, jump::*, load::*,
+    phi::*, ret::*, select::*, store::*, switch::*, unreachable::*,
 };
 
 pub struct InstCommon {
@@ -297,6 +297,7 @@ pub enum InstObj {
     /// 表示指令链表 “Phi 指令” 部分结束的结点, 不参与语义表达.
     PhiInstEnd(InstCommon),
 
+    // 基本块终结指令
     /// 表示 “所在基本块不可达”, 封死整个基本块的控制流.
     Unreachable(UnreachableInst),
 
@@ -308,6 +309,20 @@ pub enum InstObj {
 
     /// 条件分支跳转到两个指定基本块之一.
     Br(BrInst),
+
+    /// 多路分支跳转到多个指定基本块之一.
+    Switch(SwitchInst),
+
+    // 指针与内存相关指令
+    /// 在栈上分配内存.
+    Alloca(AllocaInst),
+
+    /// 获取复合类型元素地址的指针计算指令.
+    GEP(GEPInst),
+
+    // 其他指令
+    /// 调用一个函数.
+    Call(CallInst),
 }
 pub type InstID = PtrID<InstObj>;
 
@@ -319,16 +334,30 @@ impl IUser for InstObj {
             Ret(ret) => ret.get_operands(),
             Jump(jump) => jump.get_operands(),
             Br(br) => br.get_operands(),
+            Switch(switch) => switch.get_operands(),
+
+            // Pointer and memory instructions
+            Alloca(alloca) => alloca.get_operands(),
+            GEP(gep) => gep.get_operands(),
+
+            // Other instructions
+            Call(call) => call.get_operands(),
         }
     }
-
     fn operands_mut(&mut self) -> &mut [UseID] {
         use InstObj::*;
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => &mut [],
+            // Basic block terminators
             Ret(ret) => ret.operands_mut(),
             Jump(jump) => jump.operands_mut(),
             Br(br) => br.operands_mut(),
+            Switch(switch) => switch.operands_mut(),
+            // Pointer and memory instructions
+            Alloca(alloca) => alloca.operands_mut(),
+            GEP(gep) => gep.operands_mut(),
+            // Other instructions
+            Call(call) => call.operands_mut(),
         }
     }
 }
@@ -338,20 +367,34 @@ impl ISubInst for InstObj {
         use InstObj::*;
         match self {
             GuideNode(c) | PhiInstEnd(c) => c,
+            // Basic block terminators
             Unreachable(c) => c.get_common(),
             Ret(ret) => ret.get_common(),
             Jump(jump) => jump.get_common(),
             Br(br) => br.get_common(),
+            Switch(switch) => switch.get_common(),
+            // Pointer and memory instructions
+            Alloca(alloca) => alloca.get_common(),
+            GEP(gep) => gep.get_common(),
+            // Other instructions
+            Call(call) => call.get_common(),
         }
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         use InstObj::*;
         match self {
             GuideNode(c) | PhiInstEnd(c) => c,
+            // Basic block terminators
             Unreachable(c) => c.common_mut(),
             Ret(ret) => ret.common_mut(),
             Jump(jump) => jump.common_mut(),
             Br(br) => br.common_mut(),
+            Switch(switch) => switch.common_mut(),
+            // Pointer and memory instructions
+            Alloca(alloca) => alloca.common_mut(),
+            GEP(gep) => gep.common_mut(),
+            // Other instructions
+            Call(call) => call.common_mut(),
         }
     }
 
@@ -371,18 +414,19 @@ impl ISubInst for InstObj {
     fn is_terminator(&self) -> bool {
         use InstObj::*;
         match self {
-            GuideNode(_) | PhiInstEnd(_) => false,
-            Unreachable(_) | Ret(_) | Jump(_) | Br(_) => true,
+            Unreachable(_) | Ret(_) | Jump(_) | Br(_) | Switch(_) => true,
+            _ => false,
         }
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
         use InstObj::*;
         match self {
-            GuideNode(_) | PhiInstEnd(_) => None,
             Unreachable(_) => Some(JumpTargets::Fix(&[])),
             Ret(ret) => ret.try_get_jts(),
             Jump(jump) => jump.try_get_jts(),
             Br(br) => br.try_get_jts(),
+            Switch(switch) => switch.try_get_jts(),
+            _ => None,
         }
     }
 
@@ -396,6 +440,12 @@ impl ISubInst for InstObj {
             Ret(ret) => ret.dispose(allocs),
             Jump(jump) => jump.dispose(allocs),
             Br(br) => br.dispose(allocs),
+            Switch(switch) => switch.dispose(allocs),
+            // Pointer and memory instructions
+            Alloca(alloca) => alloca.dispose(allocs),
+            GEP(gep) => gep.dispose(allocs),
+            // Other instructions
+            Call(call) => call.dispose(allocs),
         }
     }
 }

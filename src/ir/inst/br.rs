@@ -2,8 +2,8 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst,
-        IUser, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet,
-        UseID, UseKind, ValueSSA, inst::InstCommon,
+        IUser, InstCommon, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -131,6 +131,9 @@ impl ISubInstID for BrInstID {
     }
     fn into_ir(self) -> InstID {
         self.0
+    }
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
     }
 }
 impl ITerminatorID for BrInstID {}

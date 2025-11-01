@@ -57,6 +57,7 @@ impl<'a, T: ?Sized> MixRef<'a, T> {
     }
 }
 
+#[derive(Clone)]
 pub struct MixRefIter<'a, E: Clone> {
     inner: MixRef<'a, [E]>,
     index: usize,

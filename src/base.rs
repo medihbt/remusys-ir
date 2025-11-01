@@ -1,4 +1,4 @@
-use mtb_entity::IndexedID;
+use mtb_entity::{IEntityAllocatable, IndexedID};
 use std::marker::PhantomData;
 
 mod apint;
@@ -12,7 +12,7 @@ pub use {
     apint::APInt,
     bitset::{FixBitSet, FixBitSetIter},
     dsu::DSU,
-    mixref::{MixMutRef, MixRef},
+    mixref::{MixMutRef, MixRef, MixRefIter},
     slabid::ISlabID,
     weak_list::*,
 };
@@ -36,7 +36,7 @@ pub trait INullableValue: Copy + Eq {
     }
 }
 
-impl<E> INullableValue for IndexedID<E> {
+impl<E: IEntityAllocatable> INullableValue for IndexedID<E> {
     fn new_null() -> Self {
         IndexedID(usize::MAX, PhantomData)
     }

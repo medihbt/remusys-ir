@@ -1,8 +1,8 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstID, InstObj,
-        JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, inst::InstCommon,
+        IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstCommon, InstID,
+        InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
@@ -86,10 +86,13 @@ impl ISubInstID for UnreachableInstID {
     fn into_ir(self) -> InstID {
         self.0
     }
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
+    }
 }
 impl ITerminatorID for UnreachableInstID {}
 impl UnreachableInstID {
-    pub fn new_full(allocs: &IRAllocs) -> Self {
+    pub fn new(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, UnreachableInst::new())
     }
 }
