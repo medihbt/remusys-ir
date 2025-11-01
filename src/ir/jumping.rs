@@ -120,7 +120,7 @@ impl JumpTargetID {
             .detach(&allocs.jts)
             .expect("Failed to detach JumpTarget from its previous block");
         jt_obj.block.set(Some(block));
-        block.deref_ir(allocs).add_jump_target(allocs, self);
+        block.deref_ir(allocs).add_pred(allocs, self);
     }
     pub fn clean_block(self, allocs: &IRAllocs) {
         let obj = self.deref(allocs);

@@ -17,6 +17,7 @@ mod br;
 mod jump;
 mod ret;
 mod switch;
+mod unreachable;
 
 mod alloca;
 mod gep;
@@ -33,7 +34,7 @@ mod select;
 
 pub use self::{
     alloca::*, amormw::*, binop::*, br::*, call::*, cast::*, cmp::*, jump::*, load::*, phi::*,
-    ret::*, select::*, store::*, switch::*,
+    ret::*, select::*, store::*, switch::*, unreachable::*,
 };
 
 pub struct InstCommon {
@@ -139,9 +140,10 @@ pub trait ISubInst: IUser {
 
     fn into_ir(self) -> InstObj;
 
-    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
-        None
+    fn is_terminator(&self) -> bool {
+        false
     }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>>;
 
     fn dispose(&self, allocs: &IRAllocs) {
         if self.get_common().disposed.get() {
@@ -243,6 +245,13 @@ pub trait ISubInstID: Copy {
         self.deref_ir_mut(allocs).operands_mut()
     }
 
+    fn is_terminator(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).is_terminator()
+    }
+    fn try_get_jts(self, allocs: &IRAllocs) -> Option<JumpTargets<'_>> {
+        self.deref_ir(allocs).try_get_jts()
+    }
+
     fn new(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
         let mut obj = obj.into_ir();
         if obj.get_common().users.is_none() && !obj.is_sentinel() {
@@ -286,7 +295,7 @@ pub enum InstObj {
     PhiInstEnd(InstCommon),
 
     /// 表示 “所在基本块不可达”, 封死整个基本块的控制流.
-    Unreachable(InstCommon),
+    Unreachable(UnreachableInst),
 
     /// 结束函数控制流, 并返回一个值
     Ret(RetInst),
@@ -315,14 +324,16 @@ impl ISubInst for InstObj {
     fn get_common(&self) -> &InstCommon {
         use InstObj::*;
         match self {
-            GuideNode(c) | PhiInstEnd(c) | Unreachable(c) => c,
+            GuideNode(c) | PhiInstEnd(c) => c,
+            Unreachable(c) => c.get_common(),
             Ret(ret) => ret.get_common(),
         }
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         use InstObj::*;
         match self {
-            GuideNode(c) | PhiInstEnd(c) | Unreachable(c) => c,
+            GuideNode(c) | PhiInstEnd(c) => c,
+            Unreachable(c) => c.common_mut(),
             Ret(ret) => ret.common_mut(),
         }
     }
@@ -338,6 +349,22 @@ impl ISubInst for InstObj {
     }
     fn into_ir(self) -> InstObj {
         self
+    }
+
+    fn is_terminator(&self) -> bool {
+        use InstObj::*;
+        match self {
+            GuideNode(_) | PhiInstEnd(_) => false,
+            Unreachable(_) | Ret(_) => true,
+        }
+    }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        use InstObj::*;
+        match self {
+            GuideNode(_) | PhiInstEnd(_) => None,
+            Unreachable(_) => Some(JumpTargets::Fix(&[])),
+            Ret(ret) => ret.try_get_jts(),
+        }
     }
 
     fn dispose(&self, allocs: &IRAllocs) {
@@ -404,7 +431,7 @@ impl InstObj {
         InstObj::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
     }
     pub fn new_unreachable() -> Self {
-        InstObj::Unreachable(InstCommon::new(Opcode::Unreachable, ValTypeID::Void))
+        Self::Unreachable(UnreachableInst::new())
     }
 
     pub fn is_disposed(&self) -> bool {

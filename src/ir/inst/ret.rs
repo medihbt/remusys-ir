@@ -37,6 +37,13 @@ impl ISubInst for RetInst {
         &mut self.common
     }
 
+    fn is_terminator(&self) -> bool {
+        true
+    }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        Some(JumpTargets::Fix(&[]))
+    }
+
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         if let InstObj::Ret(ret) = inst { Some(ret) } else { None }
     }

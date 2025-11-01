@@ -1,7 +1,10 @@
-use crate::{ir::{
-    GlobalID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-    JumpTargetID, PredList, UserList, ValueClass, ValueSSA,
-}, typing::ValTypeID};
+use crate::{
+    ir::{
+        GlobalID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
+        JumpTargetID, JumpTargets, PredList, UserList, ValueClass, ValueSSA,
+    },
+    typing::ValTypeID,
+};
 use mtb_entity::{
     EntityAlloc, EntityList, EntityListError, EntityListHead, IEntityAllocID, IEntityListNode,
     IndexedID, PtrID, PtrListRes,
@@ -122,12 +125,48 @@ impl BlockObj {
     pub fn get_preds(&self) -> &PredList {
         &self.get_body().preds
     }
-
-    pub(crate) fn add_jump_target(&self, allocs: &IRAllocs, jt_id: JumpTargetID) {
+    pub(super) fn add_pred(&self, allocs: &IRAllocs, jt_id: JumpTargetID) {
         self.get_body()
             .preds
             .push_back_id(jt_id.inner(), &allocs.jts)
             .expect("Failed to add JumpTarget to BlockObj preds");
+    }
+
+    pub fn try_get_terminator(&self, allocs: &IRAllocs) -> Option<InstID> {
+        let back = self.get_body().insts.get_back_id(&allocs.insts)?;
+        if back.is_terminator(allocs) { Some(back) } else { None }
+    }
+    pub fn get_terminator_inst(&self, allocs: &IRAllocs) -> InstID {
+        self.try_get_terminator(allocs)
+            .expect("Attempted to get terminator of BlockObj without terminator")
+    }
+    pub fn set_terminator_inst(&self, allocs: &IRAllocs, inst_id: InstID) -> Option<InstID> {
+        if !inst_id.is_terminator(allocs) {
+            panic!("Attempted to set non-terminator {inst_id:?} as terminator of {self:p}");
+        }
+        let insts = &self.get_body().insts;
+        let old_terminator = insts.get_back_id(&allocs.insts);
+        if old_terminator == Some(inst_id) {
+            panic!("Attempted to set existing terminator {inst_id:?} as terminator of {self:p}");
+        }
+        if let Some(old_id) = old_terminator {
+            insts
+                .node_unplug(old_id, &allocs.insts)
+                .expect("Failed to unplug old terminator InstID from BlockObj insts");
+        }
+        insts
+            .push_back_id(inst_id, &allocs.insts)
+            .expect("Failed to add new terminator InstID to BlockObj insts");
+        old_terminator
+    }
+
+    pub fn try_get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
+        let term_inst = self.try_get_terminator(allocs)?;
+        term_inst.try_get_jts(allocs)
+    }
+    pub fn get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
+        self.try_get_succs(allocs)
+            .expect("Attempted to get JumpTargets of BlockObj without terminator")
     }
 }
 
@@ -198,6 +237,21 @@ impl BlockID {
     }
     pub fn get_preds(self, allocs: &IRAllocs) -> &PredList {
         &self.get_body(allocs).preds
+    }
+    pub fn try_get_terminator(self, allocs: &IRAllocs) -> Option<InstID> {
+        self.deref_ir(allocs).try_get_terminator(allocs)
+    }
+    pub fn get_terminator_inst(self, allocs: &IRAllocs) -> InstID {
+        self.deref_ir(allocs).get_terminator_inst(allocs)
+    }
+    pub fn set_terminator_inst(self, allocs: &IRAllocs, inst_id: InstID) -> Option<InstID> {
+        self.deref_ir(allocs).set_terminator_inst(allocs, inst_id)
+    }
+    pub fn try_get_succs<'ir>(self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
+        self.deref_ir(allocs).try_get_succs(allocs)
+    }
+    pub fn get_succs<'ir>(self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
+        self.deref_ir(allocs).get_succs(allocs)
     }
 
     pub fn new(allocs: &IRAllocs, mut obj: BlockObj) -> Self {
