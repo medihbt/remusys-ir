@@ -32,6 +32,8 @@ mod binop;
 mod call;
 mod cast;
 mod cmp;
+mod index_extract;
+mod index_insert;
 mod phi;
 mod select;
 
@@ -320,7 +322,16 @@ pub enum InstObj {
     /// 获取复合类型元素地址的指针计算指令.
     GEP(GEPInst),
 
+    /// 从指针所示的内存中加载出一个 SSA 值.
+    Load(LoadInst),
+
+    /// 将一个 SSA 值存储到指针所示的存储区域.
+    Store(StoreInst),
+
     // 其他指令
+    /// 原子读取-修改-写入指令.
+    AmoRmw(AmoRmwInst),
+
     /// 调用一个函数.
     Call(CallInst),
 }
@@ -339,8 +350,11 @@ impl IUser for InstObj {
             // Pointer and memory instructions
             Alloca(alloca) => alloca.get_operands(),
             GEP(gep) => gep.get_operands(),
+            Load(load) => load.get_operands(),
+            Store(store) => store.get_operands(),
 
             // Other instructions
+            AmoRmw(amormw) => amormw.get_operands(),
             Call(call) => call.get_operands(),
         }
     }
@@ -356,7 +370,10 @@ impl IUser for InstObj {
             // Pointer and memory instructions
             Alloca(alloca) => alloca.operands_mut(),
             GEP(gep) => gep.operands_mut(),
+            Load(load) => load.operands_mut(),
+            Store(store) => store.operands_mut(),
             // Other instructions
+            AmoRmw(amormw) => amormw.operands_mut(),
             Call(call) => call.operands_mut(),
         }
     }
@@ -376,7 +393,10 @@ impl ISubInst for InstObj {
             // Pointer and memory instructions
             Alloca(alloca) => alloca.get_common(),
             GEP(gep) => gep.get_common(),
+            Load(load) => load.get_common(),
+            Store(store) => store.get_common(),
             // Other instructions
+            AmoRmw(amormw) => amormw.get_common(),
             Call(call) => call.get_common(),
         }
     }
@@ -393,7 +413,10 @@ impl ISubInst for InstObj {
             // Pointer and memory instructions
             Alloca(alloca) => alloca.common_mut(),
             GEP(gep) => gep.common_mut(),
+            Load(load) => load.common_mut(),
+            Store(store) => store.common_mut(),
             // Other instructions
+            AmoRmw(amormw) => amormw.common_mut(),
             Call(call) => call.common_mut(),
         }
     }
@@ -444,7 +467,10 @@ impl ISubInst for InstObj {
             // Pointer and memory instructions
             Alloca(alloca) => alloca.dispose(allocs),
             GEP(gep) => gep.dispose(allocs),
+            Load(load) => load.dispose(allocs),
+            Store(store) => store.dispose(allocs),
             // Other instructions
+            AmoRmw(amormw) => amormw.dispose(allocs),
             Call(call) => call.dispose(allocs),
         }
     }

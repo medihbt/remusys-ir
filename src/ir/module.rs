@@ -1,9 +1,8 @@
-use std::{cell::RefCell, collections::HashMap};
-
 use crate::{
-    ir::{GlobalID, ISubExprID, ISubGlobalID, ISubInstID},
+    ir::GlobalID,
     typing::{ArchInfo, TypeContext},
 };
+use std::{cell::RefCell, collections::HashMap};
 
 pub mod allocs;
 

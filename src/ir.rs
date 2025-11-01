@@ -39,7 +39,7 @@ pub use self::{
         func::{FuncArg, FuncArgID, FuncID, FuncObj, IFuncUniqueUser, IFuncValue},
         var::{GlobalVar, GlobalVarID},
     },
-    inst::{ISubInst, ISubInstID, InstCommon, InstID, InstObj},
+    inst::{AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstObj, SyncScope},
     jumping::{
         ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
         JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
