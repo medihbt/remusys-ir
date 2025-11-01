@@ -1,6 +1,6 @@
 use crate::{
     impl_traceable_from_common,
-    ir::{ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID},
+    ir::{ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID, UseKind},
     typing::{FixVecType, IValType, ValTypeID},
 };
 use mtb_entity::PtrID;
@@ -64,7 +64,7 @@ impl FixVec {
         let elems = {
             let mut elems = Vec::with_capacity(nelems);
             for i in 0..nelems {
-                let use_id = UseID::new(crate::ir::UseKind::VecElem(i), allocs);
+                let use_id = UseID::new(allocs, UseKind::VecElem(i));
                 elems.push(use_id);
             }
             elems.into_boxed_slice()

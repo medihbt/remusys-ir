@@ -1,8 +1,9 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstID, InstObj,
-        JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA, inst::InstCommon,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst, IUser,
+        InstID, InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        inst::InstCommon,
     },
     typing::ValTypeID,
 };
@@ -87,7 +88,7 @@ impl RetInst {
     pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Ret, ret_ty),
-            operands: [UseID::new(UseKind::RetValue, allocs)],
+            operands: [UseID::new(allocs, UseKind::RetValue)],
         }
     }
 }
@@ -108,7 +109,12 @@ impl ISubInstID for RetInstID {
 impl ITerminatorID for RetInstID {}
 impl RetInstID {
     pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
-        Self::new(allocs, RetInst::new_uninit(allocs, ret_ty))
+        Self::allocate(allocs, RetInst::new_uninit(allocs, ret_ty))
+    }
+    pub fn with_retval(allocs: &IRAllocs, retval: ValueSSA) -> Self {
+        let ret = Self::new_uninit(allocs, retval.get_valtype(allocs));
+        ret.set_retval(allocs, retval);
+        ret
     }
 
     pub fn retval_use(self, allocs: &IRAllocs) -> UseID {

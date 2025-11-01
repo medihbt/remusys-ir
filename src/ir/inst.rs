@@ -13,17 +13,20 @@ use mtb_entity::{
 };
 use std::cell::Cell;
 
+// basic block terminators
 mod br;
 mod jump;
 mod ret;
 mod switch;
 mod unreachable;
 
+// pointer and memory instructions
 mod alloca;
 mod gep;
 mod load;
 mod store;
 
+// other instructions (atomic op; data processing; phi, etc.)
 mod amormw;
 mod binop;
 mod call;
@@ -252,7 +255,7 @@ pub trait ISubInstID: Copy {
         self.deref_ir(allocs).try_get_jts()
     }
 
-    fn new(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
+    fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
         let mut obj = obj.into_ir();
         if obj.get_common().users.is_none() && !obj.is_sentinel() {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
@@ -299,6 +302,12 @@ pub enum InstObj {
 
     /// 结束函数控制流, 并返回一个值
     Ret(RetInst),
+
+    /// 无条件跳转到指定基本块.
+    Jump(JumpInst),
+
+    /// 条件分支跳转到两个指定基本块之一.
+    Br(BrInst),
 }
 pub type InstID = PtrID<InstObj>;
 
@@ -308,6 +317,8 @@ impl IUser for InstObj {
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => OperandSet::Fixed(&[]),
             Ret(ret) => ret.get_operands(),
+            Jump(jump) => jump.get_operands(),
+            Br(br) => br.get_operands(),
         }
     }
 
@@ -316,6 +327,8 @@ impl IUser for InstObj {
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => &mut [],
             Ret(ret) => ret.operands_mut(),
+            Jump(jump) => jump.operands_mut(),
+            Br(br) => br.operands_mut(),
         }
     }
 }
@@ -327,6 +340,8 @@ impl ISubInst for InstObj {
             GuideNode(c) | PhiInstEnd(c) => c,
             Unreachable(c) => c.get_common(),
             Ret(ret) => ret.get_common(),
+            Jump(jump) => jump.get_common(),
+            Br(br) => br.get_common(),
         }
     }
     fn common_mut(&mut self) -> &mut InstCommon {
@@ -335,6 +350,8 @@ impl ISubInst for InstObj {
             GuideNode(c) | PhiInstEnd(c) => c,
             Unreachable(c) => c.common_mut(),
             Ret(ret) => ret.common_mut(),
+            Jump(jump) => jump.common_mut(),
+            Br(br) => br.common_mut(),
         }
     }
 
@@ -355,7 +372,7 @@ impl ISubInst for InstObj {
         use InstObj::*;
         match self {
             GuideNode(_) | PhiInstEnd(_) => false,
-            Unreachable(_) | Ret(_) => true,
+            Unreachable(_) | Ret(_) | Jump(_) | Br(_) => true,
         }
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
@@ -364,6 +381,8 @@ impl ISubInst for InstObj {
             GuideNode(_) | PhiInstEnd(_) => None,
             Unreachable(_) => Some(JumpTargets::Fix(&[])),
             Ret(ret) => ret.try_get_jts(),
+            Jump(jump) => jump.try_get_jts(),
+            Br(br) => br.try_get_jts(),
         }
     }
 
@@ -375,6 +394,8 @@ impl ISubInst for InstObj {
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => self._common_dispose(allocs),
             Ret(ret) => ret.dispose(allocs),
+            Jump(jump) => jump.dispose(allocs),
+            Br(br) => br.dispose(allocs),
         }
     }
 }

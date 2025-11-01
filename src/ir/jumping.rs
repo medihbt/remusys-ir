@@ -16,9 +16,9 @@ pub enum JumpTargetKind {
     /// 无条件跳转
     Jump,
     /// 条件分支的真分支
-    BrTrue,
+    BrThen,
     /// 条件分支的假分支
-    BrFalse,
+    BrElse,
     /// Switch 语句的默认分支
     SwitchDefault,
     /// Switch 语句的具体 case 分支，值为 case 常量

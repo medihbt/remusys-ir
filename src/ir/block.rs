@@ -25,7 +25,7 @@ pub struct BlockObjBody {
 impl BlockObjBody {
     fn new(allocs: &IRAllocs) -> Self {
         let insts = EntityList::new(&allocs.insts);
-        let phi_end = InstID::new(allocs, InstObj::new_phi_end());
+        let phi_end = InstID::allocate(allocs, InstObj::new_phi_end());
         insts
             .push_back_id(phi_end, &allocs.insts)
             .expect("Failed to add phi_end to new BlockObjBody");

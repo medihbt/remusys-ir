@@ -90,6 +90,6 @@ impl ISubInstID for UnreachableInstID {
 impl ITerminatorID for UnreachableInstID {}
 impl UnreachableInstID {
     pub fn new_full(allocs: &IRAllocs) -> Self {
-        Self::new(allocs, UnreachableInst::new())
+        Self::allocate(allocs, UnreachableInst::new())
     }
 }

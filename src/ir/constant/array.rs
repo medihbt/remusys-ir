@@ -55,7 +55,7 @@ impl ArrayExpr {
         let elems = {
             let mut elems = Vec::with_capacity(nelems);
             for i in 0..nelems {
-                let use_id = UseID::new(UseKind::ArrayElem(i), allocs);
+                let use_id = UseID::new(allocs, UseKind::ArrayElem(i));
                 elems.push(use_id);
             }
             elems.into_boxed_slice()

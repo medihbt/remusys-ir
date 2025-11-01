@@ -393,7 +393,7 @@ impl UseID {
         obj.operand.set(ValueSSA::None);
     }
 
-    pub fn new(kind: UseKind, allocs: &IRAllocs) -> Self {
+    pub fn new(allocs: &IRAllocs, kind: UseKind) -> Self {
         let obj = Use {
             list_head: Cell::new(EntityListHead::none()),
             kind: Cell::new(kind),

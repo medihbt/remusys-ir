@@ -53,7 +53,7 @@ impl StructExpr {
         let fields = {
             let mut fields = Vec::with_capacity(nfields);
             for i in 0..nfields {
-                let use_id = UseID::new(UseKind::StructField(i), allocs);
+                let use_id = UseID::new(allocs, UseKind::StructField(i));
                 fields.push(use_id);
             }
             fields.into_boxed_slice()

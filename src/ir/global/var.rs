@@ -76,7 +76,7 @@ impl GlobalVar {
                 users: Some(UserList::new(&allocs.uses)),
                 back_linkage: Cell::new(Linkage::External),
             },
-            initval: [UseID::new(UseKind::GlobalInit, allocs)],
+            initval: [UseID::new(allocs, UseKind::GlobalInit)],
             readonly: Cell::new(is_const),
         }
     }
