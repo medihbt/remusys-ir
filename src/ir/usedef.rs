@@ -124,7 +124,7 @@ pub trait IUser: ITraceableValue {
     fn user_dispose(&self, allocs: &IRAllocs) {
         let operands = self.get_operands();
         for use_id in operands.into_iter() {
-            use_id.clean_operand(allocs);
+            use_id.dispose(allocs);
         }
         self.traceable_dispose(allocs);
     }
@@ -238,6 +238,17 @@ pub enum UseKind {
     StoreSource,
     StoreTarget,
 
+    IndexExtractAggr,
+    IndexExtractIndex,
+    FieldExtractAggr,
+
+    IndexInsertAggr,
+    IndexInsertElem,
+    IndexInsertIndex,
+
+    FieldInsertAggr,
+    FieldInsertElem,
+
     /// PHI 指令的 incoming block. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
     PhiIncomingBlock(u32),
 
@@ -245,8 +256,8 @@ pub enum UseKind {
     PhiIncomingValue(u32),
 
     SelectCond,
-    SelectTrue,
-    SelectFalse,
+    SelectThen,
+    SelectElse,
     BranchCond,
     SwitchCond,
     RetValue,
@@ -259,6 +270,9 @@ pub enum UseKind {
     ArrayElem(usize),
     StructField(usize),
     VecElem(usize),
+
+    // 非法值, 用于占位
+    DisposedUse,
 }
 
 impl UseKind {
@@ -290,7 +304,7 @@ impl UseKind {
 #[derive(Clone)]
 pub struct Use {
     list_head: Cell<EntityListHead<Use>>,
-    pub kind: Cell<UseKind>,
+    kind: Cell<UseKind>,
     pub user: Cell<Option<UserID>>,
     pub operand: Cell<ValueSSA>,
 }
@@ -324,7 +338,26 @@ impl IEntityRingListNode for Use {
     }
 }
 impl Use {
+    pub fn is_disposed(&self) -> bool {
+        matches!(self.kind.get(), UseKind::DisposedUse)
+    }
+
+    pub fn get_kind(&self) -> UseKind {
+        self.kind.get()
+    }
+    pub fn set_kind(&self, kind: UseKind) {
+        assert_ne!(
+            kind,
+            UseKind::DisposedUse,
+            "Please call `use.dispose()` to dispose a Use"
+        );
+        self.kind.set(kind);
+    }
     pub fn dispose(&self, allocs: &IRAllocs) {
+        if self.is_disposed() {
+            return;
+        }
+        self.kind.set(UseKind::DisposedUse);
         self.detach(&allocs.uses)
             .expect("Use dispose detach failed");
         self.user.set(None);
@@ -354,7 +387,7 @@ impl UseID {
         self.deref_ir(allocs).kind.get()
     }
     pub fn set_kind(self, allocs: &IRAllocs, kind: UseKind) {
-        self.deref_ir(allocs).kind.set(kind);
+        self.deref_ir(allocs).set_kind(kind);
     }
     pub fn is_phi_incoming(self, allocs: &IRAllocs) -> bool {
         self.get_kind(allocs).is_phi_incoming()
@@ -392,8 +425,13 @@ impl UseID {
             .expect("Use clean_operand detach failed");
         obj.operand.set(ValueSSA::None);
     }
+    pub fn dispose(self, allocs: &IRAllocs) {
+        self.deref_ir(allocs).dispose(allocs);
+        allocs.push_disposed(self);
+    }
 
     pub fn new(allocs: &IRAllocs, kind: UseKind) -> Self {
+        assert_ne!(kind, UseKind::DisposedUse, "Cannot allocate a disposed Use");
         let obj = Use {
             list_head: Cell::new(EntityListHead::none()),
             kind: Cell::new(kind),
@@ -484,8 +522,7 @@ pub trait ITraceableValue {
             return;
         };
         users.clean(&allocs.uses);
-        let sentinel = users.sentinel.deref(&allocs.uses);
-        sentinel.operand.set(ValueSSA::None);
+        UseID(users.sentinel).dispose(allocs);
     }
     fn traceable_init_self_id(&self, allocs: &IRAllocs, id: ValueSSA) {
         self.users().forall_with_sentinel(&allocs.uses, |_, u| {

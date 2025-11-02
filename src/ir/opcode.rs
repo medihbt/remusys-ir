@@ -11,7 +11,7 @@ pub enum Opcode {
     Jmp, Br, Switch, Ret, Unreachable,
     Sitofp, Uitofp, Fptosi, Zext, Sext, Trunc, Fpext, Fptrunc,
     Bitcast, IntToPtr, PtrToInt,
-    Select, IndexExtract, IndexInsert, IndexPtr, IndexOffsetOf,
+    Select, IndexExtract, FieldExtract, IndexInsert, FieldInsert, IndexPtr, IndexOffsetOf,
     Load, Store, Alloca, DynAlloca,
     Call, DynCall, Phi,
     Icmp, Fcmp,
@@ -151,6 +151,7 @@ impl Opcode {
             // Selection and indexing
             Opcode::Select => InstKind::Select,
             Opcode::IndexPtr | Opcode::IndexExtract | Opcode::IndexInsert => InstKind::IndexPtr,
+            Opcode::FieldExtract | Opcode::FieldInsert => InstKind::FieldOp,
 
             // Function calls
             Opcode::Call | Opcode::DynCall => InstKind::Call,
@@ -256,7 +257,7 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "jmp", "br", "switch", "ret", "unreachable",
     "sitofp", "uitofp", "fptosi", "zext", "sext", "trunc", "fpext", "fptrunc",
     "bitcast", "inttoptr", "ptrtoint",
-    "select", "extractelement", "insertelement", "getelementptr", "offsetof",
+    "select", "extractelement", "extractvalue", "insertelement", "insertvalue", "getelementptr", "offsetof",
     "load", "store", "alloca", "dyn-alloca",
     "call", "dyncall", "phi",
     "icmp", "fcmp",
@@ -302,6 +303,7 @@ pub enum InstKind {
     Cmp,
     Cast,
     IndexPtr,
+    FieldOp,
     Call,
     AmoRmw,
     Intrin,

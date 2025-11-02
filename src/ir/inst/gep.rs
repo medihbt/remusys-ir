@@ -1,5 +1,3 @@
-use std::{cell::Cell, ops::RangeFrom};
-
 use crate::{
     impl_traceable_from_common,
     ir::{
@@ -8,6 +6,8 @@ use crate::{
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
+use smallvec::SmallVec;
+use std::{cell::Cell, ops::RangeFrom};
 
 /// 索引指针 (GEP) 指令
 ///
@@ -27,7 +27,7 @@ use crate::{
 ///    类型的索引都统一视为有符号整数索引.
 pub struct GEPInst {
     pub common: InstCommon,
-    operands: Box<[UseID]>,
+    operands: SmallVec<[UseID; 3]>,
 
     /// 是否为 inbounds GEP 指令.
     ///
@@ -123,12 +123,12 @@ impl GEPInst {
         pointee_align_log2: u8,
     ) -> Self {
         let operands = {
-            let mut ops = Vec::with_capacity(1 + nindices);
+            let mut ops = SmallVec::with_capacity(1 + nindices);
             ops.push(UseID::new(allocs, UseKind::GepBase));
             for i in 0..nindices {
                 ops.push(UseID::new(allocs, UseKind::GepIndex(i as u32)));
             }
-            ops.into_boxed_slice()
+            ops
         };
         Self {
             common: InstCommon::new(Opcode::IndexPtr, ValTypeID::Ptr),

@@ -2,14 +2,14 @@ use crate::{
     ir::GlobalID,
     typing::{ArchInfo, TypeContext},
 };
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 pub mod allocs;
 
 pub struct Module {
     pub allocs: allocs::IRAllocs,
     pub tctx: TypeContext,
-    pub globals: RefCell<HashMap<String, GlobalID>>,
+    pub symbols: RefCell<HashMap<Arc<str>, GlobalID>>,
 }
 
 impl AsRef<allocs::IRAllocs> for Module {
@@ -28,7 +28,7 @@ impl Module {
         Self {
             allocs: allocs::IRAllocs::new(),
             tctx: TypeContext::new(arch),
-            globals: RefCell::new(HashMap::new()),
+            symbols: RefCell::new(HashMap::new()),
         }
     }
 
@@ -36,12 +36,12 @@ impl Module {
         Self {
             allocs: allocs::IRAllocs::with_capacity(base_cap),
             tctx: TypeContext::new(arch),
-            globals: RefCell::new(HashMap::new()),
+            symbols: RefCell::new(HashMap::new()),
         }
     }
 
     pub fn get_global_by_name(&self, name: &str) -> Option<GlobalID> {
-        self.globals.borrow().get(name).copied()
+        self.symbols.borrow().get(name).copied()
     }
 }
 
@@ -53,5 +53,6 @@ mod tests {
     fn test_thread_safety() {
         fn assert_send<T: Send>() {}
         assert_send::<Module>();
+        // Module is Send and not Sync
     }
 }

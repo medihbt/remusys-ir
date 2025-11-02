@@ -2,13 +2,13 @@ use crate::{
     base::INullableValue,
     impl_traceable_from_common,
     ir::{
-        GlobalID, IRAllocs, ISubGlobalID, IUser, OperandSet, UseID, UseKind, UserList, ValueSSA,
+        GlobalID, IRAllocs, ISubGlobalID, IUser, OperandSet, UseID, UseKind, ValueSSA,
         global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
     },
     typing::ValTypeID,
 };
 use mtb_entity::PtrID;
-use std::cell::Cell;
+use std::{cell::Cell, sync::Arc};
 
 #[derive(Clone)]
 pub struct GlobalVar {
@@ -62,20 +62,14 @@ impl ISubGlobal for GlobalVar {
 }
 impl GlobalVar {
     pub fn new_extern(
-        name: String,
+        name: impl Into<Arc<str>>,
         allocs: &IRAllocs,
         ty: ValTypeID,
         align_log: u8,
         is_const: bool,
     ) -> Self {
         Self {
-            common: GlobalCommon {
-                name,
-                content_ty: ty,
-                content_align_log: align_log,
-                users: Some(UserList::new(&allocs.uses)),
-                back_linkage: Cell::new(Linkage::External),
-            },
+            common: GlobalCommon::new(name.into(), ty, align_log, allocs),
             initval: [UseID::new(allocs, UseKind::GlobalInit)],
             readonly: Cell::new(is_const),
         }

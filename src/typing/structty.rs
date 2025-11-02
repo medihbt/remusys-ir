@@ -5,6 +5,7 @@ use crate::{
         ValTypeID,
     },
 };
+use smallvec::SmallVec;
 use std::{
     cell::Ref,
     hash::{DefaultHasher, Hash, Hasher},
@@ -16,18 +17,18 @@ use std::{
 /// 无名结构体类型, 相当于 Rust 的 Tuple.
 #[derive(Debug, Clone)]
 pub struct StructTypeObj {
-    pub fields: Box<[ValTypeID]>,
+    pub fields: SmallVec<[ValTypeID; 8]>,
     pub packed: bool,
     /// 第 i 个元素存储第 i + 1 个字段的偏移量. 最后一个元素存储结构体总大小.
-    pub offsets: Box<[usize]>,
+    pub offsets: SmallVec<[usize; 8]>,
     pub hash: usize,
     pub align: usize,
     pub aligned_size: usize,
 }
 
 impl StructTypeObj {
-    pub fn new_raw(fields: Box<[ValTypeID]>, packed: bool) -> Self {
-        let offsets = vec![0; fields.len()].into_boxed_slice();
+    pub fn new_raw(fields: SmallVec<[ValTypeID; 8]>, packed: bool) -> Self {
+        let offsets = SmallVec::from_elem(0, fields.len());
         Self { fields, packed, offsets, hash: 0, align: 0, aligned_size: 0 }
     }
 

@@ -15,6 +15,7 @@ pub struct BlockObj {
     head: Cell<EntityListHead<BlockObj>>,
     parent_func: Cell<Option<GlobalID>>,
     body: Option<BlockObjBody>,
+    dispose_mark: Cell<bool>,
 }
 pub struct BlockObjBody {
     pub insts: EntityList<InstObj>,
@@ -60,6 +61,7 @@ impl IEntityListNode for BlockObj {
             head: Cell::new(EntityListHead::none()),
             parent_func: Cell::new(None),
             body: None,
+            dispose_mark: Cell::new(false),
         }
     }
 
@@ -114,6 +116,7 @@ impl BlockObj {
             head: Cell::new(EntityListHead::none()),
             parent_func: Cell::new(None),
             body: Some(BlockObjBody::new(allocs)),
+            dispose_mark: Cell::new(false),
         }
     }
 
@@ -179,6 +182,10 @@ impl BlockObj {
     pub fn get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
         self.try_get_succs(allocs)
             .expect("Attempted to get JumpTargets of BlockObj without terminator")
+    }
+
+    pub fn is_disposed(&self) -> bool {
+        self.dispose_mark.get()
     }
 }
 
@@ -276,20 +283,23 @@ impl BlockID {
         block_id
     }
     pub fn dispose(self, allocs: &IRAllocs) {
-        let obj = self.deref_ir(allocs);
+        let Some(obj) = self.0.try_deref(&allocs.blocks) else {
+            return;
+        };
+        if obj.dispose_mark.get() {
+            return;
+        }
+        obj.dispose_mark.set(true);
         let Some(body) = &obj.body else {
             return;
         };
         for (inst_id, _) in body.insts.iter(&allocs.insts) {
             inst_id.dispose(allocs);
         }
-        body.users.clean(&allocs.uses);
-        body.preds.clean(&allocs.jts);
         obj.parent_func.set(None);
-    }
 
-    pub fn delete(self, allocs: &mut IRAllocs) {
-        self.dispose(allocs);
-        self.0.free(&mut allocs.blocks);
+        body.preds.clean(&allocs.jts);
+        JumpTargetID(body.preds.sentinel).dispose(allocs);
+        obj.traceable_dispose(allocs);
     }
 }

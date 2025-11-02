@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use crate::{
     impl_traceable_from_common,
     ir::{
@@ -10,21 +12,25 @@ use mtb_entity::{IEntityAllocID, PtrID};
 
 pub struct ExprCommon {
     pub users: Option<UserList>,
+    dispose_mark: Cell<bool>,
 }
 impl Clone for ExprCommon {
     fn clone(&self) -> Self {
-        Self { users: None }
+        Self {
+            users: None,
+            dispose_mark: Cell::new(self.dispose_mark.get()),
+        }
     }
 }
 impl ExprCommon {
-    pub fn deep_cloned(&self, allocs: &IRAllocs) -> Self {
-        Self { users: Some(UserList::new(&allocs.uses)) }
-    }
     pub fn new(allocs: &IRAllocs) -> Self {
-        Self { users: Some(UserList::new(&allocs.uses)) }
+        Self {
+            users: Some(UserList::new(&allocs.uses)),
+            dispose_mark: Cell::new(false),
+        }
     }
     pub fn none() -> Self {
-        Self { users: None }
+        Self { users: None, dispose_mark: Cell::new(false) }
     }
 }
 
@@ -54,7 +60,14 @@ pub trait ISubExpr: IUser {
         Self::try_from_ir(expr).expect("Invalid ExprObj type for ISubExpr")
     }
 
+    fn is_disposed(&self) -> bool {
+        self.get_common().dispose_mark.get()
+    }
     fn dispose(&self, allocs: &IRAllocs) {
+        if self.is_disposed() {
+            return;
+        }
+        self.get_common().dispose_mark.set(true);
         self.user_dispose(allocs);
     }
 }
@@ -89,6 +102,7 @@ pub trait ISubExprID: Copy {
 
     fn dispose(self, allocs: &IRAllocs) {
         self.deref_ir(allocs).dispose(allocs);
+        allocs.push_disposed(self.into_ir());
     }
 }
 

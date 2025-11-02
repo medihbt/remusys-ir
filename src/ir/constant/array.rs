@@ -7,13 +7,14 @@ use crate::{
     typing::{ArrayTypeID, IValType, TypeContext, ValTypeID},
 };
 use mtb_entity::PtrID;
+use smallvec::SmallVec;
 
 #[derive(Clone)]
 pub struct ArrayExpr {
     pub common: ExprCommon,
     pub arrty: ArrayTypeID,
     pub elemty: ValTypeID,
-    pub elems: Box<[UseID]>,
+    pub elems: SmallVec<[UseID; 4]>,
 }
 impl_traceable_from_common!(ArrayExpr, false);
 impl IUser for ArrayExpr {
@@ -53,12 +54,12 @@ impl ArrayExpr {
         let nelems = arrty.get_num_elements(tctx);
 
         let elems = {
-            let mut elems = Vec::with_capacity(nelems);
+            let mut elems = SmallVec::with_capacity(nelems);
             for i in 0..nelems {
                 let use_id = UseID::new(allocs, UseKind::ArrayElem(i));
                 elems.push(use_id);
             }
-            elems.into_boxed_slice()
+            elems
         };
         Self { common: ExprCommon::none(), arrty, elemty, elems }
     }

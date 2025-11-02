@@ -5,7 +5,7 @@ use crate::{
         BlockID, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode, OperandSet,
         UseID, UserList, ValueClass, ValueSSA,
     },
-    typing::ValTypeID,
+    typing::{AggrType, TypeContext, ValTypeID},
 };
 use mtb_entity::{
     EntityAlloc, EntityListError, EntityListHead, IEntityAllocID, IEntityListNode, IndexedID,
@@ -32,14 +32,43 @@ mod binop;
 mod call;
 mod cast;
 mod cmp;
-mod index_extract;
-mod index_insert;
+mod extract;
+mod insert;
 mod phi;
 mod select;
 
+// aggregate field instructions
+mod aggr_field_inst;
+
+#[allow(unused_imports)]
 pub use self::{
-    alloca::*, amormw::*, binop::*, br::*, call::*, cast::*, cmp::*, gep::*, jump::*, load::*,
-    phi::*, ret::*, select::*, store::*, switch::*, unreachable::*,
+    aggr_field_inst::{
+        AggrFieldInstBuildErr, AggrFieldInstBuildRes, AggrFieldInstBuilderCommon,
+        IAggrFieldInstBuildable,
+    },
+    alloca::{AllocaInst, AllocaInstID},
+    amormw::{AmoOrdering, AmoRmwBuilder, AmoRmwInst, AmoRmwInstID, IAmoRmwBuildable, SyncScope},
+    binop::{BinOPInst, BinOPInstID},
+    br::{BrInst, BrInstID},
+    call::{CallInst, CallInstBuilder, CallInstID, ICallInstBuildable},
+    cast::{CastInst, CastInstID},
+    cmp::{CmpInst, CmpInstID},
+    extract::{
+        FieldExtractBuilder, FieldExtractInst, FieldExtractInstID, IndexExtractInst,
+        IndexExtractInstID,
+    },
+    gep::{GEPInst, GEPInstID, GEPTypeIter, GEPTypeState, GEPTypeUnpack},
+    insert::{
+        FieldInsertBuilder, FieldInsertInst, FieldInsertInstID, IndexInsertInst, IndexInsertInstID,
+    },
+    jump::{JumpInst, JumpInstID},
+    load::{LoadInst, LoadInstID},
+    phi::{PhiInst, PhiInstID},
+    ret::{RetInst, RetInstID},
+    select::{SelectInst, SelectInstID},
+    store::{StoreInst, StoreInstID},
+    switch::{SwitchInst, SwitchInstID},
+    unreachable::{UnreachableInst, UnreachableInstID},
 };
 
 pub struct InstCommon {
@@ -163,7 +192,7 @@ pub trait ISubInst: IUser {
         self.user_dispose(allocs);
         if let Some(jt_list) = self.try_get_jts() {
             for &jt_id in jt_list.iter() {
-                jt_id.deref(allocs).dispose(allocs);
+                jt_id.dispose(allocs);
             }
         }
     }
@@ -272,24 +301,43 @@ pub trait ISubInstID: Copy {
             return;
         };
         obj.dispose(allocs);
+        allocs.push_disposed(self.into_ir());
     }
-    fn delete(self, allocs: &mut IRAllocs) {
-        self.dispose(allocs);
-        let IRAllocs { insts, uses, jts, .. } = allocs;
-        let obj = self.into_ir().deref(insts);
-        for use_id in obj.get_operands() {
-            use_id.inner().free(uses);
-        }
-        if let Some(users_sentinel) = obj.try_get_users() {
-            users_sentinel.sentinel.free(uses);
-        }
-        if let Some(jt) = obj.try_get_jts() {
-            for &jt in jt.iter() {
-                jt.inner().free(jts);
-            }
-        }
-        self.into_ir().free(&mut allocs.insts);
+}
+pub trait IAggregateInst: ISubInst {
+    fn get_aggr_operand_type(&self) -> AggrType;
+    fn get_elem_type(&self) -> ValTypeID;
+
+    fn aggr_use(&self) -> UseID;
+    fn get_aggr(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.aggr_use().get_operand(allocs)
     }
+    fn set_aggr(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.aggr_use().set_operand(allocs, val);
+    }
+}
+
+pub trait IAggrFieldInst: IAggregateInst {
+    type DefaultBuilderT: IAggrFieldInstBuildable;
+
+    fn get_field_indices(&self) -> &[u32];
+
+    fn default_builder(aggr_type: AggrType) -> Self::DefaultBuilderT {
+        Self::DefaultBuilderT::new(aggr_type)
+    }
+}
+
+pub trait IAggrIndexInst: IAggregateInst {
+    fn index_use(&self) -> UseID;
+
+    fn get_index(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.index_use().get_operand(allocs)
+    }
+    fn set_index(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.index_use().set_operand(allocs, val);
+    }
+
+    fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self;
 }
 
 pub enum InstObj {
@@ -332,8 +380,36 @@ pub enum InstObj {
     /// 原子读取-修改-写入指令.
     AmoRmw(AmoRmwInst),
 
+    /// 二元操作
+    BinOP(BinOPInst),
+
     /// 调用一个函数.
     Call(CallInst),
+
+    /// 类型转换指令.
+    Cast(CastInst),
+
+    /// 比较指令.
+    Cmp(CmpInst),
+
+    /// 根据变量索引从数组 / 向量中提取元素
+    IndexExtract(IndexExtractInst),
+
+    /// 根据常量索引列从数组 / 向量 / 结构体中提取元素
+    FieldExtract(FieldExtractInst),
+
+    /// 把数组 / 向量值 a 中的索引位 i 替换成元素 v 并返回新的数组 / 向量值。
+    IndexInsert(IndexInsertInst),
+
+    /// 把数组 / 结构体 / 向量聚合值 a 中的指定字段替换成元素 v 并返回新的聚合值。
+    /// 字段位置通过常量索引链指定。
+    FieldInsert(FieldInsertInst),
+
+    /// Phi 节点：实现 SSA 形式中的 φ 函数
+    Phi(PhiInst),
+
+    /// 选择指令: 根据条件值选择两个操作数之一作为结果返回。
+    Select(SelectInst),
 }
 pub type InstID = PtrID<InstObj>;
 
@@ -355,7 +431,16 @@ impl IUser for InstObj {
 
             // Other instructions
             AmoRmw(amormw) => amormw.get_operands(),
+            BinOP(binop) => binop.get_operands(),
             Call(call) => call.get_operands(),
+            Cast(cast) => cast.get_operands(),
+            Cmp(cmp) => cmp.get_operands(),
+            IndexExtract(e) => e.get_operands(),
+            FieldExtract(e) => e.get_operands(),
+            IndexInsert(e) => e.get_operands(),
+            FieldInsert(e) => e.get_operands(),
+            Phi(phi) => phi.get_operands(),
+            Select(select) => select.get_operands(),
         }
     }
     fn operands_mut(&mut self) -> &mut [UseID] {
@@ -374,7 +459,16 @@ impl IUser for InstObj {
             Store(store) => store.operands_mut(),
             // Other instructions
             AmoRmw(amormw) => amormw.operands_mut(),
+            BinOP(binop) => binop.operands_mut(),
             Call(call) => call.operands_mut(),
+            Cast(cast) => cast.operands_mut(),
+            Cmp(cmp) => cmp.operands_mut(),
+            IndexExtract(e) => e.operands_mut(),
+            FieldExtract(e) => e.operands_mut(),
+            IndexInsert(e) => e.operands_mut(),
+            FieldInsert(e) => e.operands_mut(),
+            Phi(phi) => phi.operands_mut(),
+            Select(select) => select.operands_mut(),
         }
     }
 }
@@ -397,7 +491,16 @@ impl ISubInst for InstObj {
             Store(store) => store.get_common(),
             // Other instructions
             AmoRmw(amormw) => amormw.get_common(),
+            BinOP(binop) => binop.get_common(),
             Call(call) => call.get_common(),
+            Cast(cast) => cast.get_common(),
+            Cmp(cmp) => cmp.get_common(),
+            IndexExtract(e) => e.get_common(),
+            FieldExtract(e) => e.get_common(),
+            IndexInsert(e) => e.get_common(),
+            FieldInsert(e) => e.get_common(),
+            Phi(phi) => phi.get_common(),
+            Select(select) => select.get_common(),
         }
     }
     fn common_mut(&mut self) -> &mut InstCommon {
@@ -417,7 +520,16 @@ impl ISubInst for InstObj {
             Store(store) => store.common_mut(),
             // Other instructions
             AmoRmw(amormw) => amormw.common_mut(),
+            BinOP(binop) => binop.common_mut(),
             Call(call) => call.common_mut(),
+            Cast(cast) => cast.common_mut(),
+            Cmp(cmp) => cmp.common_mut(),
+            IndexExtract(e) => e.common_mut(),
+            FieldExtract(e) => e.common_mut(),
+            IndexInsert(e) => e.common_mut(),
+            FieldInsert(e) => e.common_mut(),
+            Phi(phi) => phi.common_mut(),
+            Select(select) => select.common_mut(),
         }
     }
 
@@ -471,7 +583,16 @@ impl ISubInst for InstObj {
             Store(store) => store.dispose(allocs),
             // Other instructions
             AmoRmw(amormw) => amormw.dispose(allocs),
+            BinOP(binop) => binop.dispose(allocs),
             Call(call) => call.dispose(allocs),
+            Cast(cast) => cast.dispose(allocs),
+            Cmp(cmp) => cmp.dispose(allocs),
+            IndexExtract(e) => e.dispose(allocs),
+            FieldExtract(e) => e.dispose(allocs),
+            IndexInsert(e) => e.dispose(allocs),
+            FieldInsert(e) => e.dispose(allocs),
+            Phi(phi) => phi.dispose(allocs),
+            Select(select) => select.dispose(allocs),
         }
     }
 }

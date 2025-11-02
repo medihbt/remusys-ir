@@ -7,11 +7,12 @@ use crate::{
     typing::{FixVecType, IValType, ValTypeID},
 };
 use mtb_entity::PtrID;
+use smallvec::SmallVec;
 
 #[derive(Clone)]
 pub struct FixVec {
     pub common: ExprCommon,
-    pub elems: Box<[UseID]>,
+    pub elems: SmallVec<[UseID; 4]>,
     pub vecty: FixVecType,
 }
 
@@ -48,10 +49,7 @@ impl ISubExpr for FixVec {
             _ => None,
         }
     }
-    fn try_from_ir(expr: ExprObj) -> Option<Self>
-    where
-        Self: Sized,
-    {
+    fn try_from_ir(expr: ExprObj) -> Option<Self> {
         match expr {
             ExprObj::FixVec(vec) => Some(vec),
             _ => None,
@@ -65,12 +63,12 @@ impl FixVec {
     pub fn new_uninit(allocs: &IRAllocs, vecty: FixVecType) -> Self {
         let nelems = vecty.get_len();
         let elems = {
-            let mut elems = Vec::with_capacity(nelems);
+            let mut elems = SmallVec::with_capacity(nelems);
             for i in 0..nelems {
                 let use_id = UseID::new(allocs, UseKind::VecElem(i));
                 elems.push(use_id);
             }
-            elems.into_boxed_slice()
+            elems
         };
         Self { common: ExprCommon::none(), elems, vecty }
     }

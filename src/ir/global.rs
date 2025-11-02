@@ -2,13 +2,13 @@ use crate::{
     base::INullableValue,
     impl_traceable_from_common,
     ir::{
-        FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, OperandSet, UseID,
-        UserList, ValueClass, ValueSSA, global::var::GlobalVar,
+        FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet,
+        UseID, UserList, ValueClass, ValueSSA, global::var::GlobalVar,
     },
     typing::ValTypeID,
 };
 use mtb_entity::{IEntityAllocID, PtrID};
-use std::cell::Cell;
+use std::{cell::Cell, sync::Arc};
 
 pub mod func;
 pub mod var;
@@ -21,11 +21,12 @@ pub enum Linkage {
 }
 
 pub struct GlobalCommon {
-    pub name: String,
+    pub name: Arc<str>,
     pub content_ty: ValTypeID,
     pub content_align_log: u8,
     pub users: Option<UserList>,
     pub back_linkage: Cell<Linkage>,
+    dispose_mark: Cell<bool>,
 }
 impl Clone for GlobalCommon {
     fn clone(&self) -> Self {
@@ -35,6 +36,19 @@ impl Clone for GlobalCommon {
             content_align_log: self.content_align_log,
             users: None,
             back_linkage: Cell::new(self.back_linkage.get()),
+            dispose_mark: Cell::new(self.dispose_mark.get()),
+        }
+    }
+}
+impl GlobalCommon {
+    pub fn new(name: Arc<str>, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
+        Self {
+            name,
+            content_ty,
+            content_align_log: align_log,
+            users: Some(UserList::new(&allocs.uses)),
+            back_linkage: Cell::new(Linkage::DSOLocal),
+            dispose_mark: Cell::new(false),
         }
     }
 }
@@ -45,6 +59,9 @@ pub trait ISubGlobal: IUser {
 
     fn get_name(&self) -> &str {
         &self.get_common().name
+    }
+    fn name_arc(&self) -> Arc<str> {
+        Arc::clone(&self.get_common().name)
     }
     fn get_back_linkage(&self) -> Linkage {
         self.get_common().back_linkage.get()
@@ -77,7 +94,14 @@ pub trait ISubGlobal: IUser {
         Self::try_from_ir(g).expect("Invalid GlobalObj variant")
     }
 
+    fn is_disposed(&self) -> bool {
+        self.get_common().dispose_mark.get()
+    }
     fn dispose(&self, allocs: &IRAllocs) {
+        if self.is_disposed() {
+            return;
+        }
+        self.get_common().dispose_mark.set(true);
         self.user_dispose(allocs);
     }
 }
@@ -136,7 +160,7 @@ pub trait ISubGlobalID: Copy + 'static {
         self.deref_ir(allocs).is_extern(allocs)
     }
 
-    fn new(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
+    fn allocate(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
         let mut g_obj = obj.into_ir();
         if g_obj.get_common().users.is_none() {
             g_obj.common_mut().users = Some(UserList::new(&allocs.uses));
@@ -144,8 +168,25 @@ pub trait ISubGlobalID: Copy + 'static {
         let g_id = allocs.globals.allocate(g_obj);
         Self::raw_from_ir(g_id)
     }
+    fn register_to(self, module: &Module) -> Result<Self, GlobalID> {
+        use std::collections::hash_map::Entry;
+        let mut symbols = module.symbols.borrow_mut();
+        let allocs = &module.allocs;
+        let name_arc = self.deref_ir(allocs).name_arc();
+        match symbols.entry(name_arc) {
+            Entry::Occupied(v) => {
+                let existing = v.get();
+                Err(*existing)
+            }
+            Entry::Vacant(v) => {
+                v.insert(self.into_ir());
+                Ok(self)
+            }
+        }
+    }
     fn dispose(self, allocs: &IRAllocs) {
         self.deref_ir(allocs).dispose(allocs);
+        allocs.push_disposed(self.into_ir());
     }
 }
 

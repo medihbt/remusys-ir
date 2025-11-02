@@ -46,7 +46,7 @@ pub use self::{
     },
     module::{
         Module,
-        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedValue},
+        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedID},
     },
     opcode::{InstKind, Opcode},
     usedef::{

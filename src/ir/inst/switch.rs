@@ -4,6 +4,8 @@ use std::{
     ops::RangeFrom,
 };
 
+use smallvec::{SmallVec, smallvec};
+
 use crate::{
     impl_traceable_from_common,
     ir::{
@@ -52,7 +54,7 @@ pub struct SwitchInst {
     pub common: InstCommon,
     pub discrim_ty: IntType,
     discrim: [UseID; 1],
-    targets: RefCell<Vec<JumpTargetID>>,
+    targets: RefCell<SmallVec<[JumpTargetID; 4]>>,
 }
 
 impl_traceable_from_common!(SwitchInst, true);
@@ -97,13 +99,13 @@ impl ISubInst for SwitchInst {
         true
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
-        let targets = Ref::map(self.targets.borrow(), Vec::as_slice);
+        let targets = Ref::map(self.targets.borrow(), SmallVec::as_slice);
         Some(JumpTargets::Dyn(targets))
     }
 }
 impl ITerminatorInst for SwitchInst {
     fn get_jts(&self) -> JumpTargets<'_> {
-        let targets = Ref::map(self.targets.borrow(), Vec::as_slice);
+        let targets = Ref::map(self.targets.borrow(), SmallVec::as_slice);
         JumpTargets::Dyn(targets)
     }
     fn jts_mut(&mut self) -> &mut [JumpTargetID] {
@@ -125,7 +127,7 @@ impl SwitchInst {
             common: InstCommon::new(Opcode::Switch, ValTypeID::Void),
             discrim_ty,
             discrim: [UseID::new(allocs, UseKind::SwitchCond)],
-            targets: RefCell::new(vec![default]),
+            targets: RefCell::new(smallvec![default]),
         }
     }
 
@@ -219,9 +221,10 @@ impl SwitchInst {
             .remove(Self::JT_CASE_START + case_index)
     }
     fn reserve_cases(&self, case_count: usize) {
-        self.targets
-            .borrow_mut()
-            .reserve(Self::JT_CASE_START + case_count);
+        // Reserve exactly the additional number of case entries we plan to push.
+        // Current length already includes the default entry at index 0, so we
+        // only need to reserve `case_count` more slots for cases.
+        self.targets.borrow_mut().reserve(case_count);
     }
 }
 

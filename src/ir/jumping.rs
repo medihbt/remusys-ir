@@ -29,6 +29,10 @@ pub enum JumpTargetKind {
     SwitchDefault,
     /// Switch 语句的具体 case 分支，值为 case 常量
     SwitchCase(i64),
+
+    // 非法值
+    /// JumpTarget 被析构了, 不可访问
+    Disposed,
 }
 
 /// 跳转目标对象，连接终结指令和目标基本块
@@ -42,7 +46,7 @@ pub enum JumpTargetKind {
 pub struct JumpTarget {
     node_head: Cell<EntityListHead<JumpTarget>>,
     /// 跳转目标的类型
-    pub kind: JumpTargetKind,
+    kind: Cell<JumpTargetKind>,
     /// 源终结指令的引用
     pub terminator: Cell<Option<InstID>>,
     /// 目标基本块的引用
@@ -57,12 +61,12 @@ impl IEntityRingListNode for JumpTarget {
     }
 
     fn is_sentinel(&self) -> bool {
-        self.kind == JumpTargetKind::None
+        self.get_kind() == JumpTargetKind::None
     }
     fn new_sentinel() -> Self {
         JumpTarget {
             node_head: Cell::new(EntityListHead::none()),
-            kind: JumpTargetKind::None,
+            kind: Cell::new(JumpTargetKind::None),
             terminator: Cell::new(None),
             block: Cell::new(None),
         }
@@ -70,18 +74,28 @@ impl IEntityRingListNode for JumpTarget {
 }
 impl JumpTarget {
     pub fn new(kind: JumpTargetKind) -> Self {
+        use JumpTargetKind::*;
+        assert_ne!(kind, Disposed, "Cannot allocate a disposed JumpTarget");
         JumpTarget {
             node_head: Cell::new(EntityListHead::none()),
-            kind,
-            terminator: Cell::new(None),
-            block: Cell::new(None),
+            kind: Cell::new(kind),
+            terminator: Cell::new(Option::None),
+            block: Cell::new(Option::None),
         }
     }
 
+    pub fn get_kind(&self) -> JumpTargetKind {
+        self.kind.get()
+    }
+    pub fn is_disposed(&self) -> bool {
+        self.kind.get() == JumpTargetKind::Disposed
+    }
+
     pub fn dispose(&self, allocs: &IRAllocs) {
-        if self.block.get().is_none() {
+        if self.is_disposed() {
             return;
         }
+        self.kind.set(JumpTargetKind::Disposed);
         self.detach(&allocs.jts)
             .expect("JumpTarget dispose detach failed");
         self.terminator.set(None);
@@ -97,28 +111,28 @@ impl JumpTargetID {
         self.0
     }
 
-    pub fn deref(self, allocs: &IRAllocs) -> &JumpTarget {
+    pub fn deref_ir(self, allocs: &IRAllocs) -> &JumpTarget {
         self.0.deref(&allocs.jts)
     }
 
     pub fn get_kind(self, allocs: &IRAllocs) -> JumpTargetKind {
-        self.deref(allocs).kind
+        self.deref_ir(allocs).get_kind()
     }
     pub fn get_terminator(self, allocs: &IRAllocs) -> Option<InstID> {
-        self.deref(allocs).terminator.get()
+        self.deref_ir(allocs).terminator.get()
     }
     pub fn set_terminator(self, allocs: &IRAllocs, inst: InstID) {
-        self.deref(allocs).terminator.set(Some(inst));
+        self.deref_ir(allocs).terminator.set(Some(inst));
     }
 
     pub fn get_block(self, allocs: &IRAllocs) -> Option<BlockID> {
-        self.deref(allocs).block.get()
+        self.deref_ir(allocs).block.get()
     }
     pub fn raw_set_block(self, allocs: &IRAllocs, block: BlockID) {
-        self.deref(allocs).block.set(Some(block));
+        self.deref_ir(allocs).block.set(Some(block));
     }
     pub fn set_block(self, allocs: &IRAllocs, block: BlockID) {
-        let jt_obj = self.deref(allocs);
+        let jt_obj = self.deref_ir(allocs);
         if jt_obj.block.get() == Some(block) {
             return;
         }
@@ -129,7 +143,7 @@ impl JumpTargetID {
         block.deref_ir(allocs).add_pred(allocs, self);
     }
     pub fn clean_block(self, allocs: &IRAllocs) {
-        let obj = self.deref(allocs);
+        let obj = self.deref_ir(allocs);
         if let None = obj.block.get() {
             return;
         }
@@ -143,7 +157,8 @@ impl JumpTargetID {
     }
 
     pub fn dispose(self, allocs: &IRAllocs) {
-        self.deref(allocs).dispose(allocs);
+        self.deref_ir(allocs).dispose(allocs);
+        allocs.push_disposed(self);
     }
 }
 

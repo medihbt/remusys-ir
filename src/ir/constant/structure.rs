@@ -7,12 +7,13 @@ use crate::{
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use mtb_entity::PtrID;
+use smallvec::SmallVec;
 
 #[derive(Clone)]
 pub struct StructExpr {
     pub common: ExprCommon,
     pub structty: StructTypeID,
-    pub fields: Box<[UseID]>,
+    pub fields: SmallVec<[UseID; 4]>,
 }
 impl_traceable_from_common!(StructExpr, false);
 impl IUser for StructExpr {
@@ -51,12 +52,12 @@ impl StructExpr {
         let nfields = structty.get_nfields(tctx);
 
         let fields = {
-            let mut fields = Vec::with_capacity(nfields);
+            let mut fields = SmallVec::with_capacity(nfields);
             for i in 0..nfields {
                 let use_id = UseID::new(allocs, UseKind::StructField(i));
                 fields.push(use_id);
             }
-            fields.into_boxed_slice()
+            fields
         };
         Self { common: ExprCommon::none(), structty, fields }
     }
