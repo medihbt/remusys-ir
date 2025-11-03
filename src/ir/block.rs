@@ -2,7 +2,7 @@ use crate::{
     ir::{
         FuncID, IRAllocs, IRManaged, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID,
         InstObj, JumpTargetID, JumpTargets, ManagedInst, PredList, TerminatorID, UserList,
-        ValueClass, ValueSSA,
+        ValueClass, ValueSSA, module::dispose::dispose_entity_list,
     },
     typing::ValTypeID,
 };
@@ -220,18 +220,27 @@ impl BlockObj {
     pub fn is_disposed(&self) -> bool {
         self.dispose_mark.get()
     }
-    fn dispose(&self, allocs: &IRAllocs) -> bool {
+    fn dispose(&self, self_id: BlockID, allocs: &IRAllocs) -> bool {
         if self.is_disposed() {
             return false;
         }
         self.dispose_mark.set(true);
+
         let Some(body) = &self.body else {
             return true;
         };
-        body.insts.forall_with_sentinel(&allocs.insts, |instid, _| {
-            instid.dispose(allocs);
-            true
-        });
+        // auto unplug from parent function's block list
+        // `self.body` is not None here, so `self` is not a sentinel
+        if let Some(parent) = self.get_parent_func()
+            && let Some(bbs) = parent.get_body(allocs)
+            && bbs.entry != self_id
+        {
+            bbs.blocks
+                .node_unplug(self_id.inner(), &allocs.blocks)
+                .expect("Failed to unplug BlockObj from parent function");
+        }
+        // dispose belonging instructions
+        dispose_entity_list(&body.insts, allocs);
         self.traceable_dispose(allocs);
         JumpTargetID(body.preds.sentinel).dispose(allocs);
         true
@@ -351,7 +360,7 @@ impl BlockID {
         ret
     }
     pub fn dispose(self, allocs: &IRAllocs) {
-        if !self.deref_ir(allocs).dispose(allocs) {
+        if !self.deref_ir(allocs).dispose(self, allocs) {
             return;
         }
         allocs.push_disposed(self);

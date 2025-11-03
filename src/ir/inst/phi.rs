@@ -145,11 +145,11 @@ impl ISubInst for PhiInst {
         self._common_init_self_id(self_id, allocs);
         self.self_id.set(Some(self_id));
     }
-    fn dispose(&self, allocs: &IRAllocs) -> bool {
+    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
         if self.get_common().disposed.get() {
             return false;
         }
-        self._common_dispose(allocs);
+        self._common_dispose(self_id, allocs);
         self.self_id.set(None);
         true
     }

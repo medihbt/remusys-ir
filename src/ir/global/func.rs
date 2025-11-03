@@ -5,7 +5,7 @@ use crate::{
         ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
         UseID, UserID, UserList, ValueClass, ValueSSA,
         global::{GlobalCommon, GlobalDisposeError, GlobalDisposeRes, Linkage},
-        inst::{RetInstID, UnreachableInstID},
+        inst::{RetInstID, UnreachableInstID}, module::dispose::dispose_entity_list,
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
@@ -184,10 +184,7 @@ impl ISubGlobal for FuncObj {
             arg.traceable_dispose(allocs);
         }
         if let Some(body) = &self.body {
-            body.blocks.forall_with_sentinel(&allocs.blocks, |bid, _| {
-                BlockID(bid).dispose(allocs);
-                true
-            });
+            dispose_entity_list(&body.blocks, allocs);
         }
         self.user_dispose(allocs);
         Ok(())

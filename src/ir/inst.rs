@@ -174,17 +174,23 @@ pub trait ISubInst: IUser + Sized {
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>>;
 
-    fn dispose(&self, allocs: &IRAllocs) -> bool {
+    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
         if self.get_common().disposed.get() {
             return false;
         }
-        self._common_dispose(allocs);
+        self._common_dispose(self_id, allocs);
         true
     }
-    fn _common_dispose(&self, allocs: &IRAllocs) {
+    fn _common_dispose(&self, self_id: InstID, allocs: &IRAllocs) {
         let common = self.get_common();
         assert!(!common.disposed.get(), "Instruction already disposed");
         common.disposed.set(true);
+        if let Some(bb) = self.get_parent() && !self.get_common().is_sentinel() {
+            let insts = &bb.get_body(allocs).insts;
+            insts
+                .node_unplug(self_id, &allocs.insts)
+                .expect("Failed to unplug instruction from parent basic block");
+        }
         self.user_dispose(allocs);
         if let Some(jt_list) = self.try_get_jts() {
             for &jt_id in jt_list.iter() {
@@ -296,7 +302,7 @@ pub trait ISubInstID: Copy {
         let Some(obj) = self.try_deref_ir(allocs) else {
             return;
         };
-        if !obj.dispose(allocs) {
+        if !obj.dispose(self.into_ir(), allocs) {
             return;
         }
         allocs.push_disposed(self.into_ir());
@@ -603,37 +609,37 @@ impl ISubInst for InstObj {
         }
     }
 
-    fn dispose(&self, allocs: &IRAllocs) -> bool {
+    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
         use InstObj::*;
         if self.is_disposed() {
             return false;
         }
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => {
-                self._common_dispose(allocs);
+                self._common_dispose(self_id, allocs);
                 true
             }
-            Ret(ret) => ret.dispose(allocs),
-            Jump(jump) => jump.dispose(allocs),
-            Br(br) => br.dispose(allocs),
-            Switch(switch) => switch.dispose(allocs),
+            Ret(ret) => ret.dispose(self_id, allocs),
+            Jump(jump) => jump.dispose(self_id, allocs),
+            Br(br) => br.dispose(self_id, allocs),
+            Switch(switch) => switch.dispose(self_id, allocs),
             // Pointer and memory instructions
-            Alloca(alloca) => alloca.dispose(allocs),
-            GEP(gep) => gep.dispose(allocs),
-            Load(load) => load.dispose(allocs),
-            Store(store) => store.dispose(allocs),
+            Alloca(alloca) => alloca.dispose(self_id, allocs),
+            GEP(gep) => gep.dispose(self_id, allocs),
+            Load(load) => load.dispose(self_id, allocs),
+            Store(store) => store.dispose(self_id, allocs),
             // Other instructions
-            AmoRmw(amormw) => amormw.dispose(allocs),
-            BinOP(binop) => binop.dispose(allocs),
-            Call(call) => call.dispose(allocs),
-            Cast(cast) => cast.dispose(allocs),
-            Cmp(cmp) => cmp.dispose(allocs),
-            IndexExtract(e) => e.dispose(allocs),
-            FieldExtract(e) => e.dispose(allocs),
-            IndexInsert(e) => e.dispose(allocs),
-            FieldInsert(e) => e.dispose(allocs),
-            Phi(phi) => phi.dispose(allocs),
-            Select(select) => select.dispose(allocs),
+            AmoRmw(amormw) => amormw.dispose(self_id, allocs),
+            BinOP(binop) => binop.dispose(self_id, allocs),
+            Call(call) => call.dispose(self_id, allocs),
+            Cast(cast) => cast.dispose(self_id, allocs),
+            Cmp(cmp) => cmp.dispose(self_id, allocs),
+            IndexExtract(e) => e.dispose(self_id, allocs),
+            FieldExtract(e) => e.dispose(self_id, allocs),
+            IndexInsert(e) => e.dispose(self_id, allocs),
+            FieldInsert(e) => e.dispose(self_id, allocs),
+            Phi(phi) => phi.dispose(self_id, allocs),
+            Select(select) => select.dispose(self_id, allocs),
         }
     }
 }
