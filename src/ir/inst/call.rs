@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID,
         InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -124,9 +124,9 @@ impl CallInst {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CallInstID(pub InstID);
-
+impl_debug_for_subinst_id!(CallInstID);
 impl ISubInstID for CallInstID {
     type InstObjT = CallInst;
     fn raw_from_ir(id: InstID) -> Self {

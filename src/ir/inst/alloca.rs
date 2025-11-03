@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, JumpTargets,
         Opcode, OperandSet, UseID,
@@ -89,9 +89,9 @@ impl AllocaInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AllocaInstID(pub InstID);
-
+impl_debug_for_subinst_id!(AllocaInstID);
 impl ISubInstID for AllocaInstID {
     type InstObjT = AllocaInst;
 

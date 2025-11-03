@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
         JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -129,9 +129,9 @@ impl IndexInsertInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IndexInsertInstID(pub InstID);
-
+impl_debug_for_subinst_id!(IndexInsertInstID);
 impl ISubInstID for IndexInsertInstID {
     type InstObjT = IndexInsertInst;
 
@@ -274,9 +274,9 @@ impl FieldInsertInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldInsertInstID(pub InstID);
-
+impl_debug_for_subinst_id!(FieldInsertInstID);
 impl ISubInstID for FieldInsertInstID {
     type InstObjT = FieldInsertInst;
 

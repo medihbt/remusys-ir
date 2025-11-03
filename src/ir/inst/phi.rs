@@ -3,10 +3,10 @@ use std::cell::{Ref, RefCell};
 use smallvec::SmallVec;
 
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockID, IRAllocs, ISubInst, IUser, InstCommon, InstID, InstObj, Opcode, OperandSet, UseID,
-        UseKind, ValueSSA,
+        BlockID, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -204,5 +204,50 @@ impl PhiInst {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PhiInstID(pub InstID);
+impl_debug_for_subinst_id!(PhiInstID);
+impl ISubInstID for PhiInstID {
+    type InstObjT = PhiInst;
+
+    fn raw_from_ir(id: InstID) -> Self {
+        PhiInstID(id)
+    }
+    fn into_ir(self) -> InstID {
+        self.0
+    }
+}
+impl PhiInstID {
+    pub fn new_empty(allocs: &IRAllocs, ty: ValTypeID) -> Self {
+        let inst = PhiInst::new_empty(ty);
+        Self::allocate(allocs, inst)
+    }
+    pub fn with_capacity(allocs: &IRAllocs, ty: ValTypeID, capacity: usize) -> Self {
+        let inst = PhiInst::with_capacity(ty, capacity);
+        Self::allocate(allocs, inst)
+    }
+
+    pub fn incoming_uses(self, allocs: &IRAllocs) -> Ref<'_, [UseSlotPair]> {
+        self.deref_ir(allocs).incoming_uses()
+    }
+    pub fn find_incoming_pos(self, allocs: &IRAllocs, block: BlockID) -> Option<usize> {
+        self.deref_ir(allocs).find_incoming_pos(allocs, block)
+    }
+    pub fn find_incoming_uses(self, allocs: &IRAllocs, block: BlockID) -> Option<[UseID; 2]> {
+        self.deref_ir(allocs).find_incoming_uses(allocs, block)
+    }
+    pub fn find_incoming_value(self, allocs: &IRAllocs, block: BlockID) -> Option<ValueSSA> {
+        self.deref_ir(allocs).find_incoming_value(allocs, block)
+    }
+    pub fn set_incoming(
+        self,
+        allocs: &IRAllocs,
+        bb: BlockID,
+        val: ValueSSA,
+    ) -> Ref<'_, UseSlotPair> {
+        self.deref_ir(allocs).set_incoming(allocs, bb, val)
+    }
+    pub fn remove_incoming(self, allocs: &IRAllocs, bb: BlockID) -> Option<ValueSSA> {
+        self.deref_ir(allocs).remove_incoming(allocs, bb)
+    }
+}

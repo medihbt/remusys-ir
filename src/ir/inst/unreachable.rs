@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstCommon, InstID,
         InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID,
@@ -74,9 +74,9 @@ impl UnreachableInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnreachableInstID(pub InstID);
-
+impl_debug_for_subinst_id!(UnreachableInstID);
 impl ISubInstID for UnreachableInstID {
     type InstObjT = UnreachableInst;
 

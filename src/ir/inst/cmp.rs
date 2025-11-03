@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         CmpCond, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -124,9 +124,9 @@ impl CmpInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CmpInstID(pub InstID);
-
+impl_debug_for_subinst_id!(CmpInstID);
 impl ISubInstID for CmpInstID {
     type InstObjT = CmpInst;
 

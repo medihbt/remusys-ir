@@ -12,6 +12,7 @@ use mtb_entity::{EntityListHead, EntityRingList, IEntityAllocID, IEntityRingList
 use std::{
     cell::Cell,
     collections::{BTreeSet, HashSet},
+    fmt::Debug,
 };
 
 /// 跳转目标的类型，用于区分不同的控制流转移
@@ -103,9 +104,13 @@ impl JumpTarget {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpTargetID(pub PtrID<JumpTarget>);
-
+impl Debug for JumpTargetID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "JumpTargetID({:p})", self.inner())
+    }
+}
 impl JumpTargetID {
     pub fn inner(self) -> PtrID<JumpTarget> {
         self.0

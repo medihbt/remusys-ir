@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -98,9 +98,9 @@ impl BinOPInst {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BinOPInstID(pub InstID);
-
+impl_debug_for_subinst_id!(BinOPInstID);
 impl ISubInstID for BinOPInstID {
     type InstObjT = BinOPInst;
 

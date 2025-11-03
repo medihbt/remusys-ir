@@ -1,19 +1,17 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    collections::{BTreeMap, HashMap},
-    ops::RangeFrom,
-};
-
-use smallvec::{SmallVec, smallvec};
-
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst,
         IUser, InstCommon, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{IntType, ValTypeID},
+};
+use smallvec::{SmallVec, smallvec};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::{BTreeMap, HashMap},
+    ops::RangeFrom,
 };
 
 /// Switch 指令：根据条件值跳转到不同的基本块
@@ -228,9 +226,9 @@ impl SwitchInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SwitchInstID(pub InstID);
-
+impl_debug_for_subinst_id!(SwitchInstID);
 impl ISubInstID for SwitchInstID {
     type InstObjT = SwitchInst;
 

@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         ConstData, IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser,
         InstCommon, InstID, InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -172,9 +172,9 @@ impl GEPInst {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GEPInstID(pub InstID);
-
+impl_debug_for_subinst_id!(GEPInstID);
 impl ISubInstID for GEPInstID {
     type InstObjT = GEPInst;
 

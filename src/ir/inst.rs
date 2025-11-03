@@ -304,6 +304,18 @@ pub trait ISubInstID: Copy {
         allocs.push_disposed(self.into_ir());
     }
 }
+/// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
+#[macro_export]
+macro_rules! impl_debug_for_subinst_id {
+    ($TypeName:ident) => {
+        impl std::fmt::Debug for $TypeName {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}({:p})", stringify!($TypeName), self.into_ir())
+            }
+        }
+    };
+}
+
 pub trait IAggregateInst: ISubInst {
     fn get_aggr_operand_type(&self) -> AggrType;
     fn get_elem_type(&self) -> ValTypeID;

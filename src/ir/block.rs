@@ -1,7 +1,8 @@
 use crate::{
     ir::{
-        GlobalID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-        JumpTargetID, JumpTargets, PredList, TerminatorID, UserList, ValueClass, ValueSSA,
+        GlobalID, IRAllocs, IRManaged, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID,
+        InstObj, JumpTargetID, JumpTargets, ManagedInst, PredList, TerminatorID, UserList,
+        ValueClass, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -143,7 +144,11 @@ impl BlockObj {
         self.try_get_terminator(allocs)
             .expect("Attempted to get terminator of BlockObj without terminator")
     }
-    pub fn set_terminator_inst(&self, allocs: &IRAllocs, inst_id: InstID) -> Option<InstID> {
+    pub fn set_terminator_inst<'alloc>(
+        &self,
+        allocs: &'alloc IRAllocs,
+        inst_id: InstID,
+    ) -> Option<ManagedInst<'alloc>> {
         if !inst_id.is_terminator(allocs) {
             panic!("Attempted to set non-terminator {inst_id:?} as terminator of {self:p}");
         }
@@ -160,7 +165,7 @@ impl BlockObj {
         insts
             .push_back_id(inst_id, &allocs.insts)
             .expect("Failed to add new terminator InstID to BlockObj insts");
-        old_terminator
+        old_terminator.map(|t| IRManaged::new(allocs, t))
     }
     pub fn get_terminator(&self, allocs: &IRAllocs) -> TerminatorID {
         let back = self
@@ -171,7 +176,11 @@ impl BlockObj {
         TerminatorID::try_from_ir(allocs, back)
             .expect("Terminator InstID of BlockObj is not a valid TerminatorID")
     }
-    pub fn set_terminator(&self, allocs: &IRAllocs, term_id: TerminatorID) -> Option<InstID> {
+    pub fn set_terminator<'allocs>(
+        &self,
+        allocs: &'allocs IRAllocs,
+        term_id: TerminatorID,
+    ) -> Option<ManagedInst<'allocs>> {
         self.set_terminator_inst(allocs, term_id.into_ir())
     }
 
@@ -263,7 +272,11 @@ impl BlockID {
     pub fn get_terminator_inst(self, allocs: &IRAllocs) -> InstID {
         self.deref_ir(allocs).get_terminator_inst(allocs)
     }
-    pub fn set_terminator_inst(self, allocs: &IRAllocs, inst_id: InstID) -> Option<InstID> {
+    pub fn set_terminator_inst(
+        self,
+        allocs: &IRAllocs,
+        inst_id: InstID,
+    ) -> Option<ManagedInst<'_>> {
         self.deref_ir(allocs).set_terminator_inst(allocs, inst_id)
     }
     pub fn try_get_succs<'ir>(self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {

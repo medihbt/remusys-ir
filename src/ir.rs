@@ -44,6 +44,9 @@ pub use self::{
         ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
         JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
+    managed::{
+        IRManaged, ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse,
+    },
     module::{
         Module,
         allocs::{IPoolAllocated, IRAllocs, PoolAllocatedID},
@@ -53,6 +56,7 @@ pub use self::{
         ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,
         UserList,
     },
+    utils::numbering::{IRNumberValueMap, NumberOption},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

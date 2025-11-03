@@ -2,7 +2,11 @@ use crate::{
     ir::GlobalID,
     typing::{ArchInfo, TypeContext},
 };
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 pub mod allocs;
 
@@ -31,6 +35,10 @@ impl Module {
             symbols: RefCell::new(HashMap::new()),
         }
     }
+    #[inline(never)]
+    pub fn shared_new(arch: ArchInfo) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::new(arch)))
+    }
 
     pub fn with_capacity(arch: ArchInfo, base_cap: usize) -> Self {
         Self {
@@ -38,6 +46,10 @@ impl Module {
             tctx: TypeContext::new(arch),
             symbols: RefCell::new(HashMap::new()),
         }
+    }
+    #[inline(never)]
+    pub fn shared_with_capacity(arch: ArchInfo, base_cap: usize) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::with_capacity(arch, base_cap)))
     }
 
     pub fn get_global_by_name(&self, name: &str) -> Option<GlobalID> {
