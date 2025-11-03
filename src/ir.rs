@@ -52,7 +52,8 @@ pub use self::{
     },
     module::{
         Module,
-        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedID},
+        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedID, PoolAllocatedClass},
+        gc::{IRLiveSet, IRMarker},
     },
     opcode::{InstKind, Opcode},
     usedef::{
@@ -60,6 +61,7 @@ pub use self::{
         UserList,
     },
     utils::{
+        builder::*,
         numbering::{IRNumberValueMap, NumberOption},
         writer::{IRWriteOption, IRWriter, IRWriterStat},
     },
@@ -208,5 +210,24 @@ impl ValueSSA {
             _ => return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Compound)),
         };
         Ok(val)
+    }
+
+    pub fn as_dyn_traceable<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn ITraceableValue> {
+        match self {
+            ValueSSA::ConstExpr(expr) => Some(expr.deref_ir(allocs)),
+            ValueSSA::FuncArg(func, id) => Some(FuncArgID(*func, *id).deref_ir(allocs)),
+            ValueSSA::Block(block) => Some(block.deref_ir(allocs)),
+            ValueSSA::Inst(inst) => Some(inst.deref_ir(allocs)),
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            _ => None,
+        }
+    }
+    pub fn as_dyn_user<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IUser> {
+        match self {
+            ValueSSA::Inst(inst) => Some(inst.deref_ir(allocs)),
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            ValueSSA::ConstExpr(expr) => Some(expr.deref_ir(allocs)),
+            _ => None,
+        }
     }
 }

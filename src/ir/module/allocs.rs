@@ -58,33 +58,50 @@ impl IRAllocs {
         let Self { exprs, insts, globals, blocks, uses, jts, disposed_queue } = self;
         let queue = disposed_queue.get_mut();
         while let Some(id) = queue.pop_front() {
+            use PoolAllocatedID::*;
             match id {
-                PoolAllocatedID::Block(b) => {
+                Block(b) => {
                     b.inner().free(blocks);
                 }
-                PoolAllocatedID::Inst(i) => {
+                Inst(i) => {
                     i.free(insts);
                 }
-                PoolAllocatedID::Expr(e) => {
+                Expr(e) => {
                     e.free(exprs);
                 }
-                PoolAllocatedID::Global(g) => {
+                Global(g) => {
                     g.free(globals);
                 }
-                PoolAllocatedID::Use(u) => {
+                Use(u) => {
                     u.inner().free(uses);
                 }
-                PoolAllocatedID::JumpTarget(j) => {
+                JumpTarget(j) => {
                     j.inner().free(jts);
                 }
             }
         }
     }
+
+    pub fn num_pending_disposed(&self) -> usize {
+        self.disposed_queue.borrow().len()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PoolAllocatedClass {
+    Block,
+    Inst,
+    Expr,
+    Global,
+    Use,
+    JumpTarget,
 }
 
 pub trait IPoolAllocated: IEntityAllocatable {
     type ModuleID: Copy;
     type MinRelatedPoolT: AsRef<IRAllocs>;
+
+    const CLASS: PoolAllocatedClass;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self>;
     fn alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self>;
@@ -111,6 +128,8 @@ impl IEntityAllocatable for BlockObj {
 impl IPoolAllocated for BlockObj {
     type ModuleID = BlockID;
     type MinRelatedPoolT = IRAllocs;
+
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::Block;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.blocks
@@ -142,6 +161,8 @@ impl IPoolAllocated for InstObj {
     type ModuleID = InstID;
     type MinRelatedPoolT = IRAllocs;
 
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::Inst;
+
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.insts
     }
@@ -171,6 +192,8 @@ impl IPoolAllocated for ExprObj {
     type ModuleID = ExprID;
     type MinRelatedPoolT = IRAllocs;
 
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::Expr;
+
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.exprs
     }
@@ -199,6 +222,8 @@ impl IEntityAllocatable for GlobalObj {
 impl IPoolAllocated for GlobalObj {
     type ModuleID = GlobalID;
     type MinRelatedPoolT = Module;
+
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::Global;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.globals
@@ -238,6 +263,8 @@ impl IPoolAllocated for Use {
     type ModuleID = UseID;
     type MinRelatedPoolT = IRAllocs;
 
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::Use;
+
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.uses
     }
@@ -266,6 +293,8 @@ impl IEntityAllocatable for JumpTarget {
 impl IPoolAllocated for JumpTarget {
     type ModuleID = JumpTargetID;
     type MinRelatedPoolT = IRAllocs;
+
+    const CLASS: PoolAllocatedClass = PoolAllocatedClass::JumpTarget;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.jts
@@ -302,6 +331,11 @@ impl From<BlockID> for PoolAllocatedID {
         PoolAllocatedID::Block(id)
     }
 }
+impl From<PtrID<BlockObj>> for PoolAllocatedID {
+    fn from(id: PtrID<BlockObj>) -> Self {
+        PoolAllocatedID::Block(BlockID(id))
+    }
+}
 impl From<InstID> for PoolAllocatedID {
     fn from(id: InstID) -> Self {
         PoolAllocatedID::Inst(id)
@@ -322,8 +356,63 @@ impl From<UseID> for PoolAllocatedID {
         PoolAllocatedID::Use(id)
     }
 }
+impl From<PtrID<Use>> for PoolAllocatedID {
+    fn from(id: PtrID<Use>) -> Self {
+        PoolAllocatedID::Use(UseID(id))
+    }
+}
 impl From<JumpTargetID> for PoolAllocatedID {
     fn from(id: JumpTargetID) -> Self {
         PoolAllocatedID::JumpTarget(id)
+    }
+}
+impl From<PtrID<JumpTarget>> for PoolAllocatedID {
+    fn from(id: PtrID<JumpTarget>) -> Self {
+        PoolAllocatedID::JumpTarget(JumpTargetID(id))
+    }
+}
+impl PoolAllocatedID {
+    pub fn get_class(&self) -> PoolAllocatedClass {
+        match self {
+            PoolAllocatedID::Block(_) => PoolAllocatedClass::Block,
+            PoolAllocatedID::Inst(_) => PoolAllocatedClass::Inst,
+            PoolAllocatedID::Expr(_) => PoolAllocatedClass::Expr,
+            PoolAllocatedID::Global(_) => PoolAllocatedClass::Global,
+            PoolAllocatedID::Use(_) => PoolAllocatedClass::Use,
+            PoolAllocatedID::JumpTarget(_) => PoolAllocatedClass::JumpTarget,
+        }
+    }
+    pub fn dispose(self, module: &Module) {
+        match self {
+            PoolAllocatedID::Block(b) => {
+                BlockObj::dispose_id(b, &module.allocs);
+            }
+            PoolAllocatedID::Inst(i) => {
+                InstObj::dispose_id(i, &module.allocs);
+            }
+            PoolAllocatedID::Expr(e) => {
+                ExprObj::dispose_id(e, &module.allocs);
+            }
+            PoolAllocatedID::Global(g) => {
+                GlobalObj::dispose_id(g, module);
+            }
+            PoolAllocatedID::Use(u) => {
+                Use::dispose_id(u, &module.allocs);
+            }
+            PoolAllocatedID::JumpTarget(j) => {
+                JumpTarget::dispose_id(j, &module.allocs);
+            }
+        }
+    }
+    pub fn get_indexed(self, ir_allocs: &IRAllocs) -> Option<usize> {
+        use PoolAllocatedID::*;
+        match self {
+            Block(b) => b.inner().as_indexed(&ir_allocs.blocks).map(|x| x.0),
+            Inst(i) => i.as_indexed(&ir_allocs.insts).map(|x| x.0),
+            Expr(e) => e.as_indexed(&ir_allocs.exprs).map(|x| x.0),
+            Global(g) => g.as_indexed(&ir_allocs.globals).map(|x| x.0),
+            Use(u) => u.0.as_indexed(&ir_allocs.uses).map(|x| x.0),
+            JumpTarget(j) => j.0.as_indexed(&ir_allocs.jts).map(|x| x.0),
+        }
     }
 }

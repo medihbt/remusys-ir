@@ -3,7 +3,7 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode, OperandSet,
-        UseID, UserList, ValueClass, ValueSSA,
+        UseID, UserID, UserList, ValueClass, ValueSSA,
     },
     typing::{AggrType, TypeContext, ValTypeID},
 };
@@ -136,7 +136,7 @@ impl InstCommon {
     }
 }
 
-pub trait ISubInst: IUser {
+pub trait ISubInst: IUser + Sized {
     fn get_common(&self) -> &InstCommon;
     fn common_mut(&mut self) -> &mut InstCommon;
 
@@ -155,9 +155,7 @@ pub trait ISubInst: IUser {
 
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self>;
     fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self>;
-    fn try_from_ir(inst: InstObj) -> Option<Self>
-    where
-        Self: Sized;
+    fn try_from_ir(inst: InstObj) -> Option<Self>;
 
     fn from_ir_ref(inst: &InstObj) -> &Self {
         Self::try_from_ir_ref(inst).expect("Invalid sub-instruction reference")
@@ -165,10 +163,7 @@ pub trait ISubInst: IUser {
     fn from_ir_mut(inst: &mut InstObj) -> &mut Self {
         Self::try_from_ir_mut(inst).expect("Invalid sub-instruction mutable reference")
     }
-    fn from_ir(inst: InstObj) -> Self
-    where
-        Self: Sized,
-    {
+    fn from_ir(inst: InstObj) -> Self {
         Self::try_from_ir(inst).expect("Invalid sub-instruction")
     }
 
@@ -202,7 +197,7 @@ pub trait ISubInst: IUser {
         self._common_init_self_id(self_id, allocs)
     }
     fn _common_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
-        self.user_init_self_id(allocs, self_id);
+        self.user_init_self_id(allocs, UserID::Inst(self_id));
         let jt_list = self.try_get_jts().unwrap_or(MixRef::Fix(&[]));
         for &jt_id in jt_list.iter() {
             jt_id.set_terminator(allocs, self_id);
@@ -577,6 +572,34 @@ impl ISubInst for InstObj {
             Br(br) => br.try_get_jts(),
             Switch(switch) => switch.try_get_jts(),
             _ => None,
+        }
+    }
+
+    fn inst_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
+        match self {
+            InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => {
+                self._common_init_self_id(self_id, allocs)
+            }
+            InstObj::Unreachable(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Ret(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Jump(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Br(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Switch(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Alloca(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::GEP(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Load(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Store(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::AmoRmw(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::BinOP(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Call(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Cast(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Cmp(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::IndexExtract(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::FieldExtract(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::IndexInsert(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::FieldInsert(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Phi(i) => i.inst_init_self_id(self_id, allocs),
+            InstObj::Select(i) => i.inst_init_self_id(self_id, allocs),
         }
     }
 

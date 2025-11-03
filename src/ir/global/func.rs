@@ -3,7 +3,7 @@ use crate::{
     ir::{
         BlockID, BlockObj, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
         ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
-        UseID, UserList, ValueClass, ValueSSA,
+        UseID, UserID, UserList, ValueClass, ValueSSA,
         global::{GlobalCommon, GlobalDisposeError, GlobalDisposeRes, Linkage},
         inst::{RetInstID, UnreachableInstID},
     },
@@ -158,7 +158,7 @@ impl ISubGlobal for FuncObj {
     }
 
     fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-        self.user_init_self_id(allocs, self_id);
+        self.user_init_self_id(allocs, UserID::Global(self_id));
         let func_id = FuncID(self_id);
         for arg in self.args.iter() {
             arg.func.set(Some(func_id));
@@ -291,7 +291,7 @@ pub enum FuncTerminateMode {
 
 #[derive(Debug, Clone)]
 pub struct FuncBuilder {
-    name: String,
+    pub name: String,
     functype: FuncTypeID,
     ret_type: ValTypeID,
     arg_types: SmallVec<[ValTypeID; 8]>,

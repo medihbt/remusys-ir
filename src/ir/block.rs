@@ -12,6 +12,8 @@ use mtb_entity::{
 };
 use std::cell::Cell;
 
+type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstObj>>;
+
 pub struct BlockObj {
     head: Cell<EntityListHead<BlockObj>>,
     parent_func: Cell<Option<FuncID>>,
@@ -121,8 +123,14 @@ impl BlockObj {
         }
     }
 
+    pub fn get_parent_func(&self) -> Option<FuncID> {
+        self.parent_func.get()
+    }
     pub(super) fn set_parent_func(&self, func: FuncID) {
         self.parent_func.set(Some(func));
+    }
+    pub(super) fn try_get_body(&self) -> Option<&BlockObjBody> {
+        self.body.as_ref()
     }
     pub fn get_body(&self) -> &BlockObjBody {
         self.body
@@ -147,11 +155,11 @@ impl BlockObj {
         self.try_get_terminator(allocs)
             .expect("Attempted to get terminator of BlockObj without terminator")
     }
-    pub fn set_terminator_inst<'alloc>(
+    pub fn try_set_terminator_inst<'ir>(
         &self,
-        allocs: &'alloc IRAllocs,
+        allocs: &'ir IRAllocs,
         inst_id: InstID,
-    ) -> Option<ManagedInst<'alloc>> {
+    ) -> TermiReplaceRes<'ir> {
         if !inst_id.is_terminator(allocs) {
             panic!("Attempted to set non-terminator {inst_id:?} as terminator of {self:p}");
         }
@@ -161,14 +169,19 @@ impl BlockObj {
             panic!("Attempted to set existing terminator {inst_id:?} as terminator of {self:p}");
         }
         if let Some(old_id) = old_terminator {
-            insts
-                .node_unplug(old_id, &allocs.insts)
-                .expect("Failed to unplug old terminator InstID from BlockObj insts");
+            insts.node_unplug(old_id, &allocs.insts)?;
         }
-        insts
-            .push_back_id(inst_id, &allocs.insts)
-            .expect("Failed to add new terminator InstID to BlockObj insts");
-        old_terminator.map(|t| IRManaged::new(allocs, t))
+        insts.push_back_id(inst_id, &allocs.insts)?;
+        let managed_old = old_terminator.map(|t| IRManaged::new(allocs, t));
+        Ok(managed_old)
+    }
+    pub fn set_terminator_inst<'ir>(
+        &self,
+        allocs: &'ir IRAllocs,
+        termi: InstID,
+    ) -> Option<ManagedInst<'ir>> {
+        self.try_set_terminator_inst(allocs, termi)
+            .expect("Failed to set terminator inst for BlockObj")
     }
     pub fn get_terminator(&self, allocs: &IRAllocs) -> TerminatorID {
         let back = self
@@ -179,12 +192,20 @@ impl BlockObj {
         TerminatorID::try_from_ir(allocs, back)
             .expect("Terminator InstID of BlockObj is not a valid TerminatorID")
     }
-    pub fn set_terminator<'allocs>(
+    pub fn try_set_terminator<'ir>(
         &self,
-        allocs: &'allocs IRAllocs,
-        term_id: TerminatorID,
-    ) -> Option<ManagedInst<'allocs>> {
-        self.set_terminator_inst(allocs, term_id.into_ir())
+        allocs: &'ir IRAllocs,
+        term_id: impl Into<TerminatorID>,
+    ) -> TermiReplaceRes<'ir> {
+        self.try_set_terminator_inst(allocs, term_id.into().into_ir())
+    }
+    pub fn set_terminator<'ir>(
+        &self,
+        allocs: &'ir IRAllocs,
+        term_id: impl Into<TerminatorID>,
+    ) -> Option<ManagedInst<'ir>> {
+        self.try_set_terminator(allocs, term_id)
+            .expect("Failed to set terminator for BlockObj")
     }
 
     pub fn try_get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
@@ -294,12 +315,16 @@ impl BlockID {
     pub fn get_terminator_inst(self, allocs: &IRAllocs) -> InstID {
         self.deref_ir(allocs).get_terminator_inst(allocs)
     }
-    pub fn set_terminator_inst(
+    pub fn try_set_terminator_inst(
         self,
         allocs: &IRAllocs,
         inst_id: InstID,
-    ) -> Option<ManagedInst<'_>> {
-        self.deref_ir(allocs).set_terminator_inst(allocs, inst_id)
+    ) -> TermiReplaceRes<'_> {
+        self.deref_ir(allocs)
+            .try_set_terminator_inst(allocs, inst_id)
+    }
+    pub fn set_terminator_inst(self, allocs: &IRAllocs, termi: InstID) -> Option<ManagedInst<'_>> {
+        self.deref_ir(allocs).set_terminator_inst(allocs, termi)
     }
     pub fn try_get_succs<'ir>(self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
         self.deref_ir(allocs).try_get_succs(allocs)

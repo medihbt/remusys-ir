@@ -79,7 +79,7 @@ impl ISubExprID for StructExprID {
 impl StructExprID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, structty: StructTypeID) -> Self {
         let expr = StructExpr::new_uninit(allocs, tctx, structty);
-        Self::new(allocs, expr)
+        Self::allocate(allocs, expr)
     }
 
     pub fn get_struct_type(self, allocs: &IRAllocs) -> StructTypeID {

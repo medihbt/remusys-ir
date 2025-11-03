@@ -3,7 +3,7 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, Module, OperandSet, UseID, UseKind,
-        ValueSSA,
+        UserID, ValueSSA,
         global::{
             GlobalCommon, GlobalDisposeError, GlobalDisposeRes, GlobalObj, ISubGlobal, Linkage,
         },
@@ -87,7 +87,7 @@ impl ISubGlobal for GlobalVar {
     }
 
     fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-        self.user_init_self_id(allocs, self_id);
+        self.user_init_self_id(allocs, UserID::Global(self_id));
     }
     fn dispose(&self, module: &Module) -> GlobalDisposeRes {
         if self.is_disposed() {

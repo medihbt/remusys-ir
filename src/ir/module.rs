@@ -2,13 +2,12 @@ use crate::{
     ir::{GlobalID, IRAllocs},
     typing::{ArchInfo, TypeContext},
 };
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Mutex;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 pub mod allocs;
+pub mod gc;
 
 pub struct Module {
     pub allocs: IRAllocs,
@@ -46,20 +45,30 @@ impl Module {
         }
     }
     #[inline(never)]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn shared_new(arch: ArchInfo) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self::new(arch)))
+    }
+    #[inline(never)]
+    pub fn new_rc(arch: ArchInfo) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::new(arch)))
     }
 
     pub fn with_capacity(arch: ArchInfo, base_cap: usize) -> Self {
         Self {
-            allocs: allocs::IRAllocs::with_capacity(base_cap),
+            allocs: IRAllocs::with_capacity(base_cap),
             tctx: TypeContext::new(arch),
             symbols: RefCell::new(HashMap::new()),
         }
     }
     #[inline(never)]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn shared_with_capacity(arch: ArchInfo, base_cap: usize) -> Arc<Mutex<Self>> {
         Arc::new(Mutex::new(Self::with_capacity(arch, base_cap)))
+    }
+    #[inline(never)]
+    pub fn with_capacity_rc(arch: ArchInfo, base_cap: usize) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::with_capacity(arch, base_cap)))
     }
 
     pub fn get_global_by_name(&self, name: &str) -> Option<GlobalID> {

@@ -3,7 +3,8 @@ use std::cell::Cell;
 use crate::{
     impl_traceable_from_common,
     ir::{
-        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserID, UserList, ValueClass,
+        ValueSSA,
         constant::{array::ArrayExpr, structure::StructExpr},
     },
     typing::ValTypeID,
@@ -63,12 +64,13 @@ pub trait ISubExpr: IUser {
     fn is_disposed(&self) -> bool {
         self.get_common().dispose_mark.get()
     }
-    fn dispose(&self, allocs: &IRAllocs) {
+    fn dispose(&self, allocs: &IRAllocs) -> bool {
         if self.is_disposed() {
-            return;
+            return false;
         }
         self.get_common().dispose_mark.set(true);
         self.user_dispose(allocs);
+        true
     }
 }
 
@@ -91,17 +93,21 @@ pub trait ISubExprID: Copy {
         Self::ExprObjT::from_ir_mut(expr)
     }
 
-    fn new(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
+    fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
         let mut obj = obj.into_ir();
         if obj.get_common().users.is_none() {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let id = allocs.exprs.allocate(obj);
+        id.deref_ir(allocs)
+            .user_init_self_id(allocs, UserID::Expr(id));
         Self::raw_from_ir(id)
     }
 
     fn dispose(self, allocs: &IRAllocs) {
-        self.deref_ir(allocs).dispose(allocs);
+        if !self.deref_ir(allocs).dispose(allocs) {
+            return;
+        }
         allocs.push_disposed(self.into_ir());
     }
 }

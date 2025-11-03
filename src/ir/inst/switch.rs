@@ -189,11 +189,13 @@ impl SwitchInst {
         jt.set_block(allocs, bb);
         jt
     }
-    pub fn remove_case(&self, allocs: &IRAllocs, case_val: i64) -> Option<JumpTargetID> {
+    pub fn remove_case(&self, allocs: &IRAllocs, case_val: i64) -> bool {
         if let Some(pos) = self.find_case_pos(allocs, case_val) {
-            Some(self.remove_case_jt(pos))
+            let jt = self.remove_case_jt(pos);
+            jt.dispose(allocs);
+            true
         } else {
-            None
+            false
         }
     }
     pub fn sort_cases(&self, allocs: &IRAllocs) {
@@ -210,6 +212,10 @@ impl SwitchInst {
 
     fn push_case_jt(&self, allocs: &IRAllocs, case_val: i64) -> JumpTargetID {
         let jt = JumpTargetID::new(allocs, JumpTargetKind::SwitchCase(case_val));
+        let self_id = self.default_jt().get_terminator(allocs);
+        if let Some(inst_id) = self_id {
+            jt.set_terminator(allocs, inst_id);
+        }
         self.targets.borrow_mut().push(jt);
         jt
     }
@@ -330,7 +336,7 @@ impl SwitchInstID {
     pub fn find_set_case(self, allocs: &IRAllocs, case_val: i64, bb: BlockID) -> JumpTargetID {
         self.deref_ir(allocs).find_set_case(allocs, case_val, bb)
     }
-    pub fn find_remove_case(self, allocs: &IRAllocs, case_val: i64) -> Option<JumpTargetID> {
+    pub fn find_remove_case(self, allocs: &IRAllocs, case_val: i64) -> bool {
         self.deref_ir(allocs).remove_case(allocs, case_val)
     }
 }

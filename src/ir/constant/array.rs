@@ -80,7 +80,7 @@ impl ISubExprID for ArrayExprID {
 }
 impl ArrayExprID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
-        Self::new(allocs, ArrayExpr::new_uninit(allocs, tctx, arrty))
+        Self::allocate(allocs, ArrayExpr::new_uninit(allocs, tctx, arrty))
     }
 
     pub fn get_arrty(self, allocs: &IRAllocs) -> ArrayTypeID {

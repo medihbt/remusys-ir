@@ -128,8 +128,7 @@ pub trait IUser: ITraceableValue {
         }
         self.traceable_dispose(allocs);
     }
-    fn user_init_self_id(&self, allocs: &IRAllocs, id: impl Into<UserID>) {
-        let user_id = id.into();
+    fn user_init_self_id(&self, allocs: &IRAllocs, user_id: UserID) {
         self.traceable_init_self_id(allocs, user_id.into());
         let operands = self.get_operands();
         for use_id in operands.into_iter() {
@@ -564,4 +563,15 @@ macro_rules! impl_traceable_from_common {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_iuser_dyn_compatible() {
+        fn _assert_traceable_dyn(_: &dyn ITraceableValue) {}
+        fn _assert_user_dyn(_: &dyn IUser) {}
+    }
 }

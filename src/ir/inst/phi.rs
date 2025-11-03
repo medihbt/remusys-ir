@@ -1,4 +1,4 @@
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 
 use smallvec::SmallVec;
 
@@ -6,7 +6,7 @@ use crate::{
     impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        OperandSet, UseID, UseKind, UserID, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -29,13 +29,21 @@ trait IPhiOperandSlot: Copy {
         self.pair()[0].set_operand(allocs, val);
     }
 
-    fn new(allocs: &IRAllocs, index: u32, val: ValueSSA, block: BlockID) -> Self {
+    fn new(
+        allocs: &IRAllocs,
+        id: Option<InstID>,
+        index: u32,
+        val: ValueSSA,
+        block: BlockID,
+    ) -> Self {
         let slots = [
             UseID::new(allocs, UseKind::PhiIncomingValue(index)),
             UseID::new(allocs, UseKind::PhiIncomingBlock(index)),
         ];
         slots[0].set_operand(allocs, val);
         slots[1].set_operand(allocs, ValueSSA::Block(block));
+        slots[0].set_user(allocs, id.map(UserID::Inst));
+        slots[1].set_user(allocs, id.map(UserID::Inst));
         Self::from_pair(slots)
     }
 
@@ -89,6 +97,7 @@ impl IPhiOperandSlot for UseSlotPair {
 pub struct PhiInst {
     pub common: InstCommon,
     operands: RefCell<SmallVec<[UseSlotPair; 2]>>,
+    self_id: Cell<Option<InstID>>,
 }
 impl_traceable_from_common!(PhiInst, true);
 impl IUser for PhiInst {
@@ -131,18 +140,33 @@ impl ISubInst for PhiInst {
     fn try_get_jts(&self) -> Option<crate::ir::JumpTargets<'_>> {
         None
     }
+
+    fn inst_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
+        self._common_init_self_id(self_id, allocs);
+        self.self_id.set(Some(self_id));
+    }
+    fn dispose(&self, allocs: &IRAllocs) -> bool {
+        if self.get_common().disposed.get() {
+            return false;
+        }
+        self._common_dispose(allocs);
+        self.self_id.set(None);
+        true
+    }
 }
 impl PhiInst {
     pub fn new_empty(ty: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Phi, ty),
             operands: RefCell::new(SmallVec::new()),
+            self_id: Cell::new(None),
         }
     }
     pub fn with_capacity(ty: ValTypeID, capacity: usize) -> Self {
         Self {
             common: InstCommon::new(Opcode::Phi, ty),
             operands: RefCell::new(SmallVec::with_capacity(capacity)),
+            self_id: Cell::new(None),
         }
     }
 
@@ -190,7 +214,11 @@ impl PhiInst {
         let pos = self.find_incoming_pos(allocs, bb)?;
         let mut operands = self.operands.borrow_mut();
         let u = operands.swap_remove(pos);
-        operands[pos].set_index(allocs, pos as u32);
+        // 如果 swap_remove 将最后一个元素移到了 pos，则需要更新其索引；
+        // 但当移除的是最后一个元素时，pos == new_len，直接访问会越界。
+        if pos < operands.len() {
+            operands[pos].set_index(allocs, pos as u32);
+        }
         let value = u.get_value(allocs);
         u.dispose(allocs);
         Some(value)
@@ -199,7 +227,7 @@ impl PhiInst {
     fn push_incoming(&self, allocs: &IRAllocs, bb: BlockID, val: ValueSSA) {
         let mut operands = self.operands.borrow_mut();
         let index = operands.len() as u32;
-        let slot_pair = UseSlotPair::new(allocs, index, val, bb);
+        let slot_pair = UseSlotPair::new(allocs, self.self_id.get(), index, val, bb);
         operands.push(slot_pair);
     }
 }
