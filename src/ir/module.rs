@@ -1,5 +1,5 @@
 use crate::{
-    ir::GlobalID,
+    ir::{GlobalID, IRAllocs},
     typing::{ArchInfo, TypeContext},
 };
 use std::{
@@ -11,26 +11,36 @@ use std::{
 pub mod allocs;
 
 pub struct Module {
-    pub allocs: allocs::IRAllocs,
+    pub allocs: IRAllocs,
     pub tctx: TypeContext,
     pub symbols: RefCell<HashMap<Arc<str>, GlobalID>>,
 }
 
-impl AsRef<allocs::IRAllocs> for Module {
-    fn as_ref(&self) -> &allocs::IRAllocs {
+impl AsRef<IRAllocs> for Module {
+    fn as_ref(&self) -> &IRAllocs {
         &self.allocs
     }
 }
-impl AsMut<allocs::IRAllocs> for Module {
-    fn as_mut(&mut self) -> &mut allocs::IRAllocs {
+impl AsRef<Module> for Module {
+    fn as_ref(&self) -> &Module {
+        self
+    }
+}
+impl AsMut<IRAllocs> for Module {
+    fn as_mut(&mut self) -> &mut IRAllocs {
         &mut self.allocs
+    }
+}
+impl AsMut<Module> for Module {
+    fn as_mut(&mut self) -> &mut Module {
+        self
     }
 }
 
 impl Module {
     pub fn new(arch: ArchInfo) -> Self {
         Self {
-            allocs: allocs::IRAllocs::new(),
+            allocs: IRAllocs::new(),
             tctx: TypeContext::new(arch),
             symbols: RefCell::new(HashMap::new()),
         }

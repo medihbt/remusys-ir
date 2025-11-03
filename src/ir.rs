@@ -35,7 +35,8 @@ pub use self::{
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
+        GlobalCommon, GlobalDisposeError, GlobalDisposeRes, GlobalID, GlobalKind, GlobalObj,
+        ISubGlobal, ISubGlobalID,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, IFuncUniqueUser, IFuncValue,
         },

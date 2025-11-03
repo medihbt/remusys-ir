@@ -92,15 +92,16 @@ impl JumpTarget {
         self.kind.get() == JumpTargetKind::Disposed
     }
 
-    pub fn dispose(&self, allocs: &IRAllocs) {
+    pub fn dispose(&self, allocs: &IRAllocs) -> bool {
         if self.is_disposed() {
-            return;
+            return false;
         }
         self.kind.set(JumpTargetKind::Disposed);
         self.detach(&allocs.jts)
             .expect("JumpTarget dispose detach failed");
         self.terminator.set(None);
         self.block.set(None);
+        true
     }
 }
 
@@ -162,7 +163,9 @@ impl JumpTargetID {
     }
 
     pub fn dispose(self, allocs: &IRAllocs) {
-        self.deref_ir(allocs).dispose(allocs);
+        if !self.deref_ir(allocs).dispose(allocs) {
+            return;
+        }
         allocs.push_disposed(self);
     }
 }

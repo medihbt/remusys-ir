@@ -3,22 +3,22 @@ use crate::ir::*;
 use mtb_entity::IEntityAllocID;
 
 pub struct IRManaged<'ir, T: IPoolAllocated> {
-    allocs: &'ir IRAllocs,
+    pool: &'ir T::MinRelatedPoolT,
     id: T::ModuleID,
 }
 impl<'ir, T: IPoolAllocated> Drop for IRManaged<'ir, T> {
     fn drop(&mut self) {
-        T::dispose_id(self.id, self.allocs);
+        T::dispose_id(self.id, self.pool);
     }
 }
 impl<'ir, T: IPoolAllocated> IRManaged<'ir, T> {
-    pub fn new(allocs: &'ir IRAllocs, id: T::ModuleID) -> Self {
-        Self { allocs, id }
+    pub fn new(pool: &'ir T::MinRelatedPoolT, id: T::ModuleID) -> Self {
+        Self { pool, id }
     }
 
     pub fn as_ref(&self) -> &'ir T {
         let ptr = T::from_module_id(self.id);
-        let alloc = T::get_alloc(self.allocs);
+        let alloc = T::get_alloc(self.pool.as_ref());
         ptr.deref(alloc)
     }
 

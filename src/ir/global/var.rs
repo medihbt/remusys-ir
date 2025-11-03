@@ -4,7 +4,9 @@ use crate::{
     ir::{
         GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, Module, OperandSet, UseID, UseKind,
         ValueSSA,
-        global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
+        global::{
+            GlobalCommon, GlobalDisposeError, GlobalDisposeRes, GlobalObj, ISubGlobal, Linkage,
+        },
     },
     typing::ValTypeID,
 };
@@ -82,6 +84,20 @@ impl ISubGlobal for GlobalVar {
             (false, false) => GlobalKind::VarDef,
             (false, true) => GlobalKind::ConstDef,
         }
+    }
+
+    fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
+        self.user_init_self_id(allocs, self_id);
+    }
+    fn dispose(&self, module: &Module) -> GlobalDisposeRes {
+        if self.is_disposed() {
+            return Err(GlobalDisposeError::AlreadyDisposed(None));
+        }
+        // Mark disposed and unregister from module symbol table first
+        self.common.common_dispose(module)?;
+        // Then release initializer use and any users referencing this global
+        self.user_dispose(&module.allocs);
+        Ok(())
     }
 }
 impl GlobalVar {

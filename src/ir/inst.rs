@@ -179,11 +179,12 @@ pub trait ISubInst: IUser {
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>>;
 
-    fn dispose(&self, allocs: &IRAllocs) {
+    fn dispose(&self, allocs: &IRAllocs) -> bool {
         if self.get_common().disposed.get() {
-            return;
+            return false;
         }
         self._common_dispose(allocs);
+        true
     }
     fn _common_dispose(&self, allocs: &IRAllocs) {
         let common = self.get_common();
@@ -300,7 +301,9 @@ pub trait ISubInstID: Copy {
         let Some(obj) = self.try_deref_ir(allocs) else {
             return;
         };
-        obj.dispose(allocs);
+        if !obj.dispose(allocs) {
+            return;
+        }
         allocs.push_disposed(self.into_ir());
     }
 }
@@ -577,13 +580,16 @@ impl ISubInst for InstObj {
         }
     }
 
-    fn dispose(&self, allocs: &IRAllocs) {
+    fn dispose(&self, allocs: &IRAllocs) -> bool {
         use InstObj::*;
         if self.is_disposed() {
-            return;
+            return false;
         }
         match self {
-            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => self._common_dispose(allocs),
+            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => {
+                self._common_dispose(allocs);
+                true
+            }
             Ret(ret) => ret.dispose(allocs),
             Jump(jump) => jump.dispose(allocs),
             Br(br) => br.dispose(allocs),

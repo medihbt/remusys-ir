@@ -359,15 +359,16 @@ impl Use {
         );
         self.kind.set(kind);
     }
-    pub fn dispose(&self, allocs: &IRAllocs) {
+    pub fn dispose(&self, allocs: &IRAllocs) -> bool {
         if self.is_disposed() {
-            return;
+            return false;
         }
         self.kind.set(UseKind::DisposedUse);
         self.detach(&allocs.uses)
             .expect("Use dispose detach failed");
         self.user.set(None);
         self.operand.set(ValueSSA::None);
+        true
     }
 }
 
@@ -432,7 +433,9 @@ impl UseID {
         obj.operand.set(ValueSSA::None);
     }
     pub fn dispose(self, allocs: &IRAllocs) {
-        self.deref_ir(allocs).dispose(allocs);
+        if !self.deref_ir(allocs).dispose(allocs) {
+            return;
+        }
         allocs.push_disposed(self);
     }
 

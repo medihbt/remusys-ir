@@ -4,14 +4,17 @@ use crate::{
         BlockID, BlockObj, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
         ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
         UseID, UserList, ValueClass, ValueSSA,
-        global::{GlobalCommon, Linkage},
+        global::{GlobalCommon, GlobalDisposeError, GlobalDisposeRes, Linkage},
         inst::{RetInstID, UnreachableInstID},
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
 use mtb_entity::EntityList;
 use smallvec::SmallVec;
-use std::{cell::Ref, sync::Arc};
+use std::{
+    cell::{Cell, Ref},
+    sync::Arc,
+};
 
 pub trait IFuncValue: IPtrValue {
     fn get_pointee_func_type(&self) -> FuncTypeID {
@@ -56,6 +59,7 @@ pub struct FuncArg {
     pub ty: ValTypeID,
     pub index: u32,
     pub users: UserList,
+    func: Cell<Option<FuncID>>,
 }
 impl ITraceableValue for FuncArg {
     fn users(&self) -> &UserList {
@@ -67,7 +71,18 @@ impl ITraceableValue for FuncArg {
 }
 impl FuncArg {
     pub fn new(allocs: &IRAllocs, ty: ValTypeID, index: u32) -> Self {
-        Self { ty, index, users: UserList::new(&allocs.uses) }
+        Self {
+            ty,
+            index,
+            users: UserList::new(&allocs.uses),
+            func: Cell::new(None),
+        }
+    }
+
+    pub fn try_get_func(&self) -> Result<FuncID, &'static str> {
+        self.func
+            .get()
+            .ok_or("FuncArg does not have a parent FuncID assigned")
     }
 }
 
@@ -140,6 +155,42 @@ impl ISubGlobal for FuncObj {
     fn get_kind(&self, allocs: &IRAllocs) -> super::GlobalKind {
         use super::GlobalKind::*;
         if self.is_extern(allocs) { ExternFunc } else { FuncDef }
+    }
+
+    fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
+        self.user_init_self_id(allocs, self_id);
+        let func_id = FuncID(self_id);
+        for arg in self.args.iter() {
+            arg.func.set(Some(func_id));
+            arg.traceable_init_self_id(allocs, ValueSSA::FuncArg(func_id, arg.index));
+        }
+        let Some(body) = &self.body else {
+            return;
+        };
+        body.blocks
+            .forall_with_sentinel(&allocs.blocks, |_, block| {
+                block.set_parent_func(func_id);
+                true
+            });
+    }
+    fn dispose(&self, module: &Module) -> GlobalDisposeRes {
+        if self.is_disposed() {
+            return Err(GlobalDisposeError::AlreadyDisposed(None));
+        }
+        self.common.common_dispose(module)?;
+        let allocs = &module.allocs;
+        for arg in self.args.iter() {
+            arg.func.set(None);
+            arg.traceable_dispose(allocs);
+        }
+        if let Some(body) = &self.body {
+            body.blocks.forall_with_sentinel(&allocs.blocks, |bid, _| {
+                BlockID(bid).dispose(allocs);
+                true
+            });
+        }
+        self.user_dispose(allocs);
+        Ok(())
     }
 }
 impl FuncObj {

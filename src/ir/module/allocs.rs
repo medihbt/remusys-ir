@@ -1,4 +1,4 @@
-use crate::ir::*;
+use crate::ir::{global::GlobalDisposeError, *};
 use mtb_entity::{
     EntityAlloc, EntityAllocPolicy128, EntityAllocPolicy256, EntityAllocPolicy512,
     EntityAllocPolicy4096, IEntityAllocID, IEntityAllocatable, PtrID,
@@ -13,6 +13,17 @@ pub struct IRAllocs {
     pub uses: EntityAlloc<Use>,
     pub jts: EntityAlloc<JumpTarget>,
     pub disposed_queue: RefCell<VecDeque<PoolAllocatedID>>,
+}
+
+impl AsRef<IRAllocs> for IRAllocs {
+    fn as_ref(&self) -> &IRAllocs {
+        self
+    }
+}
+impl AsMut<IRAllocs> for IRAllocs {
+    fn as_mut(&mut self) -> &mut IRAllocs {
+        self
+    }
 }
 
 impl IRAllocs {
@@ -73,6 +84,7 @@ impl IRAllocs {
 
 pub trait IPoolAllocated: IEntityAllocatable {
     type ModuleID: Copy;
+    type MinRelatedPoolT: AsRef<IRAllocs>;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self>;
     fn alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self>;
@@ -80,7 +92,7 @@ pub trait IPoolAllocated: IEntityAllocatable {
     fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID;
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self>;
 
-    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs);
+    fn dispose_id(id: Self::ModuleID, pool: &Self::MinRelatedPoolT);
     fn obj_disposed(obj: &Self) -> bool;
 
     fn id_disposed(id: Self::ModuleID, ir_allocs: &IRAllocs) -> bool {
@@ -98,6 +110,7 @@ impl IEntityAllocatable for BlockObj {
 }
 impl IPoolAllocated for BlockObj {
     type ModuleID = BlockID;
+    type MinRelatedPoolT = IRAllocs;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.blocks
@@ -127,6 +140,7 @@ impl IEntityAllocatable for InstObj {
 }
 impl IPoolAllocated for InstObj {
     type ModuleID = InstID;
+    type MinRelatedPoolT = IRAllocs;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.insts
@@ -155,6 +169,7 @@ impl IEntityAllocatable for ExprObj {
 }
 impl IPoolAllocated for ExprObj {
     type ModuleID = ExprID;
+    type MinRelatedPoolT = IRAllocs;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.exprs
@@ -183,6 +198,7 @@ impl IEntityAllocatable for GlobalObj {
 }
 impl IPoolAllocated for GlobalObj {
     type ModuleID = GlobalID;
+    type MinRelatedPoolT = Module;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.globals
@@ -197,8 +213,17 @@ impl IPoolAllocated for GlobalObj {
     fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
         id
     }
-    fn dispose_id(id: Self::ModuleID, ir_allocs: &IRAllocs) {
-        id.dispose(ir_allocs);
+    fn dispose_id(id: Self::ModuleID, module: &Module) {
+        match id.dispose(module) {
+            Ok(()) => (),
+            Err(GlobalDisposeError::AlreadyDisposed(_)) => {
+                log::warn!("Double disposal detected for GlobalID {id:?} during module disposal.");
+                // then do nothing
+            }
+            Err(e) => {
+                panic!("Error during disposal of GlobalID {id:?}: {e:?}");
+            }
+        }
     }
     fn obj_disposed(obj: &Self) -> bool {
         obj.is_disposed()
@@ -211,6 +236,7 @@ impl IEntityAllocatable for Use {
 }
 impl IPoolAllocated for Use {
     type ModuleID = UseID;
+    type MinRelatedPoolT = IRAllocs;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.uses
@@ -239,6 +265,7 @@ impl IEntityAllocatable for JumpTarget {
 }
 impl IPoolAllocated for JumpTarget {
     type ModuleID = JumpTargetID;
+    type MinRelatedPoolT = IRAllocs;
 
     fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
         &ir_allocs.jts

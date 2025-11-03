@@ -8,7 +8,10 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity::{IEntityAllocID, PtrID};
-use std::{cell::Cell, sync::Arc};
+use std::{
+    cell::{BorrowMutError, Cell},
+    sync::Arc,
+};
 
 pub mod func;
 pub mod var;
@@ -19,6 +22,15 @@ pub enum Linkage {
     DSOLocal,
     Private,
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum GlobalDisposeError {
+    #[error("{0} for `Module.symbols`: Please manually remove symbol table entry first")]
+    SymbolDetachErr(BorrowMutError),
+    #[error("Global {0:?} has already been disposed")]
+    AlreadyDisposed(Option<GlobalID>),
+}
+pub type GlobalDisposeRes<T = ()> = Result<T, GlobalDisposeError>;
 
 pub struct GlobalCommon {
     pub name: Arc<str>,
@@ -50,6 +62,21 @@ impl GlobalCommon {
             back_linkage: Cell::new(Linkage::DSOLocal),
             dispose_mark: Cell::new(false),
         }
+    }
+
+    fn common_dispose(&self, module: &Module) -> GlobalDisposeRes {
+        self.dispose_mark.set(true);
+        let symbols = module.symbols.borrow();
+        if !symbols.contains_key(&self.name) {
+            return Ok(());
+        }
+        drop(symbols);
+        let mut symbols = module
+            .symbols
+            .try_borrow_mut()
+            .map_err(GlobalDisposeError::SymbolDetachErr)?;
+        symbols.remove(&self.name);
+        Ok(())
     }
 }
 
@@ -97,16 +124,12 @@ pub trait ISubGlobal: IUser {
         Self::try_from_ir(g).expect("Invalid GlobalObj variant")
     }
 
+    fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs);
     fn is_disposed(&self) -> bool {
         self.get_common().dispose_mark.get()
     }
-    fn dispose(&self, allocs: &IRAllocs) {
-        if self.is_disposed() {
-            return;
-        }
-        self.get_common().dispose_mark.set(true);
-        self.user_dispose(allocs);
-    }
+    /// Returns true if the global can be immediately disposed.
+    fn dispose(&self, module: &Module) -> GlobalDisposeRes;
 }
 impl<T: ISubGlobal> IPtrValue for T {
     fn get_ptr_pointee_type(&self) -> ValTypeID {
@@ -172,6 +195,7 @@ pub trait ISubGlobalID: Copy + 'static {
             g_obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let g_id = allocs.globals.allocate(g_obj);
+        g_id.deref_ir(allocs)._init_self_id(g_id, allocs);
         Self::raw_from_ir(g_id)
     }
     fn register_to(self, module: &Module) -> Result<Self, GlobalID> {
@@ -190,9 +214,16 @@ pub trait ISubGlobalID: Copy + 'static {
             }
         }
     }
-    fn dispose(self, allocs: &IRAllocs) {
-        self.deref_ir(allocs).dispose(allocs);
-        allocs.push_disposed(self.into_ir());
+    fn dispose(self, module: &Module) -> GlobalDisposeRes {
+        match self.deref_ir(&module.allocs).dispose(module) {
+            Ok(()) => (),
+            Err(GlobalDisposeError::AlreadyDisposed(None)) => {
+                return Err(GlobalDisposeError::AlreadyDisposed(Some(self.into_ir())));
+            }
+            Err(e) => return Err(e),
+        }
+        module.allocs.push_disposed(self.into_ir());
+        Ok(())
     }
 }
 
@@ -266,6 +297,18 @@ impl ISubGlobal for GlobalObj {
         match self {
             GlobalObj::Var(g) => g.get_kind(allocs),
             GlobalObj::Func(f) => f.get_kind(allocs),
+        }
+    }
+    fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
+        match self {
+            GlobalObj::Var(g) => g._init_self_id(self_id, allocs),
+            GlobalObj::Func(f) => f._init_self_id(self_id, allocs),
+        }
+    }
+    fn dispose(&self, module: &Module) -> GlobalDisposeRes {
+        match self {
+            GlobalObj::Var(g) => g.dispose(module),
+            GlobalObj::Func(f) => f.dispose(module),
         }
     }
 }

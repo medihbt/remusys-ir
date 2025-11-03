@@ -1,6 +1,6 @@
 use crate::{
     ir::{
-        GlobalID, IRAllocs, IRManaged, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID,
+        FuncID, IRAllocs, IRManaged, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID,
         InstObj, JumpTargetID, JumpTargets, ManagedInst, PredList, TerminatorID, UserList,
         ValueClass, ValueSSA,
     },
@@ -14,7 +14,7 @@ use std::cell::Cell;
 
 pub struct BlockObj {
     head: Cell<EntityListHead<BlockObj>>,
-    parent_func: Cell<Option<GlobalID>>,
+    parent_func: Cell<Option<FuncID>>,
     body: Option<BlockObjBody>,
     dispose_mark: Cell<bool>,
 }
@@ -121,6 +121,9 @@ impl BlockObj {
         }
     }
 
+    pub(super) fn set_parent_func(&self, func: FuncID) {
+        self.parent_func.set(Some(func));
+    }
     pub fn get_body(&self) -> &BlockObjBody {
         self.body
             .as_ref()
@@ -196,6 +199,22 @@ impl BlockObj {
     pub fn is_disposed(&self) -> bool {
         self.dispose_mark.get()
     }
+    fn dispose(&self, allocs: &IRAllocs) -> bool {
+        if self.is_disposed() {
+            return false;
+        }
+        self.dispose_mark.set(true);
+        let Some(body) = &self.body else {
+            return true;
+        };
+        body.insts.forall_with_sentinel(&allocs.insts, |instid, _| {
+            instid.dispose(allocs);
+            true
+        });
+        self.traceable_dispose(allocs);
+        JumpTargetID(body.preds.sentinel).dispose(allocs);
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -247,10 +266,10 @@ impl BlockID {
             .expect("Error: Attempted to get indexed ID of freed BlockID")
     }
 
-    pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<GlobalID> {
+    pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {
         self.deref_ir(allocs).parent_func.get()
     }
-    pub fn set_parent_func(self, allocs: &IRAllocs, func: GlobalID) {
+    pub fn set_parent_func(self, allocs: &IRAllocs, func: FuncID) {
         self.deref_ir(allocs).parent_func.set(Some(func));
     }
 
@@ -307,23 +326,9 @@ impl BlockID {
         ret
     }
     pub fn dispose(self, allocs: &IRAllocs) {
-        let Some(obj) = self.0.try_deref(&allocs.blocks) else {
-            return;
-        };
-        if obj.dispose_mark.get() {
+        if !self.deref_ir(allocs).dispose(allocs) {
             return;
         }
-        obj.dispose_mark.set(true);
-        let Some(body) = &obj.body else {
-            return;
-        };
-        for (inst_id, _) in body.insts.iter(&allocs.insts) {
-            inst_id.dispose(allocs);
-        }
-        obj.parent_func.set(None);
-
-        body.preds.clean(&allocs.jts);
-        JumpTargetID(body.preds.sentinel).dispose(allocs);
-        obj.traceable_dispose(allocs);
+        allocs.push_disposed(self);
     }
 }
