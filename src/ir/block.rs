@@ -112,7 +112,7 @@ impl ITraceableValue for BlockObj {
     }
 }
 impl BlockObj {
-    pub fn new(allocs: &IRAllocs) -> Self {
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self {
             head: Cell::new(EntityListHead::none()),
             parent_func: Cell::new(None),
@@ -215,6 +215,9 @@ impl ISubValueSSA for BlockID {
     fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
         ValTypeID::Void
     }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        false
+    }
 
     fn can_trace(self) -> bool {
         true
@@ -286,7 +289,7 @@ impl BlockID {
         self.deref_ir(allocs).get_succs(allocs)
     }
 
-    pub fn new(allocs: &IRAllocs, mut obj: BlockObj) -> Self {
+    pub fn allocate(allocs: &IRAllocs, mut obj: BlockObj) -> Self {
         if let None = obj.body {
             obj.body = Some(BlockObjBody::new(allocs));
         }
@@ -294,6 +297,14 @@ impl BlockID {
         let block_id = Self(ptr_id);
         block_id.get_body(allocs).init_self_id(block_id, allocs);
         block_id
+    }
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
+        Self::allocate(allocs, BlockObj::new_uninit(allocs))
+    }
+    pub fn new_with_terminator(allocs: &IRAllocs, terminator: impl ISubInstID) -> Self {
+        let ret = Self::new_uninit(allocs);
+        ret.set_terminator_inst(allocs, terminator.into_ir());
+        ret
     }
     pub fn dispose(self, allocs: &IRAllocs) {
         let Some(obj) = self.0.try_deref(&allocs.blocks) else {

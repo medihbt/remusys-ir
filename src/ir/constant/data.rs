@@ -84,6 +84,15 @@ impl ISubValueSSA for ConstData {
             ConstData::Float(kind, _) => ValTypeID::Float(kind),
         }
     }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        match self {
+            ConstData::Zero(_) | ConstData::PtrNull(_) => true,
+            ConstData::Int(apint) => apint.is_zero(),
+            ConstData::Float(FPKind::Ieee32, f) => (f as f32).to_bits() == 0,
+            ConstData::Float(FPKind::Ieee64, f) => (f as f64).to_bits() == 0,
+            _ => false,
+        }
+    }
 
     fn can_trace(self) -> bool {
         false

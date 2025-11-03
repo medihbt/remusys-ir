@@ -2,13 +2,16 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         BlockID, BlockObj, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
-        ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, OperandSet, UseID, UserList,
-        ValueClass, ValueSSA, global::GlobalCommon,
+        ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
+        UseID, UserList, ValueClass, ValueSSA,
+        global::{GlobalCommon, Linkage},
+        inst::{RetInstID, UnreachableInstID},
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
 use mtb_entity::EntityList;
-use std::cell::Ref;
+use smallvec::SmallVec;
+use std::{cell::Ref, sync::Arc};
 
 pub trait IFuncValue: IPtrValue {
     fn get_pointee_func_type(&self) -> FuncTypeID {
@@ -124,8 +127,26 @@ impl ISubGlobal for FuncObj {
     fn is_extern(&self, _: &IRAllocs) -> bool {
         self.body.is_none()
     }
+    fn is_readonly(&self) -> bool {
+        true
+    }
+    fn get_linkage_prefix(&self, allocs: &IRAllocs) -> &'static str {
+        match self.get_linkage(allocs) {
+            Linkage::External => "declare",
+            Linkage::DSOLocal => "define dso_local",
+            Linkage::Private => "define internal",
+        }
+    }
+    fn get_kind(&self, allocs: &IRAllocs) -> super::GlobalKind {
+        use super::GlobalKind::*;
+        if self.is_extern(allocs) { ExternFunc } else { FuncDef }
+    }
 }
 impl FuncObj {
+    pub fn builder(tctx: &TypeContext, name: impl Into<String>, functy: FuncTypeID) -> FuncBuilder {
+        FuncBuilder::new(&tctx, name, functy)
+    }
+
     pub fn get_nargs(&self) -> usize {
         self.args.len()
     }
@@ -143,6 +164,10 @@ impl ISubGlobalID for FuncID {
     }
 }
 impl FuncID {
+    pub fn builder(tctx: &TypeContext, name: impl Into<String>, functy: FuncTypeID) -> FuncBuilder {
+        FuncBuilder::new(&tctx, name, functy)
+    }
+
     pub fn get_body(self, allocs: &IRAllocs) -> Option<&FuncBody> {
         self.deref_ir(allocs).body.as_ref()
     }
@@ -151,10 +176,6 @@ impl FuncID {
     }
     pub fn get_entry(self, allocs: &IRAllocs) -> Option<BlockID> {
         self.get_body(allocs).map(|b| b.entry)
-    }
-
-    pub fn is_extern(self, allocs: &IRAllocs) -> bool {
-        self.deref_ir(allocs).is_extern(allocs)
     }
 }
 
@@ -178,6 +199,9 @@ impl ISubValueSSA for FuncArgID {
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).ty
+    }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        false
     }
 
     fn can_trace(self) -> bool {
@@ -204,5 +228,133 @@ impl FuncArgID {
     }
     pub fn get_index(self) -> u32 {
         self.1
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FuncTerminateMode {
+    Unreachable,
+    ReturnDefault,
+    ReturnVal(ValueSSA),
+}
+
+#[derive(Debug, Clone)]
+pub struct FuncBuilder {
+    name: String,
+    functype: FuncTypeID,
+    ret_type: ValTypeID,
+    arg_types: SmallVec<[ValTypeID; 8]>,
+    is_vararg: bool,
+    pub linkage: Linkage,
+    pub terminate_mode: FuncTerminateMode,
+}
+impl FuncBuilder {
+    pub fn new(tctx: &TypeContext, name: impl Into<String>, functype: FuncTypeID) -> Self {
+        Self {
+            name: name.into(),
+            functype,
+            ret_type: functype.get_ret_type(tctx),
+            arg_types: SmallVec::from_slice(&functype.get_args(tctx)),
+            is_vararg: false,
+            linkage: Linkage::External,
+            terminate_mode: FuncTerminateMode::Unreachable,
+        }
+    }
+
+    pub fn linkage(&mut self, linkage: Linkage) -> &mut Self {
+        self.linkage = linkage;
+        self
+    }
+    pub fn make_extern(&mut self) -> &mut Self {
+        self.linkage = Linkage::External;
+        self
+    }
+    pub fn make_defined(&mut self) -> &mut Self {
+        self.linkage = Linkage::DSOLocal;
+        self
+    }
+    pub fn make_private(&mut self) -> &mut Self {
+        self.linkage = Linkage::Private;
+        self
+    }
+    pub fn name(&mut self, name: impl Into<String>) -> &mut Self {
+        self.name = name.into();
+        self
+    }
+    pub fn edit_name(&mut self, f: impl FnOnce(&mut String)) -> &mut Self {
+        f(&mut self.name);
+        self
+    }
+    pub fn terminate_mode(&mut self, mode: FuncTerminateMode) -> &mut Self {
+        self.terminate_mode = mode;
+        self
+    }
+
+    pub fn is_extern(&self) -> bool {
+        self.linkage == Linkage::External
+    }
+    pub fn is_defined(&self) -> bool {
+        self.linkage != Linkage::External
+    }
+
+    pub fn build_item(&self, allocs: &IRAllocs) -> FuncObj {
+        let args = {
+            let mut v = Vec::with_capacity(self.arg_types.len());
+            for (i, &ty) in self.arg_types.iter().enumerate() {
+                v.push(FuncArg::new(allocs, ty, i as u32));
+            }
+            v.into_boxed_slice()
+        };
+        let body = if self.is_extern() {
+            None
+        } else {
+            let blocks = EntityList::new(&allocs.blocks);
+            let terminator = self.build_terminator(allocs);
+            let entry = BlockID::new_with_terminator(allocs, terminator.into_ir());
+            let body = FuncBody { blocks, entry };
+            Some(body)
+        };
+        let name = Arc::from(self.name.as_str());
+        let content_ty = self.functype.into_ir();
+        let common = GlobalCommon::new(name, content_ty, 0, allocs);
+        let f = FuncObj {
+            common,
+            args,
+            ret_type: self.ret_type,
+            is_vararg: self.is_vararg,
+            body,
+        };
+        f.set_back_linkage(self.linkage);
+        f
+    }
+
+    pub fn build_id(&self, module: &Module) -> Result<FuncID, GlobalID> {
+        let allocs = &module.allocs;
+        let func = self.build_item(allocs);
+        let func_id = FuncID::allocate(allocs, func);
+        func_id.register_to(module)
+    }
+
+    fn build_terminator(&self, allocs: &IRAllocs) -> TerminatorID {
+        match self.terminate_mode {
+            FuncTerminateMode::Unreachable => {
+                let unreach = UnreachableInstID::new(allocs);
+                TerminatorID::Unreachable(unreach)
+            }
+            FuncTerminateMode::ReturnDefault => {
+                let retval = ValueSSA::new_zero(self.ret_type).unwrap_or(ValueSSA::None);
+                let ret = RetInstID::with_retval(allocs, retval);
+                TerminatorID::Ret(ret)
+            }
+            FuncTerminateMode::ReturnVal(val) => {
+                assert_eq!(
+                    val.get_valtype(allocs),
+                    self.ret_type,
+                    "Return value type does not match function return type"
+                );
+                let ret = RetInstID::with_retval(allocs, val);
+                TerminatorID::Ret(ret)
+            }
+        }
     }
 }

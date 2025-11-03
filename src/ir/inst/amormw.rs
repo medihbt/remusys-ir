@@ -150,6 +150,42 @@ impl AmoRmwInst {
     pub fn set_value(&self, allocs: &IRAllocs, val: ValueSSA) {
         self.value_use().set_operand(allocs, val);
     }
+
+    /// Includes:
+    ///
+    /// ```text
+    /// AmoXchg, AmoAdd, AmoSub, AmoAnd, AmoNand, AmoOr, AmoXor,
+    /// AmoSMax, AmoSMin, AmoUMax, AmoUMin,
+    /// AmoFAdd, AmoFSub, AmoFMax, AmoFMin,
+    /// AmoUIncWrap, AmoUDecWrap, AmoUSubCond, AmoUSubStat,
+    /// ```
+    pub fn subop_get_name(opcode: Opcode) -> &'static str {
+        match opcode {
+            Opcode::AmoXchg => "xchg",
+            Opcode::AmoAdd => "add",
+            Opcode::AmoSub => "sub",
+            Opcode::AmoAnd => "and",
+            Opcode::AmoNand => "nand",
+            Opcode::AmoOr => "or",
+            Opcode::AmoXor => "xor",
+            Opcode::AmoSMax => "max",
+            Opcode::AmoSMin => "min",
+            Opcode::AmoUMax => "umax",
+            Opcode::AmoUMin => "umin",
+            Opcode::AmoFAdd => "fadd",
+            Opcode::AmoFSub => "fsub",
+            Opcode::AmoFMax => "fmax",
+            Opcode::AmoFMin => "fmin",
+            Opcode::AmoUIncWrap => "uinc_wrap",
+            Opcode::AmoUDecWrap => "udec_wrap",
+            Opcode::AmoUSubCond => "usub_cond",
+            Opcode::AmoUSubStat => "usub_stat",
+            _ => panic!("Invalid opcode for AmoRmw: {opcode:?}"),
+        }
+    }
+    pub fn subop_name(&self) -> &'static str {
+        Self::subop_get_name(self.get_opcode())
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

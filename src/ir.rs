@@ -20,8 +20,8 @@ pub mod checking {
 pub mod inst;
 
 use crate::{
-    base::INullableValue,
-    typing::{AggrType, IValType, ValTypeID},
+    base::{APInt, INullableValue},
+    typing::{AggrType, IValType, TypeMismatchError, ValTypeClass, ValTypeID},
 };
 
 pub use self::{
@@ -35,9 +35,11 @@ pub use self::{
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalID, GlobalObj, ISubGlobal, ISubGlobalID,
-        func::{FuncArg, FuncArgID, FuncID, FuncObj, IFuncUniqueUser, IFuncValue},
-        var::{GlobalVar, GlobalVarID},
+        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
+        func::{
+            FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, IFuncUniqueUser, IFuncValue,
+        },
+        var::{GlobalVar, GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable},
     },
     inst::{AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstObj, SyncScope},
     jumping::{
@@ -56,7 +58,10 @@ pub use self::{
         ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,
         UserList,
     },
-    utils::numbering::{IRNumberValueMap, NumberOption},
+    utils::{
+        numbering::{IRNumberValueMap, NumberOption},
+        writer::{IRWriteOption, IRWriter, IRWriterStat},
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -98,6 +103,8 @@ pub trait ISubValueSSA: Copy {
             .expect("Failed to add User to ValueSSA users");
         true
     }
+
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool;
 }
 pub trait IPtrValue {
     fn get_ptr_pointee_type(&self) -> ValTypeID;
@@ -161,6 +168,15 @@ impl ISubValueSSA for ValueSSA {
             Global(_) => ValTypeID::Ptr,
         }
     }
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool {
+        use ValueSSA::*;
+        match self {
+            ConstData(data) => data.is_zero_const(allocs),
+            ConstExpr(expr) => expr.is_zero_const(allocs),
+            AggrZero(_) => true,
+            _ => false,
+        }
+    }
 
     fn can_trace(self) -> bool {
         use ValueSSA::*;
@@ -176,5 +192,20 @@ impl ISubValueSSA for ValueSSA {
             Global(global) => global.try_get_users(allocs),
             _ => Option::None,
         }
+    }
+}
+impl ValueSSA {
+    pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchError> {
+        let val = match ty {
+            ValTypeID::Void => ValueSSA::None,
+            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull(ValTypeID::Void)),
+            ValTypeID::Int(bits) => ValueSSA::ConstData(ConstData::Int(APInt::new(0, bits))),
+            ValTypeID::Float(fpkind) => ValueSSA::ConstData(ConstData::Float(fpkind, 0.0)),
+            ValTypeID::FixVec(v) => ValueSSA::AggrZero(AggrType::FixVec(v)),
+            ValTypeID::Array(a) => ValueSSA::AggrZero(AggrType::Array(a)),
+            ValTypeID::Struct(s) => ValueSSA::AggrZero(AggrType::Struct(s)),
+            _ => return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Compound)),
+        };
+        Ok(val)
     }
 }

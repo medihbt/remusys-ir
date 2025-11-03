@@ -696,6 +696,9 @@ impl ISubValueSSA for InstID {
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).get_valtype()
     }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        false
+    }
 
     fn can_trace(self) -> bool {
         true

@@ -194,6 +194,16 @@ impl ISubValueSSA for ExprID {
     fn into_ir(self) -> ValueSSA {
         ValueSSA::ConstExpr(self)
     }
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool {
+        let operands = match self.deref_ir(allocs) {
+            ExprObj::Array(arr) => arr.elems.as_slice(),
+            ExprObj::Struct(struc) => struc.fields.as_slice(),
+            ExprObj::FixVec(vec) => vec.elems.as_slice(),
+        };
+        operands
+            .iter()
+            .all(|&use_id| use_id.get_operand(allocs).is_zero_const(allocs))
+    }
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).get_valtype()

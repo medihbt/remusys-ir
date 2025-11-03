@@ -1,8 +1,10 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common, ir::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
+    ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
-    }, typing::ValTypeID
+    },
+    typing::ValTypeID,
 };
 
 /// Load 指令：从内存中加载数据到寄存器或变量

@@ -70,9 +70,12 @@ pub trait ISubGlobal: IUser {
         self.get_common().back_linkage.set(linkage);
     }
     fn is_extern(&self, allocs: &IRAllocs) -> bool;
+    fn is_readonly(&self) -> bool;
     fn get_linkage(&self, allocs: &IRAllocs) -> Linkage {
         if self.is_extern(allocs) { Linkage::External } else { self.get_back_linkage() }
     }
+    fn get_kind(&self, allocs: &IRAllocs) -> GlobalKind;
+    fn get_linkage_prefix(&self, allocs: &IRAllocs) -> &'static str;
 
     fn try_from_ir_ref(g: &GlobalObj) -> Option<&Self>;
     fn try_from_ir_mut(g: &mut GlobalObj) -> Option<&mut Self>;
@@ -159,6 +162,9 @@ pub trait ISubGlobalID: Copy + 'static {
     fn is_extern(self, allocs: &IRAllocs) -> bool {
         self.deref_ir(allocs).is_extern(allocs)
     }
+    fn get_kind(self, allocs: &IRAllocs) -> GlobalKind {
+        self.deref_ir(allocs).get_kind(allocs)
+    }
 
     fn allocate(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
         let mut g_obj = obj.into_ir();
@@ -244,6 +250,24 @@ impl ISubGlobal for GlobalObj {
             GlobalObj::Func(f) => f.body.is_none(),
         }
     }
+    fn is_readonly(&self) -> bool {
+        match self {
+            GlobalObj::Var(g) => g.is_readonly(),
+            GlobalObj::Func(_) => false,
+        }
+    }
+    fn get_linkage_prefix(&self, allocs: &IRAllocs) -> &'static str {
+        match self {
+            GlobalObj::Var(g) => g.get_linkage_prefix(allocs),
+            GlobalObj::Func(f) => f.get_linkage_prefix(allocs),
+        }
+    }
+    fn get_kind(&self, allocs: &IRAllocs) -> GlobalKind {
+        match self {
+            GlobalObj::Var(g) => g.get_kind(allocs),
+            GlobalObj::Func(f) => f.get_kind(allocs),
+        }
+    }
 }
 impl ISubGlobalID for GlobalID {
     type GlobalT = GlobalObj;
@@ -272,6 +296,9 @@ impl ISubValueSSA for GlobalID {
     fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
         ValTypeID::Ptr
     }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        false
+    }
 
     fn can_trace(self) -> bool {
         true
@@ -279,4 +306,14 @@ impl ISubValueSSA for GlobalID {
     fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
         self.deref_ir(allocs).try_get_users()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GlobalKind {
+    ExternVar,
+    ExternConst,
+    VarDef,
+    ConstDef,
+    ExternFunc,
+    FuncDef,
 }

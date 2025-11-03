@@ -200,6 +200,12 @@ impl ISubValueSSA for UserID {
             UserID::Global(id) => id.get_valtype(allocs),
         }
     }
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool {
+        match self {
+            UserID::Expr(id) => id.is_zero_const(allocs),
+            _ => false,
+        }
+    }
 
     fn can_trace(self) -> bool {
         true
