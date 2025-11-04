@@ -55,7 +55,7 @@ impl GlobalCommon {
     }
 }
 
-pub trait ISubGlobal: IUser {
+pub trait ISubGlobal: IUser + Sized {
     fn get_common(&self) -> &GlobalCommon;
     fn common_mut(&mut self) -> &mut GlobalCommon;
 
@@ -81,9 +81,7 @@ pub trait ISubGlobal: IUser {
 
     fn try_from_ir_ref(g: &GlobalObj) -> Option<&Self>;
     fn try_from_ir_mut(g: &mut GlobalObj) -> Option<&mut Self>;
-    fn try_from_ir(g: GlobalObj) -> Option<Self>
-    where
-        Self: Sized;
+    fn try_from_ir(g: GlobalObj) -> Option<Self>;
     fn into_ir(self) -> GlobalObj;
 
     fn from_ir_ref(g: &GlobalObj) -> &Self {
@@ -92,19 +90,9 @@ pub trait ISubGlobal: IUser {
     fn from_ir_mut(g: &mut GlobalObj) -> &mut Self {
         Self::try_from_ir_mut(g).expect("Invalid GlobalObj variant")
     }
-    fn from_ir(g: GlobalObj) -> Self
-    where
-        Self: Sized,
-    {
+    fn from_ir(g: GlobalObj) -> Self {
         Self::try_from_ir(g).expect("Invalid GlobalObj variant")
     }
-
-    // fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs);
-    // fn is_disposed(&self) -> bool {
-    //     self.get_common().dispose_mark.get()
-    // }
-    // /// Returns true if the global can be immediately disposed.
-    // fn dispose(&self, module: &Module) -> GlobalDisposeRes;
 }
 impl<T: ISubGlobal> IPtrValue for T {
     fn get_ptr_pointee_type(&self) -> ValTypeID {
@@ -261,18 +249,6 @@ impl ISubGlobal for GlobalObj {
             GlobalObj::Func(f) => f.get_kind(allocs),
         }
     }
-    // fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-    //     match self {
-    //         GlobalObj::Var(g) => g._init_self_id(self_id, allocs),
-    //         GlobalObj::Func(f) => f._init_self_id(self_id, allocs),
-    //     }
-    // }
-    // fn dispose(&self, module: &Module) -> GlobalDisposeRes {
-    //     match self {
-    //         GlobalObj::Var(g) => g.dispose(module),
-    //         GlobalObj::Func(f) => f.dispose(module),
-    //     }
-    // }
 }
 impl ISubGlobalID for GlobalID {
     type GlobalT = GlobalObj;

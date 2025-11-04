@@ -83,20 +83,6 @@ impl ISubGlobal for GlobalVar {
             (false, true) => GlobalKind::ConstDef,
         }
     }
-
-    // fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-    //     self.user_init_self_id(allocs, UserID::Global(self_id));
-    // }
-    // fn dispose(&self, module: &Module) -> GlobalDisposeRes {
-    //     if self.is_disposed() {
-    //         return Err(GlobalDisposeError::AlreadyDisposed(None));
-    //     }
-    //     // Mark disposed and unregister from module symbol table first
-    //     self.common.common_dispose(module)?;
-    //     // Then release initializer use and any users referencing this global
-    //     self.user_dispose(&module.allocs);
-    //     Ok(())
-    // }
 }
 impl GlobalVar {
     pub fn builder(name: impl Into<String>, content_ty: ValTypeID) -> GlobalVarBuilder {

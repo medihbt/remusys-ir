@@ -156,39 +156,6 @@ impl ISubGlobal for FuncObj {
         use super::GlobalKind::*;
         if self.is_extern(allocs) { ExternFunc } else { FuncDef }
     }
-
-    // fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-    //     self.user_init_self_id(allocs, UserID::Global(self_id));
-    //     let func_id = FuncID(self_id);
-    //     for arg in self.args.iter() {
-    //         arg.func.set(Some(func_id));
-    //         arg.traceable_init_self_id(allocs, ValueSSA::FuncArg(func_id, arg.index));
-    //     }
-    //     let Some(body) = &self.body else {
-    //         return;
-    //     };
-    //     body.blocks
-    //         .forall_with_sentinel(&allocs.blocks, |_, block| {
-    //             block.set_parent_func(func_id);
-    //             true
-    //         });
-    // }
-    // fn dispose(&self, module: &Module) -> GlobalDisposeRes {
-    //     if self.is_disposed() {
-    //         return Err(GlobalDisposeError::AlreadyDisposed(None));
-    //     }
-    //     self.common.common_dispose(module)?;
-    //     let allocs = &module.allocs;
-    //     for arg in self.args.iter() {
-    //         arg.func.set(None);
-    //         arg.traceable_dispose(allocs);
-    //     }
-    //     if let Some(body) = &self.body {
-    //         dispose_entity_list(&body.blocks, allocs);
-    //     }
-    //     self.user_dispose(allocs);
-    //     Ok(())
-    // }
 }
 impl FuncObj {
     pub fn builder(tctx: &TypeContext, name: impl Into<String>, functy: FuncTypeID) -> FuncBuilder {

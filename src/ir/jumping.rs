@@ -95,18 +95,6 @@ impl JumpTarget {
     pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(JumpTargetKind::Disposed);
     }
-
-    // pub fn dispose(&self, allocs: &IRAllocs) -> bool {
-    //     if self.is_disposed() {
-    //         return false;
-    //     }
-    //     self.kind.set(JumpTargetKind::Disposed);
-    //     self.detach(&allocs.jts)
-    //         .expect("JumpTarget dispose detach failed");
-    //     self.terminator.set(None);
-    //     self.block.set(None);
-    //     true
-    // }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

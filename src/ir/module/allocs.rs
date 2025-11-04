@@ -256,6 +256,9 @@ impl IPoolAllocated for InstObj {
             }
         }
         use InstObj::*;
+        // Intentionally keep an exhaustive list of variants whose init needs no extra work.
+        // Avoiding a wildcard arm ensures compile errors when new variants are added,
+        // so we must consciously review whether they require special wiring here.
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
             | Alloca(_) | GEP(_) | Load(_) | Store(_) | AmoRmw(_) | BinOP(_) | Call(_)
@@ -281,6 +284,8 @@ impl IPoolAllocated for InstObj {
     fn dispose_obj(&self, id: InstID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
         inst_dispose(self, id, allocs)?;
         use InstObj::*;
+        // Same rationale as in init_self_id: list all variants explicitly to stay exhaustive
+        // and require review on new variants.
         match self {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
             | Alloca(_) | GEP(_) | Load(_) | Store(_) | AmoRmw(_) | BinOP(_) | Call(_)

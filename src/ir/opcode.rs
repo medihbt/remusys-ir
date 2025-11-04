@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 #[rustfmt::skip]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Enum representing the various opcodes in the Musys IR.
+/// Enum representing the various opcodes in the Remusys IR.
 pub enum Opcode {
     None,
     BitAnd, BitOr, BitXor, Shl, Lshr, Ashr,

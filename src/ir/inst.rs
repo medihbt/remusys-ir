@@ -252,13 +252,6 @@ pub trait ISubInstID: Copy {
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
-        // let mut obj = obj.into_ir();
-        // if obj.get_common().users.is_none() && !obj.is_sentinel() {
-        //     obj.common_mut().users = Some(UserList::new(&allocs.uses));
-        // }
-        // let id = allocs.insts.allocate(obj);
-        // id.deref_ir(allocs).inst_init_self_id(id, allocs);
-        // Self::raw_from_ir(id)
         let id = InstObj::allocate(allocs, obj.into_ir());
         Self::raw_from_ir(id)
     }
