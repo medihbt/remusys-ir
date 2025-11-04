@@ -35,8 +35,7 @@ pub use self::{
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalDisposeError, GlobalDisposeRes, GlobalID, GlobalKind, GlobalObj,
-        ISubGlobal, ISubGlobalID,
+        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, IFuncUniqueUser, IFuncValue,
         },
@@ -48,11 +47,14 @@ pub use self::{
         JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
     managed::{
-        IRManaged, ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse,
+        ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse,
     },
     module::{
         Module,
-        allocs::{IPoolAllocated, IRAllocs, PoolAllocatedID, PoolAllocatedClass},
+        allocs::{
+            IRAllocs, PoolAllocatedClass, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes,
+            PoolAllocatedID,
+        },
         gc::{IRLiveSet, IRMarker},
     },
     opcode::{InstKind, Opcode},

@@ -1,9 +1,9 @@
 use crate::{
-    base::MixRef,
     impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode, OperandSet,
-        UseID, UserID, UserList, ValueClass, ValueSSA,
+        UseID, UserList, ValueClass, ValueSSA,
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::{AggrType, TypeContext, ValTypeID},
 };
@@ -40,7 +40,6 @@ mod select;
 // aggregate field instructions
 mod aggr_field_inst;
 
-#[allow(unused_imports)]
 pub use self::{
     aggr_field_inst::{
         AggrFieldInstBuildErr, AggrFieldInstBuildRes, AggrFieldInstBuilderCommon,
@@ -76,8 +75,8 @@ pub struct InstCommon {
     pub parent_bb: Cell<Option<BlockID>>,
     pub users: Option<UserList>,
     pub opcode: Opcode,
-    disposed: Cell<bool>,
     pub ret_type: ValTypeID,
+    pub(in crate::ir) disposed: Cell<bool>,
 }
 impl Clone for InstCommon {
     fn clone(&self) -> Self {
@@ -173,42 +172,6 @@ pub trait ISubInst: IUser + Sized {
         false
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>>;
-
-    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
-        if self.get_common().disposed.get() {
-            return false;
-        }
-        self._common_dispose(self_id, allocs);
-        true
-    }
-    fn _common_dispose(&self, self_id: InstID, allocs: &IRAllocs) {
-        let common = self.get_common();
-        assert!(!common.disposed.get(), "Instruction already disposed");
-        common.disposed.set(true);
-        if let Some(bb) = self.get_parent() && !self.get_common().is_sentinel() {
-            let insts = &bb.get_body(allocs).insts;
-            insts
-                .node_unplug(self_id, &allocs.insts)
-                .expect("Failed to unplug instruction from parent basic block");
-        }
-        self.user_dispose(allocs);
-        if let Some(jt_list) = self.try_get_jts() {
-            for &jt_id in jt_list.iter() {
-                jt_id.dispose(allocs);
-            }
-        }
-    }
-
-    fn inst_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
-        self._common_init_self_id(self_id, allocs)
-    }
-    fn _common_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
-        self.user_init_self_id(allocs, UserID::Inst(self_id));
-        let jt_list = self.try_get_jts().unwrap_or(MixRef::Fix(&[]));
-        for &jt_id in jt_list.iter() {
-            jt_id.set_terminator(allocs, self_id);
-        }
-    }
 }
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
@@ -289,23 +252,19 @@ pub trait ISubInstID: Copy {
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
-        let mut obj = obj.into_ir();
-        if obj.get_common().users.is_none() && !obj.is_sentinel() {
-            obj.common_mut().users = Some(UserList::new(&allocs.uses));
-        }
-        let id = allocs.insts.allocate(obj);
-        id.deref_ir(allocs).inst_init_self_id(id, allocs);
+        // let mut obj = obj.into_ir();
+        // if obj.get_common().users.is_none() && !obj.is_sentinel() {
+        //     obj.common_mut().users = Some(UserList::new(&allocs.uses));
+        // }
+        // let id = allocs.insts.allocate(obj);
+        // id.deref_ir(allocs).inst_init_self_id(id, allocs);
+        // Self::raw_from_ir(id)
+        let id = InstObj::allocate(allocs, obj.into_ir());
         Self::raw_from_ir(id)
     }
 
-    fn dispose(self, allocs: &IRAllocs) {
-        let Some(obj) = self.try_deref_ir(allocs) else {
-            return;
-        };
-        if !obj.dispose(self.into_ir(), allocs) {
-            return;
-        }
-        allocs.push_disposed(self.into_ir());
+    fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        InstObj::dispose_id(self.into_ir(), allocs)
     }
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
@@ -580,68 +539,6 @@ impl ISubInst for InstObj {
             _ => None,
         }
     }
-
-    fn inst_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
-        match self {
-            InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => {
-                self._common_init_self_id(self_id, allocs)
-            }
-            InstObj::Unreachable(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Ret(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Jump(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Br(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Switch(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Alloca(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::GEP(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Load(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Store(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::AmoRmw(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::BinOP(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Call(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Cast(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Cmp(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::IndexExtract(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::FieldExtract(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::IndexInsert(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::FieldInsert(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Phi(i) => i.inst_init_self_id(self_id, allocs),
-            InstObj::Select(i) => i.inst_init_self_id(self_id, allocs),
-        }
-    }
-
-    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
-        use InstObj::*;
-        if self.is_disposed() {
-            return false;
-        }
-        match self {
-            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) => {
-                self._common_dispose(self_id, allocs);
-                true
-            }
-            Ret(ret) => ret.dispose(self_id, allocs),
-            Jump(jump) => jump.dispose(self_id, allocs),
-            Br(br) => br.dispose(self_id, allocs),
-            Switch(switch) => switch.dispose(self_id, allocs),
-            // Pointer and memory instructions
-            Alloca(alloca) => alloca.dispose(self_id, allocs),
-            GEP(gep) => gep.dispose(self_id, allocs),
-            Load(load) => load.dispose(self_id, allocs),
-            Store(store) => store.dispose(self_id, allocs),
-            // Other instructions
-            AmoRmw(amormw) => amormw.dispose(self_id, allocs),
-            BinOP(binop) => binop.dispose(self_id, allocs),
-            Call(call) => call.dispose(self_id, allocs),
-            Cast(cast) => cast.dispose(self_id, allocs),
-            Cmp(cmp) => cmp.dispose(self_id, allocs),
-            IndexExtract(e) => e.dispose(self_id, allocs),
-            FieldExtract(e) => e.dispose(self_id, allocs),
-            IndexInsert(e) => e.dispose(self_id, allocs),
-            FieldInsert(e) => e.dispose(self_id, allocs),
-            Phi(phi) => phi.dispose(self_id, allocs),
-            Select(select) => select.dispose(self_id, allocs),
-        }
-    }
 }
 impl IEntityListNode for InstObj {
     fn load_head(&self) -> EntityListHead<Self> {
@@ -667,7 +564,7 @@ impl IEntityListNode for InstObj {
             return Err(EntityListError::RepeatedNode);
         }
         let parent = curr.deref(alloc).get_common().parent_bb.get();
-        assert_ne!(parent, None, "Pushing inst without parent block");
+        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         next.deref(alloc).get_common().parent_bb.set(parent);
         Ok(())
     }
@@ -680,13 +577,12 @@ impl IEntityListNode for InstObj {
             return Err(EntityListError::RepeatedNode);
         }
         let parent = curr.deref(alloc).get_common().parent_bb.get();
-        assert_ne!(parent, None, "Pushing inst without parent block");
+        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         prev.deref(alloc).get_common().parent_bb.set(parent);
         Ok(())
     }
     fn on_unplug(curr: PtrID<Self>, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        let parent_bb = curr.deref(alloc).get_common().parent_bb.get();
-        assert_ne!(parent_bb, None, "Unplugging inst without parent block");
+        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         curr.deref(alloc).get_common().parent_bb.set(None);
         Ok(())
     }

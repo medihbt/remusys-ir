@@ -1,17 +1,17 @@
 //! Managed IR structures with auto-disposal capabilities.
-use crate::ir::*;
+use crate::ir::{module::allocs::IPoolAllocated, *};
 use mtb_entity::IEntityAllocID;
 
-pub struct IRManaged<'ir, T: IPoolAllocated> {
+struct IRManagedImpl<'ir, T: IPoolAllocated> {
     pool: &'ir T::MinRelatedPoolT,
     id: T::ModuleID,
 }
-impl<'ir, T: IPoolAllocated> Drop for IRManaged<'ir, T> {
+impl<'ir, T: IPoolAllocated> Drop for IRManagedImpl<'ir, T> {
     fn drop(&mut self) {
-        T::dispose_id(self.id, self.pool);
+        T::dispose_id(self.id, self.pool).expect("Failed to dispose managed IR entity");
     }
 }
-impl<'ir, T: IPoolAllocated> IRManaged<'ir, T> {
+impl<'ir, T: IPoolAllocated> IRManagedImpl<'ir, T> {
     pub fn new(pool: &'ir T::MinRelatedPoolT, id: T::ModuleID) -> Self {
         Self { pool, id }
     }
@@ -29,9 +29,28 @@ impl<'ir, T: IPoolAllocated> IRManaged<'ir, T> {
     }
 }
 
-pub type ManagedExpr<'ir> = IRManaged<'ir, ExprObj>;
-pub type ManagedGlobal<'ir> = IRManaged<'ir, GlobalObj>;
-pub type ManagedBlock<'ir> = IRManaged<'ir, BlockObj>;
-pub type ManagedInst<'ir> = IRManaged<'ir, InstObj>;
-pub type ManagedJT<'ir> = IRManaged<'ir, JumpTarget>;
-pub type ManagedUse<'ir> = IRManaged<'ir, Use>;
+macro_rules! define_managed {
+    ($ManagedName:ident, $Typaname:ty, $PoolT:ty, $ModuleID:ty) => {
+        pub struct $ManagedName<'ir> {
+            inner: IRManagedImpl<'ir, $Typaname>,
+        }
+        impl<'ir> $ManagedName<'ir> {
+            pub fn new(pool: &'ir $PoolT, id: $ModuleID) -> Self {
+                Self { inner: IRManagedImpl::new(pool, id) }
+            }
+            pub fn as_ref(&self) -> &'ir $Typaname {
+                self.inner.as_ref()
+            }
+            pub fn release(self) -> $ModuleID {
+                self.inner.release()
+            }
+        }
+    };
+}
+
+define_managed!(ManagedExpr, ExprObj, IRAllocs, ExprID);
+define_managed!(ManagedGlobal, GlobalObj, Module, GlobalID);
+define_managed!(ManagedBlock, BlockObj, IRAllocs, BlockID);
+define_managed!(ManagedInst, InstObj, IRAllocs, InstID);
+define_managed!(ManagedJT, JumpTarget, IRAllocs, JumpTargetID);
+define_managed!(ManagedUse, Use, IRAllocs, UseID);

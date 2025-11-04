@@ -1,7 +1,10 @@
 use crate::{
     ir::{
         ExprID, GlobalID, IRAllocs, ISubValueSSA, InstID, ValueClass, ValueSSA,
-        constant::expr::ISubExprID, global::ISubGlobalID, inst::ISubInstID,
+        constant::expr::ISubExprID,
+        global::ISubGlobalID,
+        inst::ISubInstID,
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
 };
@@ -119,21 +122,6 @@ pub trait IUser: ITraceableValue {
 
     fn operands_iter(&self) -> OperandUseIter<'_> {
         self.get_operands().into_iter()
-    }
-
-    fn user_dispose(&self, allocs: &IRAllocs) {
-        let operands = self.get_operands();
-        for use_id in operands.into_iter() {
-            use_id.dispose(allocs);
-        }
-        self.traceable_dispose(allocs);
-    }
-    fn user_init_self_id(&self, allocs: &IRAllocs, user_id: UserID) {
-        self.traceable_init_self_id(allocs, user_id.into());
-        let operands = self.get_operands();
-        for use_id in operands.into_iter() {
-            use_id.set_user(allocs, Some(user_id));
-        }
     }
 }
 
@@ -343,10 +331,6 @@ impl IEntityRingListNode for Use {
     }
 }
 impl Use {
-    pub fn is_disposed(&self) -> bool {
-        matches!(self.kind.get(), UseKind::DisposedUse)
-    }
-
     pub fn get_kind(&self) -> UseKind {
         self.kind.get()
     }
@@ -358,16 +342,8 @@ impl Use {
         );
         self.kind.set(kind);
     }
-    pub fn dispose(&self, allocs: &IRAllocs) -> bool {
-        if self.is_disposed() {
-            return false;
-        }
+    pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(UseKind::DisposedUse);
-        self.detach(&allocs.uses)
-            .expect("Use dispose detach failed");
-        self.user.set(None);
-        self.operand.set(ValueSSA::None);
-        true
     }
 }
 
@@ -431,22 +407,21 @@ impl UseID {
             .expect("Use clean_operand detach failed");
         obj.operand.set(ValueSSA::None);
     }
-    pub fn dispose(self, allocs: &IRAllocs) {
-        if !self.deref_ir(allocs).dispose(allocs) {
-            return;
-        }
-        allocs.push_disposed(self);
+    pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        Use::dispose_id(self, allocs)
     }
 
     pub fn new(allocs: &IRAllocs, kind: UseKind) -> Self {
         assert_ne!(kind, UseKind::DisposedUse, "Cannot allocate a disposed Use");
-        let obj = Use {
-            list_head: Cell::new(EntityListHead::none()),
-            kind: Cell::new(kind),
-            user: Cell::new(None),
-            operand: Cell::new(ValueSSA::None),
-        };
-        UseID(allocs.uses.allocate(obj))
+        Use::allocate(
+            allocs,
+            Use {
+                list_head: Cell::new(EntityListHead::none()),
+                kind: Cell::new(kind),
+                user: Cell::new(None),
+                operand: Cell::new(ValueSSA::None),
+            },
+        )
     }
 }
 
@@ -523,20 +498,6 @@ pub trait ITraceableValue {
             }
         }
         false
-    }
-
-    fn traceable_dispose(&self, allocs: &IRAllocs) {
-        let Some(users) = self.try_get_users() else {
-            return;
-        };
-        users.clean(&allocs.uses);
-        UseID(users.sentinel).dispose(allocs);
-    }
-    fn traceable_init_self_id(&self, allocs: &IRAllocs, id: ValueSSA) {
-        self.users().forall_with_sentinel(&allocs.uses, |_, u| {
-            u.operand.set(id);
-            true
-        });
     }
 }
 

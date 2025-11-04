@@ -1,8 +1,8 @@
 use crate::{
     ir::{
-        FuncID, IRAllocs, IRManaged, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, InstID,
-        InstObj, JumpTargetID, JumpTargets, ManagedInst, PredList, TerminatorID, UserList,
-        ValueClass, ValueSSA, module::dispose::dispose_entity_list,
+        FuncID, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj, JumpTargetID,
+        JumpTargets, ManagedInst, PredList, TerminatorID, UserList, ValueClass, ValueSSA,
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
 };
@@ -15,10 +15,10 @@ use std::cell::Cell;
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstObj>>;
 
 pub struct BlockObj {
-    head: Cell<EntityListHead<BlockObj>>,
-    parent_func: Cell<Option<FuncID>>,
-    body: Option<BlockObjBody>,
-    dispose_mark: Cell<bool>,
+    pub(crate) head: Cell<EntityListHead<BlockObj>>,
+    pub(crate) parent_func: Cell<Option<FuncID>>,
+    pub(crate) body: Option<BlockObjBody>,
+    pub(crate) dispose_mark: Cell<bool>,
 }
 pub struct BlockObjBody {
     pub insts: EntityList<InstObj>,
@@ -27,7 +27,7 @@ pub struct BlockObjBody {
     pub preds: PredList,
 }
 impl BlockObjBody {
-    fn new(allocs: &IRAllocs) -> Self {
+    pub(crate) fn new(allocs: &IRAllocs) -> Self {
         let insts = EntityList::new(&allocs.insts);
         let phi_end = InstID::allocate(allocs, InstObj::new_phi_end());
         insts
@@ -36,15 +36,6 @@ impl BlockObjBody {
         let users = UserList::new(&allocs.uses);
         let preds = PredList::new(&allocs.jts);
         Self { insts, phi_end, users, preds }
-    }
-
-    fn init_self_id(&self, self_id: BlockID, allocs: &IRAllocs) {
-        let init_inst = |inst: InstID| {
-            inst.deref_ir(allocs).get_common().set_parent(Some(self_id));
-        };
-        init_inst(self.insts.head);
-        init_inst(self.phi_end);
-        init_inst(self.insts.tail);
     }
 }
 
@@ -172,7 +163,7 @@ impl BlockObj {
             insts.node_unplug(old_id, &allocs.insts)?;
         }
         insts.push_back_id(inst_id, &allocs.insts)?;
-        let managed_old = old_terminator.map(|t| IRManaged::new(allocs, t));
+        let managed_old = old_terminator.map(|t| ManagedInst::new(allocs, t));
         Ok(managed_old)
     }
     pub fn set_terminator_inst<'ir>(
@@ -215,35 +206,6 @@ impl BlockObj {
     pub fn get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
         self.try_get_succs(allocs)
             .expect("Attempted to get JumpTargets of BlockObj without terminator")
-    }
-
-    pub fn is_disposed(&self) -> bool {
-        self.dispose_mark.get()
-    }
-    fn dispose(&self, self_id: BlockID, allocs: &IRAllocs) -> bool {
-        if self.is_disposed() {
-            return false;
-        }
-        self.dispose_mark.set(true);
-
-        let Some(body) = &self.body else {
-            return true;
-        };
-        // auto unplug from parent function's block list
-        // `self.body` is not None here, so `self` is not a sentinel
-        if let Some(parent) = self.get_parent_func()
-            && let Some(bbs) = parent.get_body(allocs)
-            && bbs.entry != self_id
-        {
-            bbs.blocks
-                .node_unplug(self_id.inner(), &allocs.blocks)
-                .expect("Failed to unplug BlockObj from parent function");
-        }
-        // dispose belonging instructions
-        dispose_entity_list(&body.insts, allocs);
-        self.traceable_dispose(allocs);
-        JumpTargetID(body.preds.sentinel).dispose(allocs);
-        true
     }
 }
 
@@ -342,27 +304,15 @@ impl BlockID {
         self.deref_ir(allocs).get_succs(allocs)
     }
 
-    pub fn allocate(allocs: &IRAllocs, mut obj: BlockObj) -> Self {
-        if let None = obj.body {
-            obj.body = Some(BlockObjBody::new(allocs));
-        }
-        let ptr_id = allocs.blocks.allocate(obj);
-        let block_id = Self(ptr_id);
-        block_id.get_body(allocs).init_self_id(block_id, allocs);
-        block_id
-    }
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
-        Self::allocate(allocs, BlockObj::new_uninit(allocs))
+        BlockObj::allocate(allocs, BlockObj::new_uninit(allocs))
     }
     pub fn new_with_terminator(allocs: &IRAllocs, terminator: impl ISubInstID) -> Self {
         let ret = Self::new_uninit(allocs);
         ret.set_terminator_inst(allocs, terminator.into_ir());
         ret
     }
-    pub fn dispose(self, allocs: &IRAllocs) {
-        if !self.deref_ir(allocs).dispose(self, allocs) {
-            return;
-        }
-        allocs.push_disposed(self);
+    pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        BlockObj::dispose_id(self, allocs)
     }
 }

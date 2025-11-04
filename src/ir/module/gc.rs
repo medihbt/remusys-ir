@@ -2,8 +2,8 @@ use crate::{
     base::FixBitSet,
     ir::{
         BlockID, ExprID, FuncID, GlobalID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID, ISubInst,
-        ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, PoolAllocatedClass,
-        PoolAllocatedID, ValueSSA,
+        ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, JumpTargetID, PoolAllocatedClass,
+        PoolAllocatedID, UseID, ValueSSA, module::allocs::IPoolAllocated,
     },
 };
 use mtb_entity::IndexedID;
@@ -93,14 +93,16 @@ impl IRLiveSet {
             if self.uses.get(id) {
                 continue;
             }
-            u.dispose(allocs);
+            // 重复 dispose 不是一个错误, 忽略即可.
+            let _ = u.dispose_obj(UseID(up), allocs);
             allocs.push_disposed(up);
         }
         for (id, jp, jt) in allocs.jts.iter() {
             if self.jts.get(id) {
                 continue;
             }
-            jt.dispose(allocs);
+            // 重复 dispose 不是一个错误, 忽略即可.
+            let _ = jt.dispose_obj(JumpTargetID(jp), allocs);
             allocs.push_disposed(jp);
         }
         // 清理掉已经 dispose 的对象.

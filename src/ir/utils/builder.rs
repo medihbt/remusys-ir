@@ -3,9 +3,9 @@ use thiserror::Error;
 
 use crate::{
     ir::{
-        BlockID, BlockObj, FuncBuilder, FuncID, GlobalDisposeError, GlobalID, GlobalVar,
-        GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA,
-        ITerminatorID, InstID, InstObj, ManagedInst, Module, TerminatorID, ValueSSA,
+        BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
+        IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, InstID, InstObj, ManagedInst,
+        Module, PoolAllocatedDisposeErr,
         inst::{BrInstID, JumpInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
@@ -146,8 +146,8 @@ pub enum IRBuildError {
     #[error("Invalid insert position: %inst{0:p}")]
     InvalidInsertPos(InstID),
 
-    #[error("Global dispose error: {0:?}")]
-    GlobalDisposeErr(#[from] GlobalDisposeError),
+    #[error("Dispose error: {0:?}")]
+    DisposeErr(#[from] PoolAllocatedDisposeErr),
 }
 impl From<EntityListError<InstObj>> for IRBuildError {
     fn from(e: EntityListError<InstObj>) -> Self {
@@ -252,7 +252,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         }
     }
 
-    fn isnull_block_focus(&self) -> bool {
+    fn _isnull_block_focus(&self) -> bool {
         match &self.full_focus {
             Some(focus) => focus.block.is_none(),
             None => true,

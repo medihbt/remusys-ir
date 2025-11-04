@@ -190,13 +190,13 @@ impl SwitchInst {
         jt
     }
     pub fn remove_case(&self, allocs: &IRAllocs, case_val: i64) -> bool {
-        if let Some(pos) = self.find_case_pos(allocs, case_val) {
-            let jt = self.remove_case_jt(pos);
-            jt.dispose(allocs);
-            true
-        } else {
-            false
-        }
+        let Some(pos) = self.find_case_pos(allocs, case_val) else {
+            return false;
+        };
+        let jt = self.remove_case_jt(pos);
+        jt.dispose(allocs)
+            .expect("Broken IR invariant in SwitchInst::remove_case");
+        true
     }
     pub fn sort_cases(&self, allocs: &IRAllocs) {
         let mut targets = self.targets.borrow_mut();
@@ -212,6 +212,8 @@ impl SwitchInst {
 
     fn push_case_jt(&self, allocs: &IRAllocs, case_val: i64) -> JumpTargetID {
         let jt = JumpTargetID::new(allocs, JumpTargetKind::SwitchCase(case_val));
+        // Self-reference is stored in every case jump target. SwitchInst has at least one target (the default),
+        // so it's safe to get its ID here.
         let self_id = self.default_jt().get_terminator(allocs);
         if let Some(inst_id) = self_id {
             jt.set_terminator(allocs, inst_id);

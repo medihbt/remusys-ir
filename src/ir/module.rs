@@ -8,7 +8,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 pub mod allocs;
 pub mod gc;
-pub mod dispose;
+pub mod managing;
 
 pub struct Module {
     pub allocs: IRAllocs,

@@ -3,10 +3,8 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, Module, OperandSet, UseID, UseKind,
-        UserID, ValueSSA,
-        global::{
-            GlobalCommon, GlobalDisposeError, GlobalDisposeRes, GlobalObj, ISubGlobal, Linkage,
-        },
+        ValueSSA,
+        global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
     },
     typing::ValTypeID,
 };
@@ -86,19 +84,19 @@ impl ISubGlobal for GlobalVar {
         }
     }
 
-    fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
-        self.user_init_self_id(allocs, UserID::Global(self_id));
-    }
-    fn dispose(&self, module: &Module) -> GlobalDisposeRes {
-        if self.is_disposed() {
-            return Err(GlobalDisposeError::AlreadyDisposed(None));
-        }
-        // Mark disposed and unregister from module symbol table first
-        self.common.common_dispose(module)?;
-        // Then release initializer use and any users referencing this global
-        self.user_dispose(&module.allocs);
-        Ok(())
-    }
+    // fn _init_self_id(&self, self_id: GlobalID, allocs: &IRAllocs) {
+    //     self.user_init_self_id(allocs, UserID::Global(self_id));
+    // }
+    // fn dispose(&self, module: &Module) -> GlobalDisposeRes {
+    //     if self.is_disposed() {
+    //         return Err(GlobalDisposeError::AlreadyDisposed(None));
+    //     }
+    //     // Mark disposed and unregister from module symbol table first
+    //     self.common.common_dispose(module)?;
+    //     // Then release initializer use and any users referencing this global
+    //     self.user_dispose(&module.allocs);
+    //     Ok(())
+    // }
 }
 impl GlobalVar {
     pub fn builder(name: impl Into<String>, content_ty: ValTypeID) -> GlobalVarBuilder {

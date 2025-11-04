@@ -1,15 +1,13 @@
-use std::cell::{Cell, Ref, RefCell};
-
-use smallvec::SmallVec;
-
 use crate::{
     impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
-        OperandSet, UseID, UseKind, UserID, ValueSSA,
+        OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
     },
     typing::ValTypeID,
 };
+use smallvec::SmallVec;
+use std::cell::{Cell, Ref, RefCell};
 
 trait IPhiOperandSlot: Copy {
     fn pair(&self) -> &UseSlotPair;
@@ -36,25 +34,27 @@ trait IPhiOperandSlot: Copy {
         val: ValueSSA,
         block: BlockID,
     ) -> Self {
-        let slots = [
+        let (uval, ublk) = (
             UseID::new(allocs, UseKind::PhiIncomingValue(index)),
             UseID::new(allocs, UseKind::PhiIncomingBlock(index)),
-        ];
-        slots[0].set_operand(allocs, val);
-        slots[1].set_operand(allocs, ValueSSA::Block(block));
-        slots[0].set_user(allocs, id.map(UserID::Inst));
-        slots[1].set_user(allocs, id.map(UserID::Inst));
-        Self::from_pair(slots)
+        );
+        uval.set_operand(allocs, val);
+        ublk.set_operand(allocs, ValueSSA::Block(block));
+        uval.set_user(allocs, id.map(UserID::Inst));
+        ublk.set_user(allocs, id.map(UserID::Inst));
+        Self::from_pair([uval, ublk])
     }
 
     fn set_index(&self, allocs: &IRAllocs, index: u32) {
-        self.pair()[0].set_kind(allocs, UseKind::PhiIncomingValue(index));
-        self.pair()[1].set_kind(allocs, UseKind::PhiIncomingBlock(index));
+        let &[val, blk] = self.pair();
+        val.set_kind(allocs, UseKind::PhiIncomingValue(index));
+        blk.set_kind(allocs, UseKind::PhiIncomingBlock(index));
     }
 
-    fn dispose(&self, allocs: &IRAllocs) {
-        self.pair()[0].dispose(allocs);
-        self.pair()[1].dispose(allocs);
+    fn dispose(&self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        let &[val, blk] = self.pair();
+        val.dispose(allocs)?;
+        blk.dispose(allocs)
     }
 }
 type UseSlotPair = [UseID; 2];
@@ -97,7 +97,7 @@ impl IPhiOperandSlot for UseSlotPair {
 pub struct PhiInst {
     pub common: InstCommon,
     operands: RefCell<SmallVec<[UseSlotPair; 2]>>,
-    self_id: Cell<Option<InstID>>,
+    pub(in crate::ir) self_id: Cell<Option<InstID>>,
 }
 impl_traceable_from_common!(PhiInst, true);
 impl IUser for PhiInst {
@@ -139,19 +139,6 @@ impl ISubInst for PhiInst {
     }
     fn try_get_jts(&self) -> Option<crate::ir::JumpTargets<'_>> {
         None
-    }
-
-    fn inst_init_self_id(&self, self_id: InstID, allocs: &IRAllocs) {
-        self._common_init_self_id(self_id, allocs);
-        self.self_id.set(Some(self_id));
-    }
-    fn dispose(&self, self_id: InstID, allocs: &IRAllocs) -> bool {
-        if self.get_common().disposed.get() {
-            return false;
-        }
-        self._common_dispose(self_id, allocs);
-        self.self_id.set(None);
-        true
     }
 }
 impl PhiInst {
@@ -220,7 +207,8 @@ impl PhiInst {
             operands[pos].set_index(allocs, pos as u32);
         }
         let value = u.get_value(allocs);
-        u.dispose(allocs);
+        u.dispose(allocs)
+            .expect("Broken IR invariant in PhiInst::remove_incoming");
         Some(value)
     }
 

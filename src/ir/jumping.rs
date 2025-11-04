@@ -6,6 +6,7 @@ use crate::{
             BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
             UnreachableInst, UnreachableInstID,
         },
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
 };
 use mtb_entity::{EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID};
@@ -91,18 +92,21 @@ impl JumpTarget {
     pub fn is_disposed(&self) -> bool {
         self.kind.get() == JumpTargetKind::Disposed
     }
-
-    pub fn dispose(&self, allocs: &IRAllocs) -> bool {
-        if self.is_disposed() {
-            return false;
-        }
+    pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(JumpTargetKind::Disposed);
-        self.detach(&allocs.jts)
-            .expect("JumpTarget dispose detach failed");
-        self.terminator.set(None);
-        self.block.set(None);
-        true
     }
+
+    // pub fn dispose(&self, allocs: &IRAllocs) -> bool {
+    //     if self.is_disposed() {
+    //         return false;
+    //     }
+    //     self.kind.set(JumpTargetKind::Disposed);
+    //     self.detach(&allocs.jts)
+    //         .expect("JumpTarget dispose detach failed");
+    //     self.terminator.set(None);
+    //     self.block.set(None);
+    //     true
+    // }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -159,14 +163,10 @@ impl JumpTargetID {
     }
 
     pub fn new(allocs: &IRAllocs, kind: JumpTargetKind) -> Self {
-        JumpTargetID(allocs.jts.allocate(JumpTarget::new(kind)))
+        JumpTarget::allocate(allocs, JumpTarget::new(kind))
     }
-
-    pub fn dispose(self, allocs: &IRAllocs) {
-        if !self.deref_ir(allocs).dispose(allocs) {
-            return;
-        }
-        allocs.push_disposed(self);
+    pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        JumpTarget::dispose_id(self, allocs)
     }
 }
 

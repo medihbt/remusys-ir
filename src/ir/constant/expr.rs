@@ -1,19 +1,18 @@
-use std::cell::Cell;
-
 use crate::{
     impl_traceable_from_common,
     ir::{
-        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserID, UserList, ValueClass,
-        ValueSSA,
+        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserList, ValueClass, ValueSSA,
         constant::{array::ArrayExpr, structure::StructExpr},
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
 };
 use mtb_entity::{IEntityAllocID, PtrID};
+use std::cell::Cell;
 
 pub struct ExprCommon {
     pub users: Option<UserList>,
-    dispose_mark: Cell<bool>,
+    pub(in crate::ir) dispose_mark: Cell<bool>,
 }
 impl Clone for ExprCommon {
     fn clone(&self) -> Self {
@@ -35,7 +34,7 @@ impl ExprCommon {
     }
 }
 
-pub trait ISubExpr: IUser {
+pub trait ISubExpr: IUser + Sized {
     fn get_common(&self) -> &ExprCommon;
     fn common_mut(&mut self) -> &mut ExprCommon;
 
@@ -43,9 +42,7 @@ pub trait ISubExpr: IUser {
 
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self>;
     fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self>;
-    fn try_from_ir(expr: ExprObj) -> Option<Self>
-    where
-        Self: Sized;
+    fn try_from_ir(expr: ExprObj) -> Option<Self>;
     fn into_ir(self) -> ExprObj;
 
     fn from_ir_ref(expr: &ExprObj) -> &Self {
@@ -54,23 +51,8 @@ pub trait ISubExpr: IUser {
     fn from_ir_mut(expr: &mut ExprObj) -> &mut Self {
         Self::try_from_ir_mut(expr).expect("Invalid ExprObj type for ISubExpr")
     }
-    fn from_ir(expr: ExprObj) -> Self
-    where
-        Self: Sized,
-    {
+    fn from_ir(expr: ExprObj) -> Self {
         Self::try_from_ir(expr).expect("Invalid ExprObj type for ISubExpr")
-    }
-
-    fn is_disposed(&self) -> bool {
-        self.get_common().dispose_mark.get()
-    }
-    fn dispose(&self, allocs: &IRAllocs) -> bool {
-        if self.is_disposed() {
-            return false;
-        }
-        self.get_common().dispose_mark.set(true);
-        self.user_dispose(allocs);
-        true
     }
 }
 
@@ -94,21 +76,12 @@ pub trait ISubExprID: Copy {
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
-        let mut obj = obj.into_ir();
-        if obj.get_common().users.is_none() {
-            obj.common_mut().users = Some(UserList::new(&allocs.uses));
-        }
-        let id = allocs.exprs.allocate(obj);
-        id.deref_ir(allocs)
-            .user_init_self_id(allocs, UserID::Expr(id));
+        let id = ExprObj::allocate(allocs, obj.into_ir());
         Self::raw_from_ir(id)
     }
 
-    fn dispose(self, allocs: &IRAllocs) {
-        if !self.deref_ir(allocs).dispose(allocs) {
-            return;
-        }
-        allocs.push_disposed(self.into_ir());
+    fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        ExprObj::dispose_id(self.into_ir(), allocs)
     }
 }
 
