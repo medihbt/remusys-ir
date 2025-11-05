@@ -6,6 +6,84 @@ use crate::{
     },
     typing::ValTypeID,
 };
+use bitflags::bitflags;
+use std::cell::Cell;
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct BinOPFlags: u8 {
+        const NONE  = 0;
+        const EXACT = 0b0000_0001;
+        const NUW   = 0b0000_0010;
+        const NSW   = 0b0000_0100;
+    }
+}
+impl std::fmt::Display for BinOPFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+impl BinOPFlags {
+    pub fn has_exact(self) -> bool {
+        self.contains(BinOPFlags::EXACT)
+    }
+    pub fn has_nuw(self) -> bool {
+        self.contains(BinOPFlags::NUW)
+    }
+    pub fn has_nsw(self) -> bool {
+        self.contains(BinOPFlags::NSW)
+    }
+
+    pub fn opcode_supports(opcode: Opcode) -> Self {
+        match opcode {
+            // Integer add/sub/mul support no-wrap flags (nuw/nsw)
+            Opcode::Add | Opcode::Sub | Opcode::Mul => BinOPFlags::NUW | BinOPFlags::NSW,
+            // Left shift supports no-wrap flags (nuw/nsw); exact is NOT applicable
+            Opcode::Shl => BinOPFlags::NUW | BinOPFlags::NSW,
+            // Right shifts and integer divisions support exact; no-wrap flags don't apply here
+            Opcode::Lshr | Opcode::Ashr | Opcode::Sdiv | Opcode::Udiv => BinOPFlags::EXACT,
+            _ => BinOPFlags::NONE,
+        }
+    }
+
+    pub fn filter_by_opcode(self, opcode: Opcode) -> Self {
+        let supported = Self::opcode_supports(opcode);
+        Self::from_bits_truncate(self.bits() & supported.bits())
+    }
+
+    /// Canonical, allocation-free textual form (for writer):
+    /// - Order: "nuw nsw exact"
+    /// - Empty set: "" (no flags printed)
+    pub fn as_str(self) -> &'static str {
+        const EXACT_NUW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0011);
+        const EXACT_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0101);
+        const NUW_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0110);
+        const EXACT_NUW_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0111);
+        match self {
+            Self::NONE => "",
+            Self::NUW => "nuw",
+            Self::NSW => "nsw",
+            Self::EXACT => "exact",
+            NUW_NSW => "nuw nsw",
+            EXACT_NUW => "nuw exact",
+            EXACT_NSW => "nsw exact",
+            EXACT_NUW_NSW => "nuw nsw exact",
+            _ => "",
+        }
+    }
+    pub fn from_str(s: &str) -> Option<Self> {
+        let mut flags = BinOPFlags::NONE;
+        for part in s.split_whitespace() {
+            match part {
+                "exact" => flags |= BinOPFlags::EXACT,
+                "nuw" => flags |= BinOPFlags::NUW,
+                "nsw" => flags |= BinOPFlags::NSW,
+                _ => return None,
+            }
+        }
+        Some(flags)
+    }
+}
 
 /// 二元操作指令: 执行两个操作数的二元运算（算术运算、逻辑运算、移位运算），并返回结果。
 ///
@@ -17,6 +95,7 @@ use crate::{
 pub struct BinOPInst {
     pub common: InstCommon,
     operands: [UseID; 2],
+    flags: Cell<BinOPFlags>,
 }
 impl_traceable_from_common!(BinOPInst, true);
 impl IUser for BinOPInst {
@@ -74,6 +153,7 @@ impl BinOPInst {
                 UseID::new(allocs, UseKind::BinOpLhs),
                 UseID::new(allocs, UseKind::BinOpRhs),
             ],
+            flags: Cell::new(BinOPFlags::NONE),
         }
     }
 
@@ -95,6 +175,34 @@ impl BinOPInst {
     }
     pub fn set_rhs(&self, allocs: &IRAllocs, val: ValueSSA) {
         self.rhs_use().set_operand(allocs, val);
+    }
+
+    pub fn get_flags(&self) -> BinOPFlags {
+        self.flags.get()
+    }
+    pub fn set_flags(&self, flags: BinOPFlags) {
+        let filtered = flags.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
+    }
+    pub fn add_flags(&self, flags: BinOPFlags) {
+        let current = self.flags.get();
+        let combined = current | flags;
+        let filtered = combined.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
+    }
+    pub fn del_flags(&self, flags: BinOPFlags) {
+        let current = self.flags.get();
+        let removed = current - flags;
+        let filtered = removed.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
+    }
+    pub fn has_flag(&self, flag: BinOPFlags) -> bool {
+        let current = self.flags.get();
+        current.contains(flag)
+    }
+    pub fn has_oneof_flags(&self, flags: BinOPFlags) -> bool {
+        let current = self.flags.get();
+        !(current & flags).is_empty()
     }
 }
 
@@ -143,5 +251,24 @@ impl BinOPInstID {
     }
     pub fn set_rhs(self, allocs: &IRAllocs, val: ValueSSA) {
         self.deref_ir(allocs).set_rhs(allocs, val);
+    }
+
+    pub fn get_flags(self, allocs: &IRAllocs) -> BinOPFlags {
+        self.deref_ir(allocs).get_flags()
+    }
+    pub fn set_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).set_flags(flags);
+    }
+    pub fn add_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).add_flags(flags);
+    }
+    pub fn del_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).del_flags(flags);
+    }
+    pub fn has_flag(self, allocs: &IRAllocs, flag: BinOPFlags) -> bool {
+        self.deref_ir(allocs).has_flag(flag)
+    }
+    pub fn has_oneof_flags(self, allocs: &IRAllocs, flags: BinOPFlags) -> bool {
+        self.deref_ir(allocs).has_oneof_flags(flags)
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity::EntityListError;
+use mtb_entity::{EntityListError, IEntityListNode};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy)]
@@ -29,7 +29,7 @@ impl IRFullFocus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IRFocus {
     Block(BlockID),
     Inst(InstID),
@@ -79,12 +79,14 @@ pub enum FocusDegradeOp {
 
 #[derive(Debug, Clone, Copy)]
 pub struct FocusDegradeConfig {
-    /// 当尝试将指令添加到终结指令时的降级操作
-    pub add_inst_to_terminator: FocusDegradeOp,
     /// 当尝试将 Phi 指令添加到非 Phi 结点时的降级操作
     pub add_phi_to_inst: FocusDegradeOp,
     /// 如果焦点在 Phi 指令上, 添加非 Phi 指令时应该执行的降级操作
     pub add_inst_to_phi: FocusDegradeOp,
+    /// 如果焦点在哨兵指令上, 添加非 Phi 指令时应该执行的降级操作
+    pub add_inst_to_sentinel: FocusDegradeOp,
+    /// 尝试给焦点添加终结指令时应该执行的降级操作
+    pub add_terminator: FocusDegradeOp,
     /// 如果焦点在 Phi 指令上, 拆分基本块时应该执行的降级操作
     pub split_block_on_phi: FocusDegradeOp,
     /// 如果焦点在终结指令上, 拆分基本块时应该执行的降级操作
@@ -100,9 +102,10 @@ impl Default for FocusDegradeConfig {
     /// - 拆分块：在 phi 区段之后或终结符之前切分
     fn default() -> Self {
         Self {
-            add_inst_to_terminator: FocusDegradeOp::AsBlockOp,
             add_phi_to_inst: FocusDegradeOp::AsBlockOp,
             add_inst_to_phi: FocusDegradeOp::Strict,
+            add_inst_to_sentinel: FocusDegradeOp::AsBlockOp,
+            add_terminator: FocusDegradeOp::AsBlockOp,
             split_block_on_phi: FocusDegradeOp::AsBlockOp,
             split_block_on_terminator: FocusDegradeOp::AsBlockOp,
         }
@@ -185,6 +188,14 @@ impl IRBuilder<Module> {
             full_focus: None,
             focus_degrade: FocusDegradeConfig::default(),
         }
+    }
+}
+impl<ModuleT> IRBuilder<ModuleT>
+where
+    ModuleT: AsRef<Module> + AsMut<Module>,
+{
+    pub fn free_disposed(&mut self) {
+        self.module.as_mut().allocs.free_disposed();
     }
 }
 impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
@@ -366,7 +377,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InstIDSummary {
+pub enum InstIDSummary {
     Sentinel,
     Phi(PhiInstID),
     PhiEnd(InstID),
@@ -445,10 +456,18 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     }
 
     /// 以当前焦点为分界, 把当前基本块拆分为两个基本块. 原基本块保留在前, 新基本块插入到后.
+    ///
+    /// 焦点会一直保留在前半部分基本块的位置. 如果原焦点指向终结指令, 则会被移动到跳转指令上. 否则会一直留在原指令上,
+    /// 不随拆分操作移动到后半部分基本块.
+    ///
+    /// ### Return
+    ///
+    /// - **Success branch**: 新创建的后半部分基本块 ID.
+    /// - **Error branch**: 拆分失败时的错误.
     pub fn split_block(&mut self) -> IRBuildRes<BlockID> {
         match self.get_split_pos()? {
             IRFocus::Block(block) => self.split_block_at_end(block),
-            IRFocus::Inst(inst) => todo!("Split block at inst {inst:p}"),
+            IRFocus::Inst(inst) => self.split_block_at_inst(inst),
         }
     }
     fn split_block_at_end(&mut self, front_half: BlockID) -> IRBuildRes<BlockID> {
@@ -484,5 +503,152 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
             self.full_focus = Some(focus);
         }
         Ok(back_half)
+    }
+    fn split_block_at_inst(&mut self, front_last: InstID) -> IRBuildRes<BlockID> {
+        let Some(old_focus) = self.full_focus.clone() else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let front_half = old_focus.block.ok_or(IRBuildError::NullFocus)?;
+        assert_eq!(
+            Some(front_half),
+            front_last.get_parent(self.allocs()),
+            "InstID {front_last:p} is not in BlockID {front_half:?}"
+        );
+
+        // 此时会自动维护焦点: 一直呆在 front_half, 如果焦点是 terminator 会修复到跳转指令上
+        let back_half = self.split_block_at_end(front_half)?;
+        let allocs = self.allocs();
+
+        let front_half_insts = front_half.get_insts(allocs);
+        let back_half_insts = back_half.get_insts(allocs);
+        let back_half_termi = back_half
+            .try_get_terminator(allocs)
+            .ok_or(IRBuildError::BlockHasNoTerminator(back_half))?;
+        loop {
+            let Some(to_unplug) = front_last.deref_ir(allocs).get_next_id() else {
+                panic!("Broken IR: should quit at terminator but got `null`");
+            };
+            let to_unplug = match InstIDSummary::new(to_unplug, allocs) {
+                InstIDSummary::Sentinel => {
+                    panic!("Broken IR: should quit at terminator but got sentinel")
+                }
+                InstIDSummary::Phi(_) | InstIDSummary::PhiEnd(_) => {
+                    panic!("Broken IR: Phi {to_unplug:p} found after non-Phi {front_last:p}")
+                }
+                InstIDSummary::Normal(n) => n,
+                InstIDSummary::Terminator(_) => break,
+            };
+            front_half_insts
+                .node_unplug(to_unplug, &allocs.insts)
+                .map_err(IRBuildError::from)?;
+            back_half_insts
+                .node_add_prev(back_half_termi, to_unplug, &allocs.insts)
+                .map_err(IRBuildError::from)?;
+        }
+        Ok(back_half)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum InstInsertPos {
+    Prepend(InstID, BlockID),
+    SetTerminator(BlockID),
+}
+
+impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
+    pub fn get_inst_insert_pos(&self, inst: InstIDSummary) -> IRBuildRes<InstInsertPos> {
+        let full_focus = self.full_focus.as_ref().ok_or(IRBuildError::NullFocus)?;
+        let block = full_focus.block.ok_or(IRBuildError::NullFocus)?;
+
+        let allocs = self.allocs();
+        let Some(inst_pos) = full_focus.inst else {
+            let inst = match inst {
+                InstIDSummary::Phi(_) => block.get_phi_end(allocs),
+                _ => block.get_terminator_inst(allocs),
+            };
+            return Ok(InstInsertPos::Prepend(inst, block));
+        };
+        use InstIDSummary as IS;
+        let pos = match (inst, IS::new(inst_pos, allocs)) {
+            (IS::Sentinel, _) | (IS::PhiEnd(_), _) => {
+                return Err(IRBuildError::InstIsGuideNode(inst_pos));
+            }
+            (_, IS::Sentinel) => match self.focus_degrade.add_inst_to_sentinel {
+                FocusDegradeOp::AsBlockOp => {
+                    InstInsertPos::Prepend(block.get_terminator_inst(allocs), block)
+                }
+                FocusDegradeOp::Strict => {
+                    return Err(IRBuildError::InstIsGuideNode(inst_pos));
+                }
+                FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+            },
+            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.into_ir(), block),
+            (IS::Phi(_), IS::PhiEnd(pe)) => InstInsertPos::Prepend(pe, block),
+            (IS::Phi(_), IS::Normal(_)) | (IS::Phi(_), IS::Terminator(_)) => {
+                match self.focus_degrade.add_phi_to_inst {
+                    FocusDegradeOp::AsBlockOp => {
+                        InstInsertPos::Prepend(block.get_phi_end(allocs), block)
+                    }
+                    FocusDegradeOp::Strict => {
+                        return Err(IRBuildError::InvalidInsertPos(inst_pos));
+                    }
+                    FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+                }
+            }
+            (IS::Normal(_), IS::Phi(_)) | (IS::Normal(_), IS::PhiEnd(_)) => {
+                match self.focus_degrade.add_inst_to_phi {
+                    FocusDegradeOp::AsBlockOp => {
+                        InstInsertPos::Prepend(block.get_terminator_inst(allocs), block)
+                    }
+                    FocusDegradeOp::Strict => {
+                        return Err(IRBuildError::InsertPosIsPhi(inst_pos));
+                    }
+                    FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+                }
+            }
+            (IS::Normal(_), IS::Normal(_)) | (IS::Normal(_), IS::Terminator(_)) => {
+                InstInsertPos::Prepend(inst_pos, block)
+            }
+            (IS::Terminator(_), _) => match self.focus_degrade.add_terminator {
+                FocusDegradeOp::AsBlockOp => InstInsertPos::SetTerminator(block),
+                FocusDegradeOp::Strict => {
+                    return Err(IRBuildError::InvalidInsertPos(inst_pos));
+                }
+                FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+            },
+        };
+        Ok(pos)
+    }
+
+    pub fn insert_inst(&mut self, inst: impl ISubInstID) -> IRBuildRes {
+        let inst = inst.into_ir();
+        let inst_summary = InstIDSummary::new(inst, self.allocs());
+        match self.get_inst_insert_pos(inst_summary)? {
+            InstInsertPos::Prepend(pos, block) => block
+                .get_insts(self.allocs())
+                .node_add_prev(pos, inst, &self.allocs().insts)
+                .map_err(IRBuildError::from),
+            InstInsertPos::SetTerminator(block) => {
+                let Some(old) = block.set_terminator_inst(self.allocs(), inst) else {
+                    return Err(IRBuildError::BlockHasNoTerminator(block));
+                };
+                let old = old.release();
+                if Some(IRFocus::Inst(old)) == self.try_get_focus() {
+                    let mut focus = self.full_focus.unwrap();
+                    focus.inst = Some(inst);
+                    self.full_focus = Some(focus);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn build_inst<BuildFn>(&mut self, build: BuildFn) -> IRBuildRes<InstID>
+    where
+        BuildFn: FnOnce(&IRAllocs, &TypeContext) -> InstID,
+    {
+        let inst = build(self.allocs(), self.tctx());
+        self.insert_inst(inst)?;
+        Ok(inst)
     }
 }

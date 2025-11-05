@@ -47,7 +47,7 @@ pub use self::{
     },
     alloca::{AllocaInst, AllocaInstID},
     amormw::{AmoOrdering, AmoRmwBuilder, AmoRmwInst, AmoRmwInstID, IAmoRmwBuildable, SyncScope},
-    binop::{BinOPInst, BinOPInstID},
+    binop::{BinOPFlags, BinOPInst, BinOPInstID},
     br::{BrInst, BrInstID},
     call::{CallInst, CallInstBuilder, CallInstID, ICallInstBuildable},
     cast::{CastInst, CastInstID},
@@ -266,7 +266,12 @@ macro_rules! impl_debug_for_subinst_id {
     ($TypeName:ident) => {
         impl std::fmt::Debug for $TypeName {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}({:p})", stringify!($TypeName), self.into_ir().as_unit_pointer())
+                write!(
+                    f,
+                    "{}({:p})",
+                    stringify!($TypeName),
+                    self.into_ir().as_unit_pointer()
+                )
             }
         }
     };

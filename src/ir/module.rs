@@ -107,18 +107,11 @@ impl Module {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        base::APInt,
-        ir::{
-            ConstData, FuncID, FuncTerminateMode, GlobalVarID, IGlobalVarBuildable, IRBuilder,
-            IRFocus, IRWriteOption, IRWriter, ISubInst, ISubInstID, InstObj, ValueSSA,
-            inst::BrInstID,
-        },
-        typing::{FuncTypeID, IValType, ValTypeID},
-    };
-    use mtb_entity::IEntityAllocatable;
-
     use super::*;
+    use crate::{
+        ir::{IRWriteOption, IRWriter},
+        testing::cases::test_case_cfg_deep_while_br,
+    };
 
     #[test]
     fn test_thread_safety() {
@@ -129,59 +122,9 @@ mod tests {
 
     #[test]
     fn test_gc() {
-        let mut module = Module::new(ArchInfo::new_host(), "test_module");
-        let functy = FuncTypeID::from_arg_slice(
-            &module.tctx,
-            ValTypeID::Int(32),
-            false,
-            &[ValTypeID::Int(32), ValTypeID::Ptr],
-        );
-        println!(
-            "Function type created: {}",
-            functy.get_display_name(&module.tctx)
-        );
-        let _a_var = GlobalVarID::builder("a", ValTypeID::Int(32))
-            .readonly(false)
-            .initval(ValueSSA::ConstData(ConstData::Int(APInt::from(10))))
-            .align_log(3)
-            .build_id(&module)
-            .expect("Failed to build global variable");
-        let main_func = FuncID::builder(&module.tctx, "main", functy)
-            .make_defined()
-            .terminate_mode(FuncTerminateMode::ReturnDefault)
-            .build_id(&module)
-            .unwrap();
-        println!("Main function created.");
+        let mut module = test_case_cfg_deep_while_br().module;
         module.begin_gc().finish();
-
-        write_module(&module, "target/before_split.ll");
-
-        let mut builder = IRBuilder::new(&module);
-        let entry = main_func.get_entry(&module.allocs).unwrap();
-        builder.set_focus(IRFocus::Block(entry));
-
-        let ending = builder.split_block().unwrap();
-        let ending2 = builder.split_block().unwrap();
-
-        let br = BrInstID::new_uninit(&module.allocs);
-        br.set_cond(
-            &module.allocs,
-            ValueSSA::ConstData(ConstData::Int(APInt::from(false))),
-        );
-        br.set_then(&module.allocs, ending2);
-        br.set_else(&module.allocs, ending);
-        entry.set_terminator_inst(&module.allocs, br.into_ir());
-
-        module.begin_gc().finish();
-        println!("Inst {{index}} = (chunk:unit): Opcode");
-        for (index, _, inst) in module.allocs.insts.iter() {
-            let opcode = inst.get_opcode();
-            let chunk_id = InstObj::chunk_of_indexed_id(index);
-            let unit_id = InstObj::unit_of_indexed_id(index);
-            println!("Inst {index:#04x}    = ({chunk_id:#05x}:{unit_id:02x}):   {opcode:?}");
-        }
-
-        write_module(&module, "target/after_split.ll");
+        write_module(&module, "target/test_output_gc.ll");
     }
 
     fn write_module(module: &Module, path: &str) {

@@ -21,7 +21,7 @@ pub mod inst;
 
 use crate::{
     base::{APInt, INullableValue},
-    typing::{AggrType, IValType, TypeMismatchError, ValTypeClass, ValTypeID},
+    typing::{AggrType, IValType, ScalarType, TypeMismatchError, ValTypeClass, ValTypeID},
 };
 
 pub use self::{
@@ -130,7 +130,11 @@ pub enum ValueSSA {
     Inst(InstID),
     Global(GlobalID),
 }
-
+impl From<APInt> for ValueSSA {
+    fn from(value: APInt) -> Self {
+        ValueSSA::ConstData(ConstData::Int(value))
+    }
+}
 impl INullableValue for ValueSSA {
     fn new_null() -> Self {
         Self::None
@@ -251,6 +255,15 @@ impl ValueSSA {
                 InstObj::Call(i) => Some(i),
                 _ => None,
             },
+            _ => None,
+        }
+    }
+    pub fn as_apint(&self) -> Option<APInt> {
+        match self {
+            ValueSSA::ConstData(ConstData::Int(v)) => Some(*v),
+            ValueSSA::ConstData(ConstData::Zero(ScalarType::Int(bits))) => {
+                Some(APInt::new(0, *bits))
+            }
             _ => None,
         }
     }

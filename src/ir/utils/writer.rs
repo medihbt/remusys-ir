@@ -703,7 +703,9 @@ impl<'ir> IRWriter<'ir> {
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
-        write!(self, "{} ", binop.get_opcode().get_name()).unwrap();
+        let opcode = binop.get_opcode().get_name();
+        let flags = binop.get_flags();
+        write!(self, "{opcode} {flags} ").unwrap();
         self.write_type(binop.get_valtype()).unwrap();
         self.write_str(" ").unwrap();
         self.write_operand(binop.get_lhs(allocs)).unwrap();

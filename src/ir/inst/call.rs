@@ -270,6 +270,9 @@ impl ICallInstBuildable for CallInstBuilder {
             is_vararg: self.is_vararg,
             is_tail_call: Cell::new(self.is_tail_call),
         };
+        if self.callee != ValueSSA::None {
+            ret.set_callee(allocs, self.callee);
+        }
         for (i, &arg) in self.args.iter().enumerate() {
             let use_id = ret.operands[CallInst::OP_ARGS_BEGIN + i];
             use_id.set_operand(allocs, arg);
