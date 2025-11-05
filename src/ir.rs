@@ -37,7 +37,8 @@ pub use self::{
     global::{
         GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
         func::{
-            FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, IFuncUniqueUser, IFuncValue,
+            FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
+            IFuncUniqueUser, IFuncValue,
         },
         var::{GlobalVar, GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable},
     },
@@ -46,9 +47,7 @@ pub use self::{
         ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
         JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
-    managed::{
-        ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse,
-    },
+    managed::{ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse},
     module::{
         Module,
         allocs::{
@@ -229,6 +228,29 @@ impl ValueSSA {
             ValueSSA::Inst(inst) => Some(inst.deref_ir(allocs)),
             ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
             ValueSSA::ConstExpr(expr) => Some(expr.deref_ir(allocs)),
+            _ => None,
+        }
+    }
+    pub fn as_dyn_ptrvalue<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IPtrValue> {
+        match self {
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            ValueSSA::Inst(inst) => match inst.deref_ir(allocs) {
+                InstObj::Alloca(i) => Some(i),
+                InstObj::GEP(i) => Some(i),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn as_dyn_ptruser<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IPtrUniqueUser> {
+        match self {
+            ValueSSA::Inst(inst) => match inst.deref_ir(allocs) {
+                InstObj::Store(i) => Some(i),
+                InstObj::Load(i) => Some(i),
+                InstObj::AmoRmw(i) => Some(i),
+                InstObj::Call(i) => Some(i),
+                _ => None,
+            },
             _ => None,
         }
     }

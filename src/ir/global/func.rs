@@ -167,8 +167,13 @@ impl FuncObj {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FuncID(pub GlobalID);
+impl std::fmt::Debug for FuncID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FuncID({:p})", self.0.as_unit_pointer())
+    }
+}
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
     fn raw_from_ir(id: GlobalID) -> Self {
@@ -326,6 +331,13 @@ impl FuncBuilder {
             let blocks = EntityList::new(&allocs.blocks);
             let terminator = self.build_terminator(allocs);
             let entry = BlockID::new_with_terminator(allocs, terminator.into_ir());
+            match blocks.push_back_id(entry.inner(), &allocs.blocks) {
+                Ok(_) => {}
+                Err(e) => {
+                    let name = &self.name;
+                    panic!("Failed to add entry block to function {name}: {e:?}")
+                }
+            }
             let body = FuncBody { blocks, entry };
             Some(body)
         };

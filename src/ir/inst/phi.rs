@@ -1,13 +1,18 @@
 use crate::{
     impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
-        OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
+        Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
     },
     typing::ValTypeID,
 };
 use smallvec::SmallVec;
-use std::cell::{Cell, Ref, RefCell};
+use std::{
+    cell::{Cell, Ref, RefCell},
+    collections::{BTreeMap, HashMap},
+    ops::DerefMut,
+};
+use thiserror::Error;
 
 trait IPhiOperandSlot: Copy {
     fn pair(&self) -> &UseSlotPair;
@@ -156,6 +161,23 @@ impl PhiInst {
             self_id: Cell::new(None),
         }
     }
+    pub fn from_incomings(
+        ty: ValTypeID,
+        allocs: &IRAllocs,
+        incomings: impl IntoIterator<Item = (BlockID, ValueSSA)>,
+    ) -> Self {
+        let incomings = BTreeMap::from_iter(incomings);
+        let phi = Self::with_capacity(ty, incomings.len());
+        for (block, val) in incomings {
+            assert_eq!(
+                ty,
+                val.get_valtype(allocs),
+                "Type mismatch in PhiInst incoming value"
+            );
+            phi.push_incoming(&allocs, block, val);
+        }
+        phi
+    }
 
     pub fn incoming_uses(&self) -> Ref<'_, [UseSlotPair]> {
         Ref::map(self.operands.borrow(), |ops| ops.as_slice())
@@ -218,6 +240,10 @@ impl PhiInst {
         let slot_pair = UseSlotPair::new(allocs, self.self_id.get(), index, val, bb);
         operands.push(slot_pair);
     }
+
+    pub fn begin_dedup<'ir>(&'ir self, allocs: &'ir IRAllocs) -> PhiInstDedup<'ir> {
+        PhiInstDedup::new(self, allocs)
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -240,6 +266,14 @@ impl PhiInstID {
     }
     pub fn with_capacity(allocs: &IRAllocs, ty: ValTypeID, capacity: usize) -> Self {
         let inst = PhiInst::with_capacity(ty, capacity);
+        Self::allocate(allocs, inst)
+    }
+    pub fn from_incomings(
+        allocs: &IRAllocs,
+        ty: ValTypeID,
+        incomings: impl IntoIterator<Item = (BlockID, ValueSSA)>,
+    ) -> Self {
+        let inst = PhiInst::from_incomings(ty, allocs, incomings);
         Self::allocate(allocs, inst)
     }
 
@@ -265,5 +299,142 @@ impl PhiInstID {
     }
     pub fn remove_incoming(self, allocs: &IRAllocs, bb: BlockID) -> Option<ValueSSA> {
         self.deref_ir(allocs).remove_incoming(allocs, bb)
+    }
+
+    pub fn begin_dedup(self, allocs: &IRAllocs) -> PhiInstDedup<'_> {
+        PhiInstDedup::new(self.deref_ir(allocs), allocs)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PhiDedupError {
+    #[error("PhiInst has duplicated uses with different operands")]
+    DuplicatedUses,
+}
+pub type PhiDedupRes<T = ()> = Result<T, PhiDedupError>;
+
+pub struct PhiInstDedup<'ir> {
+    multimap: HashMap<BlockID, SmallVec<[(u32, Option<ValueSSA>); 4]>>,
+    phi_inst: &'ir PhiInst,
+    _lock: Ref<'ir, SmallVec<[UseSlotPair; 2]>>,
+    allocs: &'ir IRAllocs,
+    nodup: bool,
+    initial_nodup: bool,
+}
+
+impl<'ir> PhiInstDedup<'ir> {
+    pub fn new(phi_inst: &'ir PhiInst, allocs: &'ir IRAllocs) -> Self {
+        let mut multimap = HashMap::new();
+        let mut nodup = true;
+        for (index, [uval, ublk]) in phi_inst.incoming_uses().iter().enumerate() {
+            let block = ublk.get_operand(allocs);
+            let value = uval.get_operand(allocs);
+            let block_id = match block {
+                ValueSSA::Block(b) => b,
+                _ => panic!("Expected BlockID in Phi operand slot, found {block:?}"),
+            };
+            let entry = multimap.entry(block_id).or_insert_with(SmallVec::new);
+            if !entry.is_empty() {
+                nodup = false;
+            }
+            entry.push((index as u32, Some(value)));
+        }
+        Self {
+            multimap,
+            phi_inst,
+            _lock: phi_inst.operands.borrow(),
+            allocs,
+            nodup,
+            initial_nodup: nodup,
+        }
+    }
+
+    pub fn nodup(&self) -> bool {
+        self.nodup
+    }
+    pub fn initial_nodup(&self) -> bool {
+        self.initial_nodup
+    }
+    pub fn dedupped(&self) -> bool {
+        self.nodup && !self.initial_nodup
+    }
+
+    /// 精简掉 “同一个 block 有多个 use 对应, 但操作数一模一样” 的情况
+    /// 返回: 全部精简后回顾精简时是否存在一个 block 存在不同 value 的情况. 如果存在则返回 false
+    pub fn dedup_same_operand(&mut self) -> bool {
+        if self.nodup {
+            return true;
+        }
+        let mut consistent = true;
+        for (_block, slot_vals) in self.multimap.iter_mut() {
+            if slot_vals.len() <= 1 {
+                continue;
+            }
+            let first_val = slot_vals[0].1;
+            for &(_, val) in slot_vals.iter().skip(1) {
+                if val != first_val {
+                    consistent = false;
+                    break;
+                }
+            }
+            if consistent {
+                // 全部相同，保留第一个，其他标记为 None
+                for slot_val in slot_vals.iter_mut().skip(1) {
+                    slot_val.1 = None;
+                }
+            }
+        }
+        self.nodup = consistent;
+        consistent
+    }
+
+    pub fn keep_first(&mut self) {
+        for (_block, slot_vals) in self.multimap.iter_mut() {
+            if slot_vals.len() <= 1 {
+                continue;
+            }
+            // 保留第一个，其他标记为 None
+            for slot_val in slot_vals.iter_mut().skip(1) {
+                slot_val.1 = None;
+            }
+        }
+        self.nodup = true;
+    }
+
+    /// 应用精简结果到 PhiInst 上. 要求每个 slot 只有一个有效的 ValueSSA.
+    pub fn apply(self) -> PhiDedupRes {
+        if !self.nodup {
+            return Err(PhiDedupError::DuplicatedUses);
+        }
+        // 如果初始就是无重复的，则无需操作
+        if self.initial_nodup {
+            return Ok(());
+        }
+        // 释放掉 Phi 的操作数锁
+        let Self { multimap, allocs, .. } = self;
+        // 接下来重新组织操作数列表
+        let mut operands = self.phi_inst.operands.borrow_mut();
+
+        let old_operands = std::mem::take(operands.deref_mut());
+        let mut new_opreands = SmallVec::with_capacity(multimap.len());
+
+        for (_, dups) in multimap {
+            for (index, val_opt) in dups {
+                let [uval, ublk] = old_operands[index as usize];
+                if let Some(val) = val_opt {
+                    // 保留该 use
+                    uval.set_operand(allocs, val);
+                    uval.set_kind(allocs, UseKind::PhiIncomingValue(new_opreands.len() as u32));
+                    ublk.set_kind(allocs, UseKind::PhiIncomingBlock(new_opreands.len() as u32));
+                    new_opreands.push([uval, ublk]);
+                } else {
+                    // 释放掉该 use
+                    uval.dispose(allocs).expect("Broken IR structure");
+                    ublk.dispose(allocs).expect("Broken IR structure");
+                }
+            }
+        }
+        *operands = new_opreands;
+        Ok(())
     }
 }

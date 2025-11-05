@@ -4,8 +4,8 @@ use crate::{
         ArrayExpr, ArrayExprID, BlockID, BlockObj, ConstData, ExprID, ExprObj, FuncID, FuncObj,
         GlobalID, GlobalKind, GlobalObj, GlobalVar, IPtrUniqueUser, IPtrValue, IRAllocs,
         IRNumberValueMap, ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA,
-        ITraceableValue, InstID, InstObj, JumpTargetKind, Module, NumberOption, PredList, UseID,
-        UserList, ValueSSA, inst::*,
+        ITraceableValue, InstID, InstObj, JumpTargetKind, Module, NumberOption, PoolAllocatedID,
+        PredList, UseID, UserList, ValueSSA, inst::*,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
@@ -185,12 +185,12 @@ impl<'ir> IRWriter<'ir> {
         let numbers = self.numbering.borrow();
         let Some(numbers) = &*numbers else {
             warn!("Instruction can only be used in its own function");
-            return write!(self, "%inst:{:x}", i.get_indexed(self.allocs));
+            return write!(self, "%inst:{:#x}", i.get_indexed(self.allocs).0);
         };
         if let Some(id) = numbers.inst_get_number(i) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%inst:{:x}", i.get_indexed(self.allocs))
+            write!(self, "%inst:{:#x}", i.get_indexed(self.allocs).0)
         }
     }
     fn write_block_operand(&self, b: Option<BlockID>) -> std::io::Result<()> {
@@ -200,12 +200,12 @@ impl<'ir> IRWriter<'ir> {
         let numbers = self.numbering.borrow();
         let Some(numbers) = &*numbers else {
             warn!("Block can only be used in its own function");
-            return write!(self, "%block:{:x}", b.get_indexed(self.allocs));
+            return write!(self, "%block:{:#x}", b.get_indexed(self.allocs).0);
         };
         if let Some(id) = numbers.block_get_number(b) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%block:{:x}", b.get_indexed(self.allocs))
+            write!(self, "%block:{:#x}", b.get_indexed(self.allocs).0)
         }
     }
     fn format_const_data(&self, data: ConstData) -> std::io::Result<()> {
@@ -218,7 +218,11 @@ impl<'ir> IRWriter<'ir> {
             },
             ConstData::PtrNull(_) => self.write_str("null"),
             ConstData::Int(apint) => {
-                write!(self.output.borrow_mut(), "{}", apint.as_signed())
+                if apint.bits() == 1 {
+                    write!(self, "{}", !apint.is_zero())
+                } else {
+                    write!(self, "{}", apint.as_signed())
+                }
             }
             ConstData::Float(FPKind::Ieee32, fp) => {
                 write!(self.output.borrow_mut(), "{:.20e}", fp as f32)
@@ -294,35 +298,33 @@ impl<'ir> IRWriter<'ir> {
         }
         self.write_str(end_s)
     }
-    fn writeln_id(&self, id: impl ISubValueSSA) -> std::io::Result<()> {
+    fn writeln_entity_id(&self, id: impl Into<PoolAllocatedID>) -> std::io::Result<()> {
         if !self.option.show_ptrid {
             return Ok(());
         }
-        self.write_str("; self.id = ")?;
-        match id.into_ir() {
-            ValueSSA::ConstExpr(e) => write!(
-                self,
-                "%expr:{:x}; .addr = {e:p}",
-                e.as_indexed(&self.allocs.exprs).unwrap(),
-            )
-            .unwrap(),
-            ValueSSA::Block(b) => {
-                self.write_block_operand(Some(b))?;
-                write!(self, "; .addr = {:p}", b.inner())?;
-            }
-            ValueSSA::Inst(i) => {
-                self.write_inst_operand(i)?;
-                write!(self, "; .addr = {i:p}")?;
-            }
-            ValueSSA::Global(g) => write!(
-                self,
-                "@{:x}; .addr = {g:p}",
-                g.as_indexed(&self.allocs.globals).unwrap(),
-            )?,
-            _ => {
-                panic!("Only ConstExpr, Block, Inst, Global can be formatted as ID")
-            }
+        let id = id.into();
+        let indexed = id.get_indexed(self.allocs);
+        let prefix = match id {
+            PoolAllocatedID::Block(_) => "; .id = %block:",
+            PoolAllocatedID::Inst(_) => "; .id = %inst:",
+            PoolAllocatedID::Expr(_) => "; .id = %expr:",
+            PoolAllocatedID::Global(_) => "; .id = %global:",
+            PoolAllocatedID::Use(_) => "; .id = %use:",
+            PoolAllocatedID::JumpTarget(_) => "; .id = %jt:",
+        };
+        if let Some(index) = indexed {
+            write!(self, "{prefix}{:#x}, addr = ", index)?;
+        } else {
+            write!(self, "{prefix}<INVALID>, addr = ")?;
         }
+        match id {
+            PoolAllocatedID::Block(b) => write!(self, "{:p}", b.inner()),
+            PoolAllocatedID::Inst(i) => write!(self, "{i:p}"),
+            PoolAllocatedID::Expr(e) => write!(self, "{e:p}"),
+            PoolAllocatedID::Global(g) => write!(self, "{g:p}"),
+            PoolAllocatedID::Use(u) => write!(self, "{:p}", u.inner()),
+            PoolAllocatedID::JumpTarget(jt) => write!(self, "{:p}", jt.inner()),
+        }?;
         self.wrap_indent();
         Ok(())
     }
@@ -392,12 +394,13 @@ impl<'ir> IRWriter<'ir> {
                 curr_kind = gkind;
             }
             let gobj = gid.deref_ir(self.allocs);
-            self.writeln_id(gid).unwrap();
+            self.writeln_entity_id(gid).unwrap();
             self.writeln_users(gobj.users()).unwrap();
             match gobj {
                 GlobalObj::Func(f) => self.format_func(FuncID(gid), f),
                 GlobalObj::Var(g) => self.format_global_var(g),
             }
+            self.wrap_indent();
         }
     }
     fn format_global_var(&self, gvar: &GlobalVar) {
@@ -461,14 +464,16 @@ impl<'ir> IRWriter<'ir> {
         self.write_str(" {").unwrap();
         self.set_numbers(func_id);
         self.format_block(body.entry, body.entry.deref_ir(self.allocs));
+        self.wrap_indent();
         for (block_id, block) in body.blocks.iter(&self.allocs.blocks) {
-            self.wrap_indent();
             let block_id = BlockID(block_id);
             if block_id == body.entry {
                 continue;
             }
             self.format_block(block_id, block);
+            self.wrap_indent();
         }
+        self.write_str("}").unwrap();
     }
 
     fn format_block(&self, block_id: BlockID, block: &BlockObj) {
@@ -476,11 +481,11 @@ impl<'ir> IRWriter<'ir> {
         if number.is_some() {
             self.wrap_indent();
         }
-        self.writeln_id(block_id).unwrap();
+        self.writeln_entity_id(block_id).unwrap();
         self.writeln_users(block.users()).unwrap();
         self.writeln_preds(block.get_preds()).unwrap();
         if let Some(number) = number {
-            write!(self, "%{number}:").unwrap();
+            write!(self, "{number}:").unwrap();
         }
 
         self.inc_indent();
@@ -491,14 +496,20 @@ impl<'ir> IRWriter<'ir> {
             self.format_inst(inst_id, inst, number);
         }
         self.dec_indent();
-        self.wrap_indent();
     }
     fn format_inst(&self, inst_id: InstID, inst: &InstObj, number: Option<usize>) {
-        self.writeln_id(inst_id).unwrap();
-        self.writeln_users(inst.users()).unwrap();
+        if let InstObj::PhiInstEnd(_) = inst {
+            // PhiInstEnd 不占用编号
+        } else {
+            self.writeln_entity_id(inst_id).unwrap();
+            self.writeln_users(inst.users()).unwrap();
+        }
         match inst {
             InstObj::GuideNode(_) => {}
-            InstObj::PhiInstEnd(_) => self.write_str("; Phi Inst End Node").unwrap(),
+            InstObj::PhiInstEnd(_) => {
+                let id = inst_id.get_indexed(self.allocs);
+                write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id.0).unwrap()
+            }
             InstObj::Unreachable(_) => self.write_str("unreachable").unwrap(),
             InstObj::Ret(ret_inst) => {
                 self.write_str("ret ").unwrap();

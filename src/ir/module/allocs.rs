@@ -57,6 +57,16 @@ impl IRAllocs {
         }
     }
 
+    pub fn num_total_allocated(&self) -> usize {
+        let b = self.blocks.len();
+        let i = self.insts.len();
+        let e = self.exprs.len();
+        let g = self.globals.len();
+        let u = self.uses.len();
+        let j = self.jts.len();
+        b + i + e + g + u + j
+    }
+
     pub(crate) fn push_disposed(&self, id: impl Into<PoolAllocatedID>) {
         self.disposed_queue.borrow_mut().push_back(id.into());
     }
@@ -85,6 +95,37 @@ impl IRAllocs {
                     j.inner().free(jts);
                 }
             }
+        }
+        // After draining, optionally shrink the dispose queue's capacity so it doesn't keep
+        // an excessive allocation. Heuristic:
+        // - Soft target scales with module size (total allocated entities / 8),
+        //   clamped within [QUEUE_SOFT_TARGET_MIN, QUEUE_SOFT_TARGET_MAX].
+        // - Hard cap bounds the retained capacity unconditionally.
+        // - Shrink only when capacity is far above the target or hard cap to reduce churn.
+        let num_total_allocated = {
+            let b = blocks.len();
+            let i = insts.len();
+            let e = exprs.len();
+            let g = globals.len();
+            let u = uses.len();
+            let j = jts.len();
+            b + i + e + g + u + j
+        };
+        const QUEUE_HARD_CAP: usize = 16 * 1024; // absolute upper bound to retain
+        const QUEUE_SOFT_TARGET_MIN: usize = 256; // never shrink below this
+        const QUEUE_SOFT_TARGET_MAX: usize = 8 * 1024; // typical soft ceiling
+
+        let mut target = num_total_allocated / 8; // scale with module size
+        if target < QUEUE_SOFT_TARGET_MIN {
+            target = QUEUE_SOFT_TARGET_MIN;
+        }
+        if target > QUEUE_SOFT_TARGET_MAX {
+            target = QUEUE_SOFT_TARGET_MAX;
+        }
+        let cap = queue.capacity();
+        if cap > QUEUE_HARD_CAP || cap > (target.saturating_mul(2)) {
+            let new_cap = target.min(QUEUE_HARD_CAP);
+            *queue = VecDeque::with_capacity(new_cap);
         }
     }
 
@@ -520,7 +561,7 @@ impl IPoolAllocated for JumpTarget {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PoolAllocatedID {
     Block(BlockID),
     Inst(InstID),
@@ -528,6 +569,19 @@ pub enum PoolAllocatedID {
     Global(GlobalID),
     Use(UseID),
     JumpTarget(JumpTargetID),
+}
+impl std::fmt::Debug for PoolAllocatedID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PoolAllocatedID::*;
+        match self {
+            Block(b) => write!(f, "BlockID({:p})", b.0),
+            Inst(i) => write!(f, "InstID({:p})", i.as_unit_pointer()),
+            Expr(e) => write!(f, "ExprID({:p})", e.as_unit_pointer()),
+            Global(g) => write!(f, "GlobalID({:p})", g.as_unit_pointer()),
+            Use(u) => write!(f, "UseID({:p})", u.0),
+            JumpTarget(j) => write!(f, "JumpTargetID({:p})", j.0),
+        }
+    }
 }
 impl From<BlockID> for PoolAllocatedID {
     fn from(id: BlockID) -> Self {

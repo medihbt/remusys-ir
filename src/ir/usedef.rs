@@ -9,8 +9,8 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity::{
-    EntityAlloc, EntityListHead, EntityRingList, EntityRingListReadIter, IEntityAllocID,
-    IEntityRingListNode, PtrID,
+    EntityAlloc, EntityListError, EntityListHead, EntityRingList, EntityRingListReadIter,
+    IEntityAllocID, IEntityRingListNode, PtrID,
 };
 use std::{
     cell::{Cell, Ref},
@@ -329,6 +329,9 @@ impl IEntityRingListNode for Use {
         self.user.set(None);
         self.operand.set(ValueSSA::None);
     }
+    fn on_self_unplug(&self, _: PtrID<Self>, _: &EntityAlloc<Self>) {
+        self.operand.set(ValueSSA::None);
+    }
 }
 impl Use {
     pub fn get_kind(&self) -> UseKind {
@@ -352,8 +355,7 @@ pub struct UseID(pub PtrID<Use>);
 
 impl std::fmt::Debug for UseID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ptr = unsafe { self.0.direct_deref() as *const _ };
-        write!(f, "UseID({ptr:p})")
+        write!(f, "UseID({:p})", self.0.as_unit_pointer())
     }
 }
 impl UseID {
@@ -499,6 +501,29 @@ pub trait ITraceableValue {
         }
         false
     }
+
+    fn clean_users(&self, allocs: &IRAllocs) {
+        self.users().clean(&allocs.uses);
+    }
+    fn replace_self_with(
+        &self,
+        allocs: &IRAllocs,
+        new_value: ValueSSA,
+    ) -> Result<(), EntityListError<Use>> {
+        let alloc = &allocs.uses;
+        if let Some(new_users) = new_value.try_get_users(allocs) {
+            return self.users().move_all_to(new_users, &allocs.uses, |uptr| {
+                uptr.deref(alloc).operand.set(new_value);
+            });
+        }
+        loop {
+            match self.users().pop_front(alloc) {
+                Ok(uptr) => uptr.deref(alloc).operand.set(new_value),
+                Err(EntityListError::EmptyList) => break Ok(()),
+                Err(e) => break Err(e),
+            }
+        }
+    }
 }
 
 #[macro_export]
@@ -529,10 +554,13 @@ macro_rules! impl_traceable_from_common {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::{IPtrUniqueUser, IPtrValue};
 
     #[test]
     fn test_iuser_dyn_compatible() {
         fn _assert_traceable_dyn(_: &dyn ITraceableValue) {}
         fn _assert_user_dyn(_: &dyn IUser) {}
+        fn _assert_ptrvalue_dyn(_: &dyn IPtrValue) {}
+        fn _assert_ptruser_dyn(_: &dyn IPtrUniqueUser) {}
     }
 }

@@ -104,9 +104,13 @@ impl GlobalVar {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GlobalVarID(pub GlobalID);
-
+impl std::fmt::Debug for GlobalVarID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GlobalVarID({:p})", self.0.as_unit_pointer())
+    }
+}
 impl ISubGlobalID for GlobalVarID {
     type GlobalT = GlobalVar;
 

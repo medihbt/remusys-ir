@@ -1,17 +1,16 @@
-use mtb_entity::EntityListError;
-use thiserror::Error;
-
 use crate::{
     ir::{
         BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
-        IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, InstID, InstObj, ManagedInst,
-        Module, PoolAllocatedDisposeErr,
-        inst::{BrInstID, JumpInstID, SwitchInstID, UnreachableInstID},
+        IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
+        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseID, UseKind, ValueSSA,
+        inst::{BrInstID, JumpInstID, PhiInstID, RetInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
+use mtb_entity::EntityListError;
+use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct IRFullFocus {
     pub func: FuncID,
     pub block: Option<BlockID>,
@@ -121,10 +120,17 @@ pub enum IRBuildError {
     InstListError(EntityListError<InstObj>),
     #[error("Block list error: {0:?}")]
     BlockListError(EntityListError<BlockObj>),
+    #[error("Use-def list error: {0:?}")]
+    UsedefListError(#[from] EntityListError<Use>),
+
     #[error("Null focus")]
     NullFocus,
+    #[error("Focus function is external: %{0:?}")]
+    FocusFuncIsExtern(FuncID),
     #[error("Split focus is PHI: %inst{0:p}")]
     SplitFocusIsPhi(InstID),
+    #[error("Split focus is terminator: %inst{0:?}")]
+    SplitFocusIsTerminator(TerminatorID),
     #[error("Split focus is guide node: %inst{0:p}")]
     SplitFocusIsGuideNode(InstID),
 
@@ -173,9 +179,9 @@ impl IRBuilder<Module> {
         self.module
     }
     #[inline(never)]
-    pub fn new_inlined(arch: ArchInfo) -> Self {
+    pub fn new_inlined(arch: ArchInfo, name: impl Into<String>) -> Self {
         Self {
-            module: Module::new(arch),
+            module: Module::new(arch, name),
             full_focus: None,
             focus_degrade: FocusDegradeConfig::default(),
         }
@@ -359,5 +365,124 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstIDSummary {
+    Sentinel,
+    Phi(PhiInstID),
+    PhiEnd(InstID),
+    Normal(InstID),
+    Terminator(TerminatorID),
+}
+
+impl InstIDSummary {
+    fn new(id: InstID, allocs: &IRAllocs) -> Self {
+        match id.deref_ir(allocs) {
+            InstObj::GuideNode(_) => InstIDSummary::Sentinel,
+            InstObj::Phi(_) => InstIDSummary::Phi(PhiInstID(id)),
+            InstObj::PhiInstEnd(_) => InstIDSummary::PhiEnd(id),
+            InstObj::Unreachable(_) => {
+                Self::Terminator(TerminatorID::Unreachable(UnreachableInstID(id)))
+            }
+            InstObj::Ret(_) => Self::Terminator(TerminatorID::Ret(RetInstID(id))),
+            InstObj::Jump(_) => Self::Terminator(TerminatorID::Jump(JumpInstID(id))),
+            InstObj::Br(_) => Self::Terminator(TerminatorID::Br(BrInstID(id))),
+            InstObj::Switch(_) => Self::Terminator(TerminatorID::Switch(SwitchInstID(id))),
+            _ => InstIDSummary::Normal(id),
+        }
+    }
+}
+
 /// IR Builder as basic block splitter
-impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {}
+impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
+    /// 根据当前焦点获取拆分位置.
+    ///
+    /// 返回的焦点可能是块级焦点, 也可能是表示“拆分时前半部分的最后一条指令”的指令级焦点.
+    pub fn get_split_pos(&self) -> IRBuildRes<IRFocus> {
+        let Some(full_focus) = self.full_focus else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let Some(block) = full_focus.block else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let Some(inst) = full_focus.inst else {
+            return Ok(IRFocus::Block(block));
+        };
+        match InstIDSummary::new(inst, self.allocs()) {
+            InstIDSummary::Sentinel => Err(IRBuildError::SplitFocusIsGuideNode(inst)),
+            InstIDSummary::Phi(_) => match self.focus_degrade.split_block_on_phi {
+                FocusDegradeOp::AsBlockOp => Ok(IRFocus::Block(block)),
+                FocusDegradeOp::Strict => Err(IRBuildError::SplitFocusIsPhi(inst)),
+                FocusDegradeOp::Ignore => Ok(IRFocus::Inst(inst)),
+            },
+            InstIDSummary::PhiEnd(_) | InstIDSummary::Normal(_) => Ok(IRFocus::Inst(inst)),
+            InstIDSummary::Terminator(t) => match self.focus_degrade.split_block_on_terminator {
+                FocusDegradeOp::AsBlockOp => Ok(IRFocus::Block(block)),
+                FocusDegradeOp::Strict => Err(IRBuildError::SplitFocusIsTerminator(t)),
+                FocusDegradeOp::Ignore => Ok(IRFocus::Inst(inst)),
+            },
+        }
+    }
+
+    pub fn focus_add_block(&mut self, bb: BlockID) -> IRBuildRes {
+        let Some(focus) = self.full_focus else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let allocs = self.allocs();
+        let insert_after = if let Some(b) = focus.block {
+            b
+        } else {
+            focus
+                .func
+                .get_entry(allocs)
+                .expect("Focus func has no entry block")
+        };
+        let Some(blocks) = focus.func.get_blocks(allocs) else {
+            return Err(IRBuildError::FocusFuncIsExtern(focus.func));
+        };
+        blocks
+            .node_add_next(insert_after.inner(), bb.inner(), &allocs.blocks)
+            .map_err(From::from)
+    }
+
+    /// 以当前焦点为分界, 把当前基本块拆分为两个基本块. 原基本块保留在前, 新基本块插入到后.
+    pub fn split_block(&mut self) -> IRBuildRes<BlockID> {
+        match self.get_split_pos()? {
+            IRFocus::Block(block) => self.split_block_at_end(block),
+            IRFocus::Inst(inst) => todo!("Split block at inst {inst:p}"),
+        }
+    }
+    fn split_block_at_end(&mut self, front_half: BlockID) -> IRBuildRes<BlockID> {
+        let back_half = BlockID::new_uninit(self.allocs());
+        self.focus_add_block(back_half)?;
+        let allocs = self.allocs();
+        let goto_backhalf = JumpInstID::with_target(allocs, back_half).into_ir();
+        let Some(old_terminator) = front_half.set_terminator_inst(allocs, goto_backhalf) else {
+            return Err(IRBuildError::BlockHasNoTerminator(front_half));
+        };
+        let old_terminator = old_terminator.release();
+        back_half.set_terminator_inst(allocs, old_terminator);
+        // Fix use-def chains of old terminator
+        front_half
+            .deref_ir(allocs)
+            .users()
+            .move_to_if(
+                back_half.deref_ir(allocs).users(),
+                &allocs.uses,
+                |_, u| matches!(u.get_kind(), UseKind::PhiIncomingBlock(_)),
+                |up| {
+                    UseID(up)
+                        .deref_ir(allocs)
+                        .operand
+                        .set(ValueSSA::Block(back_half))
+                },
+            )
+            .map_err(IRBuildError::from)?;
+        // repair focus if needed
+        let mut focus = self.full_focus.unwrap();
+        if Some(old_terminator) == focus.inst {
+            focus.inst = Some(goto_backhalf);
+            self.full_focus = Some(focus);
+        }
+        Ok(back_half)
+    }
+}

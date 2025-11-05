@@ -1,9 +1,10 @@
 use crate::{
     base::FixBitSet,
     ir::{
-        BlockID, ExprID, FuncID, GlobalID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID, ISubInst,
-        ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, JumpTargetID, PoolAllocatedClass,
-        PoolAllocatedID, UseID, ValueSSA, module::allocs::IPoolAllocated,
+        BlockID, ExprID, FuncID, GlobalID, GlobalObj, IRAllocs, ISubExprID, ISubGlobal,
+        ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID,
+        JumpTargetID, PoolAllocatedClass, PoolAllocatedID, UseID, ValueSSA,
+        module::allocs::IPoolAllocated,
     },
 };
 use mtb_entity::IndexedID;
@@ -82,7 +83,7 @@ impl IRLiveSet {
         }
     }
 
-    pub fn sweep(&self, allocs: &mut IRAllocs) {
+    pub fn sweep(&self, allocs: &mut IRAllocs) -> usize {
         assert_eq!(
             allocs.num_pending_disposed(),
             0,
@@ -105,21 +106,27 @@ impl IRLiveSet {
             let _ = jt.dispose_obj(JumpTargetID(jp), allocs);
             allocs.push_disposed(jp);
         }
+        let mut num_freed = allocs.num_pending_disposed();
         // 清理掉已经 dispose 的对象.
         allocs.free_disposed();
         // 其他的对象就不需要 dispose 了. 直接 free 就行.
-        allocs
-            .insts
-            .free_if(|_, _, IndexedID(idx, _)| !self.insts.get(idx));
-        allocs
-            .blocks
-            .free_if(|_, _, IndexedID(idx, _)| !self.blocks.get(idx));
-        allocs
-            .exprs
-            .free_if(|_, _, IndexedID(idx, _)| !self.exprs.get(idx));
-        allocs
-            .globals
-            .free_if(|_, _, IndexedID(idx, _)| !self.globals.get(idx));
+        allocs.insts.fully_free_if(
+            |_, _, IndexedID(idx, _)| !self.insts.get(idx),
+            |_| num_freed += 1,
+        );
+        allocs.blocks.fully_free_if(
+            |_, _, IndexedID(idx, _)| !self.blocks.get(idx),
+            |_| num_freed += 1,
+        );
+        allocs.exprs.fully_free_if(
+            |_, _, IndexedID(idx, _)| !self.exprs.get(idx),
+            |_| num_freed += 1,
+        );
+        allocs.globals.fully_free_if(
+            |_, _, IndexedID(idx, _)| !self.globals.get(idx),
+            |_| num_freed += 1,
+        );
+        num_freed
     }
 }
 
@@ -142,12 +149,19 @@ impl<'ir> IRMarker<'ir> {
             ir_allocs,
         }
     }
+    pub fn finish(mut self) {
+        self.mark_all();
+        let Self { live_set, ir_allocs, .. } = self;
+        let num_freed = live_set.sweep(ir_allocs);
+        log::debug!("IR GC: freed {num_freed} allocations.");
+    }
 
-    pub fn push_mark(&mut self, id: impl Into<PoolAllocatedID>) {
+    pub fn push_mark(&mut self, id: impl Into<PoolAllocatedID>) -> &mut Self {
         let id = id.into();
         Self::do_push_mark(&mut self.borrow_proxy(), id);
+        self
     }
-    pub fn push_mark_value(&mut self, value: impl ISubValueSSA) {
+    pub fn push_mark_value(&mut self, value: impl ISubValueSSA) -> &mut Self {
         let val = value.into_ir();
         match val {
             ValueSSA::Inst(id) => self.push_mark(id),
@@ -155,7 +169,7 @@ impl<'ir> IRMarker<'ir> {
             ValueSSA::ConstExpr(id) => self.push_mark(id),
             ValueSSA::Global(id) => self.push_mark(id),
             ValueSSA::FuncArg(func, _) => self.push_mark(func.into_ir()),
-            _ => {}
+            _ => self,
         }
     }
     pub fn mark_leaf(&mut self, id: impl Into<PoolAllocatedID>) {
@@ -166,6 +180,7 @@ impl<'ir> IRMarker<'ir> {
     pub fn mark_all(&mut self) {
         while let Some(id) = self.mark_queue.pop_front() {
             use PoolAllocatedID::*;
+            log::trace!("GC marking {:?}", id);
             match id {
                 Block(b) => self.consume_block(b),
                 Inst(i) => self.consume_inst(i),
@@ -257,14 +272,21 @@ impl<'ir> IRMarker<'ir> {
             GlobalObj::Func(f) => (f.args.as_ref(), f.body.as_ref()),
         };
 
+        let func_id = FuncID(global_id);
         for arg in args {
             Self::do_push_mark(&mut proxy, arg.users().sentinel);
         }
         if let Some(body) = body {
+            assert_eq!(
+                body.entry.get_parent_func(allocs),
+                Some(func_id),
+                "Function @{} entry NOT attached.",
+                global.get_name()
+            );
             body.blocks.forall_with_sentinel(&allocs.blocks, |bid, bb| {
                 assert_eq!(
                     bb.get_parent_func(),
-                    Some(FuncID(global_id)),
+                    Some(func_id),
                     "IRMarker discovered broken GlobalFunc -> Block relationship."
                 );
                 Self::do_push_mark(&mut proxy, bid);

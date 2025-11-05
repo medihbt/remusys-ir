@@ -9,7 +9,9 @@ use crate::{
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
 };
-use mtb_entity::{EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID};
+use mtb_entity::{
+    EntityAlloc, EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID,
+};
 use std::{
     cell::Cell,
     collections::{BTreeSet, HashSet},
@@ -72,6 +74,9 @@ impl IEntityRingListNode for JumpTarget {
             terminator: Cell::new(None),
             block: Cell::new(None),
         }
+    }
+    fn on_self_unplug(&self, _: PtrID<Self>, _: &EntityAlloc<Self>) {
+        self.block.set(None);
     }
 }
 impl JumpTarget {

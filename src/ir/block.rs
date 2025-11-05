@@ -68,7 +68,7 @@ impl IEntityListNode for BlockObj {
             return Err(EntityListError::RepeatedNode);
         }
         let parent = curr.deref(alloc).parent_func.get();
-        assert_ne!(parent, None, "Pushing block without parent function");
+        // It is legal to push a block without a parent function, so no assert here.
         next.deref(alloc).parent_func.set(parent);
         Ok(())
     }
@@ -82,7 +82,7 @@ impl IEntityListNode for BlockObj {
             return Err(EntityListError::RepeatedNode);
         }
         let parent = curr.deref(alloc).parent_func.get();
-        assert_ne!(parent, None, "Pushing block without parent function");
+        // It is legal to push a block without a parent function, so no assert here.
         prev.deref(alloc).parent_func.set(parent);
         Ok(())
     }
@@ -155,10 +155,10 @@ impl BlockObj {
             panic!("Attempted to set non-terminator {inst_id:?} as terminator of {self:p}");
         }
         let insts = &self.get_body().insts;
-        let old_terminator = insts.get_back_id(&allocs.insts);
-        if old_terminator == Some(inst_id) {
-            panic!("Attempted to set existing terminator {inst_id:?} as terminator of {self:p}");
-        }
+        let back = insts
+            .get_back_id(&allocs.insts)
+            .expect("Found empty list: BasicBlock inst list should have at least 1 inst (PhiEnd)");
+        let old_terminator = if back.is_terminator(allocs) { Some(back) } else { None };
         if let Some(old_id) = old_terminator {
             insts.node_unplug(old_id, &allocs.insts)?;
         }
@@ -209,9 +209,13 @@ impl BlockObj {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockID(pub PtrID<BlockObj>);
-
+impl std::fmt::Debug for BlockID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BlockID({:p})", self.0)
+    }
+}
 impl ISubValueSSA for BlockID {
     fn try_from_ir(ir: ValueSSA) -> Option<Self> {
         match ir {

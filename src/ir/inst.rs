@@ -62,7 +62,7 @@ pub use self::{
     },
     jump::{JumpInst, JumpInstID},
     load::{LoadInst, LoadInstID},
-    phi::{PhiInst, PhiInstID},
+    phi::{PhiDedupError, PhiDedupRes, PhiInst, PhiInstDedup, PhiInstID},
     ret::{RetInst, RetInstID},
     select::{SelectInst, SelectInstID},
     store::{StoreInst, StoreInstID},
@@ -266,7 +266,7 @@ macro_rules! impl_debug_for_subinst_id {
     ($TypeName:ident) => {
         impl std::fmt::Debug for $TypeName {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}({:p})", stringify!($TypeName), self.into_ir())
+                write!(f, "{}({:p})", stringify!($TypeName), self.into_ir().as_unit_pointer())
             }
         }
     };
