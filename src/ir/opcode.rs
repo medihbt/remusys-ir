@@ -31,18 +31,10 @@ impl Opcode {
         matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor)
     }
     pub fn is_int_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
+            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv | Srem | Urem
         )
     }
     pub fn is_float_op(self) -> bool {
@@ -52,19 +44,12 @@ impl Opcode {
         )
     }
     pub fn is_binary_op(self) -> bool {
-        matches!(
-            self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
-        )
+        use Opcode::*;
+        match self {
+            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv | Srem | Urem | Fadd | Fsub
+            | Fmul | Fdiv | Frem => true,
+            _ => false,
+        }
     }
     pub fn is_divrem_op(self) -> bool {
         matches!(
@@ -73,41 +58,24 @@ impl Opcode {
         )
     }
     pub fn is_constexpr_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
-                | Opcode::IndexExtract
-                | Opcode::IndexInsert
-                | Opcode::IndexPtr
-                | Opcode::IndexOffsetOf
+            ConstArray | ConstStruct | ConstVec | ConstPtrNull | IndexOffsetOf
         )
     }
     pub fn is_inst_op(self) -> bool {
+        use Opcode::*;
         !matches!(
             self,
-            Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec
+            ConstArray | ConstStruct | ConstVec | ConstPtrNull | IndexOffsetOf
         )
     }
     pub fn is_cast_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::Sitofp
-                | Opcode::Uitofp
-                | Opcode::Fptosi
-                | Opcode::Zext
-                | Opcode::Sext
-                | Opcode::Trunc
-                | Opcode::Fpext
-                | Opcode::Fptrunc
+            Sitofp | Uitofp | Fptosi | Zext | Sext | Trunc | Fpext | Fptrunc
         )
     }
 

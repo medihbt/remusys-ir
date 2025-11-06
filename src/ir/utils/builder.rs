@@ -561,9 +561,20 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         let block = full_focus.block.ok_or(IRBuildError::NullFocus)?;
 
         let allocs = self.allocs();
+
+        // Teriminator 在块级焦点需要做特殊处理: 永远都是合法的, 并且在安全条件下会
+        // 替换掉原基本块的终结指令
         let Some(inst_pos) = full_focus.inst else {
             let inst = match inst {
                 InstIDSummary::Phi(_) => block.get_phi_end(allocs),
+                InstIDSummary::Terminator(t) => {
+                    use {FocusDegradeOp::*, InstInsertPos::*};
+                    let res = match self.focus_degrade.add_terminator {
+                        AsBlockOp | Strict => SetTerminator(block),
+                        Ignore => Prepend(t.into_ir(), block),
+                    };
+                    return Ok(res);
+                }
                 _ => block.get_terminator_inst(allocs),
             };
             return Ok(InstInsertPos::Prepend(inst, block));

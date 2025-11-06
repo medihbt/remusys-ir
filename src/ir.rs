@@ -170,7 +170,7 @@ impl ISubValueSSA for ValueSSA {
             ConstData(data) => data.get_valtype(allocs),
             ConstExpr(expr) => expr.get_valtype(allocs),
             AggrZero(aggr) => aggr.into_ir(),
-            FuncArg(func, id) => FuncArg(func, id).get_valtype(allocs),
+            FuncArg(func, id) => FuncArgID(func, id).get_valtype(allocs),
             Block(_) => ValTypeID::Void,
             Inst(inst) => inst.get_valtype(allocs),
             Global(_) => ValTypeID::Ptr,
@@ -194,7 +194,7 @@ impl ISubValueSSA for ValueSSA {
         use ValueSSA::*;
         match self {
             ConstExpr(expr) => expr.try_get_users(allocs),
-            FuncArg(func, id) => FuncArg(func, id).try_get_users(allocs),
+            FuncArg(func, id) => FuncArgID(func, id).try_get_users(allocs),
             Block(block) => block.try_get_users(allocs),
             Inst(inst) => inst.try_get_users(allocs),
             Global(global) => global.try_get_users(allocs),
