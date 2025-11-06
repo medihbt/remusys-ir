@@ -202,6 +202,10 @@ impl ISubInstID for AmoRmwInstID {
     }
 }
 impl AmoRmwInstID {
+    pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
+        AmoRmwBuilder::new(opcode, value_ty)
+    }
+
     pub fn pointer_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).pointer_use()
     }

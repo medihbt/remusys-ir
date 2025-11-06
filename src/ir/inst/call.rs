@@ -192,6 +192,10 @@ pub trait ICallInstBuildable: Clone {
     fn is_tail_call(&mut self, is_tail: bool) -> &mut Self;
 
     fn build_inst(&mut self, allocs: &IRAllocs) -> CallInst;
+    fn build_id(&mut self, allocs: &IRAllocs) -> CallInstID {
+        let inst = self.build_inst(allocs);
+        CallInstID::allocate(allocs, inst)
+    }
 }
 #[derive(Clone)]
 pub struct CallInstBuilder {

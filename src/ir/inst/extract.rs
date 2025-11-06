@@ -261,6 +261,10 @@ impl ISubInstID for FieldExtractInstID {
     }
 }
 impl FieldExtractInstID {
+    pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
+        FieldExtractInst::builder(aggr_type)
+    }
+
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
     }

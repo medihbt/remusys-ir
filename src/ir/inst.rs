@@ -56,7 +56,10 @@ pub use self::{
         FieldExtractBuilder, FieldExtractInst, FieldExtractInstID, IndexExtractInst,
         IndexExtractInstID,
     },
-    gep::{GEPInst, GEPInstID, GEPTypeIter, GEPTypeState, GEPTypeUnpack},
+    gep::{
+        GEPInst, GEPInstBuilder, GEPInstID, GEPTypeIter, GEPTypeState, GEPTypeUnpack,
+        GEPTypeUnpackRes, GEPUnpackErr,
+    },
     insert::{
         FieldInsertBuilder, FieldInsertInst, FieldInsertInstID, IndexInsertInst, IndexInsertInstID,
     },

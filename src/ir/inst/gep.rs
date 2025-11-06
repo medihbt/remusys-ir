@@ -1,13 +1,15 @@
 use crate::{
+    base::INullableValue,
     impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        ConstData, IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser,
-        InstCommon, InstID, InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
+        InstID, InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
 use std::{cell::Cell, ops::RangeFrom};
+use thiserror::Error;
 
 /// 索引指针 (GEP) 指令
 ///
@@ -140,6 +142,16 @@ impl GEPInst {
             pointee_align_log2,
         }
     }
+    pub fn builder<'ir>(
+        tctx: &'ir TypeContext,
+        allocs: &'ir IRAllocs,
+        initial_ty: ValTypeID,
+    ) -> GEPInstBuilder<'ir> {
+        GEPInstBuilder::new(tctx, allocs, initial_ty)
+    }
+    pub fn builder_from_module(module: &Module, initial_ty: ValTypeID) -> GEPInstBuilder<'_> {
+        GEPInstBuilder::from_module(module, initial_ty)
+    }
 
     pub fn get_inbounds(&self) -> bool {
         self.inbounds_mark.get()
@@ -203,6 +215,16 @@ impl GEPInstID {
             pointee_align_log2,
         );
         Self::allocate(allocs, inst)
+    }
+    pub fn builder<'ir>(
+        tctx: &'ir TypeContext,
+        allocs: &'ir IRAllocs,
+        initial_ty: ValTypeID,
+    ) -> GEPInstBuilder<'ir> {
+        GEPInstBuilder::new(tctx, allocs, initial_ty)
+    }
+    pub fn builder_from_module(module: &Module, initial_ty: ValTypeID) -> GEPInstBuilder<'_> {
+        GEPInstBuilder::from_module(module, initial_ty)
     }
     pub fn assert_indices_complete(self, allocs: &IRAllocs, tctx: &TypeContext) {
         let type_iter = GEPTypeIter::new(tctx, allocs, self);
@@ -279,6 +301,19 @@ pub enum GEPTypeState {
     AfterUnpack,
 }
 
+#[derive(Debug, Clone, Copy, Error)]
+pub enum GEPUnpackErr {
+    #[error("index type {0:?} is not integer type")]
+    IndexNotInt(ValTypeID),
+    #[error("index out of range")]
+    IndexOutOfRange,
+    #[error("unpacking struct {0:?} with variable index {1:?}")]
+    UnpackStructWithVariable(StructTypeID, ValueSSA),
+    #[error("type {0:?} cannot unpack (expecting array, struct or vector)")]
+    TypeCannotUnpack(ValTypeID),
+}
+pub type GEPTypeUnpackRes<T = ()> = Result<T, GEPUnpackErr>;
+
 /// 用于遍历 GEP 指令的类型状态迭代器
 ///
 /// 这个迭代器跟踪 GEP 指令每一步索引操作的类型变化，确保类型转换的正确性并计算最终结果类型。
@@ -312,9 +347,10 @@ impl<'ir> GEPTypeUnpack<'ir> {
         self.id
     }
 
-    pub fn try_unpack(&mut self, idx: ValueSSA) -> Result<GEPTypeState, &'static str> {
-        let ValTypeID::Int(_) = idx.get_valtype(self.allocs) else {
-            return Err("GEP index must be of integer type");
+    pub fn try_unpack(&mut self, idx: ValueSSA) -> GEPTypeUnpackRes<GEPTypeState> {
+        let idx_type = idx.get_valtype(self.allocs);
+        let ValTypeID::Int(_) = idx_type else {
+            return Err(GEPUnpackErr::IndexNotInt(idx_type));
         };
 
         let stat = match self.stat {
@@ -329,7 +365,7 @@ impl<'ir> GEPTypeUnpack<'ir> {
     pub fn unpack(&mut self, idx: ValueSSA) -> GEPTypeState {
         self.try_unpack(idx).expect("GEP unpack failed")
     }
-    fn do_unpack(&self, aggrty: ValTypeID, idx: ValueSSA) -> Result<GEPTypeState, &'static str> {
+    fn do_unpack(&self, aggrty: ValTypeID, idx: ValueSSA) -> GEPTypeUnpackRes<GEPTypeState> {
         use ValTypeID::*;
         match aggrty {
             Ptr | Int(_) | Float(_) => Ok(GEPTypeState::AfterUnpack),
@@ -350,26 +386,24 @@ impl<'ir> GEPTypeUnpack<'ir> {
                 let elemty = Self::unpack_struct(self.tctx, struc, idx)?;
                 Ok(GEPTypeState::BeforeUnpack(elemty))
             }
-            _ => Err("GEP index on unsupported type"),
+            _ => Err(GEPUnpackErr::TypeCannotUnpack(aggrty)),
         }
     }
     fn unpack_struct(
         tctx: &TypeContext,
         struc: StructTypeID,
         idx: ValueSSA,
-    ) -> Result<ValTypeID, &'static str> {
-        let ValueSSA::ConstData(c) = idx else {
-            return Err("GEP struct index must be a constant integer");
+    ) -> GEPTypeUnpackRes<ValTypeID> {
+        let Some(index) = idx.as_apint() else {
+            return Err(GEPUnpackErr::UnpackStructWithVariable(struc, idx));
         };
-        let index = match c {
-            ConstData::Int(i) => i.as_signed() as usize,
-            _ => return Err("GEP struct index must be a constant integer"),
-        };
+        let index = index.as_signed() as usize;
         let fields = struc.get_fields(tctx);
-        fields
-            .get(index)
-            .ok_or("GEP struct index out of bounds")
-            .copied()
+        if let Some(&field) = fields.get(index) {
+            Ok(field)
+        } else {
+            Err(GEPUnpackErr::IndexOutOfRange)
+        }
     }
 }
 
@@ -422,5 +456,119 @@ impl<'ir> GEPTypeIter<'ir> {
         for (..) in self {
             // Just iterate to trigger type unpacking and checks.
         }
+    }
+}
+
+pub struct GEPInstBuilder<'ir> {
+    initial_ty: ValTypeID,
+    base_ptr: ValueSSA,
+    indices: SmallVec<[(ValueSSA, ValTypeID); 4]>,
+    inbounds: bool,
+    unpacker: GEPTypeUnpack<'ir>,
+    pointee_align_log2: u8,
+    align_log2: Option<u8>,
+}
+impl<'ir> GEPInstBuilder<'ir> {
+    pub fn new(tctx: &'ir TypeContext, allocs: &'ir IRAllocs, initial_ty: ValTypeID) -> Self {
+        Self {
+            initial_ty,
+            base_ptr: ValueSSA::None,
+            indices: SmallVec::new(),
+            inbounds: false,
+            align_log2: None,
+            pointee_align_log2: initial_ty.get_align_log2(tctx),
+            unpacker: GEPTypeUnpack::new_initial(tctx, allocs, initial_ty),
+        }
+    }
+
+    pub fn from_module(module: &'ir Module, initial_ty: ValTypeID) -> Self {
+        let Module { allocs, tctx, .. } = module;
+        Self::new(tctx, allocs, initial_ty)
+    }
+
+    pub fn try_add_index(&mut self, idx: ValueSSA) -> GEPTypeUnpackRes<GEPTypeState> {
+        let new_state = self.unpacker.try_unpack(idx)?;
+        match new_state {
+            GEPTypeState::AfterUnpack => {}
+            GEPTypeState::BeforeUnpack(ty) => self.indices.push((idx, ty)),
+            GEPTypeState::InfLenArray(_) => {
+                panic!("GEPInstBuilder should not yield InfLenArray state")
+            }
+        }
+        Ok(new_state)
+    }
+    pub fn add_index(&mut self, idx: ValueSSA) -> GEPTypeState {
+        self.try_add_index(idx).expect("GEPInstBuilder failed")
+    }
+    pub fn add_indices(&mut self, indices: &[ValueSSA]) -> &mut Self {
+        for idx in indices {
+            self.add_index(*idx);
+        }
+        self
+    }
+    pub fn base_ptr(&mut self, ptr: ValueSSA) -> &mut Self {
+        self.base_ptr = ptr;
+        self
+    }
+    pub fn inbounds(&mut self, inbounds: bool) -> &mut Self {
+        self.inbounds = inbounds;
+        self
+    }
+    pub fn align_log2(&mut self, align_log2: u8) -> &mut Self {
+        self.align_log2 = Some(align_log2);
+        self
+    }
+    pub fn pointee_align_log2(&mut self, align_log2: u8) -> &mut Self {
+        self.pointee_align_log2 = align_log2;
+        self
+    }
+
+    fn allocs(&self) -> &'ir IRAllocs {
+        self.unpacker.allocs
+    }
+    fn tctx(&self) -> &'ir TypeContext {
+        self.unpacker.tctx
+    }
+    fn get_final_ty(&self) -> ValTypeID {
+        if let Some((_, ty)) = self.indices.last() { *ty } else { self.initial_ty }
+    }
+    fn get_align_log2(&self) -> u8 {
+        if let Some(a) = self.align_log2 {
+            a
+        } else {
+            let final_ty = self.get_final_ty();
+            final_ty.get_align_log2(self.tctx())
+        }
+    }
+    fn dump_operands(&self) -> SmallVec<[UseID; 3]> {
+        let mut operands = SmallVec::with_capacity(self.indices.len() + 1);
+        operands.push({
+            let u = UseID::new(self.allocs(), UseKind::GepBase);
+            if self.base_ptr.is_nonnull() {
+                u.set_operand(self.allocs(), self.base_ptr);
+            }
+            u
+        });
+        for (i, &(idx, _)) in self.indices.iter().enumerate() {
+            let u = UseID::new(self.allocs(), UseKind::GepIndex(i as u32));
+            u.set_operand(self.allocs(), idx);
+            operands.push(u);
+        }
+        operands
+    }
+
+    pub fn build_inst(&self) -> GEPInst {
+        GEPInst {
+            common: InstCommon::new(Opcode::IndexPtr, ValTypeID::Ptr),
+            operands: self.dump_operands(),
+            inbounds_mark: Cell::new(self.inbounds),
+            initial_ty: self.initial_ty,
+            final_ty: self.get_final_ty(),
+            align_log2: self.get_align_log2(),
+            pointee_align_log2: self.pointee_align_log2,
+        }
+    }
+    pub fn build_id(&self) -> GEPInstID {
+        GEPInstID::allocate(self.allocs(), self.build_inst())
     }
 }

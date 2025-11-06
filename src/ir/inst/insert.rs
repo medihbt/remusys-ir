@@ -288,6 +288,10 @@ impl ISubInstID for FieldInsertInstID {
     }
 }
 impl FieldInsertInstID {
+    pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
+        FieldInsertBuilder::new(aggr_type)
+    }
+
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
     }
