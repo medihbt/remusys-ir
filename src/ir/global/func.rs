@@ -176,10 +176,10 @@ impl std::fmt::Debug for FuncID {
 }
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
-    fn raw_from_ir(id: GlobalID) -> Self {
+    fn raw_from_global(id: GlobalID) -> Self {
         FuncID(id)
     }
-    fn into_ir(self) -> GlobalID {
+    fn into_global(self) -> GlobalID {
         self.0
     }
 }

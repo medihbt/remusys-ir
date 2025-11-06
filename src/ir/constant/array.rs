@@ -71,10 +71,10 @@ pub struct ArrayExprID(pub ExprID);
 impl ISubExprID for ArrayExprID {
     type ExprObjT = ArrayExpr;
 
-    fn raw_from_ir(id: PtrID<ExprObj>) -> Self {
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
         ArrayExprID(id)
     }
-    fn into_ir(self) -> PtrID<ExprObj> {
+    fn into_expr(self) -> PtrID<ExprObj> {
         self.0
     }
 }

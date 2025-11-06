@@ -292,7 +292,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         };
         let block = focus.block.ok_or(IRBuildError::NullFocus)?;
         let allocs = self.allocs();
-        let termi = termi.into_ir();
+        let termi = termi.into_instid();
         let managed = match block.try_set_terminator_inst(allocs, termi) {
             Ok(Some(managed)) => managed,
             Ok(None) => return Err(IRBuildError::BlockHasNoTerminator(block)),
@@ -474,7 +474,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         let back_half = BlockID::new_uninit(self.allocs());
         self.focus_add_block(back_half)?;
         let allocs = self.allocs();
-        let goto_backhalf = JumpInstID::with_target(allocs, back_half).into_ir();
+        let goto_backhalf = JumpInstID::with_target(allocs, back_half).into_instid();
         let Some(old_terminator) = front_half.set_terminator_inst(allocs, goto_backhalf) else {
             return Err(IRBuildError::BlockHasNoTerminator(front_half));
         };
@@ -582,7 +582,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
                 }
                 FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
             },
-            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.into_ir(), block),
+            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.into_instid(), block),
             (IS::Phi(_), IS::PhiEnd(pe)) => InstInsertPos::Prepend(pe, block),
             (IS::Phi(_), IS::Normal(_)) | (IS::Phi(_), IS::Terminator(_)) => {
                 match self.focus_degrade.add_phi_to_inst {
@@ -621,7 +621,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     }
 
     pub fn insert_inst(&mut self, inst: impl ISubInstID) -> IRBuildRes {
-        let inst = inst.into_ir();
+        let inst = inst.into_instid();
         let inst_summary = InstIDSummary::new(inst, self.allocs());
         match self.get_inst_insert_pos(inst_summary)? {
             InstInsertPos::Prepend(pos, block) => block
@@ -643,9 +643,9 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         }
     }
 
-    pub fn build_inst<BuildFn>(&mut self, build: BuildFn) -> IRBuildRes<InstID>
+    pub fn build_inst<BuildFn, R: ISubInstID>(&mut self, build: BuildFn) -> IRBuildRes<R>
     where
-        BuildFn: FnOnce(&IRAllocs, &TypeContext) -> InstID,
+        BuildFn: FnOnce(&IRAllocs, &TypeContext) -> R,
     {
         let inst = build(self.allocs(), self.tctx());
         self.insert_inst(inst)?;

@@ -99,10 +99,10 @@ impl_debug_for_subinst_id!(RetInstID);
 impl ISubInstID for RetInstID {
     type InstObjT = RetInst;
 
-    fn raw_from_ir(id: PtrID<InstObj>) -> Self {
+    fn raw_from_instid(id: PtrID<InstObj>) -> Self {
         RetInstID(id)
     }
-    fn into_ir(self) -> PtrID<InstObj> {
+    fn into_instid(self) -> PtrID<InstObj> {
         self.0
     }
     fn is_terminator(self, _: &IRAllocs) -> bool {

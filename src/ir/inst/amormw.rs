@@ -194,10 +194,10 @@ impl_debug_for_subinst_id!(AmoRmwInstID);
 impl ISubInstID for AmoRmwInstID {
     type InstObjT = AmoRmwInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         Self(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

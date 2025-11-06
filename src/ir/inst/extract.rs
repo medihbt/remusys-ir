@@ -113,10 +113,10 @@ impl_debug_for_subinst_id!(IndexExtractInstID);
 impl ISubInstID for IndexExtractInstID {
     type InstObjT = IndexExtractInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         Self(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }
@@ -253,10 +253,10 @@ impl_debug_for_subinst_id!(FieldExtractInstID);
 impl ISubInstID for FieldExtractInstID {
     type InstObjT = FieldExtractInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         Self(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

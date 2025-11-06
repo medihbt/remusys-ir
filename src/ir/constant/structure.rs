@@ -69,10 +69,10 @@ pub struct StructExprID(pub ExprID);
 impl ISubExprID for StructExprID {
     type ExprObjT = StructExpr;
 
-    fn raw_from_ir(id: PtrID<ExprObj>) -> Self {
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
         StructExprID(id)
     }
-    fn into_ir(self) -> PtrID<ExprObj> {
+    fn into_expr(self) -> PtrID<ExprObj> {
         self.0
     }
 }

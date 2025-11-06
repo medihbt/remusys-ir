@@ -99,10 +99,10 @@ impl_debug_for_subinst_id!(JumpInstID);
 impl ISubInstID for JumpInstID {
     type InstObjT = JumpInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         JumpInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
     fn is_terminator(self, _: &IRAllocs) -> bool {

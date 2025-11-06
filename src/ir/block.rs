@@ -313,7 +313,7 @@ impl BlockID {
     }
     pub fn new_with_terminator(allocs: &IRAllocs, terminator: impl ISubInstID) -> Self {
         let ret = Self::new_uninit(allocs);
-        ret.set_terminator_inst(allocs, terminator.into_ir());
+        ret.set_terminator_inst(allocs, terminator.into_instid());
         ret
     }
     pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {

@@ -80,10 +80,10 @@ pub struct FixVecID(pub ExprID);
 impl ISubExprID for FixVecID {
     type ExprObjT = FixVec;
 
-    fn raw_from_ir(id: PtrID<ExprObj>) -> Self {
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
         FixVecID(id)
     }
-    fn into_ir(self) -> PtrID<ExprObj> {
+    fn into_expr(self) -> PtrID<ExprObj> {
         self.0
     }
 }

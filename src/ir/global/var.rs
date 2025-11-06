@@ -114,10 +114,10 @@ impl std::fmt::Debug for GlobalVarID {
 impl ISubGlobalID for GlobalVarID {
     type GlobalT = GlobalVar;
 
-    fn raw_from_ir(id: PtrID<GlobalObj>) -> Self {
+    fn raw_from_global(id: PtrID<GlobalObj>) -> Self {
         GlobalVarID(id)
     }
-    fn into_ir(self) -> PtrID<GlobalObj> {
+    fn into_global(self) -> PtrID<GlobalObj> {
         self.0
     }
 }

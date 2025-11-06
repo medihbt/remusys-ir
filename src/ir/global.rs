@@ -105,23 +105,23 @@ impl<T: ISubGlobal> IPtrValue for T {
 pub trait ISubGlobalID: Copy + 'static {
     type GlobalT: ISubGlobal;
 
-    fn raw_from_ir(id: GlobalID) -> Self;
-    fn into_ir(self) -> GlobalID;
+    fn raw_from_global(id: GlobalID) -> Self;
+    fn into_global(self) -> GlobalID;
 
-    fn try_from_ir(allocs: &IRAllocs, id: GlobalID) -> Option<Self> {
+    fn try_from_global(allocs: &IRAllocs, id: GlobalID) -> Option<Self> {
         let g = id.deref(&allocs.globals);
-        if Self::GlobalT::try_from_ir_ref(g).is_some() { Some(Self::raw_from_ir(id)) } else { None }
+        if Self::GlobalT::try_from_ir_ref(g).is_some() { Some(Self::raw_from_global(id)) } else { None }
     }
-    fn from_ir(allocs: &IRAllocs, id: GlobalID) -> Self {
-        Self::try_from_ir(allocs, id).expect("Invalid GlobalObj variant")
+    fn from_global(allocs: &IRAllocs, id: GlobalID) -> Self {
+        Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::GlobalT> {
-        let g = self.into_ir().deref(&allocs.globals);
+        let g = self.into_global().deref(&allocs.globals);
         Self::GlobalT::try_from_ir_ref(g)
     }
     fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::GlobalT> {
-        let g = self.into_ir().deref_mut(&mut allocs.globals);
+        let g = self.into_global().deref_mut(&mut allocs.globals);
         Self::GlobalT::try_from_ir_mut(g)
     }
     fn deref_ir(self, allocs: &IRAllocs) -> &Self::GlobalT {
@@ -154,7 +154,7 @@ pub trait ISubGlobalID: Copy + 'static {
 
     fn allocate(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
         let id = GlobalObj::allocate(allocs, obj.into_ir());
-        Self::raw_from_ir(id)
+        Self::raw_from_global(id)
     }
     fn register_to(self, module: &Module) -> Result<Self, GlobalID> {
         use std::collections::hash_map::Entry;
@@ -167,13 +167,13 @@ pub trait ISubGlobalID: Copy + 'static {
                 Err(*existing)
             }
             Entry::Vacant(v) => {
-                v.insert(self.into_ir());
+                v.insert(self.into_global());
                 Ok(self)
             }
         }
     }
     fn dispose(self, module: &Module) -> PoolAllocatedDisposeRes {
-        GlobalObj::dispose_id(self.into_ir(), module)
+        GlobalObj::dispose_id(self.into_global(), module)
     }
 }
 
@@ -253,10 +253,10 @@ impl ISubGlobal for GlobalObj {
 impl ISubGlobalID for GlobalID {
     type GlobalT = GlobalObj;
 
-    fn raw_from_ir(id: GlobalID) -> Self {
+    fn raw_from_global(id: GlobalID) -> Self {
         id
     }
-    fn into_ir(self) -> GlobalID {
+    fn into_global(self) -> GlobalID {
         self
     }
 }

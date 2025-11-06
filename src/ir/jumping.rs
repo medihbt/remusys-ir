@@ -278,7 +278,7 @@ pub enum TerminatorObj<'ir> {
 impl TerminatorID {
     pub fn try_from_ir(allocs: &IRAllocs, inst_id: impl ISubInstID) -> Option<Self> {
         use TerminatorID::*;
-        let inst_id = inst_id.into_ir();
+        let inst_id = inst_id.into_instid();
         match inst_id.deref_ir(allocs) {
             InstObj::Unreachable(_) => Some(Unreachable(UnreachableInstID(inst_id))),
             InstObj::Ret(_) => Some(Ret(RetInstID(inst_id))),
@@ -291,11 +291,11 @@ impl TerminatorID {
     pub fn into_ir(self) -> InstID {
         use TerminatorID::*;
         match self {
-            Unreachable(id) => id.into_ir(),
-            Ret(id) => id.into_ir(),
-            Jump(id) => id.into_ir(),
-            Br(id) => id.into_ir(),
-            Switch(id) => id.into_ir(),
+            Unreachable(id) => id.into_instid(),
+            Ret(id) => id.into_instid(),
+            Jump(id) => id.into_instid(),
+            Br(id) => id.into_instid(),
+            Switch(id) => id.into_instid(),
         }
     }
 

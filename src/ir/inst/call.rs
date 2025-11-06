@@ -129,10 +129,10 @@ pub struct CallInstID(pub InstID);
 impl_debug_for_subinst_id!(CallInstID);
 impl ISubInstID for CallInstID {
     type InstObjT = CallInst;
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         Self(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

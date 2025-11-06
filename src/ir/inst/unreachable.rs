@@ -80,10 +80,10 @@ impl_debug_for_subinst_id!(UnreachableInstID);
 impl ISubInstID for UnreachableInstID {
     type InstObjT = UnreachableInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         Self(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
     fn is_terminator(self, _: &IRAllocs) -> bool {

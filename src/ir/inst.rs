@@ -179,26 +179,26 @@ pub trait ISubInst: IUser + Sized {
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
 
-    fn raw_from_ir(id: InstID) -> Self;
-    fn into_ir(self) -> InstID;
+    fn raw_from_instid(id: InstID) -> Self;
+    fn into_instid(self) -> InstID;
 
-    fn try_from_ir(id: InstID, allocs: &IRAllocs) -> Option<Self> {
+    fn try_from_instid(id: InstID, allocs: &IRAllocs) -> Option<Self> {
         let inst = id.deref(&allocs.insts);
-        Self::InstObjT::try_from_ir_ref(inst).map(|_| Self::raw_from_ir(id))
+        Self::InstObjT::try_from_ir_ref(inst).map(|_| Self::raw_from_instid(id))
     }
-    fn from_ir(id: InstID, allocs: &IRAllocs) -> Self {
-        Self::try_from_ir(id, allocs).expect("Invalid sub-instruction ID")
+    fn from_instid(id: InstID, allocs: &IRAllocs) -> Self {
+        Self::try_from_instid(id, allocs).expect("Invalid sub-instruction ID")
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::InstObjT> {
-        let inst = self.into_ir().try_deref(&allocs.insts)?;
+        let inst = self.into_instid().try_deref(&allocs.insts)?;
         if inst.is_disposed() {
             return None;
         }
         Self::InstObjT::try_from_ir_ref(inst)
     }
     fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::InstObjT> {
-        let inst = self.into_ir().deref_mut(&mut allocs.insts);
+        let inst = self.into_instid().deref_mut(&mut allocs.insts);
         if inst.is_disposed() {
             return None;
         }
@@ -216,7 +216,7 @@ pub trait ISubInstID: Copy {
             .expect("Error: Attempted to deref freed InstID")
     }
     fn get_indexed(self, allocs: &IRAllocs) -> IndexedID<InstObj> {
-        self.into_ir()
+        self.into_instid()
             .as_indexed(&allocs.insts)
             .expect("Error: Attempted to get indexed ID of freed InstID")
     }
@@ -256,11 +256,11 @@ pub trait ISubInstID: Copy {
 
     fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
         let id = InstObj::allocate(allocs, obj.into_ir());
-        Self::raw_from_ir(id)
+        Self::raw_from_instid(id)
     }
 
     fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
-        InstObj::dispose_id(self.into_ir(), allocs)
+        InstObj::dispose_id(self.into_instid(), allocs)
     }
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
@@ -269,12 +269,9 @@ macro_rules! impl_debug_for_subinst_id {
     ($TypeName:ident) => {
         impl std::fmt::Debug for $TypeName {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "{}({:p})",
-                    stringify!($TypeName),
-                    self.into_ir().as_unit_pointer()
-                )
+                let tyname = stringify!($TypeName);
+                let addr = self.into_instid().as_unit_pointer();
+                write!(f, "{tyname}({addr:p})",)
             }
         }
     };
@@ -604,10 +601,10 @@ impl InstObj {
 impl ISubInstID for InstID {
     type InstObjT = InstObj;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         id
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self
     }
 }

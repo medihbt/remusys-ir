@@ -68,7 +68,7 @@ impl IRLiveSet {
             ValueSSA::Block(id) => self.add(allocs, id),
             ValueSSA::ConstExpr(id) => self.add(allocs, id),
             ValueSSA::Global(id) => self.add(allocs, id),
-            ValueSSA::FuncArg(func, _) => self.add(allocs, func.into_ir()),
+            ValueSSA::FuncArg(func, _) => self.add(allocs, func.into_global()),
             _ => {}
         }
     }
@@ -78,7 +78,7 @@ impl IRLiveSet {
             ValueSSA::Block(id) => self.is_alive(allocs, id),
             ValueSSA::ConstExpr(id) => self.is_alive(allocs, id),
             ValueSSA::Global(id) => self.is_alive(allocs, id),
-            ValueSSA::FuncArg(func, _) => self.is_alive(allocs, func.into_ir()),
+            ValueSSA::FuncArg(func, _) => self.is_alive(allocs, func.into_global()),
             _ => false,
         }
     }
@@ -168,7 +168,7 @@ impl<'ir> IRMarker<'ir> {
             ValueSSA::Block(id) => self.push_mark(id),
             ValueSSA::ConstExpr(id) => self.push_mark(id),
             ValueSSA::Global(id) => self.push_mark(id),
-            ValueSSA::FuncArg(func, _) => self.push_mark(func.into_ir()),
+            ValueSSA::FuncArg(func, _) => self.push_mark(func.into_global()),
             _ => self,
         }
     }

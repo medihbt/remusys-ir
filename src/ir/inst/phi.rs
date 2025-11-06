@@ -252,10 +252,10 @@ impl_debug_for_subinst_id!(PhiInstID);
 impl ISubInstID for PhiInstID {
     type InstObjT = PhiInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         PhiInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

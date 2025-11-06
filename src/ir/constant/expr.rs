@@ -59,29 +59,29 @@ pub trait ISubExpr: IUser + Sized {
 pub trait ISubExprID: Copy {
     type ExprObjT: ISubExpr + 'static;
 
-    fn raw_from_ir(id: PtrID<ExprObj>) -> Self;
-    fn into_ir(self) -> PtrID<ExprObj>;
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self;
+    fn into_expr(self) -> PtrID<ExprObj>;
 
-    fn try_from_ir(id: PtrID<ExprObj>, allocs: &IRAllocs) -> Option<Self> {
+    fn try_from_expr(id: PtrID<ExprObj>, allocs: &IRAllocs) -> Option<Self> {
         let expr = id.deref(&allocs.exprs);
-        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::raw_from_ir(id))
+        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::raw_from_expr(id))
     }
     fn deref_ir(self, allocs: &IRAllocs) -> &Self::ExprObjT {
-        let expr = self.into_ir().deref(&allocs.exprs);
+        let expr = self.into_expr().deref(&allocs.exprs);
         Self::ExprObjT::from_ir_ref(expr)
     }
     fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::ExprObjT {
-        let expr = self.into_ir().deref_mut(&mut allocs.exprs);
+        let expr = self.into_expr().deref_mut(&mut allocs.exprs);
         Self::ExprObjT::from_ir_mut(expr)
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
         let id = ExprObj::allocate(allocs, obj.into_ir());
-        Self::raw_from_ir(id)
+        Self::raw_from_expr(id)
     }
 
     fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
-        ExprObj::dispose_id(self.into_ir(), allocs)
+        ExprObj::dispose_id(self.into_expr(), allocs)
     }
 }
 
@@ -153,10 +153,10 @@ impl ISubExpr for ExprObj {
 impl ISubExprID for ExprID {
     type ExprObjT = ExprObj;
 
-    fn raw_from_ir(id: PtrID<ExprObj>) -> Self {
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
         id
     }
-    fn into_ir(self) -> PtrID<ExprObj> {
+    fn into_expr(self) -> PtrID<ExprObj> {
         self
     }
 }

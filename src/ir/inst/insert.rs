@@ -135,10 +135,10 @@ impl_debug_for_subinst_id!(IndexInsertInstID);
 impl ISubInstID for IndexInsertInstID {
     type InstObjT = IndexInsertInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         IndexInsertInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }
@@ -280,10 +280,10 @@ impl_debug_for_subinst_id!(FieldInsertInstID);
 impl ISubInstID for FieldInsertInstID {
     type InstObjT = FieldInsertInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         FieldInsertInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

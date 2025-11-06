@@ -119,10 +119,10 @@ impl_debug_for_subinst_id!(StoreInstID);
 impl ISubInstID for StoreInstID {
     type InstObjT = StoreInst;
 
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         StoreInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }

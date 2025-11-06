@@ -126,10 +126,10 @@ pub struct BrInstID(pub InstID);
 impl_debug_for_subinst_id!(BrInstID);
 impl ISubInstID for BrInstID {
     type InstObjT = BrInst;
-    fn raw_from_ir(id: InstID) -> Self {
+    fn raw_from_instid(id: InstID) -> Self {
         BrInstID(id)
     }
-    fn into_ir(self) -> InstID {
+    fn into_instid(self) -> InstID {
         self.0
     }
     fn is_terminator(self, _: &IRAllocs) -> bool {
