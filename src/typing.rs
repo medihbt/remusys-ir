@@ -11,18 +11,36 @@ mod structty;
 mod vec;
 
 pub use self::{
-    alias::{StructAliasData, StructAliasRef},
-    array::{ArrayTypeData, ArrayTypeRef},
-    compound::{AggrType, AggrTypeIter, ScalarType},
+    alias::{StructAliasID, StructAliasObj},
+    array::{ArrayTypeID, ArrayTypeObj},
+    compound::{AggrType, ScalarType},
     context::{ArchInfo, TypeAllocs, TypeContext},
     fmt::TypeFormatter,
-    func::{FuncType, FuncTypeRef},
+    func::{FuncTypeID, FuncTypeObj},
     prim::{FPKind, IntType, PtrType},
-    structty::{StructOffsetIter, StructTypeData, StructTypeRef},
+    structty::{StructTypeID, StructTypeObj},
     vec::FixVecType,
 };
 
-pub trait IValType: Sized + Clone + Copy {
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum TypeMismatchErr {
+    #[error("Type {0:?} is not equal to type {1:?}")]
+    IDNotEqual(ValTypeID, ValTypeID),
+    #[error("Type {0:?} layout is not equal to type {1:?}")]
+    LayoutNotEqual(ValTypeID, ValTypeID),
+    #[error("Type {0:?} kind does not match expected kind {1:?}")]
+    KindNotMatch(ValTypeID, ValTypeID),
+    #[error("Type {0:?} is not of class {1:?}")]
+    NotClass(ValTypeID, ValTypeClass),
+
+    #[error("Type {0:?} is not an aggregate type")]
+    NotAggregate(ValTypeID),
+    #[error("Type {0:?} is not a primitive type")]
+    NotPrimitive(ValTypeID),
+}
+pub type TypingRes<T = ()> = Result<T, TypeMismatchErr>;
+
+pub trait IValType: Copy {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self>;
 
     fn from_ir(ty: ValTypeID) -> Self {
@@ -51,6 +69,10 @@ pub trait IValType: Sized + Clone + Copy {
             .expect("Serialization to Vec<u8> should not fail");
         drop(formatter);
         String::from_utf8(buffer).expect("Type names should be valid UTF-8")
+    }
+    fn println(&self, tctx: &TypeContext) {
+        let name = self.get_display_name(tctx);
+        println!("{name}");
     }
 
     fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize>;
@@ -87,19 +109,6 @@ pub trait IValType: Sized + Clone + Copy {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum TypeMismatchError {
-    IDNotEqual(ValTypeID, ValTypeID),
-    LayoutNotEqual(ValTypeID, ValTypeID),
-    KindNotMatch(ValTypeID, ValTypeID),
-    NotClass(ValTypeID, ValTypeClass),
-
-    NotAggregate(ValTypeID),
-    NotPrimitive(ValTypeID),
-}
-
-pub type TypingRes<T = ()> = Result<T, TypeMismatchError>;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValTypeClass {
     Void,
@@ -132,16 +141,22 @@ pub enum ValTypeID {
     FixVec(FixVecType),
 
     /// Array Type
-    Array(ArrayTypeRef),
+    Array(ArrayTypeID),
 
     /// Unnamed Structure Type
-    Struct(StructTypeRef),
+    Struct(StructTypeID),
 
     /// Struct Alias Type
-    StructAlias(StructAliasRef),
+    StructAlias(StructAliasID),
 
     /// Function type
-    Func(FuncTypeRef),
+    Func(FuncTypeID),
+}
+
+impl Default for ValTypeID {
+    fn default() -> Self {
+        ValTypeID::Void
+    }
 }
 
 impl IValType for ValTypeID {
@@ -154,7 +169,7 @@ impl IValType for ValTypeID {
     }
 
     fn makes_instance(self) -> bool {
-        !matches!(self, ValTypeID::Void)
+        !matches!(self, ValTypeID::Void | ValTypeID::Func(_))
     }
 
     fn class_id(self) -> ValTypeClass {
@@ -209,38 +224,5 @@ impl IValType for ValTypeID {
             ValTypeID::StructAlias(sa) => sa.serialize(f),
             ValTypeID::Func(func) => func.serialize(f),
         }
-    }
-}
-
-impl ValTypeID {
-    pub fn new_boolean() -> Self {
-        Self::Int(1) // 1 bit for boolean
-    }
-
-    pub fn try_get_bits(self, tctx: &TypeContext) -> Option<usize> {
-        match self {
-            ValTypeID::Int(bits) => Some(bits as usize),
-            ValTypeID::Float(FPKind::Ieee32) => Some(32),
-            ValTypeID::Float(FPKind::Ieee64) => Some(64),
-            ValTypeID::Ptr => Some(tctx.arch.ptr_nbits),
-            _ => self.try_get_size(tctx).map(|s| s * 8),
-        }
-    }
-
-    pub fn matches_or_vec(self, rhs: ValTypeID) -> bool {
-        if self == rhs {
-            return true;
-        }
-        let ValTypeID::FixVec(FixVecType(lty, _)) = self else { return false };
-        let Ok(rty) = ScalarType::try_from_ir(rhs) else { return false };
-        lty == rty
-    }
-
-    pub fn isclass_or_vec(self, rhs: ValTypeClass) -> bool {
-        if self.class_id() == rhs {
-            return true;
-        }
-        let ValTypeID::FixVec(FixVecType(lty, _)) = self else { return false };
-        lty.class_id() == rhs
     }
 }

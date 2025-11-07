@@ -1,11 +1,11 @@
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, IRWriter, ISubInst, ISubInstRef, ISubValueSSA, IUser, InstCommon, InstData,
-        InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA,
+        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
-use std::rc::Rc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmoOrdering {
@@ -38,6 +38,7 @@ impl AmoOrdering {
 pub enum SyncScope {
     SingleThread,
     System,
+    Other(&'static str),
 }
 
 impl SyncScope {
@@ -45,6 +46,14 @@ impl SyncScope {
         match self {
             SyncScope::SingleThread => "singlethread",
             SyncScope::System => "system",
+            SyncScope::Other(name) => name,
+        }
+    }
+    pub fn from_str(name: &'static str) -> Self {
+        match name {
+            "singlethread" => SyncScope::SingleThread,
+            "system" => SyncScope::System,
+            other => SyncScope::Other(other),
         }
     }
 }
@@ -56,99 +65,101 @@ impl SyncScope {
 /// ```llvm
 /// %id = atomicrmw [volatile] <operation> ptr <pointer>, <ty> <value> [syncscope("<target-scope>")] <ordering>[, align <alignment>]  ; yields ty
 /// ```
-#[derive(Debug, Clone)]
-pub struct AmoRmw {
-    common: InstCommon,
-    operands: [Rc<Use>; 2],
+pub struct AmoRmwInst {
+    pub common: InstCommon,
+    operands: [UseID; 2],
+    pub value_ty: ValTypeID,
     pub ordering: AmoOrdering,
+    pub scope: SyncScope,
     pub is_volatile: bool,
     pub align_log2: u8,
-    pub scope: SyncScope,
 }
-
-impl IUser for AmoRmw {
+impl_traceable_from_common!(AmoRmwInst, true);
+impl IUser for AmoRmwInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
-
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.operands
     }
 }
-
-impl ISubInst for AmoRmw {
-    fn new_empty(opcode: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(opcode, ValTypeID::Void),
-            operands: [Use::new(UseKind::AmoRmwPtr), Use::new(UseKind::AmoRmwVal)],
-            ordering: AmoOrdering::NonAtomic,
-            is_volatile: false,
-            align_log2: 0,
-            scope: SyncScope::System,
-        }
+impl IPtrUniqueUser for AmoRmwInst {
+    fn get_operand_pointee_type(&self) -> ValTypeID {
+        self.value_ty
     }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        if let InstData::AmoRmw(x) = inst { Some(x) } else { None }
+    fn get_operand_pointee_align(&self) -> u32 {
+        1 << self.align_log2
     }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        if let InstData::AmoRmw(x) = inst { Some(x) } else { None }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::AmoRmw(self)
-    }
+}
+impl ISubInst for AmoRmwInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
-    fn is_terminator(&self) -> bool {
-        false
-    }
-    /// ```llvm
-    /// %id = atomicrmw [volatile] <operation> ptr <pointer>, <ty> <value> [syncscope("<target-scope>")] <ordering>[, align <alignment>]  ; yields ty
-    /// ```
-    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        let Some(id) = id else {
-            use std::io::{Error, ErrorKind::*};
-            return Err(Error::new(Other, "Inst must have an ID to be printed"));
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        let InstObj::AmoRmw(amormw) = inst else {
+            return None;
         };
-        write!(writer, "%{id} = atomicrmw ")?;
-        if self.is_volatile {
-            writer.write_str("volatile ")?;
-        }
-
-        write!(writer, "{} ", Self::subop_get_name(self.common.opcode))?;
-
-        writer.write_str("ptr ")?;
-        writer.write_operand(self.get_pointer())?;
-
-        let value = self.get_value();
-        let valuety = self.get_valtype();
-        debug_assert_eq!(value.get_valtype(&writer.allocs), valuety);
-        writer.write_str(", ")?;
-        writer.write_type(valuety)?;
-        writer.write_operand(value)?;
-
-        if self.scope != SyncScope::System {
-            write!(writer, " syncscope(\"{}\") ", self.scope.as_str())?;
-        }
-        write!(
-            writer,
-            "{}, align {}",
-            self.ordering.as_str(),
-            1 << self.align_log2
-        )?;
-
-        Ok(())
+        Some(amormw)
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        let InstObj::AmoRmw(amormw) = inst else {
+            return None;
+        };
+        Some(amormw)
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        let InstObj::AmoRmw(amormw) = inst else {
+            return None;
+        };
+        Some(amormw)
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::AmoRmw(self)
+    }
+    fn try_get_jts(&self) -> Option<crate::ir::JumpTargets<'_>> {
+        None
     }
 }
+impl AmoRmwInst {
+    pub const OP_POINTER: usize = 0;
+    pub const OP_VALUE: usize = 1;
 
-impl AmoRmw {
-    pub const OP_PTR: usize = 0;
-    pub const OP_VAL: usize = 1;
+    pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
+        AmoRmwBuilder::new(opcode, value_ty)
+    }
 
-    fn subop_get_name(opcode: Opcode) -> &'static str {
+    pub fn pointer_use(&self) -> UseID {
+        self.operands[Self::OP_POINTER]
+    }
+    pub fn get_pointer(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.pointer_use().get_operand(allocs)
+    }
+    pub fn set_pointer(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.pointer_use().set_operand(allocs, val);
+    }
+
+    pub fn value_use(&self) -> UseID {
+        self.operands[Self::OP_VALUE]
+    }
+    pub fn get_value(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.value_use().get_operand(allocs)
+    }
+    pub fn set_value(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.value_use().set_operand(allocs, val);
+    }
+
+    /// Includes:
+    ///
+    /// ```text
+    /// AmoXchg, AmoAdd, AmoSub, AmoAnd, AmoNand, AmoOr, AmoXor,
+    /// AmoSMax, AmoSMin, AmoUMax, AmoUMin,
+    /// AmoFAdd, AmoFSub, AmoFMax, AmoFMin,
+    /// AmoUIncWrap, AmoUDecWrap, AmoUSubCond, AmoUSubStat,
+    /// ```
+    pub fn subop_get_name(opcode: Opcode) -> &'static str {
         match opcode {
             Opcode::AmoXchg => "xchg",
             Opcode::AmoAdd => "add",
@@ -172,137 +183,134 @@ impl AmoRmw {
             _ => panic!("Invalid opcode for AmoRmw: {opcode:?}"),
         }
     }
-
-    pub fn pointer_use(&self) -> &Rc<Use> {
-        &self.operands[0]
-    }
-    pub fn get_pointer(&self) -> ValueSSA {
-        self.pointer_use().get_operand()
-    }
-    pub fn set_pointer(&self, allocs: &IRAllocs, value: impl ISubValueSSA) {
-        self.pointer_use().set_operand(allocs, value);
-    }
-
-    pub fn value_use(&self) -> &Rc<Use> {
-        &self.operands[1]
-    }
-    pub fn get_value(&self) -> ValueSSA {
-        self.value_use().get_operand()
-    }
-    pub fn set_value(&self, allocs: &IRAllocs, value: impl ISubValueSSA) {
-        self.value_use().set_operand(allocs, value);
-    }
-
-    pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
-        AmoRmwBuilder::new(opcode, value_ty)
+    pub fn subop_name(&self) -> &'static str {
+        Self::subop_get_name(self.get_opcode())
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AmoRmwInstID(pub InstID);
+impl_debug_for_subinst_id!(AmoRmwInstID);
+impl ISubInstID for AmoRmwInstID {
+    type InstObjT = AmoRmwInst;
+
+    fn raw_from_instid(id: InstID) -> Self {
+        Self(id)
+    }
+    fn into_instid(self) -> InstID {
+        self.0
+    }
+}
+impl AmoRmwInstID {
+    pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
+        AmoRmwBuilder::new(opcode, value_ty)
+    }
+
+    pub fn pointer_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).pointer_use()
+    }
+    pub fn get_pointer(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_pointer(allocs)
+    }
+    pub fn set_pointer(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_pointer(allocs, val);
+    }
+
+    pub fn value_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).value_use()
+    }
+    pub fn get_value(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_value(allocs)
+    }
+    pub fn set_value(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_value(allocs, val);
+    }
+
+    pub fn value_ty(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).value_ty
+    }
+    pub fn ordering(self, allocs: &IRAllocs) -> AmoOrdering {
+        self.deref_ir(allocs).ordering
+    }
+    pub fn scope(self, allocs: &IRAllocs) -> SyncScope {
+        self.deref_ir(allocs).scope
+    }
+    pub fn is_volatile(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).is_volatile
+    }
+    pub fn align_log2(self, allocs: &IRAllocs) -> u8 {
+        self.deref_ir(allocs).align_log2
+    }
+    pub fn align(self, allocs: &IRAllocs) -> u32 {
+        1 << self.align_log2(allocs)
+    }
+}
+
+pub trait IAmoRmwBuildable: Sized {
+    fn new(opcode: Opcode, value_ty: ValTypeID) -> Self;
+    fn value_ty(self, ty: ValTypeID) -> Self;
+    fn ordering(self, ordering: AmoOrdering) -> Self;
+    fn scope(self, scope: SyncScope) -> Self;
+    fn is_volatile(self, is_volatile: bool) -> Self;
+    fn align_log2(self, align_log2: u8) -> Self;
+
+    fn build_obj(self, allocs: &IRAllocs) -> AmoRmwInst;
+    fn build_id(self, allocs: &IRAllocs) -> AmoRmwInstID {
+        AmoRmwInstID::allocate(allocs, self.build_obj(allocs))
+    }
+}
 pub struct AmoRmwBuilder {
     opcode: Opcode,
     value_ty: ValTypeID,
     ordering: AmoOrdering,
+    scope: SyncScope,
     is_volatile: bool,
     align_log2: u8,
-    scope: SyncScope,
-    ptr_operand: ValueSSA,
-    val_operand: ValueSSA,
 }
-
-impl AmoRmwBuilder {
-    pub fn new(opcode: Opcode, value_ty: ValTypeID) -> Self {
-        assert_eq!(opcode.get_kind(), InstKind::AmoRmw);
+impl IAmoRmwBuildable for AmoRmwBuilder {
+    fn new(opcode: Opcode, value_ty: ValTypeID) -> Self {
         Self {
             opcode,
             value_ty,
             ordering: AmoOrdering::SeqCst,
+            scope: SyncScope::System,
             is_volatile: true,
             align_log2: 0,
-            scope: SyncScope::System,
-            ptr_operand: ValueSSA::None,
-            val_operand: ValueSSA::None,
         }
     }
-
-    pub fn opcode(mut self, opcode: Opcode) -> Self {
-        assert_eq!(opcode.get_kind(), InstKind::AmoRmw);
-        self.opcode = opcode;
+    fn value_ty(mut self, ty: ValTypeID) -> Self {
+        self.value_ty = ty;
         self
     }
-
-    pub fn value_ty(mut self, value_ty: ValTypeID) -> Self {
-        self.value_ty = value_ty;
-        self
-    }
-
-    pub fn ordering(mut self, ordering: AmoOrdering) -> Self {
+    fn ordering(mut self, ordering: AmoOrdering) -> Self {
         self.ordering = ordering;
         self
     }
-
-    pub fn volatile(mut self, is_volatile: bool) -> Self {
+    fn scope(mut self, scope: SyncScope) -> Self {
+        self.scope = scope;
+        self
+    }
+    fn is_volatile(mut self, is_volatile: bool) -> Self {
         self.is_volatile = is_volatile;
         self
     }
-
-    pub fn align(mut self, align: usize) -> Self {
-        self.align_log2 = align.trailing_zeros() as u8;
-        self
-    }
-
-    pub fn align_log2(mut self, align_log2: u8) -> Self {
+    fn align_log2(mut self, align_log2: u8) -> Self {
         self.align_log2 = align_log2;
         self
     }
 
-    pub fn scope(mut self, scope: SyncScope) -> Self {
-        self.scope = scope;
-        self
-    }
-
-    pub fn ptr_operand(mut self, ptr_operand: impl ISubValueSSA) -> Self {
-        self.ptr_operand = ptr_operand.into_ir();
-        self
-    }
-
-    pub fn val_operand(mut self, val_operand: impl ISubValueSSA) -> Self {
-        self.val_operand = val_operand.into_ir();
-        self
-    }
-
-    pub fn build(self, allocs: &IRAllocs) -> AmoRmw {
-        let inst = AmoRmw {
+    fn build_obj(self, allocs: &IRAllocs) -> AmoRmwInst {
+        AmoRmwInst {
             common: InstCommon::new(self.opcode, self.value_ty),
-            operands: [Use::new(UseKind::AmoRmwPtr), Use::new(UseKind::AmoRmwVal)],
+            operands: [
+                UseID::new(allocs, UseKind::AmoRmwPtr),
+                UseID::new(allocs, UseKind::AmoRmwVal),
+            ],
+            value_ty: self.value_ty,
             ordering: self.ordering,
+            scope: self.scope,
             is_volatile: self.is_volatile,
             align_log2: self.align_log2,
-            scope: self.scope,
-        };
-
-        if self.ptr_operand != ValueSSA::None {
-            inst.set_pointer(allocs, self.ptr_operand);
         }
-        if self.val_operand != ValueSSA::None {
-            inst.set_value(allocs, self.val_operand);
-        }
-
-        inst
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AmoRmwRef(InstRef);
-
-impl ISubInstRef for AmoRmwRef {
-    type InstDataT = AmoRmw;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
-    }
-
-    fn into_raw(self) -> InstRef {
-        self.0
     }
 }

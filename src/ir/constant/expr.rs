@@ -1,213 +1,197 @@
-use std::rc::Rc;
-
 use crate::{
-    base::SlabRef,
+    impl_traceable_from_common,
     ir::{
-        Array, FixVec, IRAllocs, IRWriter, IReferenceValue, ISubValueSSA, ITraceableValue, IUser,
-        IUserRef, OperandSet, Struct, Use, UserID, UserList, ValueSSA,
+        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        constant::{array::ArrayExpr, structure::StructExpr},
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
 };
-use slab::Slab;
+use mtb_entity::{IEntityAllocID, PtrID};
+use std::cell::Cell;
 
-#[derive(Debug, Clone)]
-pub enum ConstExprData {
-    Array(Array),
-    Struct(Struct),
+pub struct ExprCommon {
+    pub users: Option<UserList>,
+    pub(in crate::ir) dispose_mark: Cell<bool>,
+}
+impl Clone for ExprCommon {
+    fn clone(&self) -> Self {
+        Self {
+            users: None,
+            dispose_mark: Cell::new(self.dispose_mark.get()),
+        }
+    }
+}
+impl ExprCommon {
+    pub fn new(allocs: &IRAllocs) -> Self {
+        Self {
+            users: Some(UserList::new(&allocs.uses)),
+            dispose_mark: Cell::new(false),
+        }
+    }
+    pub fn none() -> Self {
+        Self { users: None, dispose_mark: Cell::new(false) }
+    }
+}
+
+pub trait ISubExpr: IUser + Sized {
+    fn get_common(&self) -> &ExprCommon;
+    fn common_mut(&mut self) -> &mut ExprCommon;
+
+    fn get_valtype(&self) -> ValTypeID;
+
+    fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self>;
+    fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self>;
+    fn try_from_ir(expr: ExprObj) -> Option<Self>;
+    fn into_ir(self) -> ExprObj;
+
+    fn from_ir_ref(expr: &ExprObj) -> &Self {
+        Self::try_from_ir_ref(expr).expect("Invalid ExprObj type for ISubExpr")
+    }
+    fn from_ir_mut(expr: &mut ExprObj) -> &mut Self {
+        Self::try_from_ir_mut(expr).expect("Invalid ExprObj type for ISubExpr")
+    }
+    fn from_ir(expr: ExprObj) -> Self {
+        Self::try_from_ir(expr).expect("Invalid ExprObj type for ISubExpr")
+    }
+}
+
+pub trait ISubExprID: Copy {
+    type ExprObjT: ISubExpr + 'static;
+
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self;
+    fn into_expr(self) -> PtrID<ExprObj>;
+
+    fn try_from_expr(id: PtrID<ExprObj>, allocs: &IRAllocs) -> Option<Self> {
+        let expr = id.deref(&allocs.exprs);
+        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::raw_from_expr(id))
+    }
+    fn deref_ir(self, allocs: &IRAllocs) -> &Self::ExprObjT {
+        let expr = self.into_expr().deref(&allocs.exprs);
+        Self::ExprObjT::from_ir_ref(expr)
+    }
+    fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::ExprObjT {
+        let expr = self.into_expr().deref_mut(&mut allocs.exprs);
+        Self::ExprObjT::from_ir_mut(expr)
+    }
+
+    fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
+        let id = ExprObj::allocate(allocs, obj.into_ir());
+        Self::raw_from_expr(id)
+    }
+
+    fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        ExprObj::dispose_id(self.into_expr(), allocs)
+    }
+}
+
+#[derive(Clone)]
+pub enum ExprObj {
+    Array(ArrayExpr),
+    Struct(StructExpr),
     FixVec(FixVec),
 }
+pub type ExprID = PtrID<ExprObj>;
 
-impl ITraceableValue for ConstExprData {
-    fn users(&self) -> &UserList {
-        &self.get_common().users
-    }
-
-    fn has_single_reference_semantics(&self) -> bool {
-        false
-    }
-}
-
-impl IUser for ConstExprData {
-    fn get_operands<'a>(&'a self) -> OperandSet<'a> {
+impl_traceable_from_common!(ExprObj, false);
+impl IUser for ExprObj {
+    fn get_operands(&self) -> OperandSet<'_> {
+        use ExprObj::*;
         match self {
-            ConstExprData::Array(data) => data.get_operands(),
-            ConstExprData::Struct(data) => data.get_operands(),
-            ConstExprData::FixVec(data) => data.get_operands(),
+            Array(arr) => arr.get_operands(),
+            Struct(struc) => struc.get_operands(),
+            FixVec(vec) => vec.get_operands(),
         }
     }
-
-    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        use ExprObj::*;
         match self {
-            ConstExprData::Array(data) => data.operands_mut(),
-            ConstExprData::Struct(data) => data.operands_mut(),
-            ConstExprData::FixVec(data) => data.operands_mut(),
+            Array(arr) => arr.operands_mut(),
+            Struct(struc) => struc.operands_mut(),
+            FixVec(vec) => vec.operands_mut(),
         }
     }
 }
-
-impl ISubExpr for ConstExprData {
+impl ISubExpr for ExprObj {
     fn get_common(&self) -> &ExprCommon {
+        use ExprObj::*;
         match self {
-            ConstExprData::Array(data) => &data.common,
-            ConstExprData::Struct(data) => &data.common,
-            ConstExprData::FixVec(data) => &data.common,
+            Array(arr) => &arr.common,
+            Struct(struc) => &struc.common,
+            FixVec(vec) => &vec.common,
         }
     }
     fn common_mut(&mut self) -> &mut ExprCommon {
+        use ExprObj::*;
         match self {
-            ConstExprData::Array(data) => &mut data.common,
-            ConstExprData::Struct(data) => &mut data.common,
-            ConstExprData::FixVec(data) => &mut data.common,
+            Array(arr) => &mut arr.common,
+            Struct(struc) => &mut struc.common,
+            FixVec(vec) => &mut vec.common,
         }
     }
-
-    fn is_aggregate(&self) -> bool {
-        matches!(self, ConstExprData::Array(_) | ConstExprData::Struct(_))
-    }
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+    fn get_valtype(&self) -> ValTypeID {
+        use ExprObj::*;
         match self {
-            ConstExprData::Array(data) => data.fmt_ir(writer),
-            ConstExprData::Struct(data) => data.fmt_ir(writer),
-            ConstExprData::FixVec(data) => data.fmt_ir(writer),
+            Array(arr) => arr.get_valtype(),
+            Struct(struc) => struc.get_valtype(),
+            FixVec(vec) => vec.get_valtype(),
         }
     }
-}
-
-impl ConstExprData {
-    pub fn get_value_type(&self) -> ValTypeID {
-        match self {
-            ConstExprData::Array(data) => ValTypeID::Array(data.arrty),
-            ConstExprData::Struct(data) => data.structty,
-            ConstExprData::FixVec(data) => ValTypeID::FixVec(data.vecty),
-        }
+    fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
+        Some(expr)
+    }
+    fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self> {
+        Some(expr)
+    }
+    fn try_from_ir(expr: ExprObj) -> Option<Self> {
+        Some(expr)
+    }
+    fn into_ir(self) -> ExprObj {
+        self
     }
 }
+impl ISubExprID for ExprID {
+    type ExprObjT = ExprObj;
 
-#[derive(Debug)]
-pub struct ExprCommon {
-    /// 有哪些指令使用了该常量表达式引用
-    ///
-    /// **重要限制**: ConstExpr 不是引用唯一的，相同值的常量表达式可能
-    /// 有多个不同的 ConstExprRef。因此这个 UserList 只能反映使用了
-    /// **当前这个引用** 的指令，而不是使用了相同**值**的所有指令。
-    ///
-    /// 要获得完整的使用信息，需要先运行 Const Expression Compression Pass
-    /// 将所有值相同的表达式合并，之后 UserList 才能准确反映该值的所有使用者。
-    ///
-    /// ### 示例
-    ///
-    /// ```ignore
-    /// // 编译前：两个相同值的不同引用
-    /// let ref1 = ConstExpr([1, 2, 3]);  // users: [inst1, inst3]  
-    /// let ref2 = ConstExpr([1, 2, 3]);  // users: [inst2, inst4]
-    ///
-    /// // 压缩后：合并为同一个引用
-    /// let merged = ConstExpr([1, 2, 3]); // users: [inst1, inst2, inst3, inst4]
-    /// ```
-    pub users: UserList,
-}
-
-impl Clone for ExprCommon {
-    /// 克隆时不克隆 users 列表，保持为空。因为 UserList 在设计上就不支持深拷贝.
-    fn clone(&self) -> Self {
-        Self { users: UserList::new_empty() }
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
+        id
+    }
+    fn into_expr(self) -> PtrID<ExprObj> {
+        self
     }
 }
-
-impl ExprCommon {
-    pub fn new() -> Self {
-        Self { users: UserList::new_empty() }
+impl ISubValueSSA for ExprID {
+    fn get_class(self) -> ValueClass {
+        ValueClass::ConstExpr
     }
-}
-
-pub trait ISubExpr: IUser {
-    fn get_common(&self) -> &ExprCommon;
-    fn common_mut(&mut self) -> &mut ExprCommon;
-    fn is_aggregate(&self) -> bool;
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExprRef(usize);
-
-impl SlabRef for ExprRef {
-    type RefObject = ConstExprData;
-    fn from_handle(handle: usize) -> Self {
-        ExprRef(handle)
-    }
-    fn get_handle(&self) -> usize {
-        self.0
-    }
-}
-
-impl IReferenceValue for ExprRef {
-    type ValueDataT = ConstExprData;
-
-    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
-    where
-        Self::ValueDataT: 'a,
-    {
-        self.to_data(&allocs.exprs)
-    }
-
-    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
-    where
-        Self::ValueDataT: 'a,
-    {
-        self.to_data_mut(&mut allocs.exprs)
-    }
-}
-
-impl IUserRef for ExprRef {}
-
-impl ISubValueSSA for ExprRef {
-    fn try_from_ir(value: ValueSSA) -> Option<Self> {
-        match value {
-            ValueSSA::ConstExpr(x) => Some(x),
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::ConstExpr(id) => Some(id),
             _ => None,
         }
     }
-
     fn into_ir(self) -> ValueSSA {
         ValueSSA::ConstExpr(self)
     }
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool {
+        let operands = match self.deref_ir(allocs) {
+            ExprObj::Array(arr) => arr.elems.as_slice(),
+            ExprObj::Struct(struc) => struc.fields.as_slice(),
+            ExprObj::FixVec(vec) => vec.elems.as_slice(),
+        };
+        operands
+            .iter()
+            .all(|&use_id| use_id.get_operand(allocs).is_zero_const(allocs))
+    }
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
-        self.to_data(&allocs.exprs).get_value_type()
+        self.deref_ir(allocs).get_valtype()
     }
 
-    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
-        None
+    fn can_trace(self) -> bool {
+        true
     }
-
-    fn is_zero(&self, allocs: &IRAllocs) -> bool {
-        match self.to_data(&allocs.exprs) {
-            ConstExprData::Array(data) => data.is_zero(allocs),
-            ConstExprData::Struct(data) => data.is_zero(allocs),
-            ConstExprData::FixVec(data) => data.is_zero(allocs),
-        }
-    }
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        match self.to_data(&writer.allocs.exprs) {
-            ConstExprData::Array(arr) => arr.fmt_ir(writer),
-            ConstExprData::Struct(str) => str.fmt_ir(writer),
-            ConstExprData::FixVec(vec) => vec.fmt_ir(writer),
-        }
-    }
-}
-
-impl ExprRef {
-    pub fn from_alloc(alloc: &mut Slab<ConstExprData>, mut data: ConstExprData) -> Self {
-        let ret = ExprRef(alloc.vacant_key());
-        for user in data.users() {
-            user.operand.set(ValueSSA::ConstExpr(ret));
-        }
-        for operands in data.operands_mut() {
-            operands.user.set(UserID::Expr(ret));
-        }
-        alloc.insert(data);
-        ret
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        Some(&self.deref_ir(allocs).get_common().users.as_ref().unwrap())
     }
 }

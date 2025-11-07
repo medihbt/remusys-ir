@@ -1,374 +1,278 @@
-//! # 中间代码子系统
+//! ## Remusys IR subsystem
 //!
-//! 中间代码子系统提供了类似 LLVM IR 的中间表示形式、数据流与控制流分析系统, 用于程序的分析和优化.
-
-use crate::{
-    base::{APInt, INullableValue, SlabRef},
-    typing::{AggrType, FPKind, IValType, ScalarType, ValTypeID},
-};
-use std::{
-    fmt::Debug,
-    hash::Hash,
-    num::NonZero,
-    rc::{Rc, Weak},
-};
+//! Core IR structures and utilities.
+//!
+//! ### How to import
+//!
+//! The most recommended way to import this module is writing code like this:
+//!
+//! ```rust,ignore
+//! use remusys_ir::ir::{*, inst::*, checking::*};
+//! ```
+//!
+//! Then remove unused imports as needed.
 
 mod attributes;
 mod block;
 mod cmp_cond;
 mod constant;
 mod global;
+mod jumping;
 mod managed;
 mod module;
 mod opcode;
-mod user;
+mod usedef;
 mod utils;
 
 pub mod checking;
-pub mod compact_ir;
 pub mod inst;
 
+use crate::{
+    base::{APInt, INullableValue},
+    typing::{AggrType, IValType, ScalarType, TypeMismatchErr, ValTypeClass, ValTypeID},
+};
+
 pub use self::{
-    attributes::{
-        Attr, AttrKind, CodeTempAttr, IAttrHolderValue, InlineAttr, IntExtAttr, MergeBehavior,
-        attrlist::{AttrList, AttrListID},
-        attrset::AttrSet,
-    },
-    block::{
-        BlockData, BlockDataInner, BlockRef,
-        jump_target::{
-            ITerminatorInst, ITerminatorRef, JumpTarget, JumpTargetKind, JumpTargetSplitter,
-            JumpTargets, PredList, TerminatorDataRef, TerminatorRef,
-        },
-    },
-    checking::{ValueCheckError, inst_check::InstCheckCtx},
+    block::{BlockID, BlockObj},
     cmp_cond::CmpCond,
     constant::{
-        array::Array,
+        array::{ArrayExpr, ArrayExprID},
         data::ConstData,
-        expr::{ConstExprData, ExprCommon, ExprRef, ISubExpr},
-        structure::Struct,
-        vec::FixVec,
+        expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
+        structure::{StructExpr, StructExprID},
+        vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalData, GlobalDataCommon, GlobalKind, GlobalRef, ISubGlobal, Linkage,
-        func::{Func, FuncArg, FuncArgRef, FuncRef, FuncStorage, FuncUser},
-        var::{Var, VarInner},
+        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
+        func::{
+            FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
+            IFuncUniqueUser, IFuncValue,
+        },
+        var::{GlobalVar, GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable},
     },
-    inst::{
-        AmoOrdering, ISubInst, ISubInstRef, InstCommon, InstData, InstInner, InstRef, SyncScope,
-        usedef::{ITraceableValue, Use, UseKind, UserIter, UserList},
+    inst::{AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstObj, SyncScope},
+    jumping::{
+        ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
+        JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
-    managed::{IManageableIRValue, IRManaged, ManagedInst},
+    managed::{ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse},
     module::{
-        IModuleEditable, IModuleReadable, IRModuleCleaner, Module,
-        allocs::*,
-        gc::{IRLiveValueSet, IRValueCompactMap, IRValueMarker},
-        view::*,
+        Module,
+        allocs::{
+            IRAllocs, PoolAllocatedClass, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes,
+            PoolAllocatedID,
+        },
+        gc::{IRLiveSet, IRMarker},
     },
     opcode::{InstKind, Opcode},
-    user::{IUser, IUserRef, OperandSet, UserID},
+    usedef::{
+        ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,
+        UserList,
+    },
     utils::{
-        builder::{
-            AmoRmwEditBuilder, GEPEditBuilder, IRBuildError, IRBuilder, IRFocus,
-            IRFocusCheckOption, IRFullFocus, IRSwitchBuilder, IRVarBuilder,
-        },
-        numbering::{IRValueNumberMap, NumberOption},
-        writer::{IRWriter, IRWriterOption, write_ir_module, write_ir_module_quiet},
+        builder::*,
+        numbering::{IRNumberValueMap, NumberOption},
+        writer::{IRWriteOption, IRWriter, IRWriterStat},
     },
 };
 
-/// # 操作数定义
-///
-/// 和 LLVM IR 一样, Remusys IR 一切可追踪对象皆 Value. ValueSSA 可以是
-/// 常量、指令、基本块、函数参数、全局变量等, 其中全局量、指令等引用类型采用
-/// 实体内存池方式存储, 这里仅仅存储它们的引用, 其他值类型直接内联在 ValueSSA 里.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ValueClass {
+    None,
+    ConstData,
+    ConstExpr,
+    AggrZero,
+    FuncArg,
+    Block,
+    Inst,
+    Global,
+}
+
+pub trait ISubValueSSA: Copy {
+    fn get_class(self) -> ValueClass;
+    fn try_from_ir(ir: ValueSSA) -> Option<Self>;
+    fn into_ir(self) -> ValueSSA;
+    fn from_ir(ir: ValueSSA) -> Self {
+        match Self::try_from_ir(ir) {
+            Some(v) => v,
+            None => panic!(
+                "Invalid ValueSSA type for {}",
+                std::any::type_name::<Self>()
+            ),
+        }
+    }
+
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID;
+
+    fn can_trace(self) -> bool;
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList>;
+    fn try_add_user(self, allocs: &IRAllocs, user_use: UseID) -> bool {
+        let Some(users) = self.try_get_users(allocs) else {
+            return false;
+        };
+        users
+            .push_back_id(user_use.inner(), &allocs.uses)
+            .expect("Failed to add User to ValueSSA users");
+        true
+    }
+
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool;
+}
+pub trait IPtrValue {
+    fn get_ptr_pointee_type(&self) -> ValTypeID;
+    fn get_ptr_pointee_align(&self) -> u32;
+}
+pub trait IPtrUniqueUser: IUser {
+    fn get_operand_pointee_type(&self) -> ValTypeID;
+    fn get_operand_pointee_align(&self) -> u32;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValueSSA {
     None,
-
-    /// 常量数据, 包括整数、浮点数、零值等
     ConstData(ConstData),
-
-    /// 常量表达式, 包括数组、结构体
-    ConstExpr(ExprRef),
-
-    /// 常量 0 表达式
+    ConstExpr(ExprID),
     AggrZero(AggrType),
-
-    /// 函数参数, 包含函数引用和参数索引
-    FuncArg(GlobalRef, u32),
-
-    /// 基本块引用, 用于控制流图中的块
-    Block(BlockRef),
-
-    /// 指令引用, 包括终结指令和其他指令
-    Inst(InstRef),
-
-    /// 全局变量引用, 包括函数和全局变量
-    Global(GlobalRef),
+    FuncArg(FuncID, u32),
+    Block(BlockID),
+    Inst(InstID),
+    Global(GlobalID),
 }
-
-#[rustfmt::skip]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ValueSSAClass {
-    None,
-    ConstData, ConstExpr, AggrZero,
-    FuncArg, Block, Inst, Global,
-}
-
-impl INullableValue for ValueSSA {
-    fn new_null() -> Self {
-        ValueSSA::None
-    }
-
-    fn is_null(&self) -> bool {
-        match self {
-            ValueSSA::None => true,
-            ValueSSA::ConstData(_) => false,
-            ValueSSA::ConstExpr(x) => x.is_null(),
-            ValueSSA::AggrZero(x) => x.is_null(),
-            ValueSSA::FuncArg(x, _) => x.is_null(),
-            ValueSSA::Block(x) => x.is_null(),
-            ValueSSA::Inst(x) => x.is_null(),
-            ValueSSA::Global(x) => x.is_null(),
-        }
-    }
-}
-
-impl ISubValueSSA for ValueSSA {
-    fn try_from_ir(value: ValueSSA) -> Option<Self> {
-        Some(value)
-    }
-    fn into_ir(self) -> ValueSSA {
-        self
-    }
-
-    fn is_zero(&self, allocs: &IRAllocs) -> bool {
-        match self {
-            ValueSSA::ConstData(data) => data.is_zero(),
-            ValueSSA::ConstExpr(expr) => expr.is_zero(allocs),
-            ValueSSA::AggrZero(_) => true,
-            _ => false,
-        }
-    }
-
-    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
-        match self {
-            ValueSSA::None => ValTypeID::Void,
-            ValueSSA::ConstData(data) => data.get_valtype(allocs),
-            ValueSSA::ConstExpr(expr) => expr.get_valtype(allocs),
-            ValueSSA::FuncArg(func, id) => {
-                FuncArgRef(func, id as usize).get_valtype(&allocs.globals)
-            }
-            ValueSSA::Block(_) => ValTypeID::Void,
-            ValueSSA::Inst(inst_ref) => inst_ref.get_valtype(allocs),
-            ValueSSA::Global(_) => ValTypeID::Ptr, // Global references are treated as pointers
-            ValueSSA::AggrZero(aggr) => aggr.into_ir(),
-        }
-    }
-
-    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
-        match self {
-            ValueSSA::ConstData(data) => data.try_gettype_noalloc(),
-            ValueSSA::Global(_) => Some(ValTypeID::Ptr),
-            ValueSSA::Block(_) => Some(ValTypeID::Void),
-            ValueSSA::AggrZero(aggr) => Some(aggr.into_ir()),
-            _ => None,
-        }
-    }
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        match self {
-            ValueSSA::None => writer.write_str("none"),
-            ValueSSA::ConstData(data) => data.fmt_ir(writer),
-            ValueSSA::ConstExpr(expr) => expr.fmt_ir(writer),
-            ValueSSA::AggrZero(_) => writer.write_str("zeroinitializer"),
-            ValueSSA::FuncArg(_, id) => write!(writer.output.borrow_mut(), "%{id}"),
-            ValueSSA::Block(block) => block.fmt_ir(writer),
-            ValueSSA::Inst(inst) => inst.fmt_ir(writer),
-            ValueSSA::Global(global) => global.fmt_ir(writer),
-        }
-    }
-}
-
 impl From<APInt> for ValueSSA {
     fn from(value: APInt) -> Self {
         ValueSSA::ConstData(ConstData::Int(value))
     }
 }
-
-impl From<f32> for ValueSSA {
-    fn from(value: f32) -> Self {
-        ValueSSA::ConstData(ConstData::Float(FPKind::Ieee32, value as f64))
+impl INullableValue for ValueSSA {
+    fn new_null() -> Self {
+        Self::None
+    }
+    fn is_null(&self) -> bool {
+        matches!(self, Self::None)
     }
 }
-
-impl From<f64> for ValueSSA {
-    fn from(value: f64) -> Self {
-        ValueSSA::ConstData(ConstData::Float(FPKind::Ieee64, value))
-    }
-}
-
-impl TryInto<APInt> for ValueSSA {
-    type Error = ValueSSAError;
-
-    fn try_into(self) -> Result<APInt, Self::Error> {
+impl ISubValueSSA for ValueSSA {
+    fn get_class(self) -> ValueClass {
         match self {
-            ValueSSA::ConstData(x) => match x.as_apint() {
-                Some(apint) => Ok(apint),
-                None => Err(ValueSSAError::KindNotMatch(
-                    self,
-                    ValueSSA::ConstData(ConstData::Int(0.into())),
-                )),
-            },
-            _ => Err(ValueSSAError::KindNotMatch(
-                self,
-                ValueSSA::ConstData(ConstData::Int(0.into())),
-            )),
+            Self::None => ValueClass::None,
+            Self::ConstData(_) => ValueClass::ConstData,
+            Self::ConstExpr(_) => ValueClass::ConstExpr,
+            Self::AggrZero(_) => ValueClass::AggrZero,
+            Self::FuncArg(..) => ValueClass::FuncArg,
+            Self::Block(_) => ValueClass::Block,
+            Self::Inst(_) => ValueClass::Inst,
+            Self::Global(_) => ValueClass::Global,
         }
     }
-}
-
-impl ValueSSA {
-    /// 检查该 Value 是否能被追踪
-    pub fn partial_traceable(&self) -> bool {
-        !matches!(self, Self::None | Self::ConstData(_))
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        Some(ir)
+    }
+    fn into_ir(self) -> ValueSSA {
+        self
     }
 
-    /// 检查该 Value 是否可以获得完整的使用者信息.
-    pub fn traceable(&self) -> bool {
+    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
         use ValueSSA::*;
-        matches!(self, FuncArg(..) | Block(_) | Inst(_) | Global(_))
-    }
-
-    /// 从整数值创建一个 ValueSSA
-    pub fn from_int<T: Into<APInt>>(value: T) -> Self {
-        ValueSSA::ConstData(ConstData::Int(value.into()))
-    }
-
-    pub fn as_int(self) -> Option<APInt> {
-        self.try_into().ok()
-    }
-
-    /// 获取该 Value 的使用者列表
-    pub fn users(self, allocs: &IRAllocs) -> Option<&UserList> {
         match self {
-            ValueSSA::FuncArg(func, id) => {
-                let users = FuncArgRef(func, id as usize).get_users(&allocs.globals);
-                Some(users)
-            }
-            ValueSSA::Block(block) => Some(&block.to_data(&allocs.blocks).users()),
-            ValueSSA::Inst(inst_ref) => Some(inst_ref.to_data(&allocs.insts).users()),
-            ValueSSA::Global(global) => Some(global.to_data(&allocs.globals).users()),
-            _ => None,
+            None => ValTypeID::Void,
+            ConstData(data) => data.get_valtype(allocs),
+            ConstExpr(expr) => expr.get_valtype(allocs),
+            AggrZero(aggr) => aggr.into_ir(),
+            FuncArg(func, id) => FuncArgID(func, id).get_valtype(allocs),
+            Block(_) => ValTypeID::Void,
+            Inst(inst) => inst.get_valtype(allocs),
+            Global(_) => ValTypeID::Ptr,
         }
     }
-
-    pub fn new_zero(ty: ValTypeID) -> ValueSSA {
-        match ty {
-            ValTypeID::Ptr => Self::ConstData(ConstData::Zero(ScalarType::Ptr)),
-            ValTypeID::Int(bits) => Self::ConstData(ConstData::Int(APInt::new(0, bits))),
-            ValTypeID::Float(fpkind) => Self::ConstData(ConstData::Float(fpkind, 0.0)),
-            ValTypeID::Array(aggr) => Self::AggrZero(aggr.into()),
-            ValTypeID::Struct(aggr) => Self::AggrZero(aggr.into()),
-            ValTypeID::StructAlias(aggr) => Self::AggrZero(aggr.into()),
-            ValTypeID::FixVec(fv) => Self::AggrZero(fv.into()),
-            ValTypeID::Void | ValTypeID::Func(_) => {
-                panic!("Cannot create zero value for void or function types")
-            }
-        }
-    }
-
-    pub(crate) fn add_user_rc(self, allocs: &IRAllocs, user: &Rc<Use>) -> bool {
-        self.add_user(allocs, Rc::downgrade(user))
-    }
-    pub(crate) fn add_user(self, allocs: &IRAllocs, user: Weak<Use>) -> bool {
+    fn is_zero_const(self, allocs: &IRAllocs) -> bool {
+        use ValueSSA::*;
         match self {
-            ValueSSA::FuncArg(func, id) => {
-                FuncArgRef(func, id as usize)
-                    .to_data(&allocs.globals)
-                    .add_user(user);
-                true
-            }
-            ValueSSA::Block(block) => {
-                block.to_data(&allocs.blocks).add_user(user);
-                true
-            }
-            ValueSSA::Inst(inst_ref) => {
-                inst_ref.to_data(&allocs.insts).add_user(user);
-                true
-            }
-            ValueSSA::Global(global) => {
-                global.to_data(&allocs.globals).add_user(user);
-                true
-            }
+            ConstData(data) => data.is_zero_const(allocs),
+            ConstExpr(expr) => expr.is_zero_const(allocs),
+            AggrZero(_) => true,
             _ => false,
         }
     }
-}
 
-#[derive(Debug, Clone, Copy)]
-pub enum ValueSSAError {
-    IDNotEqual(ValueSSA, ValueSSA),
-    KindNotMatch(ValueSSA, ValueSSA),
-    NotFunction(ValueSSA),
-}
-
-pub trait ISubValueSSA: Debug + Clone + PartialEq + Eq + Hash {
-    fn try_from_ir(value: ValueSSA) -> Option<Self>;
-    fn from_ir(value: ValueSSA) -> Self {
-        if let Some(val) = Self::try_from_ir(value) {
-            val
-        } else {
-            let selfty = std::any::type_name::<Self>();
-            panic!("ValueSSA kind mismatch: {value:?} but requires {selfty}",);
+    fn can_trace(self) -> bool {
+        use ValueSSA::*;
+        matches!(self, ConstExpr(_) | Block(_) | Inst(_) | Global(_))
+    }
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        use ValueSSA::*;
+        match self {
+            ConstExpr(expr) => expr.try_get_users(allocs),
+            FuncArg(func, id) => FuncArgID(func, id).try_get_users(allocs),
+            Block(block) => block.try_get_users(allocs),
+            Inst(inst) => inst.try_get_users(allocs),
+            Global(global) => global.try_get_users(allocs),
+            _ => Option::None,
         }
     }
-    fn into_ir(self) -> ValueSSA;
-
-    fn is_zero(&self, allocs: &IRAllocs) -> bool;
-
-    fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID;
-    fn try_gettype_noalloc(self) -> Option<ValTypeID>;
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()>;
 }
+impl ValueSSA {
+    pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchErr> {
+        let val = match ty {
+            ValTypeID::Void => ValueSSA::None,
+            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull(ValTypeID::Void)),
+            ValTypeID::Int(bits) => ValueSSA::ConstData(ConstData::Int(APInt::new(0, bits))),
+            ValTypeID::Float(fpkind) => ValueSSA::ConstData(ConstData::Float(fpkind, 0.0)),
+            ValTypeID::FixVec(v) => ValueSSA::AggrZero(AggrType::FixVec(v)),
+            ValTypeID::Array(a) => ValueSSA::AggrZero(AggrType::Array(a)),
+            ValTypeID::Struct(s) => ValueSSA::AggrZero(AggrType::Struct(s)),
+            _ => return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Compound)),
+        };
+        Ok(val)
+    }
 
-/// Trait for types that store pointer information.
-/// Implementors of this trait can provide information about the type pointed to.
-pub trait PtrStorage {
-    /// Gets the type of the value being pointed to.
-    ///
-    /// # Returns
-    /// The value type ID of the pointee type.
-    fn get_stored_pointee_type(&self) -> ValTypeID;
-
-    /// Gets the align of the value begin pointed to.
-    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>>;
-}
-
-/// Trait for types that use pointers as operands.
-/// Implementors of this trait can retrieve type information about the pointee.
-pub trait PtrUser {
-    /// Gets the type of the value pointed to by an operand.
-    ///
-    /// # Returns
-    /// The value type ID of the pointee.
-    fn get_operand_pointee_type(&self) -> ValTypeID;
-
-    /// Gets the align of this value user.
-    fn get_operand_align(&self) -> Option<NonZero<usize>>;
-}
-
-pub trait IReferenceValue {
-    type ValueDataT;
-
-    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a Self::ValueDataT
-    where
-        Self::ValueDataT: 'a;
-
-    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
-    where
-        Self::ValueDataT: 'a;
+    pub fn as_dyn_traceable<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn ITraceableValue> {
+        match self {
+            ValueSSA::ConstExpr(expr) => Some(expr.deref_ir(allocs)),
+            ValueSSA::FuncArg(func, id) => Some(FuncArgID(*func, *id).deref_ir(allocs)),
+            ValueSSA::Block(block) => Some(block.deref_ir(allocs)),
+            ValueSSA::Inst(inst) => Some(inst.deref_ir(allocs)),
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            _ => None,
+        }
+    }
+    pub fn as_dyn_user<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IUser> {
+        match self {
+            ValueSSA::Inst(inst) => Some(inst.deref_ir(allocs)),
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            ValueSSA::ConstExpr(expr) => Some(expr.deref_ir(allocs)),
+            _ => None,
+        }
+    }
+    pub fn as_dyn_ptrvalue<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IPtrValue> {
+        match self {
+            ValueSSA::Global(global) => Some(global.deref_ir(allocs)),
+            ValueSSA::Inst(inst) => match inst.deref_ir(allocs) {
+                InstObj::Alloca(i) => Some(i),
+                InstObj::GEP(i) => Some(i),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn as_dyn_ptruser<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn IPtrUniqueUser> {
+        match self {
+            ValueSSA::Inst(inst) => match inst.deref_ir(allocs) {
+                InstObj::Store(i) => Some(i),
+                InstObj::Load(i) => Some(i),
+                InstObj::AmoRmw(i) => Some(i),
+                InstObj::Call(i) => Some(i),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub fn as_apint(&self) -> Option<APInt> {
+        match self {
+            ValueSSA::ConstData(ConstData::Int(v)) => Some(*v),
+            ValueSSA::ConstData(ConstData::Zero(ScalarType::Int(bits))) => {
+                Some(APInt::new(0, *bits))
+            }
+            _ => None,
+        }
+    }
 }

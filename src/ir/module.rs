@@ -1,33 +1,35 @@
 use crate::{
-    base::{INullableValue, SlabRef},
-    ir::{
-        Func, FuncRef, GlobalData, GlobalRef, IRAllocsEditable, IRAllocsReadable,
-        IRValueCompactMap, IRValueMarker, ISubGlobal, ISubValueSSA, ModuleEdit, ValueSSA,
-        module::allocs::IRAllocs,
-    },
+    ir::{GlobalID, IRAllocs, IRMarker},
     typing::{ArchInfo, TypeContext},
 };
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    ops::{ControlFlow, Deref, DerefMut},
-    rc::Rc,
-};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Mutex;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
-pub(super) mod allocs;
-pub(super) mod gc;
-pub(super) mod view;
+pub mod allocs;
+pub mod gc;
+pub mod managing;
 
 pub struct Module {
-    pub name: String,
     pub allocs: IRAllocs,
-    pub globals: RefCell<HashMap<String, GlobalRef>>,
-    pub type_ctx: Rc<TypeContext>,
+    pub tctx: TypeContext,
+    pub symbols: RefCell<HashMap<Arc<str>, GlobalID>>,
+    pub name: String,
 }
 
+impl AsRef<IRAllocs> for Module {
+    fn as_ref(&self) -> &IRAllocs {
+        &self.allocs
+    }
+}
 impl AsRef<Module> for Module {
     fn as_ref(&self) -> &Module {
         self
+    }
+}
+impl AsMut<IRAllocs> for Module {
+    fn as_mut(&mut self) -> &mut IRAllocs {
+        &mut self.allocs
     }
 }
 impl AsMut<Module> for Module {
@@ -37,164 +39,99 @@ impl AsMut<Module> for Module {
 }
 
 impl Module {
-    pub fn new(name: String, type_ctx: Rc<TypeContext>) -> Self {
+    pub fn new(arch: ArchInfo, name: impl Into<String>) -> Self {
         Self {
-            name,
             allocs: IRAllocs::new(),
-            globals: RefCell::new(HashMap::new()),
-            type_ctx,
+            tctx: TypeContext::new(arch),
+            symbols: RefCell::new(HashMap::new()),
+            name: name.into(),
         }
     }
-    pub fn with_capacity(name: String, type_ctx: Rc<TypeContext>, base_capacity: usize) -> Self {
+    #[inline(never)]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn shared_new(arch: ArchInfo, name: impl Into<String>) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::new(arch, name)))
+    }
+    #[inline(never)]
+    pub fn new_rc(arch: ArchInfo, name: impl Into<String>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::new(arch, name)))
+    }
+
+    pub fn with_capacity(arch: ArchInfo, name: impl Into<String>, base_cap: usize) -> Self {
         Self {
-            name,
-            allocs: IRAllocs::with_capacity(base_capacity),
-            globals: RefCell::new(HashMap::new()),
-            type_ctx,
+            allocs: IRAllocs::with_capacity(base_cap),
+            tctx: TypeContext::new(arch),
+            symbols: RefCell::new(HashMap::new()),
+            name: name.into(),
         }
     }
-    pub fn new_host_arch(name: impl Into<String>) -> Self {
-        let type_ctx = TypeContext::new_rc(ArchInfo::new_host());
-        Self::new(name.into(), type_ctx)
+    #[inline(never)]
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn shared_with_capacity(
+        arch: ArchInfo,
+        name: impl Into<String>,
+        base_cap: usize,
+    ) -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::with_capacity(arch, name, base_cap)))
+    }
+    #[inline(never)]
+    pub fn with_capacity_rc(
+        arch: ArchInfo,
+        name: impl Into<String>,
+        base_cap: usize,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::with_capacity(arch, name, base_cap)))
     }
 
-    pub fn gc_cleaner(&mut self) -> IRModuleCleaner<'_> {
-        IRModuleCleaner::new(self)
-    }
-    pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {
-        self.gc_cleaner().sweep(roots);
-    }
-    pub fn gc_mark_compact(
-        &mut self,
-        roots: impl IntoIterator<Item = ValueSSA>,
-    ) -> IRValueCompactMap {
-        self.gc_cleaner().compact(roots)
+    pub fn get_global_by_name(&self, name: &str) -> Option<GlobalID> {
+        self.symbols.borrow().get(name).copied()
     }
 
-    pub fn forall_funcs(&self, has_extern: bool, f: impl FnMut(FuncRef, &Func) -> ControlFlow<()>) {
-        let allocs = &self.allocs;
-        let globals = self.globals.borrow();
-        let mut f = f;
-        for (_, &global) in globals.iter() {
-            let GlobalData::Func(func) = global.to_data(&allocs.globals) else {
-                continue;
-            };
-            if !has_extern && func.is_extern() {
-                continue;
-            }
-            if let ControlFlow::Break(()) = f(FuncRef(global), func) {
-                break;
-            }
+    /// Begin a garbage collection cycle.
+    /// This will free disposed allocations and return an IRMarker to mark live allocations.
+    pub fn begin_gc(&mut self) -> IRMarker<'_> {
+        self.allocs.free_disposed();
+        let Self { allocs, symbols, .. } = self;
+        let mut marker = IRMarker::new(allocs);
+        for (_, &gid) in symbols.get_mut().iter() {
+            marker.push_mark(gid);
         }
+        marker
     }
-    pub fn dump_funcs(&self, has_extern: bool) -> Vec<FuncRef> {
-        let mut ret = Vec::new();
-        self.forall_funcs(has_extern, |func_ref, _| {
-            ret.push(func_ref);
-            ControlFlow::Continue(())
-        });
-        ret
-    }
-    pub fn forall_globals(
-        &self,
-        has_extern: bool,
-        f: impl FnMut(GlobalRef, &GlobalData) -> ControlFlow<()>,
-    ) {
-        let allocs = &self.allocs;
-        let globals = self.globals.borrow();
-        let mut f = f;
-        for (_, &global) in globals.iter() {
-            if !has_extern && global.is_extern(&allocs) {
-                continue;
-            }
-            if let ControlFlow::Break(()) = f(global, global.to_data(&allocs.globals)) {
-                break;
-            }
-        }
+
+    /// Free disposed allocations without starting a GC cycle.
+    pub fn free_disposed(&mut self) {
+        self.allocs.free_disposed();
     }
 }
 
-pub trait IModuleReadable: IRAllocsReadable {
-    fn get_type_ctx(&self) -> &Rc<TypeContext>;
-}
-pub trait IModuleEditable: IModuleReadable + IRAllocsEditable {
-    fn edit_module(&mut self) -> ModuleEdit<'_>;
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        ir::{IRWriteOption, IRWriter},
+        testing::cases::test_case_cfg_deep_while_br,
+    };
 
-impl IModuleReadable for Module {
-    fn get_type_ctx(&self) -> &Rc<TypeContext> {
-        &self.type_ctx
-    }
-}
-impl IModuleEditable for Module {
-    fn edit_module(&mut self) -> ModuleEdit<'_> {
-        let Self { allocs, type_ctx, .. } = self;
-        ModuleEdit::new(type_ctx, allocs)
-    }
-}
-
-/// 用于垃圾回收的代理引用. 在垃圾回收时会自动管理 Module 内部引用的数据结构.
-///
-/// ### 示例
-///
-/// ```
-/// use remusys_ir::ir::Module;
-/// let mut module = Module::new_host_arch("my_module");
-/// /* 对 Module 进行大量操作，如生成 IR、做大量的优化, 此时产生了许多垃圾 */
-/// module.gc_cleaner().sweep([]);
-/// ```
-pub struct IRModuleCleaner<'ir> {
-    globals: &'ir mut HashMap<String, GlobalRef>,
-    marker: IRValueMarker<'ir>,
-}
-
-impl<'ir> Deref for IRModuleCleaner<'ir> {
-    type Target = IRValueMarker<'ir>;
-    fn deref(&self) -> &Self::Target {
-        &self.marker
-    }
-}
-impl<'ir> DerefMut for IRModuleCleaner<'ir> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.marker
-    }
-}
-impl<'ir> IRModuleCleaner<'ir> {
-    pub fn new(module: &'ir mut Module) -> Self {
-        let Module { allocs, globals, .. } = module;
-
-        let globals = globals.get_mut();
-        let mut marker = IRValueMarker::from_allocs(allocs);
-
-        for (_, &global) in globals.iter() {
-            marker.push_mark(global);
-        }
-        Self { globals, marker }
+    #[test]
+    fn test_thread_safety() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Module>();
+        // Module is Send and not Sync
     }
 
-    pub fn push_mark(&mut self, value: impl ISubValueSSA) -> &mut Self {
-        self.marker.push_mark(value);
-        self
-    }
-    pub fn mark_leaf(&mut self, value: impl ISubValueSSA) -> &mut Self {
-        self.marker.mark_leaf(value);
-        self
+    #[test]
+    fn test_gc() {
+        let mut module = test_case_cfg_deep_while_br().module;
+        module.begin_gc().finish();
+        write_module(&module, "target/test_output_gc.ll");
     }
 
-    pub fn sweep(self, roots: impl IntoIterator<Item = ValueSSA>) {
-        let Self { globals, mut marker } = self;
-        marker.mark_and_sweep(roots);
-        globals.retain(|_, &mut g| marker.live_set.is_live(g));
-    }
-
-    pub fn compact(self, roots: impl IntoIterator<Item = ValueSSA>) -> IRValueCompactMap {
-        let Self { globals, marker } = self;
-        let map = marker.mark_and_compact(roots);
-        for (_, global) in globals.iter_mut() {
-            let g = map.redirect_global(*global);
-            assert!(g.is_nonnull(), "global should not be null");
-            *global = g;
-        }
-        map
+    fn write_module(module: &Module, path: &str) {
+        let file = std::fs::File::create(path).expect("Failed to create output file");
+        let mut file_writer = std::io::BufWriter::new(file);
+        let mut writer = IRWriter::from_module(&mut file_writer, module);
+        writer.option = IRWriteOption::loud();
+        writer.write_module();
     }
 }

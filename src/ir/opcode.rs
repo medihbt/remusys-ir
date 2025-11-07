@@ -2,16 +2,16 @@ use std::{collections::HashMap, str::FromStr};
 
 #[rustfmt::skip]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-/// Enum representing the various opcodes in the Musys IR.
+/// Enum representing the various opcodes in the Remusys IR.
 pub enum Opcode {
     None,
     BitAnd, BitOr, BitXor, Shl, Lshr, Ashr,
     Add, Sub, Mul, Sdiv, Udiv, Srem, Urem,
     Fadd, Fsub, Fmul, Fdiv, Frem,
     Jmp, Br, Switch, Ret, Unreachable,
-    Sitofp, Uitofp, Fptosi, Zext, Sext, Trunc, Fpext, Fptrunc,
+    Sitofp, Uitofp, Fptosi, Fptoui, Zext, Sext, Trunc, Fpext, Fptrunc,
     Bitcast, IntToPtr, PtrToInt,
-    Select, IndexExtract, IndexInsert, IndexPtr, IndexOffsetOf,
+    Select, IndexExtract, FieldExtract, IndexInsert, FieldInsert, IndexPtr, IndexOffsetOf,
     Load, Store, Alloca, DynAlloca,
     Call, DynCall, Phi,
     Icmp, Fcmp,
@@ -31,18 +31,10 @@ impl Opcode {
         matches!(self, Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor)
     }
     pub fn is_int_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
+            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv | Srem | Urem
         )
     }
     pub fn is_float_op(self) -> bool {
@@ -52,19 +44,12 @@ impl Opcode {
         )
     }
     pub fn is_binary_op(self) -> bool {
-        matches!(
-            self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
-        )
+        use Opcode::*;
+        match self {
+            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv | Srem | Urem | Fadd | Fsub
+            | Fmul | Fdiv | Frem => true,
+            _ => false,
+        }
     }
     pub fn is_divrem_op(self) -> bool {
         matches!(
@@ -73,41 +58,24 @@ impl Opcode {
         )
     }
     pub fn is_constexpr_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::BitAnd
-                | Opcode::BitOr
-                | Opcode::BitXor
-                | Opcode::Add
-                | Opcode::Sub
-                | Opcode::Mul
-                | Opcode::Sdiv
-                | Opcode::Udiv
-                | Opcode::Srem
-                | Opcode::Urem
-                | Opcode::IndexExtract
-                | Opcode::IndexInsert
-                | Opcode::IndexPtr
-                | Opcode::IndexOffsetOf
+            ConstArray | ConstStruct | ConstVec | ConstPtrNull | IndexOffsetOf
         )
     }
     pub fn is_inst_op(self) -> bool {
+        use Opcode::*;
         !matches!(
             self,
-            Opcode::IndexOffsetOf | Opcode::ConstArray | Opcode::ConstStruct | Opcode::ConstVec
+            ConstArray | ConstStruct | ConstVec | ConstPtrNull | IndexOffsetOf
         )
     }
     pub fn is_cast_op(self) -> bool {
+        use Opcode::*;
         matches!(
             self,
-            Opcode::Sitofp
-                | Opcode::Uitofp
-                | Opcode::Fptosi
-                | Opcode::Zext
-                | Opcode::Sext
-                | Opcode::Trunc
-                | Opcode::Fpext
-                | Opcode::Fptrunc
+            Sitofp | Uitofp | Fptosi | Zext | Sext | Trunc | Fpext | Fptrunc
         )
     }
 
@@ -128,6 +96,7 @@ impl Opcode {
     }
 
     pub fn get_kind(self) -> InstKind {
+        use Opcode::*;
         match self {
             // Guide node
             Opcode::GuideNode => InstKind::ListGuideNode,
@@ -151,67 +120,27 @@ impl Opcode {
             // Selection and indexing
             Opcode::Select => InstKind::Select,
             Opcode::IndexPtr | Opcode::IndexExtract | Opcode::IndexInsert => InstKind::IndexPtr,
+            Opcode::FieldExtract | Opcode::FieldInsert => InstKind::FieldOp,
 
             // Function calls
             Opcode::Call | Opcode::DynCall => InstKind::Call,
             Opcode::Intrin => InstKind::Intrin,
 
             // Binary operations (arithmetic and logical)
-            Opcode::BitAnd
-            | Opcode::BitOr
-            | Opcode::BitXor
-            | Opcode::Shl
-            | Opcode::Lshr
-            | Opcode::Ashr
-            | Opcode::Add
-            | Opcode::Sub
-            | Opcode::Mul
-            | Opcode::Sdiv
-            | Opcode::Udiv
-            | Opcode::Srem
-            | Opcode::Urem
-            | Opcode::Fadd
-            | Opcode::Fsub
-            | Opcode::Fmul
-            | Opcode::Fdiv
-            | Opcode::Frem => InstKind::BinOp,
+            BitAnd | BitOr | BitXor | Shl | Lshr | Ashr | Add | Sub | Mul | Sdiv | Udiv | Srem
+            | Urem | Fadd | Fsub | Fmul | Fdiv | Frem => InstKind::BinOp,
 
             // Comparison operations
             Opcode::Icmp | Opcode::Fcmp => InstKind::Cmp,
 
             // Cast operations
-            Opcode::Sitofp
-            | Opcode::Uitofp
-            | Opcode::Fptosi
-            | Opcode::Zext
-            | Opcode::Sext
-            | Opcode::Trunc
-            | Opcode::Fpext
-            | Opcode::Fptrunc
-            | Opcode::Bitcast
-            | Opcode::IntToPtr
-            | Opcode::PtrToInt => InstKind::Cast,
+            Sitofp | Uitofp | Fptosi | Fptoui | Zext | Sext | Trunc | Fpext | Fptrunc | Bitcast
+            | IntToPtr | PtrToInt => InstKind::Cast,
 
             // Atomic read-modify-write operations
-            Opcode::AmoXchg
-            | Opcode::AmoAdd
-            | Opcode::AmoSub
-            | Opcode::AmoAnd
-            | Opcode::AmoNand
-            | Opcode::AmoOr
-            | Opcode::AmoXor
-            | Opcode::AmoSMax
-            | Opcode::AmoSMin
-            | Opcode::AmoUMax
-            | Opcode::AmoUMin
-            | Opcode::AmoFAdd
-            | Opcode::AmoFSub
-            | Opcode::AmoFMax
-            | Opcode::AmoFMin
-            | Opcode::AmoUIncWrap
-            | Opcode::AmoUDecWrap
-            | Opcode::AmoUSubCond
-            | Opcode::AmoUSubStat => InstKind::AmoRmw,
+            AmoXchg | AmoAdd | AmoSub | AmoAnd | AmoNand | AmoOr | AmoXor | AmoSMax | AmoSMin
+            | AmoUMax | AmoUMin | AmoFAdd | AmoFSub | AmoFMax | AmoFMin | AmoUIncWrap
+            | AmoUDecWrap | AmoUSubCond | AmoUSubStat => InstKind::AmoRmw,
 
             // Special cases for undefined or reserved opcodes
             Opcode::None => panic!("Opcode::None does not have a kind"),
@@ -254,9 +183,9 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "add", "sub", "mul", "sdiv", "udiv", "srem", "urem",
     "fadd", "fsub", "fmul", "fdiv", "frem",
     "jmp", "br", "switch", "ret", "unreachable",
-    "sitofp", "uitofp", "fptosi", "zext", "sext", "trunc", "fpext", "fptrunc",
+    "sitofp", "uitofp", "fptosi", "fptoui", "zext", "sext", "trunc", "fpext", "fptrunc",
     "bitcast", "inttoptr", "ptrtoint",
-    "select", "extractelement", "insertelement", "getelementptr", "offsetof",
+    "select", "extractelement", "extractvalue", "insertelement", "insertvalue", "getelementptr", "offsetof",
     "load", "store", "alloca", "dyn-alloca",
     "call", "dyncall", "phi",
     "icmp", "fcmp",
@@ -302,6 +231,7 @@ pub enum InstKind {
     Cmp,
     Cast,
     IndexPtr,
+    FieldOp,
     Call,
     AmoRmw,
     Intrin,

@@ -1,21 +1,24 @@
 use crate::{
-    base::SlabRef,
+    base::ISlabID,
     typing::{
-        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes,
-        ValTypeClass, ValTypeID,
+        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
+        ValTypeID,
     },
 };
-use std::{cell::Cell, io::Write};
+use std::{
+    cell::{Cell, Ref},
+    io::Write,
+};
 
 #[derive(Debug, Clone)]
-pub struct ArrayTypeData {
+pub struct ArrayTypeObj {
     pub elemty: ValTypeID,
     pub nelems: usize,
     elem_size_cache: Cell<usize>,
     elem_align_cache: Cell<usize>,
 }
 
-impl ArrayTypeData {
+impl ArrayTypeObj {
     pub fn new(elemty: ValTypeID, nelems: usize) -> Self {
         Self {
             elemty,
@@ -59,25 +62,26 @@ impl ArrayTypeData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayTypeRef(pub usize);
+pub struct ArrayTypeID(pub u32);
 
-impl SlabRef for ArrayTypeRef {
-    type RefObject = ArrayTypeData;
-    fn from_handle(handle: usize) -> Self {
-        Self(handle)
+impl ISlabID for ArrayTypeID {
+    type RefObject = ArrayTypeObj;
+
+    fn from_handle(handle: u32) -> Self {
+        ArrayTypeID(handle)
     }
-    fn get_handle(&self) -> usize {
+
+    fn into_handle(self) -> u32 {
         self.0
     }
 }
 
-impl IValType for ArrayTypeRef {
+impl IValType for ArrayTypeID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
-        if let ValTypeID::Array(arr) = ty {
-            Ok(arr)
-        } else {
-            Err(TypeMismatchError::NotClass(ty, ValTypeClass::Array))
-        }
+        let ValTypeID::Array(arr_id) = ty else {
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Array));
+        };
+        Ok(arr_id)
     }
 
     fn into_ir(self) -> ValTypeID {
@@ -92,53 +96,55 @@ impl IValType for ArrayTypeRef {
         ValTypeClass::Array
     }
 
-    fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        let data = self.to_data(&alloc.array);
-        let elem_size = data.update_size(alloc, tctx);
-        let elem_align = data.update_align(alloc, tctx);
-        let aligned_size = elem_size.next_multiple_of(elem_align);
-        let nelems = data.nelems;
-        Some(aligned_size * nelems)
-    }
-
-    fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        let data = self.to_data(&alloc.array);
-        let elem_align = data.update_align(alloc, tctx);
-        Some(elem_align)
-    }
-
     fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let (nelems, elemty) = {
-            let data = self.to_data(&f.allocs.array);
-            (data.nelems, data.elemty)
+            let obj = self.deref(&f.allocs.arrays);
+            (obj.nelems, obj.elemty)
         };
         write!(f, "[ {nelems} x ")?;
         elemty.serialize(f)?;
         write!(f, " ]")
     }
+
+    fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
+        let obj = self.deref(&alloc.arrays);
+        let elem_size = obj.update_size(alloc, tctx);
+        Some(elem_size * obj.nelems)
+    }
+
+    fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
+        let obj = self.deref(&alloc.arrays);
+        let elem_align = obj.update_align(alloc, tctx);
+        Some(elem_align)
+    }
 }
 
-impl ArrayTypeRef {
+impl ArrayTypeID {
+    pub fn deref_ir(self, tctx: &TypeContext) -> Ref<'_, ArrayTypeObj> {
+        let allocs = tctx.allocs.borrow();
+        Ref::map(allocs, |a| self.deref(&a.arrays))
+    }
+
     pub fn get_element_type(self, tctx: &TypeContext) -> ValTypeID {
-        self.to_data(&tctx.allocs.borrow().array).elemty
+        self.deref(&tctx.allocs.borrow().arrays).elemty
     }
     pub fn get_num_elements(self, tctx: &TypeContext) -> usize {
-        self.to_data(&tctx.allocs.borrow().array).nelems
+        self.deref(&tctx.allocs.borrow().arrays).nelems
     }
 
     pub fn get_element_size(self, tctx: &TypeContext) -> usize {
         let allocs = tctx.allocs.borrow();
-        let data = self.to_data(&allocs.array);
+        let data = self.deref(&allocs.arrays);
         data.update_size(&allocs, tctx)
     }
     pub fn get_element_align(self, tctx: &TypeContext) -> usize {
         let allocs = tctx.allocs.borrow();
-        let data = self.to_data(&allocs.array);
+        let data = self.deref(&allocs.arrays);
         data.update_align(&allocs, tctx)
     }
     pub fn get_unit_size(self, tctx: &TypeContext) -> usize {
         let allocs = tctx.allocs.borrow();
-        let data = self.to_data(&allocs.array);
+        let data = self.deref(&allocs.arrays);
         let elem_size = data.update_size(&allocs, tctx);
         let elem_align = data.update_align(&allocs, tctx);
         elem_size.next_multiple_of(elem_align)
@@ -150,14 +156,14 @@ impl ArrayTypeRef {
 
     pub fn new(tctx: &TypeContext, elemty: ValTypeID, nelems: usize) -> Self {
         let mut allocs = tctx.allocs.borrow_mut();
-        let alloc_arr = &mut allocs.array;
+        let alloc_arr = &mut allocs.arrays;
         for (handle, arr) in alloc_arr.iter_mut() {
             if arr.elemty == elemty && arr.nelems == nelems {
-                return ArrayTypeRef(handle);
+                return Self(handle as u32);
             }
         }
-        let new_arr = ArrayTypeData::new(elemty, nelems);
+        let new_arr = ArrayTypeObj::new(elemty, nelems);
         let handle = alloc_arr.insert(new_arr);
-        ArrayTypeRef(handle)
+        ArrayTypeID(handle as u32)
     }
 }

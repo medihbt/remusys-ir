@@ -1,92 +1,664 @@
-use crate::{
-    base::{MixMutRef, MixRef},
-    ir::{
-        AttrList, BlockData, ConstExprData, GlobalData, IRValueMarker, InstData, Module, ValueSSA,
-    },
+use super::managing::{
+    dispose_entity_list, global_common_dispose, inst_dispose, traceable_dispose, traceable_init_id,
+    user_dispose, user_init_id,
 };
-use slab::Slab;
+use crate::ir::*;
+use mtb_entity::{
+    EntityAlloc, EntityAllocPolicy128, EntityAllocPolicy256, EntityAllocPolicy512,
+    EntityAllocPolicy4096, IEntityAllocID, IEntityAllocatable, IEntityListNode,
+    IEntityRingListNode, PtrID,
+};
+use std::{cell::RefCell, collections::VecDeque};
+use thiserror::Error;
 
-#[derive(Debug)]
 pub struct IRAllocs {
-    pub exprs: Slab<ConstExprData>,
-    pub insts: Slab<InstData>,
-    pub blocks: Slab<BlockData>,
-    pub globals: Slab<GlobalData>,
-    pub attrs: Slab<AttrList>,
+    pub exprs: EntityAlloc<ExprObj>,
+    pub insts: EntityAlloc<InstObj>,
+    pub globals: EntityAlloc<GlobalObj>,
+    pub blocks: EntityAlloc<BlockObj>,
+    pub uses: EntityAlloc<Use>,
+    pub jts: EntityAlloc<JumpTarget>,
+    pub disposed_queue: RefCell<VecDeque<PoolAllocatedID>>,
+}
+
+impl AsRef<IRAllocs> for IRAllocs {
+    fn as_ref(&self) -> &IRAllocs {
+        self
+    }
+}
+impl AsMut<IRAllocs> for IRAllocs {
+    fn as_mut(&mut self) -> &mut IRAllocs {
+        self
+    }
 }
 
 impl IRAllocs {
     pub fn new() -> Self {
         Self {
-            exprs: Slab::new(),
-            insts: Slab::new(),
-            blocks: Slab::new(),
-            globals: Slab::new(),
-            attrs: Slab::new(),
+            exprs: EntityAlloc::new(),
+            insts: EntityAlloc::new(),
+            globals: EntityAlloc::new(),
+            blocks: EntityAlloc::new(),
+            uses: EntityAlloc::new(),
+            jts: EntityAlloc::new(),
+            disposed_queue: RefCell::new(VecDeque::new()),
         }
     }
 
-    pub fn with_capacity(base_capacity: usize) -> Self {
+    pub fn with_capacity(base_cap: usize) -> Self {
         Self {
-            exprs: Slab::with_capacity(base_capacity * 2),
-            insts: Slab::with_capacity(base_capacity * 8),
-            blocks: Slab::with_capacity(base_capacity * 2),
-            globals: Slab::with_capacity(base_capacity),
-            attrs: Slab::with_capacity(base_capacity),
+            exprs: EntityAlloc::with_capacity(base_cap * 4),
+            insts: EntityAlloc::with_capacity(base_cap * 4),
+            globals: EntityAlloc::with_capacity(base_cap),
+            blocks: EntityAlloc::with_capacity(base_cap * 2),
+            uses: EntityAlloc::with_capacity(base_cap * 12),
+            jts: EntityAlloc::with_capacity(base_cap * 2),
+            disposed_queue: RefCell::new(VecDeque::with_capacity(base_cap)),
         }
     }
 
-    /// 执行垃圾回收，清理未使用的 IR 对象
-    ///
-    /// # 参数
-    /// - `roots`: 根对象集合，通常包括模块的全局变量和函数入口点
-    pub fn gc_mark_sweep(&mut self, roots: impl IntoIterator<Item = ValueSSA>) {
-        let mut marker = IRValueMarker::from_allocs(self);
-        marker.mark_and_sweep(roots);
+    pub fn num_total_allocated(&self) -> usize {
+        let b = self.blocks.len();
+        let i = self.insts.len();
+        let e = self.exprs.len();
+        let g = self.globals.len();
+        let u = self.uses.len();
+        let j = self.jts.len();
+        b + i + e + g + u + j
+    }
+
+    pub(crate) fn push_disposed(&self, id: impl Into<PoolAllocatedID>) {
+        self.disposed_queue.borrow_mut().push_back(id.into());
+    }
+    pub fn free_disposed(&mut self) {
+        let Self { exprs, insts, globals, blocks, uses, jts, disposed_queue } = self;
+        let queue = disposed_queue.get_mut();
+        while let Some(id) = queue.pop_front() {
+            use PoolAllocatedID::*;
+            match id {
+                Block(b) => {
+                    b.inner().free(blocks);
+                }
+                Inst(i) => {
+                    i.free(insts);
+                }
+                Expr(e) => {
+                    e.free(exprs);
+                }
+                Global(g) => {
+                    g.free(globals);
+                }
+                Use(u) => {
+                    u.inner().free(uses);
+                }
+                JumpTarget(j) => {
+                    j.inner().free(jts);
+                }
+            }
+        }
+        // After draining, optionally shrink the dispose queue's capacity so it doesn't keep
+        // an excessive allocation. Heuristic:
+        // - Soft target scales with module size (total allocated entities / 8),
+        //   clamped within [QUEUE_SOFT_TARGET_MIN, QUEUE_SOFT_TARGET_MAX].
+        // - Hard cap bounds the retained capacity unconditionally.
+        // - Shrink only when capacity is far above the target or hard cap to reduce churn.
+        let num_total_allocated = {
+            let b = blocks.len();
+            let i = insts.len();
+            let e = exprs.len();
+            let g = globals.len();
+            let u = uses.len();
+            let j = jts.len();
+            b + i + e + g + u + j
+        };
+        const QUEUE_HARD_CAP: usize = 16 * 1024; // absolute upper bound to retain
+        const QUEUE_SOFT_TARGET_MIN: usize = 256; // never shrink below this
+        const QUEUE_SOFT_TARGET_MAX: usize = 8 * 1024; // typical soft ceiling
+
+        let mut target = num_total_allocated / 8; // scale with module size
+        if target < QUEUE_SOFT_TARGET_MIN {
+            target = QUEUE_SOFT_TARGET_MIN;
+        }
+        if target > QUEUE_SOFT_TARGET_MAX {
+            target = QUEUE_SOFT_TARGET_MAX;
+        }
+        let cap = queue.capacity();
+        if cap > QUEUE_HARD_CAP || cap > (target.saturating_mul(2)) {
+            let new_cap = target.min(QUEUE_HARD_CAP);
+            *queue = VecDeque::with_capacity(new_cap);
+        }
+    }
+
+    pub fn num_pending_disposed(&self) -> usize {
+        self.disposed_queue.borrow().len()
     }
 }
 
-pub trait IRAllocsReadable {
-    fn get_allocs_ref(&self) -> &IRAllocs;
-}
-pub trait IRAllocsEditable {
-    fn get_allocs_mutref(&mut self) -> &mut IRAllocs;
-}
-
-impl IRAllocsReadable for IRAllocs {
-    fn get_allocs_ref(&self) -> &IRAllocs {
-        self
-    }
-}
-impl IRAllocsEditable for IRAllocs {
-    fn get_allocs_mutref(&mut self) -> &mut IRAllocs {
-        self
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PoolAllocatedClass {
+    Block,
+    Inst,
+    Expr,
+    Global,
+    Use,
+    JumpTarget,
 }
 
-impl IRAllocsReadable for MixRef<'_, IRAllocs> {
-    fn get_allocs_ref(&self) -> &IRAllocs {
-        self.get()
-    }
+#[derive(Debug, Clone, Copy, Error)]
+pub enum PoolAllocatedDisposeErr {
+    #[error("Entity already disposed")]
+    AlreadyDisposed,
+
+    #[error("Disposing a global in reading symbol table: {0}")]
+    SymtabBorrowError(&'static std::panic::Location<'static>),
 }
-impl IRAllocsReadable for MixMutRef<'_, IRAllocs> {
-    fn get_allocs_ref(&self) -> &IRAllocs {
-        self.get()
+pub type PoolAllocatedDisposeRes<T = ()> = Result<T, PoolAllocatedDisposeErr>;
+
+pub(crate) trait IPoolAllocated: IEntityAllocatable {
+    type ModuleID: Copy + Into<PoolAllocatedID>;
+    type MinRelatedPoolT: AsRef<IRAllocs>;
+
+    const _CLASS: PoolAllocatedClass;
+
+    fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self>;
+    fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self>;
+
+    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID;
+    fn from_module_id(id: Self::ModuleID) -> PtrID<Self>;
+
+    fn init_self_id(&self, id: Self::ModuleID, allocs: &IRAllocs);
+    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::ModuleID;
+
+    fn obj_disposed(&self) -> bool;
+    fn id_is_live(id: Self::ModuleID, allocs: &IRAllocs) -> bool {
+        let alloc = Self::get_alloc(allocs);
+        let ptr = Self::from_module_id(id);
+        let Some(obj) = ptr.try_deref(alloc) else {
+            return false;
+        };
+        !obj.obj_disposed()
     }
-}
-impl IRAllocsEditable for MixMutRef<'_, IRAllocs> {
-    fn get_allocs_mutref(&mut self) -> &mut IRAllocs {
-        self.get_mut()
+
+    fn dispose_obj(
+        &self,
+        id: Self::ModuleID,
+        pool: &Self::MinRelatedPoolT,
+    ) -> PoolAllocatedDisposeRes;
+    fn dispose_id(id: Self::ModuleID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
+        let alloc = Self::get_alloc(pool.as_ref());
+        let ptr = Self::from_module_id(id);
+        let Some(obj) = ptr.try_deref(alloc) else {
+            return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
+        };
+        obj.dispose_obj(id, pool)?;
+        pool.as_ref().push_disposed(id);
+        Ok(())
     }
 }
 
-impl IRAllocsReadable for Module {
-    fn get_allocs_ref(&self) -> &IRAllocs {
-        &self.allocs
+impl IEntityAllocatable for BlockObj {
+    /// Allocate 256 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy256<Self>;
+}
+impl IPoolAllocated for BlockObj {
+    type ModuleID = BlockID;
+    type MinRelatedPoolT = IRAllocs;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Block;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.blocks
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.blocks
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID {
+        BlockID(raw)
+    }
+    fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
+        id.0
+    }
+    fn allocate(allocs: &IRAllocs, obj: Self) -> BlockID {
+        let alloc = &allocs.blocks;
+        let ptr = alloc.allocate(obj);
+        ptr.deref(alloc).init_self_id(BlockID(ptr), allocs);
+        BlockID(ptr)
+    }
+    fn init_self_id(&self, id: BlockID, allocs: &IRAllocs) {
+        traceable_init_id(self, ValueSSA::Block(id), allocs);
+        let Some(body) = &self.body else {
+            return;
+        };
+        JumpTargetID(body.preds.sentinel).raw_set_block(allocs, id);
+        body.insts.forall_with_sentinel(&allocs.insts, |_, i| {
+            i.set_parent(Some(id));
+            true
+        });
+    }
+
+    fn obj_disposed(&self) -> bool {
+        self.dispose_mark.get()
+    }
+    fn dispose_obj(&self, id: BlockID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        if self.obj_disposed() {
+            return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
+        }
+        self.dispose_mark.set(true);
+
+        if let Some(parent) = self.get_parent_func()
+            && let Some(bbs) = parent.get_body(allocs)
+        {
+            bbs.blocks
+                .node_unplug(id.inner(), &allocs.blocks)
+                .expect("Block not found in parent function's block list");
+        }
+        let Some(body) = &self.body else {
+            return Ok(());
+        };
+        dispose_entity_list(&body.insts, allocs)?;
+        traceable_dispose(self, allocs)?;
+
+        // clean up predecessors
+        body.preds.clean(&allocs.jts);
+        JumpTargetID(body.preds.sentinel).dispose(allocs)?;
+        Ok(())
     }
 }
-impl IRAllocsEditable for Module {
-    fn get_allocs_mutref(&mut self) -> &mut IRAllocs {
-        &mut self.allocs
+
+impl IEntityAllocatable for InstObj {
+    /// Allocate 512 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy512<Self>;
+}
+impl IPoolAllocated for InstObj {
+    type ModuleID = InstID;
+    type MinRelatedPoolT = IRAllocs;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Inst;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.insts
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.insts
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> InstID {
+        raw
+    }
+    fn from_module_id(id: InstID) -> PtrID<Self> {
+        id
+    }
+
+    fn init_self_id(&self, id: InstID, allocs: &IRAllocs) {
+        user_init_id(self, id.into(), allocs);
+        if let Some(jt) = self.try_get_jts() {
+            for &jt_id in jt.iter() {
+                jt_id.set_terminator(allocs, id);
+            }
+        }
+        use InstObj::*;
+        // Intentionally keep an exhaustive list of variants whose init needs no extra work.
+        // Avoiding a wildcard arm ensures compile errors when new variants are added,
+        // so we must consciously review whether they require special wiring here.
+        match self {
+            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
+            | Alloca(_) | GEP(_) | Load(_) | Store(_) | AmoRmw(_) | BinOP(_) | Call(_)
+            | Cast(_) | Cmp(_) | IndexExtract(_) | FieldExtract(_) | IndexInsert(_)
+            | FieldInsert(_) | Select(_) => { /* do nothing */ }
+            Switch(_) => { /* do nothing */ }
+            Phi(phi) => phi.self_id.set(Some(id)),
+        }
+    }
+    fn allocate(allocs: &IRAllocs, mut obj: Self) -> InstID {
+        if !obj.is_sentinel() && obj.common_mut().users.is_none() {
+            obj.common_mut().users = Some(UserList::new(&allocs.uses));
+        }
+        let alloc = &allocs.insts;
+        let ptr = alloc.allocate(obj);
+        ptr.deref(alloc).init_self_id(ptr, allocs);
+        ptr
+    }
+
+    fn obj_disposed(&self) -> bool {
+        self.get_common().disposed.get()
+    }
+    fn dispose_obj(&self, id: InstID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        inst_dispose(self, id, allocs)?;
+        use InstObj::*;
+        // Same rationale as in init_self_id: list all variants explicitly to stay exhaustive
+        // and require review on new variants.
+        match self {
+            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
+            | Alloca(_) | GEP(_) | Load(_) | Store(_) | AmoRmw(_) | BinOP(_) | Call(_)
+            | Cast(_) | Cmp(_) | IndexExtract(_) | FieldExtract(_) | IndexInsert(_)
+            | FieldInsert(_) | Select(_) => { /* do nothing */ }
+            Switch(_) => { /* do nothing */ }
+            Phi(phi) => phi.self_id.set(None),
+        }
+        Ok(())
+    }
+}
+
+impl IEntityAllocatable for ExprObj {
+    /// Allocate 256 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy256<Self>;
+}
+impl IPoolAllocated for ExprObj {
+    type ModuleID = ExprID;
+    type MinRelatedPoolT = IRAllocs;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Expr;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.exprs
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.exprs
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID {
+        raw
+    }
+    fn from_module_id(id: ExprID) -> PtrID<Self> {
+        id
+    }
+
+    fn init_self_id(&self, id: ExprID, allocs: &IRAllocs) {
+        user_init_id(self, id.into(), allocs);
+    }
+    fn allocate(allocs: &IRAllocs, mut obj: Self) -> ExprID {
+        if obj.common_mut().users.is_none() {
+            obj.common_mut().users = Some(UserList::new(&allocs.uses));
+        }
+        let alloc = &allocs.exprs;
+        let id = alloc.allocate(obj);
+        id.deref(alloc).init_self_id(id, allocs);
+        id
+    }
+    fn obj_disposed(&self) -> bool {
+        self.get_common().dispose_mark.get()
+    }
+
+    fn dispose_obj(&self, _: ExprID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        if self.obj_disposed() {
+            return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
+        }
+        self.get_common().dispose_mark.set(true);
+        user_dispose(self, allocs)
+    }
+}
+
+impl IEntityAllocatable for GlobalObj {
+    /// Allocate 128 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy128<Self>;
+}
+impl IPoolAllocated for GlobalObj {
+    type ModuleID = GlobalID;
+    type MinRelatedPoolT = Module;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Global;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.globals
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.globals
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> GlobalID {
+        raw
+    }
+    fn from_module_id(id: GlobalID) -> PtrID<Self> {
+        id
+    }
+
+    fn init_self_id(&self, id: GlobalID, allocs: &IRAllocs) {
+        user_init_id(self, UserID::Global(id), allocs);
+        let f = match self {
+            GlobalObj::Var(_) => return,
+            GlobalObj::Func(f) => f,
+        };
+        let func_id = FuncID(id);
+        for arg in &f.args {
+            arg.func.set(Some(func_id));
+            let arg_val = ValueSSA::FuncArg(func_id, arg.index);
+            traceable_init_id(arg, arg_val, allocs);
+        }
+        let Some(body) = &f.body else {
+            return;
+        };
+        body.blocks.forall_with_sentinel(&allocs.blocks, |_, b| {
+            b.set_parent_func(func_id);
+            true
+        });
+    }
+    fn allocate(allocs: &IRAllocs, mut obj: Self) -> GlobalID {
+        if let None = &obj.common_mut().users {
+            obj.common_mut().users = Some(UserList::new(&allocs.uses));
+        }
+        let alloc = &allocs.globals;
+        let id = alloc.allocate(obj);
+        id.deref(alloc).init_self_id(id, allocs);
+        id
+    }
+
+    fn obj_disposed(&self) -> bool {
+        self.get_common().dispose_mark.get()
+    }
+    fn dispose_obj(&self, _: GlobalID, pool: &Module) -> PoolAllocatedDisposeRes {
+        global_common_dispose(self, pool)?;
+        let func = match self {
+            GlobalObj::Var(_) => return Ok(()),
+            GlobalObj::Func(gf) => gf,
+        };
+        for arg in &func.args {
+            arg.func.set(None);
+            traceable_dispose(arg, &pool.allocs)?;
+        }
+        let Some(body) = &func.body else {
+            return Ok(());
+        };
+        dispose_entity_list(&body.blocks, &pool.allocs)
+    }
+}
+
+impl IEntityAllocatable for Use {
+    /// Allocate 4096 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy4096<Self>;
+}
+impl IPoolAllocated for Use {
+    type ModuleID = UseID;
+    type MinRelatedPoolT = IRAllocs;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Use;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.uses
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.uses
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> UseID {
+        UseID(raw)
+    }
+    fn from_module_id(id: UseID) -> PtrID<Self> {
+        id.0
+    }
+
+    fn init_self_id(&self, _: UseID, _: &IRAllocs) {}
+    fn allocate(allocs: &IRAllocs, obj: Self) -> UseID {
+        assert_ne!(
+            obj.get_kind(),
+            UseKind::DisposedUse,
+            "Cannot allocate a disposed Use"
+        );
+        let ptr = allocs.uses.allocate(obj);
+        ptr.deref(&allocs.uses).init_self_id(UseID(ptr), allocs);
+        UseID(ptr)
+    }
+
+    fn obj_disposed(&self) -> bool {
+        self.get_kind() == UseKind::DisposedUse
+    }
+    fn dispose_obj(&self, _: UseID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        if self.obj_disposed() {
+            return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
+        }
+        self.mark_disposed();
+        self.detach(&allocs.uses)
+            .expect("Use dispose detach failed");
+        self.user.set(None);
+        self.operand.set(ValueSSA::None);
+        Ok(())
+    }
+}
+
+impl IEntityAllocatable for JumpTarget {
+    /// Allocate 256 entities per allocation block.
+    type AllocatePolicyT = EntityAllocPolicy256<Self>;
+}
+impl IPoolAllocated for JumpTarget {
+    type ModuleID = JumpTargetID;
+    type MinRelatedPoolT = IRAllocs;
+
+    const _CLASS: PoolAllocatedClass = PoolAllocatedClass::JumpTarget;
+
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+        &ir_allocs.jts
+    }
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+        &mut ir_allocs.jts
+    }
+
+    fn make_module_id(raw: PtrID<Self>) -> JumpTargetID {
+        JumpTargetID(raw)
+    }
+    fn from_module_id(id: JumpTargetID) -> PtrID<Self> {
+        id.0
+    }
+
+    fn init_self_id(&self, _: JumpTargetID, _: &IRAllocs) {}
+    fn allocate(allocs: &IRAllocs, obj: Self) -> JumpTargetID {
+        let ptr = allocs.jts.allocate(obj);
+        ptr.deref(&allocs.jts)
+            .init_self_id(JumpTargetID(ptr), allocs);
+        JumpTargetID(ptr)
+    }
+    fn obj_disposed(&self) -> bool {
+        self.get_kind() == JumpTargetKind::Disposed
+    }
+    fn dispose_obj(&self, _: JumpTargetID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+        if self.obj_disposed() {
+            return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
+        }
+        self.mark_disposed();
+        self.detach(&allocs.jts)
+            .expect("JumpTarget dispose detach failed");
+        self.terminator.set(None);
+        self.block.set(None);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum PoolAllocatedID {
+    Block(BlockID),
+    Inst(InstID),
+    Expr(ExprID),
+    Global(GlobalID),
+    Use(UseID),
+    JumpTarget(JumpTargetID),
+}
+impl std::fmt::Debug for PoolAllocatedID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use PoolAllocatedID::*;
+        match self {
+            Block(b) => write!(f, "BlockID({:p})", b.0),
+            Inst(i) => write!(f, "InstID({:p})", i.as_unit_pointer()),
+            Expr(e) => write!(f, "ExprID({:p})", e.as_unit_pointer()),
+            Global(g) => write!(f, "GlobalID({:p})", g.as_unit_pointer()),
+            Use(u) => write!(f, "UseID({:p})", u.0),
+            JumpTarget(j) => write!(f, "JumpTargetID({:p})", j.0),
+        }
+    }
+}
+impl From<BlockID> for PoolAllocatedID {
+    fn from(id: BlockID) -> Self {
+        PoolAllocatedID::Block(id)
+    }
+}
+impl From<PtrID<BlockObj>> for PoolAllocatedID {
+    fn from(id: PtrID<BlockObj>) -> Self {
+        PoolAllocatedID::Block(BlockID(id))
+    }
+}
+impl From<InstID> for PoolAllocatedID {
+    fn from(id: InstID) -> Self {
+        PoolAllocatedID::Inst(id)
+    }
+}
+impl From<ExprID> for PoolAllocatedID {
+    fn from(id: ExprID) -> Self {
+        PoolAllocatedID::Expr(id)
+    }
+}
+impl From<GlobalID> for PoolAllocatedID {
+    fn from(id: GlobalID) -> Self {
+        PoolAllocatedID::Global(id)
+    }
+}
+impl From<UseID> for PoolAllocatedID {
+    fn from(id: UseID) -> Self {
+        PoolAllocatedID::Use(id)
+    }
+}
+impl From<PtrID<Use>> for PoolAllocatedID {
+    fn from(id: PtrID<Use>) -> Self {
+        PoolAllocatedID::Use(UseID(id))
+    }
+}
+impl From<JumpTargetID> for PoolAllocatedID {
+    fn from(id: JumpTargetID) -> Self {
+        PoolAllocatedID::JumpTarget(id)
+    }
+}
+impl From<PtrID<JumpTarget>> for PoolAllocatedID {
+    fn from(id: PtrID<JumpTarget>) -> Self {
+        PoolAllocatedID::JumpTarget(JumpTargetID(id))
+    }
+}
+impl PoolAllocatedID {
+    pub fn get_class(&self) -> PoolAllocatedClass {
+        match self {
+            PoolAllocatedID::Block(_) => PoolAllocatedClass::Block,
+            PoolAllocatedID::Inst(_) => PoolAllocatedClass::Inst,
+            PoolAllocatedID::Expr(_) => PoolAllocatedClass::Expr,
+            PoolAllocatedID::Global(_) => PoolAllocatedClass::Global,
+            PoolAllocatedID::Use(_) => PoolAllocatedClass::Use,
+            PoolAllocatedID::JumpTarget(_) => PoolAllocatedClass::JumpTarget,
+        }
+    }
+    pub fn dispose(self, module: &Module) -> PoolAllocatedDisposeRes {
+        match self {
+            PoolAllocatedID::Block(b) => BlockObj::dispose_id(b, &module.allocs),
+            PoolAllocatedID::Inst(i) => InstObj::dispose_id(i, &module.allocs),
+            PoolAllocatedID::Expr(e) => ExprObj::dispose_id(e, &module.allocs),
+            PoolAllocatedID::Global(g) => GlobalObj::dispose_id(g, module),
+            PoolAllocatedID::Use(u) => Use::dispose_id(u, &module.allocs),
+            PoolAllocatedID::JumpTarget(j) => JumpTarget::dispose_id(j, &module.allocs),
+        }
+    }
+    pub fn get_indexed(self, ir_allocs: &IRAllocs) -> Option<usize> {
+        use PoolAllocatedID::*;
+        match self {
+            Block(b) => b.inner().as_indexed(&ir_allocs.blocks).map(|x| x.0),
+            Inst(i) => i.as_indexed(&ir_allocs.insts).map(|x| x.0),
+            Expr(e) => e.as_indexed(&ir_allocs.exprs).map(|x| x.0),
+            Global(g) => g.as_indexed(&ir_allocs.globals).map(|x| x.0),
+            Use(u) => u.0.as_indexed(&ir_allocs.uses).map(|x| x.0),
+            JumpTarget(j) => j.0.as_indexed(&ir_allocs.jts).map(|x| x.0),
+        }
     }
 }

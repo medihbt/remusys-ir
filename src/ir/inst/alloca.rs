@@ -1,9 +1,8 @@
-use std::{num::NonZero, rc::Rc};
-
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRWriter, ISubInst, IUser, InstCommon, InstData, InstRef, Opcode, OperandSet, PtrStorage,
-        Use, inst::ISubInstRef,
+        IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, JumpTargets,
+        Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
@@ -21,76 +20,65 @@ use crate::{
 /// ```llvm
 /// %<result> = alloca <pointee_ty>, align <alignment>
 /// ```
-#[derive(Debug)]
-pub struct Alloca {
-    common: InstCommon,
-    /// 指向分配内存的类型. 如果要一次分配多个同类型的元素, 请使用
-    /// 对应的数组类型填充 `pointee_ty`.
+pub struct AllocaInst {
+    pub common: InstCommon,
+    /// 指向分配内存的类型. 如果要一次分配多个同类型的元素, 请使用对应的数组类型
+    /// 填充 `pointee_ty`.
     pub pointee_ty: ValTypeID,
-    /// 对齐方式的对数
     pub align_log2: u8,
 }
-
-impl ISubInst for Alloca {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Alloca, ValTypeID::Ptr),
-            pointee_ty: ValTypeID::Void,
-            align_log2: 0,
-        }
+impl_traceable_from_common!(AllocaInst, true);
+impl IUser for AllocaInst {
+    fn get_operands(&self) -> OperandSet<'_> {
+        OperandSet::Fixed(&[])
     }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        match inst {
-            InstData::Alloca(alloca) => Some(alloca),
-            _ => None,
-        }
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut []
     }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Alloca(alloca) => Some(alloca),
-            _ => None,
-        }
+}
+impl IPtrValue for AllocaInst {
+    fn get_ptr_pointee_type(&self) -> ValTypeID {
+        self.pointee_ty
     }
-    fn into_ir(self) -> InstData {
-        InstData::Alloca(self)
+    fn get_ptr_pointee_align(&self) -> u32 {
+        1 << self.align_log2
     }
+}
+impl ISubInst for AllocaInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
-    fn is_terminator(&self) -> bool {
-        false
+
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Alloca(a) => Some(a),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Alloca(a) => Some(a),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Alloca(a) => Some(a),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Alloca(self)
     }
 
-    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        let Some(id) = id else { panic!("Tried to format an Alloca without an ID") };
-        write!(writer, "%{} = alloca ", id)?;
-        writer.write_type(self.pointee_ty)?;
-        write!(writer, ", align {}", 1usize << self.align_log2)
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        None
     }
 }
-
-impl IUser for Alloca {
-    fn get_operands(&self) -> OperandSet<'_> {
-        OperandSet::Fixed(&[])
-    }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut []
-    }
-}
-
-impl PtrStorage for Alloca {
-    fn get_stored_pointee_type(&self) -> ValTypeID {
-        self.pointee_ty
-    }
-    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
-        NonZero::new(1usize << self.align_log2)
-    }
-}
-
-impl Alloca {
+impl AllocaInst {
     /// 创建一个新的 Alloca 指令, 分配指定类型的内存.
     pub fn new(pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self {
@@ -101,15 +89,31 @@ impl Alloca {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AllocaInstID(pub InstID);
+impl_debug_for_subinst_id!(AllocaInstID);
+impl ISubInstID for AllocaInstID {
+    type InstObjT = AllocaInst;
 
-impl ISubInstRef for AllocaRef {
-    type InstDataT = Alloca;
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        Self(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
+    }
+}
+impl AllocaInstID {
+    pub fn new(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
+        Self::allocate(allocs, AllocaInst::new(pointee_ty, align_log2))
+    }
+
+    pub fn get_pointee_ty(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).pointee_ty
+    }
+    pub fn get_align_log2(self, allocs: &IRAllocs) -> u8 {
+        self.deref_ir(allocs).align_log2
+    }
+    pub fn get_align(self, allocs: &IRAllocs) -> u32 {
+        1 << self.get_align_log2(allocs)
     }
 }

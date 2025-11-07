@@ -1,33 +1,30 @@
 use crate::{
-    ir::{ExprCommon, IRAllocs, IRWriter, ISubExpr, ISubValueSSA, IUser, OperandSet, Use},
-    typing::{FixVecType, IValType, ScalarType},
+    impl_traceable_from_common,
+    ir::{
+        ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID,
+        UseKind,
+    },
+    typing::{FixVecType, IValType, ValTypeID},
 };
-use std::rc::Rc;
+use mtb_entity::PtrID;
+use smallvec::SmallVec;
 
-/// ## 向量表达式
-///
-/// ### LLVM-IR 语法
-///
-/// ```llvm-ir
-/// <ty1 elem1, ty1 elem2, ...>
-/// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FixVec {
-    pub(super) common: ExprCommon,
-    pub elems: Box<[Rc<Use>]>,
+    pub common: ExprCommon,
+    pub elems: SmallVec<[UseID; 4]>,
     pub vecty: FixVecType,
 }
 
+impl_traceable_from_common!(FixVec, false);
 impl IUser for FixVec {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
     }
-
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.elems
     }
 }
-
 impl ISubExpr for FixVec {
     fn get_common(&self) -> &ExprCommon {
         &self.common
@@ -36,32 +33,57 @@ impl ISubExpr for FixVec {
         &mut self.common
     }
 
-    fn is_aggregate(&self) -> bool {
-        true
+    fn get_valtype(&self) -> ValTypeID {
+        self.vecty.into_ir()
     }
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        let elemty = self.vecty.get_elemty();
-        writer.write_str("<")?;
-        for (i, elem) in self.elems.iter().enumerate() {
-            writer.write_type(elemty.into_ir())?;
-            writer.write_str(" ")?;
-            writer.write_operand(elem.get_operand())?;
-            if i < self.elems.len() - 1 {
-                writer.write_str(", ")?;
-            }
+    fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
+        match expr {
+            ExprObj::FixVec(vec) => Some(vec),
+            _ => None,
         }
-        writer.write_str(">")?;
-        Ok(())
+    }
+    fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self> {
+        match expr {
+            ExprObj::FixVec(vec) => Some(vec),
+            _ => None,
+        }
+    }
+    fn try_from_ir(expr: ExprObj) -> Option<Self> {
+        match expr {
+            ExprObj::FixVec(vec) => Some(vec),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> ExprObj {
+        ExprObj::FixVec(self)
+    }
+}
+impl FixVec {
+    pub fn new_uninit(allocs: &IRAllocs, vecty: FixVecType) -> Self {
+        let nelems = vecty.get_len();
+        let elems = {
+            let mut elems = SmallVec::with_capacity(nelems);
+            for i in 0..nelems {
+                let use_id = UseID::new(allocs, UseKind::VecElem(i));
+                elems.push(use_id);
+            }
+            elems
+        };
+        Self { common: ExprCommon::none(), elems, vecty }
     }
 }
 
-impl FixVec {
-    pub fn is_zero(&self, allocs: &IRAllocs) -> bool {
-        self.elems.iter().all(|e| e.get_operand().is_zero(allocs))
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FixVecID(pub ExprID);
 
-    pub fn get_elemty(&self) -> ScalarType {
-        self.vecty.get_elemty()
+impl ISubExprID for FixVecID {
+    type ExprObjT = FixVec;
+
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
+        FixVecID(id)
+    }
+    fn into_expr(self) -> PtrID<ExprObj> {
+        self.0
     }
 }

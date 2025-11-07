@@ -1,346 +1,304 @@
-use slab::Slab;
-
 use crate::{
-    base::{INullableValue, SlabRef},
+    base::INullableValue,
+    impl_traceable_from_common,
     ir::{
-        IRAllocs, IRAllocsEditable, IRAllocsReadable, IRWriter, IReferenceValue, ISubValueSSA,
-        ITraceableValue, IUser, IUserRef, Module, OperandSet, PtrStorage, Use, UserID, UserList,
-        ValueSSA, Var, global::func::Func,
+        FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet,
+        UseID, UserList, ValueClass, ValueSSA,
+        global::var::GlobalVar,
+        module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
 };
-use std::{cell::Cell, fmt::Debug, num::NonZero, ops::ControlFlow, rc::Rc};
+use mtb_entity::{IEntityAllocID, PtrID};
+use std::{cell::Cell, sync::Arc};
 
-pub(super) mod func;
-pub(super) mod var;
+pub mod func;
+pub mod var;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Linkage {
-    Extern,
+    External,
     DSOLocal,
     Private,
 }
 
-#[derive(Debug)]
-pub enum GlobalData {
-    Var(Var),
-    Func(Func),
-}
-
-impl IUser for GlobalData {
-    fn get_operands<'a>(&'a self) -> OperandSet<'a> {
-        match self {
-            GlobalData::Var(var) => OperandSet::Fixed(&var.init),
-            GlobalData::Func(_) => OperandSet::Fixed(&[]),
-        }
-    }
-
-    fn operands_mut<'a>(&'a mut self) -> &'a mut [Rc<Use>] {
-        match self {
-            GlobalData::Var(var) => &mut var.init,
-            GlobalData::Func(_) => &mut [],
-        }
-    }
-}
-
-impl ISubGlobal for GlobalData {
-    fn from_ir(data: &GlobalData) -> Option<&Self> {
-        Some(data)
-    }
-    fn into_ir(self) -> GlobalData {
-        self
-    }
-    fn get_common(&self) -> &GlobalDataCommon {
-        match self {
-            GlobalData::Var(var) => &var.common,
-            GlobalData::Func(func) => &func.common,
-        }
-    }
-    fn common_mut(&mut self) -> &mut GlobalDataCommon {
-        match self {
-            GlobalData::Var(var) => &mut var.common,
-            GlobalData::Func(func) => &mut func.common,
-        }
-    }
-
-    fn get_kind(&self) -> GlobalKind {
-        match self {
-            GlobalData::Var(var) => var.get_kind(),
-            GlobalData::Func(func) => func.get_kind(),
-        }
-    }
-
-    fn is_readonly(&self) -> bool {
-        match self {
-            GlobalData::Var(var) => var.is_readonly(),
-            GlobalData::Func(_) => true, // Functions are considered read-only in this context
-        }
-    }
-
-    fn is_extern(&self) -> bool {
-        match self {
-            GlobalData::Var(var) => var.is_extern(),
-            GlobalData::Func(func) => func.is_extern(),
-        }
-    }
-
-    fn get_linkage(&self) -> Linkage {
-        match self {
-            GlobalData::Var(var) => var.get_linkage(),
-            GlobalData::Func(func) => func.get_linkage(),
-        }
-    }
-
-    fn set_linkage(&self, linkage: Linkage) {
-        match self {
-            GlobalData::Var(var) => var.set_linkage(linkage),
-            GlobalData::Func(func) => func.set_linkage(linkage),
-        }
-    }
-
-    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()> {
-        writer.write_ref(self_ref, "Global");
-        writer.write_users(self.users());
-        match self {
-            GlobalData::Var(var) => var.fmt_ir(self_ref, writer),
-            GlobalData::Func(func) => func.fmt_ir(self_ref, writer),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct GlobalDataCommon {
-    pub name: String,
+pub struct GlobalCommon {
+    pub name: Arc<str>,
     pub content_ty: ValTypeID,
-    pub content_align: usize,
-    pub self_ref: GlobalRef,
-    pub users: UserList,
-    pub linkage: Cell<Linkage>,
+    pub content_align_log: u8,
+    pub users: Option<UserList>,
+    pub back_linkage: Cell<Linkage>,
+    pub(in crate::ir) dispose_mark: Cell<bool>,
+}
+impl Clone for GlobalCommon {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            content_ty: self.content_ty,
+            content_align_log: self.content_align_log,
+            users: None,
+            back_linkage: Cell::new(self.back_linkage.get()),
+            dispose_mark: Cell::new(self.dispose_mark.get()),
+        }
+    }
+}
+impl GlobalCommon {
+    pub fn new(name: Arc<str>, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
+        Self {
+            name,
+            content_ty,
+            content_align_log: align_log,
+            users: Some(UserList::new(&allocs.uses)),
+            back_linkage: Cell::new(Linkage::DSOLocal),
+            dispose_mark: Cell::new(false),
+        }
+    }
 }
 
-pub trait ISubGlobal {
-    fn from_ir(data: &GlobalData) -> Option<&Self>;
-    fn into_ir(self) -> GlobalData;
-
-    fn get_common(&self) -> &GlobalDataCommon;
-    fn common_mut(&mut self) -> &mut GlobalDataCommon;
-
-    fn get_kind(&self) -> GlobalKind;
-
-    /// 判断该全局量是否为外部符号.
-    fn is_extern(&self) -> bool;
-
-    /// 获取该全局量的链接属性.
-    fn get_linkage(&self) -> Linkage;
-
-    /// 设置该全局量的链接属性.
-    fn set_linkage(&self, linkage: Linkage);
-
-    /// 该全局变量所示的 ELF 段是否只读.
-    /// 只读的全局量不允许被修改, 但可以被读取.
-    fn is_readonly(&self) -> bool;
+pub trait ISubGlobal: IUser + Sized {
+    fn get_common(&self) -> &GlobalCommon;
+    fn common_mut(&mut self) -> &mut GlobalCommon;
 
     fn get_name(&self) -> &str {
         &self.get_common().name
     }
+    fn name_arc(&self) -> Arc<str> {
+        Arc::clone(&self.get_common().name)
+    }
+    fn get_back_linkage(&self) -> Linkage {
+        self.get_common().back_linkage.get()
+    }
+    fn set_back_linkage(&self, linkage: Linkage) {
+        self.get_common().back_linkage.set(linkage);
+    }
+    fn is_extern(&self, allocs: &IRAllocs) -> bool;
+    fn is_readonly(&self) -> bool;
+    fn get_linkage(&self, allocs: &IRAllocs) -> Linkage {
+        if self.is_extern(allocs) { Linkage::External } else { self.get_back_linkage() }
+    }
+    fn get_kind(&self, allocs: &IRAllocs) -> GlobalKind;
+    fn get_linkage_prefix(&self, allocs: &IRAllocs) -> &'static str;
 
-    fn fmt_ir(&self, self_ref: GlobalRef, writer: &IRWriter) -> std::io::Result<()>;
+    fn try_from_ir_ref(g: &GlobalObj) -> Option<&Self>;
+    fn try_from_ir_mut(g: &mut GlobalObj) -> Option<&mut Self>;
+    fn try_from_ir(g: GlobalObj) -> Option<Self>;
+    fn into_ir(self) -> GlobalObj;
+
+    fn from_ir_ref(g: &GlobalObj) -> &Self {
+        Self::try_from_ir_ref(g).expect("Invalid GlobalObj variant")
+    }
+    fn from_ir_mut(g: &mut GlobalObj) -> &mut Self {
+        Self::try_from_ir_mut(g).expect("Invalid GlobalObj variant")
+    }
+    fn from_ir(g: GlobalObj) -> Self {
+        Self::try_from_ir(g).expect("Invalid GlobalObj variant")
+    }
 }
-
-impl<T: ISubGlobal> PtrStorage for T {
-    fn get_stored_pointee_type(&self) -> ValTypeID {
+impl<T: ISubGlobal> IPtrValue for T {
+    fn get_ptr_pointee_type(&self) -> ValTypeID {
         self.get_common().content_ty
     }
-    fn get_stored_pointee_align(&self) -> Option<NonZero<usize>> {
-        NonZero::new(self.get_common().content_align)
+    fn get_ptr_pointee_align(&self) -> u32 {
+        1 << self.get_common().content_align_log
+    }
+}
+pub trait ISubGlobalID: Copy + 'static {
+    type GlobalT: ISubGlobal;
+
+    fn raw_from_global(id: GlobalID) -> Self;
+    fn into_global(self) -> GlobalID;
+
+    fn try_from_global(allocs: &IRAllocs, id: GlobalID) -> Option<Self> {
+        let g = id.deref(&allocs.globals);
+        if Self::GlobalT::try_from_ir_ref(g).is_some() {
+            Some(Self::raw_from_global(id))
+        } else {
+            None
+        }
+    }
+    fn from_global(allocs: &IRAllocs, id: GlobalID) -> Self {
+        Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")
+    }
+
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::GlobalT> {
+        let g = self.into_global().deref(&allocs.globals);
+        Self::GlobalT::try_from_ir_ref(g)
+    }
+    fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::GlobalT> {
+        let g = self.into_global().deref_mut(&mut allocs.globals);
+        Self::GlobalT::try_from_ir_mut(g)
+    }
+    fn deref_ir(self, allocs: &IRAllocs) -> &Self::GlobalT {
+        self.try_deref_ir(allocs)
+            .expect("Invalid GlobalObj variant")
+    }
+    fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::GlobalT {
+        self.try_deref_ir_mut(allocs)
+            .expect("Invalid GlobalObj variant")
+    }
+
+    fn get_name(self, allocs: &IRAllocs) -> &str {
+        self.deref_ir(allocs).get_name()
+    }
+    fn get_linkage(self, allocs: &IRAllocs) -> Linkage {
+        self.deref_ir(allocs).get_linkage(allocs)
+    }
+    fn get_back_linkage(self, allocs: &IRAllocs) -> Linkage {
+        self.deref_ir(allocs).get_common().back_linkage.get()
+    }
+    fn set_back_linkage(self, allocs: &IRAllocs, linkage: Linkage) {
+        self.deref_ir(allocs).get_common().back_linkage.set(linkage);
+    }
+    fn is_extern(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).is_extern(allocs)
+    }
+    fn get_kind(self, allocs: &IRAllocs) -> GlobalKind {
+        self.deref_ir(allocs).get_kind(allocs)
+    }
+
+    fn allocate(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
+        let id = GlobalObj::allocate(allocs, obj.into_ir());
+        Self::raw_from_global(id)
+    }
+    fn register_to(self, module: &Module) -> Result<Self, GlobalID> {
+        use std::collections::hash_map::Entry;
+        let mut symbols = module.symbols.borrow_mut();
+        let allocs = &module.allocs;
+        let name_arc = self.deref_ir(allocs).name_arc();
+        match symbols.entry(name_arc) {
+            Entry::Occupied(v) => {
+                let existing = v.get();
+                Err(*existing)
+            }
+            Entry::Vacant(v) => {
+                v.insert(self.into_global());
+                Ok(self)
+            }
+        }
+    }
+    fn dispose(self, module: &Module) -> PoolAllocatedDisposeRes {
+        GlobalObj::dispose_id(self.into_global(), module)
     }
 }
 
-impl GlobalDataCommon {
-    pub fn new(name: String, content_ty: ValTypeID, content_align: usize) -> Self {
-        debug_assert!(
-            content_align.is_power_of_two(),
-            "Content alignment must be a power of two buf got {content_align}"
-        );
-        GlobalDataCommon {
-            name,
-            content_ty,
-            content_align,
-            self_ref: GlobalRef::new_null(),
-            users: UserList::new_empty(),
-            linkage: Cell::new(Linkage::Extern),
-        }
-    }
-
-    pub fn new_empty() -> Self {
-        GlobalDataCommon {
-            name: String::new(),
-            content_ty: ValTypeID::Void,
-            content_align: 0,
-            self_ref: GlobalRef::new_null(),
-            users: UserList::new_empty(),
-            linkage: Cell::new(Linkage::Extern),
-        }
-    }
+pub enum GlobalObj {
+    Var(GlobalVar),
+    Func(FuncObj),
 }
+pub type GlobalID = PtrID<GlobalObj>;
 
-impl ITraceableValue for GlobalData {
-    fn users(&self) -> &UserList {
+impl_traceable_from_common!(GlobalObj, true);
+impl IUser for GlobalObj {
+    fn get_operands(&self) -> OperandSet<'_> {
         match self {
-            GlobalData::Var(var) => &var.common.users,
-            GlobalData::Func(func) => &func.common.users,
+            GlobalObj::Var(g) => g.get_operands(),
+            GlobalObj::Func(f) => f.get_operands(),
+        }
+    }
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        match self {
+            GlobalObj::Var(g) => g.operands_mut(),
+            GlobalObj::Func(f) => f.operands_mut(),
+        }
+    }
+}
+impl ISubGlobal for GlobalObj {
+    fn get_common(&self) -> &GlobalCommon {
+        match self {
+            GlobalObj::Var(g) => &g.common,
+            GlobalObj::Func(f) => &f.common,
+        }
+    }
+    fn common_mut(&mut self) -> &mut GlobalCommon {
+        match self {
+            GlobalObj::Var(g) => &mut g.common,
+            GlobalObj::Func(f) => &mut f.common,
         }
     }
 
-    fn has_single_reference_semantics(&self) -> bool {
-        true
+    fn try_from_ir_ref(g: &GlobalObj) -> Option<&Self> {
+        Some(g)
+    }
+    fn try_from_ir_mut(g: &mut GlobalObj) -> Option<&mut Self> {
+        Some(g)
+    }
+    fn try_from_ir(g: GlobalObj) -> Option<Self> {
+        Some(g)
+    }
+    fn into_ir(self) -> GlobalObj {
+        self
+    }
+
+    fn is_extern(&self, allocs: &IRAllocs) -> bool {
+        match self {
+            GlobalObj::Var(g) => g.initval[0].get_operand(allocs).is_null(),
+            GlobalObj::Func(f) => f.body.is_none(),
+        }
+    }
+    fn is_readonly(&self) -> bool {
+        match self {
+            GlobalObj::Var(g) => g.is_readonly(),
+            GlobalObj::Func(_) => false,
+        }
+    }
+    fn get_linkage_prefix(&self, allocs: &IRAllocs) -> &'static str {
+        match self {
+            GlobalObj::Var(g) => g.get_linkage_prefix(allocs),
+            GlobalObj::Func(f) => f.get_linkage_prefix(allocs),
+        }
+    }
+    fn get_kind(&self, allocs: &IRAllocs) -> GlobalKind {
+        match self {
+            GlobalObj::Var(g) => g.get_kind(allocs),
+            GlobalObj::Func(f) => f.get_kind(allocs),
+        }
     }
 }
+impl ISubGlobalID for GlobalID {
+    type GlobalT = GlobalObj;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalRef(usize);
-
-impl SlabRef for GlobalRef {
-    type RefObject = GlobalData;
-    fn from_handle(handle: usize) -> Self {
-        GlobalRef(handle)
+    fn raw_from_global(id: GlobalID) -> Self {
+        id
     }
-    fn get_handle(&self) -> usize {
-        self.0
+    fn into_global(self) -> GlobalID {
+        self
     }
 }
-
-impl Debug for GlobalRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GlobalRef({})", self.0)
+impl ISubValueSSA for GlobalID {
+    fn get_class(self) -> ValueClass {
+        ValueClass::Global
     }
-}
-
-impl IReferenceValue for GlobalRef {
-    type ValueDataT = GlobalData;
-
-    fn to_value_data<'a>(self, allocs: &'a IRAllocs) -> &'a GlobalData
-    where
-        GlobalData: 'a,
-    {
-        self.to_data(&allocs.globals)
-    }
-
-    fn to_value_data_mut<'a>(self, allocs: &'a mut IRAllocs) -> &'a mut Self::ValueDataT
-    where
-        Self::ValueDataT: 'a,
-    {
-        self.to_data_mut(&mut allocs.globals)
-    }
-}
-
-impl IUserRef for GlobalRef {}
-
-impl ISubValueSSA for GlobalRef {
-    fn try_from_ir(value: ValueSSA) -> Option<Self> {
-        if let ValueSSA::Global(gref) = value { Some(gref) } else { None }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::Global(gid) => Some(gid),
+            _ => None,
+        }
     }
     fn into_ir(self) -> ValueSSA {
         ValueSSA::Global(self)
     }
-    fn is_zero(&self, _: &IRAllocs) -> bool {
-        false
-    }
+
     fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
         ValTypeID::Ptr
     }
-    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
-        Some(ValTypeID::Ptr)
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        false
     }
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        self.to_data(&writer.allocs.globals).fmt_ir(*self, writer)
+
+    fn can_trace(self) -> bool {
+        true
+    }
+    fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
+        self.deref_ir(allocs).try_get_users()
     }
 }
 
-impl GlobalRef {
-    pub fn from_allocs(allocs: &mut impl IRAllocsEditable, mut data: GlobalData) -> Self {
-        let allocs = allocs.get_allocs_mutref();
-        let ret = Self::from_handle(allocs.globals.vacant_key());
-        data.common_mut().self_ref = ret;
-        for user in data.users() {
-            user.operand.set(ValueSSA::Global(ret));
-        }
-        for operands in data.operands_mut() {
-            operands.user.set(UserID::Global(ret));
-        }
-        let GlobalData::Func(func) = &mut data else {
-            allocs.globals.insert(data);
-            return ret;
-        };
-        if let Some(body) = func.get_body() {
-            body.forall_nodes(&allocs.blocks, |_, block| {
-                block.set_parent_func(ret);
-                ControlFlow::Continue(())
-            });
-        }
-        allocs.globals.insert(data);
-        return ret;
-    }
-
-    pub fn new(allocs: &mut impl IRAllocsEditable, data: GlobalData) -> Self {
-        Self::from_allocs(allocs.get_allocs_mutref(), data)
-    }
-
-    /// Registers this global reference to the module's symbol table.
-    pub fn register_to_symtab(self, module: &mut Module) {
-        let name = self.get_name(module).to_string();
-        module.globals.borrow_mut().insert(name, self);
-    }
-
-    pub fn get_name(self, allocs: &impl IRAllocsReadable) -> &str {
-        self.to_data(&allocs.get_allocs_ref().globals).get_name()
-    }
-
-    pub fn get_content_type(self, allocs: &impl IRAllocsReadable) -> ValTypeID {
-        self.to_data(&allocs.get_allocs_ref().globals)
-            .get_common()
-            .content_ty
-    }
-
-    pub fn is_extern(self, allocs: &IRAllocs) -> bool {
-        self.to_data(&allocs.globals).is_extern()
-    }
-    pub fn is_extern_from_alloc(self, alloc: &Slab<GlobalData>) -> bool {
-        self.to_data(alloc).is_extern()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlobalKind {
     ExternVar,
     ExternConst,
-    Var,
-    Const,
+    VarDef,
+    ConstDef,
     ExternFunc,
-    Func,
-}
-
-impl GlobalKind {
-    pub fn from_global(gref: GlobalRef, allocs: &IRAllocs) -> Self {
-        Self::from_data(gref.to_data(&allocs.globals))
-    }
-    pub fn from_data(data: &GlobalData) -> Self {
-        data.get_kind()
-    }
-
-    pub fn get_ir_prefix(self, linkage: Linkage) -> &'static str {
-        use GlobalKind::*;
-        use Linkage::*;
-        match (self, linkage) {
-            (ExternVar, _) | (Var, Extern) => "external global",
-            (ExternConst, _) | (Const, Extern) => "external constant",
-            (Var, DSOLocal) => "dso_local global",
-            (Var, Private) => "private global",
-            (Const, DSOLocal) => "dso_local constant",
-            (Const, Private) => "private constant",
-            (ExternFunc, _) | (Func, Extern) => "declare",
-            (Func, DSOLocal) => "define dso_local",
-            (Func, Private) => "define internal",
-        }
-    }
+    FuncDef,
 }

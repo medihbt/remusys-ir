@@ -1,142 +1,95 @@
-use std::rc::Rc;
-
 use crate::{
+    impl_traceable_from_common,
     ir::{
-        ConstData, ExprCommon, IRAllocs, IRWriter, ISubExpr, ISubValueSSA, IUser, OperandSet, Use,
-        UseKind, ValueSSA,
+        ExprID, ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
+        constant::expr::{ExprCommon, ISubExpr},
     },
-    typing::{ArrayTypeRef, TypeContext, ValTypeID},
+    typing::{ArrayTypeID, IValType, TypeContext, ValTypeID},
 };
+use mtb_entity::PtrID;
+use smallvec::SmallVec;
 
-#[derive(Debug, Clone)]
-pub struct Array {
-    pub arrty: ArrayTypeRef,
-    pub elems: Box<[Rc<Use>]>,
+#[derive(Clone)]
+pub struct ArrayExpr {
     pub common: ExprCommon,
+    pub arrty: ArrayTypeID,
+    pub elemty: ValTypeID,
+    pub elems: SmallVec<[UseID; 4]>,
 }
-
-impl IUser for Array {
+impl_traceable_from_common!(ArrayExpr, false);
+impl IUser for ArrayExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
     }
-
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.elems
     }
 }
-
-impl ISubExpr for Array {
+impl ISubExpr for ArrayExpr {
     fn get_common(&self) -> &ExprCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
     }
-
-    fn is_aggregate(&self) -> bool {
-        true
+    fn get_valtype(&self) -> ValTypeID {
+        self.arrty.into_ir()
     }
+    fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
+        if let ExprObj::Array(arr) = expr { Some(arr) } else { None }
+    }
+    fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self> {
+        if let ExprObj::Array(arr) = expr { Some(arr) } else { None }
+    }
+    fn try_from_ir(expr: ExprObj) -> Option<Self> {
+        if let ExprObj::Array(arr) = expr { Some(arr) } else { None }
+    }
+    fn into_ir(self) -> ExprObj {
+        ExprObj::Array(self)
+    }
+}
+impl ArrayExpr {
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        let elemty = arrty.get_element_type(tctx);
+        let nelems = arrty.get_num_elements(tctx);
 
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
-        if self.is_zero(&writer.allocs) {
-            return write!(writer.output.borrow_mut(), "zeroinitializer");
-        }
-        if self.try_fmt_str_literal(writer)? {
-            return Ok(());
-        }
-        self.fmt_array_literal(writer)
+        let elems = {
+            let mut elems = SmallVec::with_capacity(nelems);
+            for i in 0..nelems {
+                let use_id = UseID::new(allocs, UseKind::ArrayElem(i));
+                elems.push(use_id);
+            }
+            elems
+        };
+        Self { common: ExprCommon::none(), arrty, elemty, elems }
     }
 }
 
-impl Array {
-    pub fn len(&self) -> usize {
-        self.elems.len()
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayExprID(pub ExprID);
+
+impl ISubExprID for ArrayExprID {
+    type ExprObjT = ArrayExpr;
+
+    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
+        ArrayExprID(id)
     }
-    pub fn is_zero(&self, allocs: &IRAllocs) -> bool {
-        self.elems
-            .iter()
-            .all(|elem| elem.get_operand().is_zero(allocs))
+    fn into_expr(self) -> PtrID<ExprObj> {
+        self.0
+    }
+}
+impl ArrayExprID {
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        Self::allocate(allocs, ArrayExpr::new_uninit(allocs, tctx, arrty))
     }
 
-    pub fn new(
-        arrty: ArrayTypeRef,
-        allocs: &IRAllocs,
-        elems: impl IntoIterator<Item = ValueSSA>,
-    ) -> Self {
-        let elems = {
-            let elems_iter = elems.into_iter();
-            let mut elems = Vec::with_capacity(elems_iter.size_hint().0);
-            for (id, elem) in elems_iter.enumerate() {
-                let u = Use::new(UseKind::ArrayElem(id));
-                u.set_operand(allocs, elem);
-                elems.push(u);
-            }
-            elems.into_boxed_slice()
-        };
-        Self { arrty, elems, common: ExprCommon::new() }
+    pub fn get_arrty(self, allocs: &IRAllocs) -> ArrayTypeID {
+        self.deref_ir(allocs).arrty
     }
-    pub fn from_slice(arrty: ArrayTypeRef, allocs: &IRAllocs, elems: &[ValueSSA]) -> Self {
-        Self::new(arrty, allocs, elems.iter().cloned())
+    pub fn get_elemty(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).elemty
     }
-
-    pub fn new_zero(type_ctx: &TypeContext, arrty: ArrayTypeRef, allocs: &IRAllocs) -> Self {
-        let elemty = arrty.get_element_type(type_ctx);
-        let nelems = arrty.get_num_elements(type_ctx);
-        let elem0 = ValueSSA::new_zero(elemty);
-        Self::new(arrty, allocs, std::iter::repeat(elem0).take(nelems))
-    }
-
-    fn fmt_array_literal(&self, writer: &IRWriter) -> std::io::Result<()> {
-        let elemty = self.arrty.get_element_type(&writer.type_ctx);
-        writer.write_str("[")?;
-        for (i, elem) in self.elems.iter().enumerate() {
-            if i > 0 {
-                writer.write_str(", ")?;
-            }
-            debug_assert_eq!(
-                elemty,
-                elem.get_operand().get_valtype(&writer.allocs),
-                "Element type mismatch",
-            );
-            // 写入元素类型和操作数
-            writer.write_type(elemty)?;
-            writer.write_str(" ")?;
-            writer.write_operand(elem.get_operand())?;
-        }
-        writer.write_str("]")
-    }
-    fn try_fmt_str_literal(&self, writer: &IRWriter) -> std::io::Result<bool> {
-        // 仅当元素类型为 i8 且所有元素均为常量时，才尝试格式化为字符串字面量
-        // 其他情况均格式化为数组字面量
-        let ValTypeID::Int(8) = self.arrty.get_element_type(&writer.type_ctx) else {
-            return Ok(false);
-        };
-        let bytes = {
-            use std::fmt::Write;
-            let mut bytes = String::with_capacity(self.elems.len() + 4);
-            bytes.push_str("c\"");
-            for elem in &self.elems {
-                let val = elem.get_operand();
-                // 仅当元素为常量时，才尝试格式化为字符串字面量
-                // 非常量元素会导致整个数组无法格式化为字符串字面量
-                let ValueSSA::ConstData(cx) = val else {
-                    return Ok(false);
-                };
-                let ch = match cx {
-                    ConstData::Zero(_) => 0u8,
-                    ConstData::Int(x) => x.as_signed() as u8,
-                    // 非整数常量，无法格式化为字符串
-                    _ => return Ok(false),
-                };
-                match ch {
-                    x if x.is_ascii_graphic() => bytes.push(x as char),
-                    _ => write!(bytes, "\\{:02x}", ch).unwrap(),
-                }
-            }
-            bytes.push('"');
-            bytes
-        };
-        writer.write_str(&bytes)?;
-        Ok(true)
+    pub fn get_elems(self, allocs: &IRAllocs) -> &[UseID] {
+        &self.deref_ir(allocs).elems
     }
 }

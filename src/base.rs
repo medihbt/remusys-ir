@@ -1,25 +1,23 @@
+use mtb_entity::{IEntityAllocatable, IndexedID};
+use std::marker::PhantomData;
+
 mod apint;
 mod bitset;
 mod dsu;
 mod mixref;
-mod slablist;
-mod slabref;
+mod slabid;
 mod weak_list;
 
 pub use {
     apint::APInt,
     bitset::{FixBitSet, FixBitSetIter},
     dsu::DSU,
-    mixref::{MixMutRef, MixRef},
-    slablist::{
-        SlabListError, SlabListIterator, SlabListNode, SlabListNodeHead, SlabListNodeRef,
-        SlabListRange, SlabListRes, SlabListView, SlabRefList,
-    },
-    slabref::SlabRef,
+    mixref::{MixMutRef, MixRef, MixRefIter},
+    slabid::ISlabID,
     weak_list::*,
 };
 
-pub trait INullableValue: Clone + Eq {
+pub trait INullableValue: Copy + Eq {
     fn new_null() -> Self;
     fn is_null(&self) -> bool;
 
@@ -35,5 +33,15 @@ pub trait INullableValue: Clone + Eq {
 
     fn unwrap(&self) -> Self {
         if self.is_null() { panic!("Tried to unwrap a null value") } else { self.clone() }
+    }
+}
+
+impl<E: IEntityAllocatable> INullableValue for IndexedID<E> {
+    fn new_null() -> Self {
+        IndexedID(usize::MAX, PhantomData)
+    }
+
+    fn is_null(&self) -> bool {
+        self.0 == usize::MAX
     }
 }

@@ -1,39 +1,39 @@
 use crate::{
-    base::SlabRef,
+    base::ISlabID,
     typing::{
-        IValType, StructTypeRef, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError,
-        TypingRes, ValTypeClass, ValTypeID,
+        IValType, StructTypeID, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes,
+        ValTypeClass, ValTypeID,
     },
 };
 use std::{cell::Ref, io::Write};
 
 #[derive(Debug, Clone)]
-pub struct StructAliasData {
+pub struct StructAliasObj {
     pub name: String,
-    pub aliasee: StructTypeRef,
+    pub aliasee: StructTypeID,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructAliasRef(pub usize);
+pub struct StructAliasID(pub u32);
 
-impl SlabRef for StructAliasRef {
-    type RefObject = StructAliasData;
-    fn from_handle(handle: usize) -> Self {
-        Self(handle)
+impl ISlabID for StructAliasID {
+    type RefObject = StructAliasObj;
+
+    fn from_handle(handle: u32) -> Self {
+        StructAliasID(handle)
     }
-    fn get_handle(&self) -> usize {
+    fn into_handle(self) -> u32 {
         self.0
     }
 }
 
-impl IValType for StructAliasRef {
+impl IValType for StructAliasID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
-        match ty {
-            ValTypeID::StructAlias(s) => Ok(s),
-            _ => Err(TypeMismatchError::NotClass(ty, ValTypeClass::StructAlias)),
-        }
+        let ValTypeID::StructAlias(a) = ty else {
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::StructAlias));
+        };
+        Ok(a)
     }
-
     fn into_ir(self) -> ValTypeID {
         ValTypeID::StructAlias(self)
     }
@@ -46,31 +46,39 @@ impl IValType for StructAliasRef {
         ValTypeClass::StructAlias
     }
 
+    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+        let name = &self.deref(&f.allocs.aliases).name;
+        write!(f, "%{name}")
+    }
+
     fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        self.to_data(&alloc.aliases)
+        self.deref(&alloc.aliases)
             .aliasee
-            .try_get_align_full(alloc, tctx)
+            .try_get_size_full(alloc, tctx)
     }
 
     fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        self.to_data(&alloc.aliases)
+        self.deref(&alloc.aliases)
             .aliasee
             .try_get_align_full(alloc, tctx)
     }
-
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
-        let name = &self.to_data(&f.allocs.aliases).name;
-        write!(f, "%{name}")
-    }
 }
 
-impl StructAliasRef {
-    pub fn get_aliasee(self, tctx: &TypeContext) -> StructTypeRef {
-        self.to_data(&tctx.allocs.borrow().aliases).aliasee
+impl StructAliasID {
+    pub fn deref_ir(self, tctx: &TypeContext) -> Ref<'_, StructAliasObj> {
+        let allocs = tctx.allocs.borrow();
+        Ref::map(allocs, |allocs| self.deref(&allocs.aliases))
     }
 
-    pub fn get_name<'a>(self, tctx: &'a TypeContext) -> Ref<'a, str> {
+    pub fn get_name(self, tctx: &TypeContext) -> Ref<'_, str> {
         let allocs = tctx.allocs.borrow();
-        Ref::map(allocs, |allocs| self.to_data(&allocs.aliases).name.as_str())
+        Ref::map(allocs, |allocs| &self.deref(&allocs.aliases).name[..])
+    }
+    pub fn get_aliasee(self, tctx: &TypeContext) -> StructTypeID {
+        self.deref_ir(tctx).aliasee
+    }
+
+    pub fn new(tctx: &TypeContext, name: impl Into<String>, aliasee: StructTypeID) -> Self {
+        tctx.set_alias(name, aliasee)
     }
 }

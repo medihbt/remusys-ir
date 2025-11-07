@@ -1,12 +1,13 @@
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst, IUser, InstCommon,
-        InstData, InstRef, JumpTarget, Opcode, OperandSet, Use, UseKind, ValueSSA,
-        block::jump_target::JumpTargets, inst::ISubInstRef,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst, IUser,
+        InstCommon, InstID, InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind,
+        ValueSSA,
     },
     typing::ValTypeID,
 };
-use std::rc::Rc;
+use mtb_entity::PtrID;
 
 /// 返回指令
 ///
@@ -16,44 +17,20 @@ use std::rc::Rc;
 /// ret <ty> <value> ; when returns a value
 /// ret void ; when returns nothing
 /// ```
-#[derive(Debug)]
-pub struct Ret {
+pub struct RetInst {
     common: InstCommon,
-    operands: [Rc<Use>; 1],
+    operands: [UseID; 1],
 }
-
-impl IUser for Ret {
+impl_traceable_from_common!(RetInst, true);
+impl IUser for RetInst {
     fn get_operands(&self) -> OperandSet<'_> {
-        if self.has_retval() { OperandSet::Fixed(&self.operands) } else { OperandSet::Fixed(&[]) }
+        OperandSet::Fixed(&self.operands)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        if self.has_retval() { &mut self.operands } else { &mut [] }
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut self.operands
     }
 }
-
-impl ISubInst for Ret {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Ret, ValTypeID::Void),
-            operands: [Use::new(UseKind::RetValue)],
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        match inst {
-            InstData::Ret(ret) => Some(ret),
-            _ => None,
-        }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Ret(ret) => Some(ret),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Ret(self)
-    }
-
+impl ISubInst for RetInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
@@ -64,85 +41,95 @@ impl ISubInst for Ret {
     fn is_terminator(&self) -> bool {
         true
     }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        Some(JumpTargets::Fix(&[]))
+    }
 
-    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        writer.write_str("ret ")?;
-        if self.common.ret_type != ValTypeID::Void {
-            writer.write_type(self.common.ret_type)?;
-            writer.write_str(" ")?;
-            writer.write_operand(self.get_retval())?;
-        } else {
-            writer.write_str("void")?;
-        }
-        Ok(())
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        if let InstObj::Ret(ret) = inst { Some(ret) } else { None }
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        if let InstObj::Ret(ret) = inst { Some(ret) } else { None }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        if let InstObj::Ret(ret) = inst { Some(ret) } else { None }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Ret(self)
     }
 }
-
-impl ITerminatorInst for Ret {
-    fn read_jts<T>(&self, reader: impl FnOnce(&[Rc<JumpTarget>]) -> T) -> T {
-        reader(&[])
-    }
-
-    fn jts_mut(&mut self) -> &mut [Rc<JumpTarget>] {
-        &mut []
-    }
-
+impl ITerminatorInst for RetInst {
     fn get_jts(&self) -> JumpTargets<'_> {
         JumpTargets::Fix(&[])
     }
+    fn jts_mut(&mut self) -> &mut [JumpTargetID] {
+        &mut []
+    }
+    fn terminates_function(&self) -> bool {
+        true
+    }
 }
-
-impl Ret {
+impl RetInst {
     pub const OP_RETVAL: usize = 0;
 
-    pub fn new_raw(ret_ty: ValTypeID) -> Self {
+    pub fn retval_use(&self) -> UseID {
+        self.operands[Self::OP_RETVAL]
+    }
+    pub fn get_retval(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.retval_use().get_operand(allocs)
+    }
+    pub fn set_retval(&self, allocs: &IRAllocs, value: ValueSSA) {
+        self.retval_use().set_operand(allocs, value);
+    }
+    pub fn has_retval(&self) -> bool {
+        self.get_valtype() != ValTypeID::Void
+    }
+
+    pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
         Self {
             common: InstCommon::new(Opcode::Ret, ret_ty),
-            operands: [Use::new(UseKind::RetValue)],
+            operands: [UseID::new(allocs, UseKind::RetValue)],
         }
     }
-    pub fn with_retval(allocs: &IRAllocs, ret_ty: ValTypeID, ret_value: ValueSSA) -> Self {
-        let ret = Self::new_raw(ret_ty);
-        ret.operands[0].set_operand(allocs, ret_value);
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RetInstID(pub InstID);
+impl_debug_for_subinst_id!(RetInstID);
+impl ISubInstID for RetInstID {
+    type InstObjT = RetInst;
+
+    fn raw_from_instid(id: PtrID<InstObj>) -> Self {
+        RetInstID(id)
+    }
+    fn into_instid(self) -> PtrID<InstObj> {
+        self.0
+    }
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
+    }
+}
+impl ITerminatorID for RetInstID {}
+impl RetInstID {
+    pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
+        Self::allocate(allocs, RetInst::new_uninit(allocs, ret_ty))
+    }
+    pub fn with_retval(allocs: &IRAllocs, retval: ValueSSA) -> Self {
+        let ret = Self::new_uninit(allocs, retval.get_valtype(allocs));
+        ret.set_retval(allocs, retval);
         ret
     }
 
-    pub fn retval(&self) -> &Rc<Use> {
-        &self.operands[0]
+    pub fn retval_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).retval_use()
     }
-    pub fn get_retval(&self) -> ValueSSA {
-        self.operands[0].get_operand()
+    pub fn get_retval(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_retval(allocs)
     }
-    pub fn set_retval(&self, allocs: &IRAllocs, ret_value: ValueSSA) {
-        self.operands[0].set_operand(allocs, ret_value);
+    pub fn set_retval(self, allocs: &IRAllocs, value: ValueSSA) {
+        self.deref_ir(allocs).set_retval(allocs, value);
     }
-    pub fn has_retval(&self) -> bool {
-        !matches!(self.get_valtype(), ValTypeID::Void)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RetRef(InstRef);
-
-impl ISubInstRef for RetRef {
-    type InstDataT = Ret;
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
-    }
-    fn into_raw(self) -> InstRef {
-        self.0
-    }
-}
-
-impl RetRef {
-    pub fn get_retval(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_retval()
-    }
-    pub fn set_retval(self, allocs: &impl IRAllocsReadable, ret_value: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_retval(allocs, ret_value);
-    }
-    pub fn has_retval(&self, allocs: &impl IRAllocsReadable) -> bool {
-        self.to_inst(&allocs.get_allocs_ref().insts).has_retval()
+    pub fn has_retval(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).has_retval()
     }
 }

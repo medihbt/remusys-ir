@@ -1,365 +1,279 @@
 use crate::{
-    base::{INullableValue, SlabListError, SlabListNodeRef, SlabRef},
     ir::{
-        BlockData, BlockRef, CmpCond, Func, FuncRef, GlobalRef, IRAllocs, IRAllocsReadable,
-        IRManaged, IRModuleCleaner, ISubGlobal, ISubInst, ISubInstRef, ISubValueSSA,
-        ITraceableValue, IUser, InstData, InstKind, InstRef, Linkage, ManagedInst, Module, Opcode,
-        UseKind, UserID, ValueSSA, Var, inst::*,
+        BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
+        IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
+        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseID, UseKind, ValueSSA,
+        inst::{BrInstID, JumpInstID, PhiInstID, RetInstID, SwitchInstID, UnreachableInstID},
     },
-    typing::{FuncTypeRef, IValType, TypeContext, ValTypeID},
+    typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
-use std::{collections::BTreeMap, rc::Rc};
+use mtb_entity::{EntityListError, IEntityListNode};
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct IRFullFocus {
-    pub func: GlobalRef,
-    pub block: BlockRef,
-    pub inst: InstRef,
+    pub func: FuncID,
+    pub block: Option<BlockID>,
+    pub inst: Option<InstID>,
 }
-
 impl IRFullFocus {
-    pub fn is_null(&self) -> bool {
-        self.func.is_null() || self.block.is_null()
-    }
-
     pub fn is_block_focus(&self) -> bool {
-        !self.is_null() && self.inst.is_null()
+        self.block.is_some() && self.inst.is_none()
     }
-
     pub fn is_inst_focus(&self) -> bool {
-        !self.is_null() && !self.inst.is_null()
+        self.block.is_some() && self.inst.is_some()
     }
 
-    pub fn new_empty() -> Self {
-        IRFullFocus {
-            func: GlobalRef::new_null(),
-            block: BlockRef::new_null(),
-            inst: InstRef::new_null(),
-        }
+    pub fn new_func_focus(func: FuncID) -> Self {
+        Self { func, block: None, inst: None }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IRFocus {
-    Block(BlockRef),
-    Inst(InstRef),
+    Block(BlockID),
+    Inst(InstID),
 }
 
 impl IRFocus {
     pub fn from_full(full: &IRFullFocus) -> Option<Self> {
-        if full.func.is_null() || full.block.is_null() {
-            None
-        } else if full.inst.is_null() {
-            Some(IRFocus::Block(full.block))
-        } else {
-            Some(IRFocus::Inst(full.inst))
+        match (full.block, full.inst) {
+            (Some(b), None) => Some(IRFocus::Block(b)),
+            (Some(_), Some(i)) => Some(IRFocus::Inst(i)),
+            _ => None,
         }
     }
 
-    pub fn to_full(&self, allocs: &impl IRAllocsReadable) -> IRFullFocus {
+    pub fn to_full(&self, allocs: impl AsRef<IRAllocs>) -> IRFullFocus {
+        let allocs = allocs.as_ref();
         match self {
             IRFocus::Block(block) => {
-                let func = block.get_parent(allocs);
-                IRFullFocus { func, block: *block, inst: InstRef::new_null() }
+                let Some(func) = block.get_parent_func(allocs) else {
+                    panic!("BlockID has no parent FuncID");
+                };
+                IRFullFocus { func, block: Some(*block), inst: None }
             }
             IRFocus::Inst(inst) => {
-                let block = inst.get_parent(allocs);
-                let func = block.get_parent(allocs);
-                IRFullFocus { func, block, inst: *inst }
+                let Some(block) = inst.get_parent(allocs) else {
+                    panic!("InstID has no parent BlockID");
+                };
+                let Some(func) = block.get_parent_func(allocs) else {
+                    panic!("BlockID has no parent FuncID");
+                };
+                IRFullFocus { func, block: Some(block), inst: Some(*inst) }
             }
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum IRFocusCheckOption {
-    /// When option `.0` is turned on:
-    /// - while you add a normal instruction on a terminator focus,
-    ///   the insertion will happen on the front of this terminator.
-    /// - while you add a terminator instruction on terminator focus,
-    ///   the insertion will be turned to replacing this terminator.
-    /// - while you add a PHI instruction on terminator focus,
-    ///   the insertion will be degraded to an insertion with block focus.
-    /// - **Basic block splitting**: Splitting on a terminator focus will
-    ///   do exactly the same thing as splitting on a block focus.
-    ///
-    /// When option `.0` is turned off:
-    /// - You cannot add any instruction on a terminator focus.
-    /// - **Basic block splitting**: Splitting on a terminator focus will
-    ///   return an error.
-    ///
-    /// When option `.1` is turned on:
-    /// - while you add a PHI instruction on a non-PHI instruction focus
-    ///   (or vice versa), the insertion will be degraded to an insertion
-    ///   with block focus.
-    /// - **Basic block splitting**: Splitting on a PHI focus will be degraded
-    ///   to splitting on the PHI-end guide node.
-    Degrade(bool /* terminator */, bool /* phi */),
-
-    /// Disable checking, ignore all the limits, just treat everything
-    /// as a normal instruction.
-    ///
-    /// This option is unsafe and should be used with caution.
+/// 当某个操作的焦点不合法时, `IRBuilder` 应该做什么.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusDegradeOp {
+    /// 降级为块级焦点
+    AsBlockOp,
+    /// 严格模式, 抛出错误
+    Strict,
+    /// 无视风险, 继续在原地操作
     Ignore,
 }
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, Copy)]
+pub struct FocusDegradeConfig {
+    /// 当尝试将 Phi 指令添加到非 Phi 结点时的降级操作
+    pub add_phi_to_inst: FocusDegradeOp,
+    /// 如果焦点在 Phi 指令上, 添加非 Phi 指令时应该执行的降级操作
+    pub add_inst_to_phi: FocusDegradeOp,
+    /// 如果焦点在哨兵指令上, 添加非 Phi 指令时应该执行的降级操作
+    pub add_inst_to_sentinel: FocusDegradeOp,
+    /// 尝试给焦点添加终结指令时应该执行的降级操作
+    pub add_terminator: FocusDegradeOp,
+    /// 如果焦点在 Phi 指令上, 拆分基本块时应该执行的降级操作
+    pub split_block_on_phi: FocusDegradeOp,
+    /// 如果焦点在终结指令上, 拆分基本块时应该执行的降级操作
+    pub split_block_on_terminator: FocusDegradeOp,
+}
+impl Default for FocusDegradeConfig {
+    /// 便捷且安全的默认策略：当目标位置不合法时退化为“块级操作”，
+    /// 由 Builder 选择合理插入/拆分点：
+    /// - 普通指令插入到终结符之前
+    /// - 终结符作为块末尾追加（必要时先移动焦点到块）
+    /// - Phi 指令插入到 phi_end 之前
+    /// - 焦点在 Phi 时添加普通指令，改为在 phi 区段之后插入
+    /// - 拆分块：在 phi 区段之后或终结符之前切分
+    fn default() -> Self {
+        Self {
+            add_phi_to_inst: FocusDegradeOp::AsBlockOp,
+            add_inst_to_phi: FocusDegradeOp::Strict,
+            add_inst_to_sentinel: FocusDegradeOp::AsBlockOp,
+            add_terminator: FocusDegradeOp::AsBlockOp,
+            split_block_on_phi: FocusDegradeOp::AsBlockOp,
+            split_block_on_terminator: FocusDegradeOp::AsBlockOp,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
 pub enum IRBuildError {
-    #[error("Global definition already exists: {0}")]
-    GlobalDefExists(String, GlobalRef),
+    #[error("Global definition {0} already exists: {1:p}")]
+    GlobalDefExists(String, GlobalID),
     #[error("Global definition not found: {0}")]
     GlobalDefNotFound(String),
 
-    #[error("List error: {0:?}")]
-    ListError(SlabListError),
+    #[error("Instruction list error: {0:?}")]
+    InstListError(EntityListError<InstObj>),
+    #[error("Block list error: {0:?}")]
+    BlockListError(EntityListError<BlockObj>),
+    #[error("Use-def list error: {0:?}")]
+    UsedefListError(#[from] EntityListError<Use>),
+
     #[error("Null focus")]
     NullFocus,
-    #[error("Split focus is PHI: {0:?}")]
-    SplitFocusIsPhi(InstRef),
-    #[error("Split focus is guide node: {0:?}")]
-    SplitFocusIsGuideNode(InstRef),
+    #[error("Focus function is external: %{0:?}")]
+    FocusFuncIsExtern(FuncID),
+    #[error("Split focus is PHI: %inst{0:p}")]
+    SplitFocusIsPhi(InstID),
+    #[error("Split focus is terminator: %inst{0:?}")]
+    SplitFocusIsTerminator(TerminatorID),
+    #[error("Split focus is guide node: %inst{0:p}")]
+    SplitFocusIsGuideNode(InstID),
 
     #[error("Block has no terminator: {0:?}")]
-    BlockHasNoTerminator(BlockRef),
-    #[error("Instruction is terminator: {0:?}")]
-    InstIsTerminator(InstRef),
-    #[error("Instruction is guide node: {0:?}")]
-    InstIsGuideNode(InstRef),
-    #[error("Instruction is PHI: {0:?}")]
-    InstIsPhi(InstRef),
+    BlockHasNoTerminator(BlockID),
+    #[error("Instruction is terminator: %inst{0:p}")]
+    InstIsTerminator(InstID),
+    #[error("Instruction is guide node: %inst{0:p}")]
+    InstIsGuideNode(InstID),
+    #[error("Instruction is PHI: %inst{0:p}")]
+    InstIsPhi(InstID),
 
-    #[error("Insert position is PHI: {0:?}")]
-    InsertPosIsPhi(InstRef),
-    #[error("Insert position is terminator: {0:?}")]
-    InsertPosIsTerminator(InstRef),
-    #[error("Insert position is guide node: {0:?}")]
-    InsertPosIsGuideNode(InstRef),
-    #[error("Invalid insert position: {0:?}")]
-    InvalidInsertPos(InstRef),
+    #[error("Insert position is PHI: %inst{0:p}")]
+    InsertPosIsPhi(InstID),
+    #[error("Insert position is terminator: %inst{0:p}")]
+    InsertPosIsTerminator(InstID),
+    #[error("Insert position is guide node: %inst{0:p}")]
+    InsertPosIsGuideNode(InstID),
+    #[error("Invalid insert position: %inst{0:p}")]
+    InvalidInsertPos(InstID),
 
-    #[error("PHI Node error: {0:?}")]
-    PhiNodeError(PhiError),
+    #[error("Dispose error: {0:?}")]
+    DisposeErr(#[from] PoolAllocatedDisposeErr),
 }
-
-impl From<InstError> for IRBuildError {
-    fn from(inst_err: InstError) -> Self {
-        match inst_err {
-            InstError::ListError(e) => IRBuildError::ListError(e),
-            _ => Err(inst_err).expect("IR Builder cannot handle these fatal errors. STOP."),
-        }
+impl From<EntityListError<InstObj>> for IRBuildError {
+    fn from(e: EntityListError<InstObj>) -> Self {
+        IRBuildError::InstListError(e)
     }
 }
-
-type IRBuildRes<T = ()> = Result<T, IRBuildError>;
-type InstBuildRes = Result<InstRef, IRBuildError>;
-type TermiBuildRes<'a> = Result<(ManagedInst<'a>, InstRef), IRBuildError>;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum FocusInstKind {
-    Phi,
-    Terminator,
-    Normal,
+impl From<EntityListError<BlockObj>> for IRBuildError {
+    fn from(e: EntityListError<BlockObj>) -> Self {
+        IRBuildError::BlockListError(e)
+    }
 }
+pub type IRBuildRes<T = ()> = Result<T, IRBuildError>;
+pub type TermiBuildRes<'ir, T> = IRBuildRes<(ManagedInst<'ir>, T)>;
 
 pub struct IRBuilder<ModuleT = Module> {
     pub module: ModuleT,
-    pub full_focus: IRFullFocus,
-    pub focus_check: IRFocusCheckOption,
+    pub full_focus: Option<IRFullFocus>,
+    pub focus_degrade: FocusDegradeConfig,
 }
-
 impl IRBuilder<Module> {
-    pub fn take(self) -> Module {
+    pub fn take(mut self) -> Module {
+        self.module.allocs.free_disposed();
         self.module
     }
-
-    pub fn new_host(name: impl ToString) -> Self {
+    #[inline(never)]
+    pub fn new_inlined(arch: ArchInfo, name: impl Into<String>) -> Self {
         Self {
-            module: Module::new_host_arch(name.to_string()),
-            full_focus: IRFullFocus::new_empty(),
-            focus_check: IRFocusCheckOption::Degrade(true, true),
+            module: Module::new(arch, name),
+            full_focus: None,
+            focus_degrade: FocusDegradeConfig::default(),
         }
     }
 }
-
 impl<ModuleT> IRBuilder<ModuleT>
 where
     ModuleT: AsRef<Module> + AsMut<Module>,
 {
+    pub fn free_disposed(&mut self) {
+        self.module.as_mut().allocs.free_disposed();
+    }
+}
+impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     pub fn new(module: ModuleT) -> Self {
-        IRBuilder {
+        Self {
             module,
-            full_focus: IRFullFocus::new_empty(),
-            focus_check: IRFocusCheckOption::Degrade(true, true),
+            full_focus: None,
+            focus_degrade: FocusDegradeConfig::default(),
         }
     }
 
-    pub fn get_allocs(&self) -> &IRAllocs {
+    pub fn module(&self) -> &Module {
+        self.module.as_ref()
+    }
+    pub fn allocs(&self) -> &IRAllocs {
         &self.module.as_ref().allocs
     }
-    pub fn allocs_mut(&mut self) -> &mut IRAllocs {
-        &mut self.module.as_mut().allocs
+    pub fn tctx(&self) -> &TypeContext {
+        &self.module.as_ref().tctx
     }
-    pub fn gc_cleaner(&mut self) -> IRModuleCleaner<'_> {
-        self.module.as_mut().gc_cleaner()
-    }
-    pub fn type_ctx(&self) -> &Rc<TypeContext> {
-        &self.module.as_ref().type_ctx
-    }
-
     pub fn try_get_focus(&self) -> Option<IRFocus> {
-        IRFocus::from_full(&self.full_focus)
+        let Some(full) = &self.full_focus else {
+            return None;
+        };
+        IRFocus::from_full(full)
     }
-    pub fn get_focus(&self) -> IRFocus {
-        self.try_get_focus().expect("Current focus is null.")
-    }
-    pub fn set_focus(&mut self, focus: IRFocus) -> &mut Self {
-        self.full_focus = focus.to_full(self.module.as_ref());
-        self
+    pub fn set_focus(&mut self, focus: IRFocus) {
+        let full = focus.to_full(self.allocs());
+        self.full_focus = Some(full);
     }
 
     /// Switch the focus to the terminator of the current block.
-    /// Returns the previous focus.
-    pub fn switch_focus_to_terminator(&mut self) -> Result<InstRef, IRBuildError> {
-        let mut focus = self.full_focus.clone();
-        if focus.func.is_null() || focus.block.is_null() {
+    pub fn switch_focus_to_terminator(&mut self) -> IRBuildRes {
+        let Some(mut focus) = self.full_focus.clone() else {
             return Err(IRBuildError::NullFocus);
-        }
-        let prev_focus = focus.inst;
-        let focus_block = focus.block;
-        let terminator = focus_block.get_terminator(self.get_allocs());
-        focus.inst = terminator.get_inst();
-        self.full_focus = focus;
-        Ok(prev_focus)
-    }
-}
-
-pub struct IRVarBuilder<'a> {
-    pub module: &'a mut Module,
-    pub name: String,
-    pub content_ty: ValTypeID,
-    pub is_const: bool,
-    pub linkage: Linkage,
-}
-
-impl<'a> IRVarBuilder<'a> {
-    pub fn new(module: &'a mut Module, name: impl ToString, content_ty: ValTypeID) -> Self {
-        IRVarBuilder {
-            module,
-            name: name.to_string(),
-            content_ty,
-            is_const: false,
-            linkage: Linkage::Extern,
-        }
-    }
-
-    pub fn content_ty(mut self, content_ty: ValTypeID) -> Self {
-        self.content_ty = content_ty;
-        self
-    }
-    pub fn set_const(mut self, is_const: bool) -> Self {
-        self.is_const = is_const;
-        self
-    }
-    pub fn linkage(mut self, linkage: Linkage) -> Self {
-        self.linkage = linkage;
-        self
-    }
-
-    pub fn build_extern(self) -> GlobalRef {
-        let content_align = self.content_ty.get_align(&self.module.type_ctx).max(8);
-        let var = Var::new_extern(self.name, self.content_ty, content_align);
-        var.set_readonly(self.is_const);
-        let var = GlobalRef::from_allocs(self.module, var.into_ir());
-        var.register_to_symtab(self.module);
-        var
-    }
-    pub fn build_define(mut self, initval: ValueSSA) -> IRBuildRes<GlobalRef> {
-        if self.linkage == Linkage::Extern {
-            self.linkage = Linkage::DSOLocal;
-        }
-        if let Some(&global) = self.module.globals.get_mut().get(&self.name) {
-            return Err(IRBuildError::GlobalDefExists(self.name, global));
-        }
-        let content_align = self.content_ty.get_align(&self.module.type_ctx).max(8);
-        let var = Var::new_extern(self.name.into(), self.content_ty, content_align);
-        var.set_readonly(self.is_const);
-        var.set_linkage(self.linkage);
-        var.set_init(self.module, initval);
-        let var = GlobalRef::from_allocs(self.module, var.into_ir());
-        var.register_to_symtab(self.module);
-        Ok(var)
-    }
-}
-
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsRef<Module> + AsMut<Module>,
-{
-    pub fn declare_function(&mut self, name: &str, functy: FuncTypeRef) -> IRBuildRes<GlobalRef> {
-        if let Some(global) = self.module.as_ref().globals.borrow().get(name) {
-            return Err(IRBuildError::GlobalDefExists(name.to_string(), *global));
-        }
-        let func = Func::new_extern(functy, name, self.type_ctx());
-        let funcref = GlobalRef::from_allocs(self.allocs_mut(), func.into_ir());
-        funcref.register_to_symtab(self.module.as_mut());
-        Ok(funcref)
-    }
-
-    pub fn define_function_with_unreachable(
-        &mut self,
-        name: &str,
-        functy: FuncTypeRef,
-    ) -> IRBuildRes<GlobalRef> {
-        let module = self.module.as_mut();
-        if let Some(global) = module.globals.borrow().get(name) {
-            return Err(IRBuildError::GlobalDefExists(name.to_string(), *global));
-        }
-        let func = Func::new_with_unreachable(module, functy, name);
-        let (block, inst) = {
-            let entry = func.get_entry();
-            let inst = entry.get_terminator(module);
-            (entry, inst.get_inst())
         };
-        let func = GlobalRef::from_allocs(module, func.into_ir());
-        func.register_to_symtab(module);
-        self.full_focus = IRFullFocus { func, block, inst };
-        Ok(func)
+        let block = focus.block.ok_or(IRBuildError::NullFocus)?;
+        let Some(termi) = block.try_get_terminator(self.allocs()) else {
+            return Err(IRBuildError::BlockHasNoTerminator(block));
+        };
+        focus.inst = Some(termi);
+        self.full_focus = Some(focus);
+        Ok(())
     }
 
-    pub fn var_builder(&mut self, name: impl ToString, content_ty: ValTypeID) -> IRVarBuilder<'_> {
-        IRVarBuilder::new(self.module.as_mut(), name, content_ty)
-    }
-}
-
-pub struct IRSwitchBuilder<'a, M: AsMut<Module> + AsRef<Module>> {
-    pub editor: &'a mut IRBuilder<M>,
-    pub cond: ValueSSA,
-    pub default: BlockRef,
-    pub cases: BTreeMap<i128, BlockRef>,
-}
-
-impl<'a, M: AsMut<Module> + AsRef<Module>> IRSwitchBuilder<'a, M> {
-    pub fn add_case(&mut self, case: i128, block: BlockRef) -> &mut Self {
-        self.cases.insert(case, block);
-        self
+    pub fn build_global_var(
+        &mut self,
+        name: impl Into<String>,
+        ty: ValTypeID,
+        build: impl FnOnce(&mut GlobalVarBuilder),
+    ) -> IRBuildRes<GlobalVarID> {
+        let mut builder = GlobalVar::builder(name, ty);
+        build(&mut builder);
+        match builder.build_id(self.module()) {
+            Ok(gid) => Ok(gid),
+            Err(e) => Err(IRBuildError::GlobalDefExists(builder.name, e)),
+        }
     }
 
-    pub fn build(&'a mut self) -> IRBuildRes<(IRManaged<'a, InstRef>, SwitchRef)> {
-        let Self { editor, cond, default, cases } = self;
-        let (old, new) =
-            editor.focus_set_switch(*cond, *default, cases.iter().map(|(k, v)| (*k, *v)))?;
-        let new = SwitchRef::from_raw_nocheck(new);
-        Ok((old, new))
+    pub fn build_func(
+        &mut self,
+        name: impl Into<String>,
+        functy: FuncTypeID,
+        build: impl FnOnce(&mut FuncBuilder),
+    ) -> IRBuildRes<FuncID> {
+        let mut builder = FuncID::builder(self.tctx(), name.into(), functy);
+        build(&mut builder);
+        match builder.build_id(self.module()) {
+            Ok(fid) => Ok(fid),
+            Err(e) => Err(IRBuildError::GlobalDefExists(builder.name, e)),
+        }
     }
-}
 
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsMut<Module> + AsRef<Module>,
-{
-    fn null_block_focus(&self) -> bool {
-        self.full_focus.block.is_null()
+    fn _isnull_block_focus(&self) -> bool {
+        match &self.full_focus {
+            Some(focus) => focus.block.is_none(),
+            None => true,
+        }
     }
 
     /// Terminator Replacement Function
@@ -372,28 +286,22 @@ where
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_replace_terminator(&mut self, terminator: InstData) -> TermiBuildRes<'_> {
-        let full_focus = self.full_focus.clone();
-        if full_focus.block.is_null() {
+    pub fn focus_set_terminator(&mut self, termi: impl ISubInstID) -> IRBuildRes<ManagedInst<'_>> {
+        let Some(mut focus) = self.full_focus.clone() else {
             return Err(IRBuildError::NullFocus);
-        }
-        // Replace the current terminator with the new one.
-        let allocs = self.allocs_mut();
-        let new_terminator = InstRef::from_alloc(&mut allocs.insts, terminator);
-
-        let old_terminator = full_focus
-            .block
-            .set_terminator(allocs, new_terminator)
-            .map_err(IRBuildError::from)?
-            .release();
-
-        if full_focus.inst == old_terminator {
-            self.full_focus.inst = new_terminator;
-        }
-        Ok((
-            IRManaged::new(old_terminator, self.allocs_mut()),
-            new_terminator,
-        ))
+        };
+        let block = focus.block.ok_or(IRBuildError::NullFocus)?;
+        let allocs = self.allocs();
+        let termi = termi.into_instid();
+        let managed = match block.try_set_terminator_inst(allocs, termi) {
+            Ok(Some(managed)) => managed,
+            Ok(None) => return Err(IRBuildError::BlockHasNoTerminator(block)),
+            Err(e) => return Err(e.into()),
+        };
+        let old_termi = managed.release();
+        focus.inst = Some(termi);
+        self.full_focus = Some(focus);
+        Ok(ManagedInst::new(self.allocs(), old_termi))
     }
 
     /// Terminator Replacement Function
@@ -405,13 +313,11 @@ where
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_jump_to(&mut self, jump_to: BlockRef) -> TermiBuildRes<'_> {
-        if self.null_block_focus() {
-            Err(IRBuildError::NullFocus)
-        } else {
-            let jump = Jump::new(&self.get_allocs().blocks, jump_to);
-            self.focus_replace_terminator(InstData::Jump(jump))
-        }
+    pub fn focus_set_jump_to(&mut self, jump_to: BlockID) -> TermiBuildRes<'_, JumpInstID> {
+        let jump = JumpInstID::new_uninit(self.allocs());
+        jump.set_target(self.allocs(), jump_to);
+        let managed = self.focus_set_terminator(jump)?;
+        Ok((managed, jump))
     }
 
     /// Terminator Replacement Function
@@ -425,17 +331,13 @@ where
     /// - **Error branch**: An error.
     pub fn focus_set_branch_to(
         &mut self,
-        cond: ValueSSA,
-        if_true: BlockRef,
-        if_false: BlockRef,
-    ) -> TermiBuildRes<'_> {
-        if self.null_block_focus() {
-            Err(IRBuildError::NullFocus)
-        } else {
-            let allocs = self.allocs_mut();
-            let br = Br::new(&allocs, cond, if_true, if_false);
-            self.focus_replace_terminator(InstData::Br(br))
-        }
+        cond: impl ISubValueSSA,
+        then_bb: BlockID,
+        else_bb: BlockID,
+    ) -> TermiBuildRes<'_, BrInstID> {
+        let br = BrInstID::new(self.allocs(), cond.into_ir(), then_bb, else_bb);
+        let managed = self.focus_set_terminator(br)?;
+        Ok((managed, br))
     }
 
     /// Terminator Replacement Function
@@ -447,29 +349,15 @@ where
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_switch(
+    pub fn focus_set_switch_to(
         &mut self,
-        cond: ValueSSA,
-        default: BlockRef,
-        cases: impl Iterator<Item = (i128, BlockRef)>,
-    ) -> TermiBuildRes<'_> {
-        if self.null_block_focus() {
-            return Err(IRBuildError::NullFocus);
-        }
-        let allocs = self.allocs_mut();
-        let switch = Switch::new(allocs, cond, default);
-        for (case, block) in cases {
-            switch.set_case(&allocs.blocks, case, block);
-        }
-        self.focus_replace_terminator(InstData::Switch(switch))
-    }
-
-    pub fn switch_builder(
-        &mut self,
-        cond: ValueSSA,
-        default: BlockRef,
-    ) -> IRSwitchBuilder<'_, ModuleT> {
-        IRSwitchBuilder { editor: self, cond, default, cases: BTreeMap::new() }
+        discrim: impl ISubValueSSA,
+        default_bb: BlockID,
+        cases: impl IntoIterator<Item = (i64, BlockID)>,
+    ) -> TermiBuildRes<'_, SwitchInstID> {
+        let switch = SwitchInstID::from_cases(self.allocs(), discrim.into_ir(), cases, default_bb);
+        let managed = self.focus_set_terminator(switch)?;
+        Ok((managed, switch))
     }
 
     /// Terminator Replacement Function
@@ -481,629 +369,297 @@ where
     ///
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
-    pub fn focus_set_unreachable(&mut self) -> TermiBuildRes<'_> {
-        if self.null_block_focus() {
-            Err(IRBuildError::NullFocus)
-        } else {
-            let unreachable_i = InstData::new_unreachable();
-            self.focus_replace_terminator(unreachable_i)
+    pub fn focus_set_unreachable(&mut self) -> TermiBuildRes<'_, UnreachableInstID> {
+        let unreach = UnreachableInstID::new(self.allocs());
+        let managed = self.focus_set_terminator(unreach)?;
+        Ok((managed, unreach))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstIDSummary {
+    Sentinel,
+    Phi(PhiInstID),
+    PhiEnd(InstID),
+    Normal(InstID),
+    Terminator(TerminatorID),
+}
+
+impl InstIDSummary {
+    fn new(id: InstID, allocs: &IRAllocs) -> Self {
+        match id.deref_ir(allocs) {
+            InstObj::GuideNode(_) => InstIDSummary::Sentinel,
+            InstObj::Phi(_) => InstIDSummary::Phi(PhiInstID(id)),
+            InstObj::PhiInstEnd(_) => InstIDSummary::PhiEnd(id),
+            InstObj::Unreachable(_) => {
+                Self::Terminator(TerminatorID::Unreachable(UnreachableInstID(id)))
+            }
+            InstObj::Ret(_) => Self::Terminator(TerminatorID::Ret(RetInstID(id))),
+            InstObj::Jump(_) => Self::Terminator(TerminatorID::Jump(JumpInstID(id))),
+            InstObj::Br(_) => Self::Terminator(TerminatorID::Br(BrInstID(id))),
+            InstObj::Switch(_) => Self::Terminator(TerminatorID::Switch(SwitchInstID(id))),
+            _ => InstIDSummary::Normal(id),
+        }
+    }
+}
+
+/// IR Builder as basic block splitter
+impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
+    /// 根据当前焦点获取拆分位置.
+    ///
+    /// 返回的焦点可能是块级焦点, 也可能是表示“拆分时前半部分的最后一条指令”的指令级焦点.
+    pub fn get_split_pos(&self) -> IRBuildRes<IRFocus> {
+        let Some(full_focus) = self.full_focus else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let Some(block) = full_focus.block else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let Some(inst) = full_focus.inst else {
+            return Ok(IRFocus::Block(block));
+        };
+        match InstIDSummary::new(inst, self.allocs()) {
+            InstIDSummary::Sentinel => Err(IRBuildError::SplitFocusIsGuideNode(inst)),
+            InstIDSummary::Phi(_) => match self.focus_degrade.split_block_on_phi {
+                FocusDegradeOp::AsBlockOp => Ok(IRFocus::Block(block)),
+                FocusDegradeOp::Strict => Err(IRBuildError::SplitFocusIsPhi(inst)),
+                FocusDegradeOp::Ignore => Ok(IRFocus::Inst(inst)),
+            },
+            InstIDSummary::PhiEnd(_) | InstIDSummary::Normal(_) => Ok(IRFocus::Inst(inst)),
+            InstIDSummary::Terminator(t) => match self.focus_degrade.split_block_on_terminator {
+                FocusDegradeOp::AsBlockOp => Ok(IRFocus::Block(block)),
+                FocusDegradeOp::Strict => Err(IRBuildError::SplitFocusIsTerminator(t)),
+                FocusDegradeOp::Ignore => Ok(IRFocus::Inst(inst)),
+            },
         }
     }
 
-    /// Terminator Replacement Function
+    pub fn focus_add_block(&mut self, bb: BlockID) -> IRBuildRes {
+        let Some(focus) = self.full_focus else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let allocs = self.allocs();
+        let insert_after = if let Some(b) = focus.block {
+            b
+        } else {
+            focus
+                .func
+                .get_entry(allocs)
+                .expect("Focus func has no entry block")
+        };
+        let Some(blocks) = focus.func.get_blocks(allocs) else {
+            return Err(IRBuildError::FocusFuncIsExtern(focus.func));
+        };
+        blocks
+            .node_add_next(insert_after.inner(), bb.inner(), &allocs.blocks)
+            .map_err(From::from)
+    }
+
+    /// 以当前焦点为分界, 把当前基本块拆分为两个基本块. 原基本块保留在前, 新基本块插入到后.
     ///
-    /// This function replaces the current terminator with a `Return` instruction.
-    /// The original jump relationship will be LOST!
+    /// 焦点会一直保留在前半部分基本块的位置. 如果原焦点指向终结指令, 则会被移动到跳转指令上. 否则会一直留在原指令上,
+    /// 不随拆分操作移动到后半部分基本块.
     ///
     /// ### Return
     ///
-    /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
-    /// - **Error branch**: An error.
-    pub fn focus_set_return(&mut self, retval: ValueSSA) -> TermiBuildRes<'_> {
-        if self.null_block_focus() {
-            return Err(IRBuildError::NullFocus);
+    /// - **Success branch**: 新创建的后半部分基本块 ID.
+    /// - **Error branch**: 拆分失败时的错误.
+    pub fn split_block(&mut self) -> IRBuildRes<BlockID> {
+        match self.get_split_pos()? {
+            IRFocus::Block(block) => self.split_block_at_end(block),
+            IRFocus::Inst(inst) => self.split_block_at_inst(inst),
         }
-        let allocs = self.allocs_mut();
-        let ret_ty = retval.get_valtype(allocs);
-        let ret = Ret::with_retval(allocs, ret_ty, retval);
-        self.focus_replace_terminator(InstData::Ret(ret))
     }
-}
-
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsMut<Module> + AsRef<Module>,
-{
-    pub fn edit_allow_terminator_degrade(&mut self, allow: bool) {
-        let focus_check = match self.focus_check {
-            IRFocusCheckOption::Degrade(_, phi) => IRFocusCheckOption::Degrade(allow, phi),
-            IRFocusCheckOption::Ignore => IRFocusCheckOption::Degrade(allow, false),
+    fn split_block_at_end(&mut self, front_half: BlockID) -> IRBuildRes<BlockID> {
+        let back_half = BlockID::new_uninit(self.allocs());
+        self.focus_add_block(back_half)?;
+        let allocs = self.allocs();
+        let goto_backhalf = JumpInstID::with_target(allocs, back_half).into_instid();
+        let Some(old_terminator) = front_half.set_terminator_inst(allocs, goto_backhalf) else {
+            return Err(IRBuildError::BlockHasNoTerminator(front_half));
         };
-        self.focus_check = focus_check;
-    }
-    pub fn edit_allow_phi_degrade(&mut self, allow: bool) {
-        let focus_check = match self.focus_check {
-            IRFocusCheckOption::Degrade(term, _) => IRFocusCheckOption::Degrade(term, allow),
-            IRFocusCheckOption::Ignore => IRFocusCheckOption::Degrade(false, allow),
-        };
-        self.focus_check = focus_check;
-    }
-    pub fn allows_terminator_degrade(&self) -> bool {
-        match self.focus_check {
-            IRFocusCheckOption::Degrade(term, _) => term,
-            IRFocusCheckOption::Ignore => true,
-        }
-    }
-    pub fn allows_phi_degrade(&self) -> bool {
-        match self.focus_check {
-            IRFocusCheckOption::Degrade(_, phi) => phi,
-            IRFocusCheckOption::Ignore => true,
-        }
-    }
-    pub fn is_full_strict_insert_mode(&self) -> bool {
-        match self.focus_check {
-            IRFocusCheckOption::Degrade(t, p) => !t && !p,
-            IRFocusCheckOption::Ignore => true,
-        }
-    }
-
-    fn get_inst_split_pos(&self) -> IRBuildRes<InstRef> {
-        let old_focus = self.full_focus.clone();
-        if old_focus.inst.is_null() {
-            // Focus is a block.
-            Ok(InstRef::new_null())
-        } else if self.focus_check == IRFocusCheckOption::Ignore {
-            Ok(old_focus.inst)
-        } else {
-            self.get_inst_split_pos_by_check()
-        }
-    }
-
-    fn focus_inst_get_kind(focus_inst: InstRef, allocs: &IRAllocs) -> FocusInstKind {
-        match focus_inst.to_inst(&allocs.insts) {
-            InstData::Phi(..) => FocusInstKind::Phi,
-            x if x.is_terminator() => FocusInstKind::Terminator,
-            _ => FocusInstKind::Normal,
-        }
-    }
-
-    fn get_inst_split_pos_by_check(&self) -> IRBuildRes<InstRef> {
-        let old_focus = self.full_focus.clone();
-        // Focus is an instruction.
-        let focus_inst = old_focus.inst;
-        let allocs = self.get_allocs();
-        let focus_kind = Self::focus_inst_get_kind(focus_inst, allocs);
-
-        // Case 1: Focus is a terminator.
-        //
-        // - When terminator degrade is disabled, the function will return an error.
-        // - Otherwise, the function will degrade to a block-based split.
-        if focus_kind == FocusInstKind::Terminator {
-            if self.allows_terminator_degrade() {
-                Ok(InstRef::new_null())
-            } else {
-                Err(IRBuildError::InsertPosIsTerminator(focus_inst))
-            }
-        }
-        // Case 2: Focus is a PHI node.
-        //
-        // - When PHI degrade is disabled, the function will return an error.
-        // - Otherwise, see the rules above: All instructions after the
-        //   PHI-end guide node will be moved to the new block.
-        else if focus_kind == FocusInstKind::Phi {
-            if self.allows_phi_degrade() {
-                // Focus is a PHI node, move all instructions after the PHI-end guide node.
-                Ok(old_focus.block.to_data(&allocs.blocks).phi_end)
-            } else {
-                Err(IRBuildError::InsertPosIsPhi(focus_inst))
-            }
-        }
-        // Case 3: Focus is a PHI-end guide node or a normal instruction.
-        //
-        // - The function will move all instructions after the focus to the new block.
-        // - The focus will be adjusted to the new block.
-        else {
-            Ok(focus_inst)
-        }
-    }
-
-    fn insert_new_block(&mut self, block: BlockData) -> Result<BlockRef, IRBuildError> {
-        let next_block = BlockRef::new(self.allocs_mut(), block);
-        let old_focus = self.full_focus.clone();
-        let focus_func = FuncRef(old_focus.func);
-        let focus_block = old_focus.block;
-        if focus_block.is_null() {
-            let allocs = self.allocs_mut();
-            focus_func
-                .to_data(&allocs.globals)
-                .add_block_ref(allocs, next_block)
-                .map_err(IRBuildError::ListError)?;
-        } else {
-            let allocs = self.allocs_mut();
-            let body = focus_func.to_data(&allocs.globals).get_body().unwrap();
-            body.node_add_next(&allocs.blocks, focus_block, next_block)
-                .map_err(IRBuildError::ListError)?;
-        }
-        Ok(next_block)
-    }
-
-    pub fn split_current_block_from_focus(&mut self) -> IRBuildRes<BlockRef> {
-        let inst_split_pos = self.get_inst_split_pos()?;
-        let IRFullFocus { func, block: old_block, .. } = self.full_focus;
-        let new_bb = self.split_current_block_from_terminator()?;
-        let new_focus = IRFullFocus { func, block: new_bb, inst: InstRef::new_null() };
-
-        if inst_split_pos.is_null() {
-            // Focus is a block, degrade to a terminator-based split.
-            // Create new focus pointing to the new block
-            self.full_focus = new_focus;
-            return Ok(old_block);
-        }
-
-        // Now move all instructions after the `inst_split_pos` to the new block.
-        let allocs = self.get_allocs();
-        let new_block = new_bb.to_data(&allocs.blocks);
-        loop {
-            let Some(next) = inst_split_pos.get_next_ref(&allocs.insts) else {
-                panic!("Invalid insert position: {inst_split_pos:?}");
-            };
-            match next.get_kind(allocs) {
-                InstKind::PhiInstEnd => continue,
-                x if x.is_terminator() => break,
-                InstKind::ListGuideNode => break,
-                _ => {}
-            }
-            next.detach_self(allocs)
-                .expect("Failed to unplug inst from `to_insert`");
-            new_block.build_add_inst(&allocs.insts, next);
-        }
-        // Create new focus pointing to the new block and return old block
-        self.full_focus = new_focus;
-        Ok(old_block)
-    }
-
-    /// Split the current block from the terminator. New block will be the successor of the
-    /// original one with the old terminator. The terminator of the new block will be changed
-    /// to a jump instruction to the new block.
-    ///
-    /// The block focus will not be changed while the new block will be returned.
-    /// If the instruction focus is a terminator, it will be set to the new jump instruction.
-    ///
-    /// There's no need to maintain the RCFG because RCFG connection is based on `Use`-like
-    /// object `JumpTarget`, which will remain unchanged during the split. **However, the PHI
-    /// nodes in the successors of the original block will be updated to point to the new block**.
-    pub fn split_current_block_from_terminator(&mut self) -> IRBuildRes<BlockRef> {
-        let IRFullFocus { block: old_block, inst: old_inst, .. } = self.full_focus;
-        if old_block.is_null() {
-            return Err(IRBuildError::NullFocus);
-        }
-
-        // Now create a new block. After that, a new jump instruction to this block will be created.
-        let new_block = {
-            let block = BlockData::new_empty(self.module.as_mut());
-            self.insert_new_block(block)?
-        };
-        let (old_terminator, jump_to_new_bb) = self.focus_set_jump_to(new_block)?;
-        if old_terminator.is_null() {
-            return Err(IRBuildError::BlockHasNoTerminator(old_block));
-        }
         let old_terminator = old_terminator.release();
-        let allocs = self.allocs_mut();
-
-        new_block
-            .set_terminator(allocs, old_terminator)
+        back_half.set_terminator_inst(allocs, old_terminator);
+        // Fix use-def chains of old terminator
+        front_half
+            .deref_ir(allocs)
+            .users()
+            .move_to_if(
+                back_half.deref_ir(allocs).users(),
+                &allocs.uses,
+                |_, u| matches!(u.get_kind(), UseKind::PhiIncomingBlock(_)),
+                |up| {
+                    UseID(up)
+                        .deref_ir(allocs)
+                        .operand
+                        .set(ValueSSA::Block(back_half))
+                },
+            )
             .map_err(IRBuildError::from)?;
-
-        // Now we need to update the PHI nodes in the successors of the original block.
-        // collect the successors of the original block.
-        Self::replace_successor_phis_with_block(&self.allocs_mut(), old_block, new_block);
-
-        // If the current focus is a terminator, we need to set the focus back to the
-        // new jump instruction of the old block.
-        if old_inst == old_terminator {
-            self.full_focus.inst = jump_to_new_bb;
+        // repair focus if needed
+        let mut focus = self.full_focus.unwrap();
+        if Some(old_terminator) == focus.inst {
+            focus.inst = Some(goto_backhalf);
+            self.full_focus = Some(focus);
         }
-        Ok(new_block)
+        Ok(back_half)
     }
-
-    fn replace_successor_phis_with_block(
-        allocs: &IRAllocs,
-        old_block: BlockRef,
-        new_block: BlockRef,
-    ) {
-        if old_block == new_block {
-            return;
-        }
-        let old_users = old_block.to_data(&allocs.blocks).users();
-        if old_users.is_empty() {
-            return;
-        }
-
-        let new_users = new_block.to_data(&allocs.blocks).users();
-        old_users.move_to_if(
-            new_users,
-            |u| matches!(u.kind.get(), UseKind::PhiIncomingBlock(_)),
-            |u| {
-                let UseKind::PhiIncomingBlock(value_use_index) = u.kind.get() else {
-                    unreachable!();
-                };
-                // 这里不使用 set_operand(), 因为链表已经发生移动了.
-                u.operand.set(new_block.into_ir());
-                let phi_inst = {
-                    let UserID::Inst(inst) = u.user.get() else { unreachable!() };
-                    PhiRef::from_inst(inst, &allocs.insts)
-                };
-                let phi_operands = phi_inst.to_inst(&allocs.insts).get_operands();
-                let phi_value_use = &phi_operands[value_use_index as usize];
-                let UseKind::PhiIncomingValue(block_idx) = phi_value_use.kind.get() else {
-                    panic!("PHI inst structure broken");
-                };
-                phi_value_use.kind.set(UseKind::PhiIncomingValue(block_idx));
-            },
-        )
-    }
-}
-
-pub struct PhiBuilder<'a, M: AsMut<Module> + AsRef<Module>> {
-    pub editor: &'a mut IRBuilder<M>,
-    pub dest: ValTypeID,
-    pub incomings: BTreeMap<BlockRef, ValueSSA>,
-}
-
-impl<'a, M: AsMut<Module> + AsRef<Module>> PhiBuilder<'a, M> {
-    pub fn new(editor: &'a mut IRBuilder<M>, dest: ValTypeID) -> Self {
-        PhiBuilder { editor, dest, incomings: BTreeMap::new() }
-    }
-
-    pub fn add_income(&mut self, block: BlockRef, value: ValueSSA) -> &mut Self {
-        self.incomings.insert(block, value);
-        self
-    }
-
-    pub fn build(&mut self) -> IRBuildRes<InstRef> {
-        let Self { editor, dest, incomings } = self;
-        let phi = PhiNode::new(*dest);
-        for (&bb, &mut val) in incomings {
-            phi.set_income(editor.get_allocs(), bb, val)
-                .map_err(IRBuildError::PhiNodeError)?;
-        }
-        editor.add_inst(InstData::Phi(phi))
-    }
-}
-
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsMut<Module> + AsRef<Module>,
-{
-    /// ## Adding Instructions
-    ///
-    /// Add an instruction data to the `focus` position of a building module.
-    ///
-    /// ### Rules
-    ///
-    /// If the focus is a block: Call `BlockData::build_add_inst(inst, mod)` to add the instruction.
-    ///
-    /// - Normally, an instruction should be added to the front of the block terminator instruction,
-    ///   basically the end of the block.
-    /// - If the new instruction is a PHI node, it should be added to the end of "Phi Slice" at the
-    ///   front of the block, right before the `PhiEnd` helper instruction node.
-    /// - If the new instruction is a terminator, the function returns an error.
-    /// - For all those cases above, the focus will remain unchanged.
-    ///
-    /// If the focus is a normal instruction:
-    ///
-    /// - You can only add a normal instruction to the focus position when none of the focus
-    ///   degrade options are set.
-    /// - When allowing terminator degrade, the terminator insertion will be degraded to a
-    ///   terminator replacement.
-    /// - When allowing phi degrade, the phi insertion will be degraded to a normal PHI
-    ///   appending to the "Phi Slice" area.
-    ///
-    /// If the focus is a terminator instruction:
-    ///
-    /// - You cannot add any instruction to the focus position by default.
-    /// - When allowing terminator degrade, the terminator insertion will be degraded to a
-    ///   terminator replacement, while other insertion will be degraded to a block-level
-    ///   appending.
-    ///
-    /// If the focus is a PHI instruction:
-    ///
-    /// - You can only add PHI instruction to the focus position. When the PHI instruction is
-    ///   added, the focus will be switched to the new PHI instruction.
-    /// - When allowing PHI-degrade, the normal instruction insertion will be degraded to a
-    ///   block-level appending, while the terminator insertion will be degraded to a
-    ///   terminator replacement.
-    pub fn add_inst(&mut self, inst: InstData) -> IRBuildRes<InstRef> {
-        let IRFullFocus { func: focus_func, block: focus_bb, inst: focus_inst } = self.full_focus;
-        if focus_func.is_null() || focus_bb.is_null() {
+    fn split_block_at_inst(&mut self, front_last: InstID) -> IRBuildRes<BlockID> {
+        let Some(old_focus) = self.full_focus.clone() else {
             return Err(IRBuildError::NullFocus);
-        }
-        if focus_inst.is_null() {
-            // Focus is a block.
-            return self.add_inst_on_block_focus(inst);
-        }
-
-        // Focus is an instruction.
-        let (degrade_terminator, degrade_phi) = match self.focus_check {
-            IRFocusCheckOption::Degrade(t, p) => (t, p),
-            IRFocusCheckOption::Ignore => {
-                return self.add_inst_after_focus_ignore_check(inst);
-            }
         };
-
-        // Checking enabled.
-        let focus_kind = match focus_inst.to_inst(&self.allocs_mut().insts) {
-            InstData::Phi(..) => FocusInstKind::Phi,
-            x if x.is_terminator() => FocusInstKind::Terminator,
-            _ => FocusInstKind::Normal,
-        };
-        let inst_kind = match &inst {
-            InstData::Phi(..) => FocusInstKind::Phi,
-            x if x.is_terminator() => FocusInstKind::Terminator,
-            _ => FocusInstKind::Normal,
-        };
-
-        match (focus_kind, inst_kind) {
-            (FocusInstKind::Normal, FocusInstKind::Normal) => {
-                self.add_inst_after_focus_ignore_check(inst)
-            }
-            (FocusInstKind::Normal, inst_kind) => {
-                let degrade_cond = match inst_kind {
-                    FocusInstKind::Terminator => degrade_terminator,
-                    FocusInstKind::Phi => degrade_phi,
-                    _ => false,
-                };
-                if degrade_cond {
-                    self.add_inst_on_block_focus(inst)
-                } else {
-                    Err(if inst_kind == FocusInstKind::Terminator {
-                        IRBuildError::InstIsTerminator(focus_inst)
-                    } else {
-                        IRBuildError::InstIsPhi(focus_inst)
-                    })
-                }
-            }
-
-            (FocusInstKind::Phi, FocusInstKind::Phi) => {
-                self.add_inst_after_focus_ignore_check(inst)
-            }
-            (FocusInstKind::Phi, _) => {
-                if degrade_phi {
-                    self.add_inst_on_block_focus(inst)
-                } else {
-                    Err(IRBuildError::InsertPosIsPhi(focus_inst))
-                }
-            }
-
-            (FocusInstKind::Terminator, FocusInstKind::Terminator) => self
-                .focus_replace_terminator(inst)
-                .map(|(_, new_termi)| new_termi),
-            (FocusInstKind::Terminator, _) => {
-                if degrade_terminator {
-                    self.add_inst_on_block_focus(inst)
-                } else {
-                    Err(IRBuildError::InsertPosIsTerminator(focus_inst))
-                }
-            }
-        }
-    }
-
-    fn add_inst_after_focus_ignore_check(&mut self, inst: InstData) -> IRBuildRes<InstRef> {
-        let IRFullFocus { block, inst: focus_inst, .. } = self.full_focus;
-        let new_ref = InstRef::from_alloc(&mut self.allocs_mut().insts, inst);
-        let allocs = self.allocs_mut();
-        block
-            .insts(allocs)
-            .node_add_next(&allocs.insts, focus_inst, new_ref)
-            .map_err(IRBuildError::ListError)?;
-        Ok(new_ref)
-    }
-    fn add_inst_on_block_focus(&mut self, inst: InstData) -> IRBuildRes<InstRef> {
-        let focus_bb = self.full_focus.block;
-        let allocs = self.allocs_mut();
-        let instref = InstRef::new(allocs, inst);
-        focus_bb.add_inst(allocs, instref);
-        return Ok(instref);
-    }
-
-    /// Adding PHI-Node. Note that this may be a dangerous operation because nearly all
-    /// instruction focuses do not allow PHI-node insertion.
-    ///
-    /// You can enable PHI-degrade option to degrade the illegal insertion to a block-level
-    /// insertion, or just switch the focus to a PHI-node or a block before calling this
-    /// function.
-    pub fn add_phi_inst(&mut self, ret_type: ValTypeID) -> InstBuildRes {
-        self.add_inst(InstData::Phi(PhiNode::new(ret_type)))
-    }
-
-    /// Create a new PHI-Node builder.
-    pub fn phi_builder(&mut self, ret_type: ValTypeID) -> PhiBuilder<'_, ModuleT> {
-        PhiBuilder::new(self, ret_type)
-    }
-
-    /// 添加 Store 指令。
-    pub fn add_store_inst(
-        &mut self,
-        target: ValueSSA,
-        source: ValueSSA,
-        align: usize,
-    ) -> InstBuildRes {
-        let module = self.module.as_mut();
-        let mut store_op = StoreOp::new(&mut module.allocs, &module.type_ctx, source, target);
-        store_op.source_align_log2 = align.ilog2() as u8;
-        self.add_inst(InstData::Store(store_op))
-    }
-
-    /// 添加 Select 指令。
-    pub fn add_select_inst(
-        &mut self,
-        cond: ValueSSA,
-        true_val: ValueSSA,
-        false_val: ValueSSA,
-    ) -> InstBuildRes {
-        let select = SelectOp::new(&self.allocs_mut(), cond, true_val, false_val);
-        self.add_inst(InstData::Select(select))
-    }
-
-    /// 添加 Binary Operation 指令。
-    pub fn add_binop_inst(&mut self, opcode: Opcode, lhs: ValueSSA, rhs: ValueSSA) -> InstBuildRes {
-        let binop = BinOp::new(&self.allocs_mut(), opcode, lhs, rhs);
-        self.add_inst(InstData::BinOp(binop))
-    }
-
-    /// 添加 Compare 指令。
-    pub fn add_cmp_inst(&mut self, cond: CmpCond, lhs: ValueSSA, rhs: ValueSSA) -> InstBuildRes {
-        let cmp = CmpOp::new(&self.allocs_mut(), cond, lhs, rhs);
-        self.add_inst(InstData::Cmp(cmp))
-    }
-
-    /// 添加 Cast 指令。
-    pub fn add_cast_inst(
-        &mut self,
-        opcode: Opcode,
-        to_ty: ValTypeID,
-        from: ValueSSA,
-    ) -> InstBuildRes {
-        let cast = CastOp::new(&self.allocs_mut(), opcode, to_ty, from);
-        self.add_inst(InstData::Cast(cast))
-    }
-
-    pub fn add_call_inst(
-        &mut self,
-        callee: GlobalRef,
-        args: impl Iterator<Item = ValueSSA> + Clone,
-    ) -> InstBuildRes {
-        let module = self.module.as_mut();
-        let call = CallOp::from_allocs(&mut module.allocs, &module.type_ctx, callee, args);
-        self.add_inst(InstData::Call(call))
-    }
-
-    pub fn add_alloca_inst(&mut self, pointee_ty: ValTypeID, align_log2: u8) -> InstBuildRes {
-        let alloca = Alloca::new(pointee_ty, align_log2);
-        self.add_inst(InstData::Alloca(alloca))
-    }
-
-    pub fn add_load_inst(
-        &mut self,
-        source_ty: ValTypeID,
-        source_align: usize,
-        source: ValueSSA,
-    ) -> InstBuildRes {
-        let loadop = LoadOp::new(
-            &self.allocs_mut(),
-            source_ty,
-            source,
-            source_align.ilog2() as u8,
+        let front_half = old_focus.block.ok_or(IRBuildError::NullFocus)?;
+        assert_eq!(
+            Some(front_half),
+            front_last.get_parent(self.allocs()),
+            "InstID {front_last:p} is not in BlockID {front_half:?}"
         );
-        self.add_inst(InstData::Load(loadop))
+
+        // 此时会自动维护焦点: 一直呆在 front_half, 如果焦点是 terminator 会修复到跳转指令上
+        let back_half = self.split_block_at_end(front_half)?;
+        let allocs = self.allocs();
+
+        let front_half_insts = front_half.get_insts(allocs);
+        let back_half_insts = back_half.get_insts(allocs);
+        let back_half_termi = back_half
+            .try_get_terminator(allocs)
+            .ok_or(IRBuildError::BlockHasNoTerminator(back_half))?;
+        loop {
+            let Some(to_unplug) = front_last.deref_ir(allocs).get_next_id() else {
+                panic!("Broken IR: should quit at terminator but got `null`");
+            };
+            let to_unplug = match InstIDSummary::new(to_unplug, allocs) {
+                InstIDSummary::Sentinel => {
+                    panic!("Broken IR: should quit at terminator but got sentinel")
+                }
+                InstIDSummary::Phi(_) | InstIDSummary::PhiEnd(_) => {
+                    panic!("Broken IR: Phi {to_unplug:p} found after non-Phi {front_last:p}")
+                }
+                InstIDSummary::Normal(n) => n,
+                InstIDSummary::Terminator(_) => break,
+            };
+            front_half_insts
+                .node_unplug(to_unplug, &allocs.insts)
+                .map_err(IRBuildError::from)?;
+            back_half_insts
+                .node_add_prev(back_half_termi, to_unplug, &allocs.insts)
+                .map_err(IRBuildError::from)?;
+        }
+        Ok(back_half)
     }
 }
 
-pub struct GEPEditBuilder<'a, M: AsMut<Module> + AsRef<Module>> {
-    inner: GEPBuilder,
-    edit: &'a mut IRBuilder<M>,
+#[derive(Debug, Clone, Copy)]
+pub enum InstInsertPos {
+    Prepend(InstID, BlockID),
+    SetTerminator(BlockID),
 }
 
-impl<'a, M: AsMut<Module> + AsRef<Module>> GEPEditBuilder<'a, M> {
-    pub fn base_ptr(mut self, base_ptr: ValueSSA) -> Self {
-        self.inner.base_ptr(base_ptr);
-        self
-    }
-    pub fn base_ty(mut self, base_ty: ValTypeID) -> Self {
-        self.inner.base_ty(base_ty);
-        self
-    }
-    pub fn storage_align_log2(mut self, align_log2: u8) -> Self {
-        self.inner.storage_align_log2(align_log2);
-        self
-    }
-    pub fn ret_align_log2(mut self, align_log2: u8) -> Self {
-        self.inner.ret_align_log2(align_log2);
-        self
-    }
-    pub fn add_index(mut self, index: ValueSSA) -> Self {
-        self.inner.add_index(index);
-        self
-    }
-    pub fn build(mut self, indices: impl IntoIterator<Item = ValueSSA>) -> IRBuildRes<InstRef> {
-        let gep = self.inner.build(self.edit.module.as_ref(), indices);
-        self.edit.add_inst(InstData::GEP(gep))
-    }
-}
+impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
+    pub fn get_inst_insert_pos(&self, inst: InstIDSummary) -> IRBuildRes<InstInsertPos> {
+        let full_focus = self.full_focus.as_ref().ok_or(IRBuildError::NullFocus)?;
+        let block = full_focus.block.ok_or(IRBuildError::NullFocus)?;
 
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsMut<Module> + AsRef<Module>,
-{
-    pub fn gep_builder(
-        &mut self,
-        base_ptr: ValueSSA,
-        base_ty: ValTypeID,
-    ) -> GEPEditBuilder<'_, ModuleT> {
-        GEPEditBuilder {
-            inner: GEPBuilder::new(self.module.as_ref(), base_ptr, base_ty),
-            edit: self,
+        let allocs = self.allocs();
+
+        // Teriminator 在块级焦点需要做特殊处理: 永远都是合法的, 并且在安全条件下会
+        // 替换掉原基本块的终结指令
+        let Some(inst_pos) = full_focus.inst else {
+            let inst = match inst {
+                InstIDSummary::Phi(_) => block.get_phi_end(allocs),
+                InstIDSummary::Terminator(t) => {
+                    use {FocusDegradeOp::*, InstInsertPos::*};
+                    let res = match self.focus_degrade.add_terminator {
+                        AsBlockOp | Strict => SetTerminator(block),
+                        Ignore => Prepend(t.into_ir(), block),
+                    };
+                    return Ok(res);
+                }
+                _ => block.get_terminator_inst(allocs),
+            };
+            return Ok(InstInsertPos::Prepend(inst, block));
+        };
+        use InstIDSummary as IS;
+        let pos = match (inst, IS::new(inst_pos, allocs)) {
+            (IS::Sentinel, _) | (IS::PhiEnd(_), _) => {
+                return Err(IRBuildError::InstIsGuideNode(inst_pos));
+            }
+            (_, IS::Sentinel) => match self.focus_degrade.add_inst_to_sentinel {
+                FocusDegradeOp::AsBlockOp => {
+                    InstInsertPos::Prepend(block.get_terminator_inst(allocs), block)
+                }
+                FocusDegradeOp::Strict => {
+                    return Err(IRBuildError::InstIsGuideNode(inst_pos));
+                }
+                FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+            },
+            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.into_instid(), block),
+            (IS::Phi(_), IS::PhiEnd(pe)) => InstInsertPos::Prepend(pe, block),
+            (IS::Phi(_), IS::Normal(_)) | (IS::Phi(_), IS::Terminator(_)) => {
+                match self.focus_degrade.add_phi_to_inst {
+                    FocusDegradeOp::AsBlockOp => {
+                        InstInsertPos::Prepend(block.get_phi_end(allocs), block)
+                    }
+                    FocusDegradeOp::Strict => {
+                        return Err(IRBuildError::InvalidInsertPos(inst_pos));
+                    }
+                    FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+                }
+            }
+            (IS::Normal(_), IS::Phi(_)) | (IS::Normal(_), IS::PhiEnd(_)) => {
+                match self.focus_degrade.add_inst_to_phi {
+                    FocusDegradeOp::AsBlockOp => {
+                        InstInsertPos::Prepend(block.get_terminator_inst(allocs), block)
+                    }
+                    FocusDegradeOp::Strict => {
+                        return Err(IRBuildError::InsertPosIsPhi(inst_pos));
+                    }
+                    FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+                }
+            }
+            (IS::Normal(_), IS::Normal(_)) | (IS::Normal(_), IS::Terminator(_)) => {
+                InstInsertPos::Prepend(inst_pos, block)
+            }
+            (IS::Terminator(_), _) => match self.focus_degrade.add_terminator {
+                FocusDegradeOp::AsBlockOp => InstInsertPos::SetTerminator(block),
+                FocusDegradeOp::Strict => {
+                    return Err(IRBuildError::InvalidInsertPos(inst_pos));
+                }
+                FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
+            },
+        };
+        Ok(pos)
+    }
+
+    pub fn insert_inst(&mut self, inst: impl ISubInstID) -> IRBuildRes {
+        let inst = inst.into_instid();
+        let inst_summary = InstIDSummary::new(inst, self.allocs());
+        match self.get_inst_insert_pos(inst_summary)? {
+            InstInsertPos::Prepend(pos, block) => block
+                .get_insts(self.allocs())
+                .node_add_prev(pos, inst, &self.allocs().insts)
+                .map_err(IRBuildError::from),
+            InstInsertPos::SetTerminator(block) => {
+                let Some(old) = block.set_terminator_inst(self.allocs(), inst) else {
+                    return Err(IRBuildError::BlockHasNoTerminator(block));
+                };
+                let old = old.release();
+                if Some(IRFocus::Inst(old)) == self.try_get_focus() {
+                    let mut focus = self.full_focus.unwrap();
+                    focus.inst = Some(inst);
+                    self.full_focus = Some(focus);
+                }
+                Ok(())
+            }
         }
     }
-}
 
-pub struct AmoRmwEditBuilder<'a, M: AsMut<Module> + AsRef<Module>> {
-    inner: AmoRmwBuilder,
-    edit: &'a mut IRBuilder<M>,
-}
-
-impl<'a, M: AsMut<Module> + AsRef<Module>> AmoRmwEditBuilder<'a, M> {
-    pub fn opcode(mut self, opcode: Opcode) -> Self {
-        self.inner = self.inner.opcode(opcode);
-        self
-    }
-    pub fn value_ty(mut self, value_ty: ValTypeID) -> Self {
-        self.inner = self.inner.value_ty(value_ty);
-        self
-    }
-    pub fn ordering(mut self, ordering: AmoOrdering) -> Self {
-        self.inner = self.inner.ordering(ordering);
-        self
-    }
-    pub fn volatile(mut self, is_volatile: bool) -> Self {
-        self.inner = self.inner.volatile(is_volatile);
-        self
-    }
-    pub fn align(mut self, align: usize) -> Self {
-        self.inner = self.inner.align(align);
-        self
-    }
-    pub fn align_log2(mut self, align_log2: u8) -> Self {
-        self.inner = self.inner.align_log2(align_log2);
-        self
-    }
-    pub fn scope(mut self, scope: SyncScope) -> Self {
-        self.inner = self.inner.scope(scope);
-        self
-    }
-    pub fn ptr_operand(mut self, ptr_operand: impl ISubValueSSA) -> Self {
-        self.inner = self.inner.ptr_operand(ptr_operand);
-        self
-    }
-    pub fn val_operand(mut self, val_operand: impl ISubValueSSA) -> Self {
-        self.inner = self.inner.val_operand(val_operand);
-        self
-    }
-    pub fn build(self) -> IRBuildRes<InstRef> {
-        let amormw = self.inner.build(self.edit.get_allocs());
-        self.edit.add_inst(InstData::AmoRmw(amormw))
-    }
-}
-
-impl<ModuleT> IRBuilder<ModuleT>
-where
-    ModuleT: AsMut<Module> + AsRef<Module>,
-{
-    pub fn amo_rmw_builder(
-        &mut self,
-        opcode: Opcode,
-        value_ty: ValTypeID,
-    ) -> AmoRmwEditBuilder<'_, ModuleT> {
-        AmoRmwEditBuilder { inner: AmoRmwBuilder::new(opcode, value_ty), edit: self }
+    pub fn build_inst<BuildFn, R: ISubInstID>(&mut self, build: BuildFn) -> IRBuildRes<R>
+    where
+        BuildFn: FnOnce(&IRAllocs, &TypeContext) -> R,
+    {
+        let inst = build(self.allocs(), self.tctx());
+        self.insert_inst(inst)?;
+        Ok(inst)
     }
 }

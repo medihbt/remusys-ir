@@ -1,40 +1,41 @@
 use crate::{
-    base::SlabRef,
+    base::ISlabID,
     typing::{
-        ArrayTypeData, FuncType, StructAliasData, StructAliasRef, StructTypeData, StructTypeRef,
+        ArrayTypeObj, FuncTypeObj, IntType, StructAliasID, StructAliasObj, StructTypeID,
+        StructTypeObj,
     },
 };
 use slab::Slab;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap};
 
 #[derive(Debug, Clone)]
 pub struct ArchInfo {
-    pub ptr_nbits: usize,
-    pub reg_nbits: usize,
+    pub ptr_nbits: u32,
+    pub reg_nbits: u32,
 }
 
 impl ArchInfo {
+    pub fn get_intptr_type(&self) -> IntType {
+        IntType(self.ptr_nbits as u8)
+    }
     pub fn new_host() -> Self {
-        use core::mem::size_of;
-        Self {
-            ptr_nbits: size_of::<*const usize>() * 8,
-            reg_nbits: size_of::<usize>() * 8,
-        }
+        let ptr_nbits = std::mem::size_of::<usize>() as u32 * 8;
+        Self { ptr_nbits, reg_nbits: ptr_nbits }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct TypeAllocs {
-    pub array: Slab<ArrayTypeData>,
-    pub structs: Slab<StructTypeData>,
-    pub aliases: Slab<StructAliasData>,
-    pub funcs: Slab<FuncType>,
+    pub arrays: Slab<ArrayTypeObj>,
+    pub structs: Slab<StructTypeObj>,
+    pub aliases: Slab<StructAliasObj>,
+    pub funcs: Slab<FuncTypeObj>,
 }
 
 impl TypeAllocs {
     pub fn new() -> Self {
         Self {
-            array: Slab::new(),
+            arrays: Slab::new(),
             structs: Slab::new(),
             aliases: Slab::new(),
             funcs: Slab::new(),
@@ -42,10 +43,11 @@ impl TypeAllocs {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TypeContext {
     pub arch: ArchInfo,
     pub allocs: RefCell<TypeAllocs>,
-    alias_map: RefCell<HashMap<String, StructAliasRef>>,
+    alias_map: RefCell<HashMap<String, StructAliasID>>,
 }
 
 impl TypeContext {
@@ -57,38 +59,34 @@ impl TypeContext {
         }
     }
 
-    pub fn new_rc(arch: ArchInfo) -> Rc<Self> {
-        Rc::new(Self::new(arch))
+    pub fn try_get_alias(&self, name: &str) -> Option<StructTypeID> {
+        let alias_id = *self.alias_map.borrow().get(name)?;
+        let aliasee = alias_id.deref(&self.allocs.borrow().aliases).aliasee;
+        Some(aliasee)
     }
-
-    pub fn try_get_alias(&self, name: &str) -> Option<StructTypeRef> {
-        let sa = self.alias_map.borrow().get(name).cloned();
-        sa.map(|alias| alias.get_aliasee(self))
-    }
-    pub fn get_alias(&self, name: &str) -> StructTypeRef {
-        self.try_get_alias(name)
-            .expect("Failed to get struct alias from type context")
-    }
-
-    pub fn set_alias(&self, name: impl Into<String>, aliasee: StructTypeRef) {
-        let name: String = name.into();
-        let mut aliases = self.alias_map.borrow_mut();
-        let mut allocs = self.allocs.borrow_mut();
-        if let Some(existing) = aliases.get(&name) {
-            let alias_data = existing.to_data_mut(&mut allocs.aliases);
-            alias_data.aliasee = aliasee;
-        } else {
-            let new_alias = StructAliasData { name: name.clone(), aliasee };
-            let alias_ref = StructAliasRef(allocs.aliases.insert(new_alias));
-            aliases.insert(name, alias_ref);
+    pub fn get_alias(&self, name: &str) -> StructTypeID {
+        if let Some(ty) = self.try_get_alias(name) {
+            return ty;
         }
+        panic!("Alias %{name} not found");
     }
 
-    pub fn read_struct_aliases(&self, mut reader: impl FnMut(&str, StructTypeRef)) {
-        let aliases = self.alias_map.borrow();
-        for (name, alias_ref) in aliases.iter() {
-            let aliasee = alias_ref.get_aliasee(self);
-            reader(name, aliasee);
+    pub fn set_alias(&self, name: impl Into<String>, aliasee: StructTypeID) -> StructAliasID {
+        let name = name.into();
+        if let Some(existing) = self.alias_map.borrow().get(&name) {
+            return *existing;
+        }
+        let alias_obj = StructAliasObj { name: name.clone(), aliasee };
+        let mut allocs = self.allocs.borrow_mut();
+        let alias_id = StructAliasID(allocs.aliases.insert(alias_obj) as u32);
+        self.alias_map.borrow_mut().insert(name, alias_id);
+        alias_id
+    }
+
+    pub fn foreach_aliases(&self, mut f: impl FnMut(&String, StructAliasID, StructTypeID)) {
+        for (name, &alias_id) in self.alias_map.borrow().iter() {
+            let aliasee = alias_id.deref(&self.allocs.borrow().aliases).aliasee;
+            f(name, alias_id, aliasee);
         }
     }
 }

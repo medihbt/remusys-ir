@@ -1,24 +1,25 @@
 use crate::{
-    base::SlabRef,
+    base::ISlabID,
     typing::{
-        IValType, TypeAllocs, TypeContext, TypeFormatter, TypingRes, ValTypeClass, ValTypeID,
+        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
+        ValTypeID,
     },
 };
 use std::{
     cell::{Cell, Ref},
-    hash::{Hash, Hasher},
+    hash::{DefaultHasher, Hash, Hasher},
     io::Write,
 };
 
 #[derive(Debug, Clone)]
-pub struct FuncType {
+pub struct FuncTypeObj {
     pub is_vararg: bool,
     pub ret_type: ValTypeID,
     pub args: Box<[ValTypeID]>,
     hash_cache: Cell<usize>,
 }
 
-impl FuncType {
+impl FuncTypeObj {
     pub fn new(is_vararg: bool, ret_type: ValTypeID, args: Box<[ValTypeID]>) -> Self {
         Self { is_vararg, ret_type, args, hash_cache: Cell::new(0) }
     }
@@ -28,56 +29,56 @@ impl FuncType {
         ret_type: ValTypeID,
         args: impl Iterator<Item = ValTypeID>,
     ) -> (usize, usize) {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = DefaultHasher::new();
         is_vararg.hash(&mut hasher);
         ret_type.hash(&mut hasher);
-        let mut len = 0;
+        let mut arg_len = 0;
         for arg in args {
             arg.hash(&mut hasher);
-            len += 1;
+            arg_len += 1;
         }
-        (hasher.finish() as usize, len)
+        (hasher.finish() as usize, arg_len)
     }
 
-    fn get_hash(&self) -> usize {
-        if self.hash_cache.get() != 0 {
-            return self.hash_cache.get();
+    pub fn get_hash(&self) -> usize {
+        let cached = self.hash_cache.get();
+        if cached != 0 {
+            return cached;
         }
         let (hash, _) =
-            Self::make_hash_and_arg_len(self.is_vararg, self.ret_type, self.args.iter().cloned());
+            Self::make_hash_and_arg_len(self.is_vararg, self.ret_type, self.args.iter().copied());
         self.hash_cache.set(hash);
         hash
     }
 
-    pub fn accepts_arg(&self, arg_index: usize, arg_type: ValTypeID) -> bool {
-        if arg_index >= self.args.len() {
+    pub fn accepts_arg(&self, index: usize, arg_type: ValTypeID) -> bool {
+        if index >= self.args.len() {
             return self.is_vararg;
         }
-        self.args[arg_index] == arg_type
+        self.args[index] == arg_type
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FuncTypeRef(pub usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FuncTypeID(pub u32);
 
-impl SlabRef for FuncTypeRef {
-    type RefObject = FuncType;
-    fn from_handle(handle: usize) -> Self {
-        Self(handle)
+impl ISlabID for FuncTypeID {
+    type RefObject = FuncTypeObj;
+
+    fn from_handle(handle: u32) -> Self {
+        FuncTypeID(handle)
     }
-    fn get_handle(&self) -> usize {
+    fn into_handle(self) -> u32 {
         self.0
     }
 }
 
-impl IValType for FuncTypeRef {
+impl IValType for FuncTypeID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
-        use crate::typing::TypeMismatchError::*;
-        use crate::typing::ValTypeClass::*;
-        match ty {
-            ValTypeID::Func(func) => Ok(func),
-            _ => Err(NotClass(ty, Func)),
-        }
+        let ValTypeID::Func(f) = ty else {
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Func));
+        };
+        Ok(f)
     }
 
     fn into_ir(self) -> ValTypeID {
@@ -92,29 +93,23 @@ impl IValType for FuncTypeRef {
         ValTypeClass::Func
     }
 
-    /// Syntax Example:
-    ///
-    /// * `<ret ty> ()`
-    /// * `<ret ty> (...)`
-    /// * `<ret ty> (argty1)`
-    /// * `<ret ty> (argty1, argty2)`
-    /// * `<ret ty> (argty1, argty2, ...)`
     fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
-        let data = self.allocs_to_data(&f.allocs);
-        data.ret_type.serialize(f)?;
-        f.write_str(" (")?;
-        let mut count = 0;
-        for arg in &data.args {
-            if count > 0 {
+        let func_obj = self.deref(&f.allocs.funcs);
+        f.write_str("func(")?;
+        for (i, arg) in func_obj.args.iter().enumerate() {
+            if i > 0 {
                 f.write_str(", ")?;
             }
-            count += 1;
             arg.serialize(f)?;
         }
-        if data.is_vararg {
-            f.write_str(if count > 0 { ", ..." } else { "..." })?;
+        if func_obj.is_vararg {
+            if !func_obj.args.is_empty() {
+                f.write_str(", ")?;
+            }
+            f.write_str("...")?;
         }
-        f.write_str(")")
+        f.write_str(") -> ")?;
+        func_obj.ret_type.serialize(f)
     }
 
     fn try_get_size_full(self, _: &TypeAllocs, _: &TypeContext) -> Option<usize> {
@@ -126,67 +121,61 @@ impl IValType for FuncTypeRef {
     }
 }
 
-impl FuncTypeRef {
-    fn allocs_to_data(self, allocs: &TypeAllocs) -> &FuncType {
-        self.to_data(&allocs.funcs)
-    }
-
-    fn typectx_to_data(self, tctx: &TypeContext) -> Ref<'_, FuncType> {
+impl FuncTypeID {
+    pub fn deref_ir(self, tctx: &TypeContext) -> Ref<'_, FuncTypeObj> {
         let allocs = tctx.allocs.borrow();
-        Ref::map(allocs, |allocs| self.to_data(&allocs.funcs))
+        Ref::map(allocs, |allocs| self.deref(&allocs.funcs))
     }
 
-    pub fn ret_type(self, tctx: &TypeContext) -> ValTypeID {
-        self.typectx_to_data(tctx).ret_type
+    pub fn get_args(self, tctx: &TypeContext) -> Ref<'_, [ValTypeID]> {
+        Ref::map(self.deref_ir(tctx), |func| &func.args[..])
     }
-
-    pub fn args(self, tctx: &TypeContext) -> Ref<'_, [ValTypeID]> {
-        Ref::map(self.typectx_to_data(tctx), |s| &*s.args)
+    pub fn get_nargs(self, tctx: &TypeContext) -> usize {
+        self.deref_ir(tctx).args.len()
     }
-
-    pub fn nargs(self, tctx: &TypeContext) -> usize {
-        self.args(tctx).len()
+    pub fn get_ret_type(self, tctx: &TypeContext) -> ValTypeID {
+        self.deref_ir(tctx).ret_type
     }
-
-    pub fn try_get_arg(self, tctx: &TypeContext, index: usize) -> Option<ValTypeID> {
-        self.args(tctx).get(index).cloned()
-    }
-    pub fn get_arg(self, tctx: &TypeContext, index: usize) -> ValTypeID {
-        self.try_get_arg(tctx, index)
-            .expect("Failed to get argument type from function type")
-    }
-
     pub fn is_vararg(self, tctx: &TypeContext) -> bool {
-        self.typectx_to_data(tctx).is_vararg
+        self.deref_ir(tctx).is_vararg
+    }
+    pub fn accepts_arg(self, tctx: &TypeContext, index: usize, arg_type: ValTypeID) -> bool {
+        self.deref_ir(tctx).accepts_arg(index, arg_type)
+    }
+    pub fn get_hash(self, tctx: &TypeContext) -> usize {
+        self.deref_ir(tctx).get_hash()
     }
 
-    pub fn accepts_arg(self, tctx: &TypeContext, arg_index: usize, arg_type: ValTypeID) -> bool {
-        self.typectx_to_data(tctx).accepts_arg(arg_index, arg_type)
-    }
-
-    pub fn new<T>(tctx: &TypeContext, ret_ty: ValTypeID, is_vararg: bool, args: T) -> FuncTypeRef
+    pub fn new<T>(tctx: &TypeContext, ret: ValTypeID, is_vararg: bool, args: T) -> Self
     where
         T: IntoIterator<Item = ValTypeID>,
         T::IntoIter: Clone,
     {
-        let args = args.into_iter();
-        let (hash, arg_len) = FuncType::make_hash_and_arg_len(is_vararg, ret_ty, args.clone());
-        for (handle, func) in tctx.allocs.borrow().funcs.iter() {
-            if arg_len != func.args.len() || is_vararg != func.is_vararg || hash != func.get_hash()
-            {
+        let mut allocs = tctx.allocs.borrow_mut();
+        let iter = args.into_iter();
+        let (hash, arg_len) = FuncTypeObj::make_hash_and_arg_len(is_vararg, ret, iter.clone());
+        let alloc_funcs = &allocs.funcs;
+        for (handle, ft) in alloc_funcs {
+            if ft.get_hash() != hash || ft.args.len() != arg_len {
                 continue;
             }
-            if func.ret_type != ret_ty {
+            if ft.is_vararg != is_vararg || ft.ret_type != ret {
                 continue;
             }
-            if func.args.iter().zip(args.clone()).all(|(a, b)| *a == b) {
-                return FuncTypeRef(handle);
+            if ft.args.iter().zip(iter.clone()).all(|(a, b)| *a == b) {
+                return Self(handle as u32);
             }
         }
-
-        let func = FuncType::new(is_vararg, ret_ty, args.collect());
-        let mut allocs = tctx.allocs.borrow_mut();
-        let handle = allocs.funcs.insert(func);
-        FuncTypeRef(handle)
+        let new_func = FuncTypeObj::new(is_vararg, ret, iter.collect());
+        let handle = allocs.funcs.insert(new_func);
+        Self(handle as u32)
+    }
+    pub fn from_arg_slice(
+        tctx: &TypeContext,
+        ret: ValTypeID,
+        is_vararg: bool,
+        args: &[ValTypeID],
+    ) -> Self {
+        Self::new(tctx, ret, is_vararg, args.iter().copied())
     }
 }

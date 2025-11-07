@@ -1,14 +1,7 @@
-//! Since Remusys-lang frontend is not yet available, we build all our cases
-//! in this module.
-
 use crate::{
     base::APInt,
-    ir::{
-        Attr, CmpCond, FuncRef, IRBuilder, IRFocus, InstCheckCtx, Module, Opcode, ValueSSA,
-        inst::{ISubInstRef, RetRef},
-        write_ir_module, write_ir_module_quiet,
-    },
-    typing::{ArchInfo, FuncTypeRef, TypeContext, ValTypeID},
+    ir::{inst::*, *},
+    typing::*,
 };
 
 /// Test case 1: CFG example with a lot of branches.
@@ -85,185 +78,236 @@ use crate::{
 /// ```
 #[allow(unused)]
 pub fn test_case_cfg_deep_while_br() -> IRBuilder {
-    let mut builder = create_module_builder("test_case_cfg_deep_while_br");
-    let ri32fty = FuncTypeRef::new(builder.type_ctx(), ValTypeID::Int(32), false, []);
-    let rarrfty = FuncTypeRef::new(
-        builder.type_ctx(),
-        ValTypeID::Void,
-        false,
-        [ValTypeID::Ptr, ValTypeID::Int(64)],
+    let mut builder = IRBuilder::new_inlined(ArchInfo::new_host(), "test_case_cfg_deep_while_br");
+    let ri32fty = FuncTypeID::new(builder.tctx(), ValTypeID::Int(32), false, []);
+    // extern i32 @getint()
+    let getint_func = FuncID::builder(builder.tctx(), "getint", ri32fty)
+        .make_extern()
+        .build_id(&builder.module)
+        .unwrap();
+    // main: define dso_local i32 @main() { ... }
+    let main_func = FuncID::builder(builder.tctx(), "main", ri32fty)
+        .make_defined()
+        .terminate_mode(FuncTerminateMode::ReturnDefault)
+        .build_id(&builder.module)
+        .unwrap();
+
+    // Focus entry block of main
+    let entry_block = main_func.get_entry(builder.allocs()).unwrap();
+    builder.set_focus(IRFocus::Block(entry_block));
+
+    // %1 = alloca i32, align 4    ; c
+    let alloca_c = AllocaInstID::new(builder.allocs(), ValTypeID::Int(32), 2);
+    builder.insert_inst(alloca_c).unwrap();
+
+    // %2 = call i32 @getint()     ; a = %2
+    let call_a = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, ri32fty);
+            cb.callee(ValueSSA::Global(getint_func.into_global()));
+            let inst = cb.build_inst(allocs);
+            CallInstID::allocate(allocs, inst).into_instid()
+        })
+        .unwrap();
+
+    // %3 = call i32 @getint()     ; b = %3
+    let call_b = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, ri32fty);
+            cb.callee(ValueSSA::Global(getint_func.into_global()));
+            let inst = cb.build_inst(allocs);
+            CallInstID::allocate(allocs, inst).into_instid()
+        })
+        .unwrap();
+
+    // %4 = add i32 %2, %3
+    let add_2_3 = BinOPInstID::new(
+        builder.allocs(),
+        Opcode::Add,
+        ValueSSA::Inst(call_a),
+        ValueSSA::Inst(call_b),
     );
+    add_2_3.add_flags(builder.allocs(), BinOPFlags::NSW);
+    builder.insert_inst(add_2_3).unwrap();
 
-    let getint_func = builder.declare_function("getint", ri32fty).unwrap();
-    let putarr_func = builder
-        .define_function_with_unreachable("_Z6putarrPil", rarrfty)
+    // store i32 %4, ptr %1, align 4
+    let store_init_c = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(add_2_3.into_instid()),
+        ValueSSA::Inst(alloca_c.into_instid()),
+        2,
+    );
+    builder.insert_inst(store_init_c).unwrap();
+
+    // Split entry twice to create: entry -> while_header(%5) -> final(%19)
+    let final_block = builder.split_block().unwrap();
+    let while_header = builder.split_block().unwrap();
+
+    // Final block: %20 = load i32, ptr %1, align 4; ret i32 %20
+    builder.set_focus(IRFocus::Block(final_block));
+    let load_ret = {
+        let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        builder.insert_inst(load).unwrap();
+        load
+    };
+    builder
+        .focus_set_terminator(RetInstID::with_retval(
+            builder.allocs(),
+            ValueSSA::Inst(load_ret.into_instid()),
+        ))
         .unwrap();
-    let putarr_func = FuncRef(putarr_func).to_data(&builder.module.allocs.globals);
-    putarr_func.args[0].add_attr(Attr::NoAlias);
-    putarr_func.add_attr(Attr::NoReturn);
 
-    let main_func = builder
-        .define_function_with_unreachable("main", ri32fty)
-        .unwrap();
-    FuncRef(main_func)
-        .to_data(&builder.module.allocs.globals)
-        .add_attr(Attr::AlignStack(4))
-        .add_attr(Attr::NoRecurse);
+    // While header (%5): create loop skeleton 5 -> 8 -> 5
+    builder.set_focus(IRFocus::Block(while_header));
+    builder.focus_set_jump_to(while_header).unwrap();
+    let while_body = builder.split_block().unwrap();
 
-    // set builder current focus to: `Block(main() -> block %0)`
-    let entry_block_0 = builder.full_focus.block;
-    builder.set_focus(IRFocus::Block(entry_block_0));
-    let (_, ret_inst) = builder.focus_set_return(APInt::new(0, 32).into()).unwrap();
-    let ret_inst = RetRef::from_raw_nocheck(ret_inst);
-
-    let alloca_c_1 = builder.add_alloca_inst(ValTypeID::Int(32), 2).unwrap();
-    let call_a_2 = builder.add_call_inst(getint_func, [].into_iter()).unwrap();
-    let call_b_3 = builder.add_call_inst(getint_func, [].into_iter()).unwrap();
-
-    let add_4 = builder
-        .add_binop_inst(
-            Opcode::Add,
-            ValueSSA::Inst(call_a_2),
-            ValueSSA::Inst(call_b_3),
+    // %6 = load i32, ptr %1, align 4
+    let load_c_6 = {
+        let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        builder.insert_inst(load).unwrap();
+        load
+    };
+    // %7 = icmp slt i32 %6, 75
+    let icmp_7 = {
+        let cmp = CmpInstID::new_uninit(
+            builder.allocs(),
+            Opcode::Icmp,
+            CmpCond::SLT,
+            ValTypeID::Int(32),
+        );
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_6.into_instid()));
+        cmp.set_rhs(builder.allocs(), APInt::new(75u32, 32).into());
+        builder.insert_inst(cmp).unwrap();
+        cmp
+    };
+    // br i1 %7, label %8, label %19
+    builder
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_7.into_instid()),
+            while_body,
+            final_block,
         )
         .unwrap();
+
+    // While body (%8): if (c < 100) then goto %11 else %5
+    builder.set_focus(IRFocus::Block(while_body));
+    let if_block_11 = builder.split_block().unwrap();
+    let load_c_9 = {
+        let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        builder.insert_inst(load).unwrap();
+        load
+    };
+    let icmp_10 = {
+        let cmp = CmpInstID::new_uninit(
+            builder.allocs(),
+            Opcode::Icmp,
+            CmpCond::SLT,
+            ValTypeID::Int(32),
+        );
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_9.into_instid()));
+        cmp.set_rhs(builder.allocs(), APInt::new(100u32, 32).into());
+        builder.insert_inst(cmp).unwrap();
+        cmp
+    };
     builder
-        .add_store_inst(ValueSSA::Inst(alloca_c_1), ValueSSA::Inst(add_4), 4)
-        .unwrap();
-
-    let final_block_19 = builder.split_current_block_from_terminator().unwrap();
-    let while_block_5 = builder.split_current_block_from_terminator().unwrap();
-
-    // set up the final block
-    builder.set_focus(IRFocus::Block(final_block_19));
-    let load_20 = builder
-        .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
-        .unwrap();
-
-    // set up the while block
-    builder.set_focus(IRFocus::Block(while_block_5));
-    // Create a loop
-    builder.focus_set_jump_to(while_block_5).unwrap();
-    // seperate the header and body
-    let while_body_block_8 = builder.split_current_block_from_terminator().unwrap();
-
-    let load_6 = builder
-        .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
-        .unwrap();
-    let icmp_7 = builder
-        .add_cmp_inst(
-            CmpCond::LT | CmpCond::SIGNED_ORDERED,
-            ValueSSA::Inst(load_6),
-            APInt::new(75, 32).into(),
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_10.into_instid()),
+            if_block_11,
+            while_header,
         )
         .unwrap();
-    builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_7), while_body_block_8, final_block_19)
-        .unwrap();
 
-    // set up the while body block
-    builder.set_focus(IRFocus::Block(while_body_block_8));
-    // if (c < 100)
-    let if_block_11 = builder.split_current_block_from_terminator().unwrap();
-    let load_9 = builder
-        .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
-        .unwrap();
-    let icmp_10 = builder
-        .add_cmp_inst(
-            CmpCond::LT | CmpCond::SIGNED_ORDERED,
-            ValueSSA::Inst(load_9),
-            APInt::new(100, 32).into(),
-        )
-        .unwrap();
-    builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_10), if_block_11, while_block_5)
-        .unwrap();
-
-    // set up the if block
+    // If block (%11): c = c + 42
     builder.set_focus(IRFocus::Block(if_block_11));
-    // c = c + d
-    let load_12 = builder
-        .add_load_inst(ValTypeID::Int(32), 4, ValueSSA::Inst(alloca_c_1))
-        .unwrap();
-    let add_13 = builder
-        .add_binop_inst(
-            Opcode::Add,
-            ValueSSA::Inst(load_12),
-            APInt::new(42, 32).into(),
+    let load_c_12 = {
+        let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        builder.insert_inst(load).unwrap();
+        load
+    };
+    let add_13 = BinOPInstID::new(
+        builder.allocs(),
+        Opcode::Add,
+        ValueSSA::Inst(load_c_12.into_instid()),
+        APInt::new(42u32, 32).into(),
+    );
+    add_13.add_flags(builder.allocs(), BinOPFlags::NSW);
+    builder.insert_inst(add_13).unwrap();
+    let store_c_13 = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(add_13.into_instid()),
+        ValueSSA::Inst(alloca_c.into_instid()),
+        2,
+    );
+    builder.insert_inst(store_c_13).unwrap();
+
+    // if (c > 99) then %15 else %5
+    let if_block_15 = builder.split_block().unwrap();
+    let icmp_14 = {
+        let cmp = CmpInstID::new_uninit(
+            builder.allocs(),
+            Opcode::Icmp,
+            CmpCond::SGT,
+            ValTypeID::Int(32),
+        );
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(add_13.into_instid()));
+        cmp.set_rhs(builder.allocs(), APInt::new(99u32, 32).into());
+        builder.insert_inst(cmp).unwrap();
+        cmp
+    };
+    builder
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_14.into_instid()),
+            if_block_15,
+            while_header,
         )
         .unwrap();
-    builder
-        .add_store_inst(ValueSSA::Inst(alloca_c_1), ValueSSA::Inst(add_13), 4)
-        .unwrap();
 
-    // if (c > 99)
-    let if_block_15 = builder.split_current_block_from_terminator().unwrap();
-    let icmp_14 = builder
-        .add_cmp_inst(
-            CmpCond::GT | CmpCond::SIGNED_ORDERED,
-            ValueSSA::Inst(add_13),
-            APInt::new(99, 32).into(),
-        )
-        .unwrap();
-    builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_14), if_block_15, while_block_5)
-        .unwrap();
-
-    // set up the if block
+    // If block (%15): if (getint() == 1) then %18 else %5
     builder.set_focus(IRFocus::Block(if_block_15));
-    // if (getint() == 1)
-    let if_block_18 = builder.split_current_block_from_terminator().unwrap();
-    let call_16 = builder.add_call_inst(getint_func, [].into_iter()).unwrap();
-    let icmp_17 = builder
-        .add_cmp_inst(
+    let if_block_18 = builder.split_block().unwrap();
+    let call_16 = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, ri32fty);
+            cb.callee(ValueSSA::Global(getint_func.into_global()));
+            let inst = cb.build_inst(allocs);
+            CallInstID::allocate(allocs, inst).into_instid()
+        })
+        .unwrap();
+    let icmp_17 = {
+        let cmp = CmpInstID::new_uninit(
+            builder.allocs(),
+            Opcode::Icmp,
             CmpCond::EQ | CmpCond::SIGNED_ORDERED,
-            ValueSSA::Inst(call_16),
-            APInt::new(1, 32).into(),
+            ValTypeID::Int(32),
+        );
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(call_16));
+        cmp.set_rhs(builder.allocs(), APInt::new(1u32, 32).into());
+        builder.insert_inst(cmp).unwrap();
+        cmp
+    };
+    builder
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_17.into_instid()),
+            if_block_18,
+            while_header,
         )
         .unwrap();
-    builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_17), if_block_18, while_block_5)
-        .unwrap();
-    // set up the if block
+
+    // If block (%18): c = 168; br %5
     builder.set_focus(IRFocus::Block(if_block_18));
-    // c = e * 2
-    builder
-        .add_store_inst(ValueSSA::Inst(alloca_c_1), APInt::new(168, 32).into(), 4)
-        .unwrap();
-    builder.focus_set_jump_to(while_block_5).unwrap();
-    builder.module.gc_cleaner().compact([]);
-    InstCheckCtx::from_module(&builder.module)
-        .check_module(&builder.module)
-        .unwrap();
-    builder
-}
+    let store_168 = StoreInstID::new(
+        builder.allocs(),
+        APInt::new(168u32, 32).into(),
+        ValueSSA::Inst(alloca_c.into_instid()),
+        2,
+    );
+    builder.insert_inst(store_168).unwrap();
+    builder.focus_set_jump_to(while_header).unwrap();
 
-pub fn create_module_builder(name: &str) -> IRBuilder {
-    let host_platform = ArchInfo::new_host();
-    let type_ctx = TypeContext::new_rc(host_platform);
-    let builder = IRBuilder::new(Module::new(name.into(), type_ctx));
     builder
-}
-
-#[allow(unused)]
-pub fn write_ir_to_file(module: &Module, filename: &str) {
-    let filepath = format!("target/{}.ll", filename);
-    let mut file = match std::fs::File::create(&filepath) {
-        Ok(f) => f,
-        Err(e) => {
-            panic!("Failed to create file {filepath}: {e}")
-        }
-    };
-    write_ir_module(module, &mut file);
-}
-
-pub fn write_ir_to_file_quiet(module: &Module, filename: &str) {
-    let filepath = format!("target/{}.ll", filename);
-    let mut file = match std::fs::File::create(&filepath) {
-        Ok(f) => f,
-        Err(e) => {
-            panic!("Failed to create file {filepath}: {e}")
-        }
-    };
-    write_ir_module_quiet(module, &mut file);
 }

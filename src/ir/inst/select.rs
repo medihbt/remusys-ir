@@ -1,217 +1,183 @@
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
-        InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
-use std::rc::Rc;
 
-/// 选择指令
+/// 选择指令: 根据条件选择两个值中的一个作为结果。
 ///
 /// ### LLVM IR 语法
 ///
 /// ```llvm
 /// %<name> = select <type>, i1 <cond>, <true value>, <false value>
 /// ```
-#[derive(Debug)]
-pub struct SelectOp {
-    common: InstCommon,
-    operands: [Rc<Use>; 3],
+///
+/// ### 操作数布局
+///
+/// - `operands[0] = cond`: 条件操作数，类型为 `i1`.
+/// - `operands[1] = then_val`: 条件为真时选择的值。
+/// - `operands[2] = else_val`: 条件为假时选择的值。
+pub struct SelectInst {
+    pub common: InstCommon,
+    operands: [UseID; 3],
 }
-
-impl IUser for SelectOp {
+impl_traceable_from_common!(SelectInst, true);
+impl IUser for SelectInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.operands
     }
 }
-
-impl ISubInst for SelectOp {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Select, ValTypeID::Void),
-            operands: [
-                Use::new(UseKind::SelectCond),
-                Use::new(UseKind::SelectTrue),
-                Use::new(UseKind::SelectFalse),
-            ],
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        if let InstData::Select(select_op) = inst { Some(select_op) } else { None }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        if let InstData::Select(select_op) = inst { Some(select_op) } else { None }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Select(self)
-    }
+impl ISubInst for SelectInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
-    fn is_terminator(&self) -> bool {
-        false
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Select(s) => Some(s),
+            _ => None,
+        }
     }
-
-    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        let Some(id) = id else {
-            use std::io::{Error, ErrorKind::InvalidInput};
-            return Err(Error::new(InvalidInput, "ID must be provided for CastOp"));
-        };
-        write!(writer, "%{id} = select ")?;
-        writer.write_type(self.get_valtype())?;
-
-        writer.write_str(", i1 ")?;
-        writer.write_operand(self.get_cond())?;
-
-        writer.write_str(", ")?;
-        writer.write_operand(self.get_true_val())?;
-
-        writer.write_str(", ")?;
-        writer.write_operand(self.get_false_val())
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Select(s) => Some(s),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Select(s) => Some(s),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Select(self)
+    }
+    fn try_get_jts(&self) -> Option<crate::ir::JumpTargets<'_>> {
+        None
     }
 }
-
-impl SelectOp {
+impl SelectInst {
     pub const OP_COND: usize = 0;
-    pub const OP_TRUE: usize = 1;
-    pub const OP_FALSE: usize = 2;
+    pub const OP_THEN: usize = 1;
+    pub const OP_ELSE: usize = 2;
 
-    pub fn new_raw(ret_type: ValTypeID) -> Self {
+    pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         Self {
-            common: InstCommon::new(Opcode::Select, ret_type),
+            common: InstCommon::new(Opcode::Select, ty),
             operands: [
-                Use::new(UseKind::SelectCond),
-                Use::new(UseKind::SelectTrue),
-                Use::new(UseKind::SelectFalse),
+                UseID::new(allocs, UseKind::SelectCond),
+                UseID::new(allocs, UseKind::SelectThen),
+                UseID::new(allocs, UseKind::SelectElse),
             ],
         }
     }
+    pub fn new(allocs: &IRAllocs, cond: ValueSSA, then_val: ValueSSA, else_val: ValueSSA) -> Self {
+        let then_ty = then_val.get_valtype(allocs);
+        let else_ty = else_val.get_valtype(allocs);
+        assert_eq!(
+            then_ty, else_ty,
+            "then_val and else_val must have the same type"
+        );
+        let cond_ty = cond.get_valtype(allocs);
+        assert_eq!(cond_ty, ValTypeID::Int(1), "cond must be of type i1");
 
-    pub fn new(allocs: &IRAllocs, cond: ValueSSA, true_val: ValueSSA, false_val: ValueSSA) -> Self {
-        let ret_type = Self::do_check_operands(allocs, &cond, &true_val, &false_val).unwrap();
-        let select_op = Self::new_raw(ret_type);
-        select_op.operands[0].set_operand(allocs, cond);
-        select_op.operands[1].set_operand(allocs, true_val);
-        select_op.operands[2].set_operand(allocs, false_val);
-        select_op
-    }
-
-    fn do_check_operands(
-        allocs: &IRAllocs,
-        cond: &ValueSSA,
-        true_val: &ValueSSA,
-        false_val: &ValueSSA,
-    ) -> Result<ValTypeID, String> {
-        let ValTypeID::Int(1) = cond.get_valtype(allocs) else {
-            return Err("SelectOp condition must be a boolean type".into());
-        };
-        let true_ty = true_val.get_valtype(allocs);
-        let false_ty = false_val.get_valtype(allocs);
-        if true_ty != false_ty {
-            return Err(format!(
-                "SelectOp true and false values must have the same type: {true_ty:?} != {false_ty:?}"
-            ));
-        }
-        let ret_ty = match true_ty {
-            ValTypeID::Int(_) | ValTypeID::Float(_) | ValTypeID::Ptr => true_ty,
-            ValTypeID::Struct(_) | ValTypeID::Array(_) => true_ty,
-            _ => {
-                return Err(format!("SelectOp does not support this type: {true_ty:?}",));
-            }
-        };
-        Ok(ret_ty)
+        let inst = Self::new_uninit(allocs, then_ty);
+        inst.cond_use().set_operand(allocs, cond);
+        inst.then_use().set_operand(allocs, then_val);
+        inst.else_use().set_operand(allocs, else_val);
+        inst
     }
 
-    pub fn check(&self, allocs: &IRAllocs) -> Result<(), String> {
-        let ret_ty = Self::do_check_operands(
-            allocs, // 使用默认的 IRAllocs 进行检查
-            &self.operands[0].get_operand(),
-            &self.operands[1].get_operand(),
-            &self.operands[2].get_operand(),
-        )?;
-        if ret_ty == self.common.ret_type {
-            Ok(())
-        } else {
-            Err(format!(
-                "SelectOp return type mismatch: expected {:?}, got {:?}",
-                self.common.ret_type, ret_ty
-            ))
-        }
+    pub fn cond_use(&self) -> UseID {
+        self.operands[Self::OP_COND]
+    }
+    pub fn get_cond(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.cond_use().get_operand(allocs)
+    }
+    pub fn set_cond(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.cond_use().set_operand(allocs, val);
     }
 
-    pub fn cond_use(&self) -> &Rc<Use> {
-        &self.operands[0]
+    pub fn then_use(&self) -> UseID {
+        self.operands[Self::OP_THEN]
     }
-    pub fn true_use(&self) -> &Rc<Use> {
-        &self.operands[1]
+    pub fn get_then(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.then_use().get_operand(allocs)
     }
-    pub fn false_use(&self) -> &Rc<Use> {
-        &self.operands[2]
-    }
-
-    pub fn get_cond(&self) -> ValueSSA {
-        self.operands[0].get_operand()
-    }
-    pub fn get_true_val(&self) -> ValueSSA {
-        self.operands[1].get_operand()
-    }
-    pub fn get_false_val(&self) -> ValueSSA {
-        self.operands[2].get_operand()
+    pub fn set_then(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.then_use().set_operand(allocs, val);
     }
 
-    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
-        self.operands[0].set_operand(allocs, cond);
+    pub fn else_use(&self) -> UseID {
+        self.operands[Self::OP_ELSE]
     }
-    pub fn set_true_val(&self, allocs: &IRAllocs, true_val: ValueSSA) {
-        self.operands[1].set_operand(allocs, true_val);
+    pub fn get_else(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.else_use().get_operand(allocs)
     }
-    pub fn set_false_val(&self, allocs: &IRAllocs, false_val: ValueSSA) {
-        self.operands[2].set_operand(allocs, false_val);
+    pub fn set_else(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.else_use().set_operand(allocs, val);
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SelectOpRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SelectInstID(pub InstID);
+impl_debug_for_subinst_id!(SelectInstID);
+impl ISubInstID for SelectInstID {
+    type InstObjT = SelectInst;
 
-impl ISubInstRef for SelectOpRef {
-    type InstDataT = SelectOp;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        SelectOpRef(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        SelectInstID(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }
-
-impl SelectOpRef {
-    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+impl SelectInstID {
+    pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
+        let inst = SelectInst::new_uninit(allocs, ty);
+        Self::allocate(allocs, inst)
     }
-    pub fn get_true_val(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_true_val()
-    }
-    pub fn get_false_val(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_false_val()
+    pub fn new(allocs: &IRAllocs, cond: ValueSSA, then_val: ValueSSA, else_val: ValueSSA) -> Self {
+        let inst = SelectInst::new(allocs, cond, then_val, else_val);
+        Self::allocate(allocs, inst)
     }
 
-    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_cond(allocs, cond);
+    pub fn cond_use(&self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).cond_use()
     }
-    pub fn set_true_val(self, allocs: &impl IRAllocsReadable, true_val: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_true_val(allocs, true_val);
+    pub fn get_cond(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_cond(allocs)
     }
-    pub fn set_false_val(self, allocs: &impl IRAllocsReadable, false_val: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_false_val(allocs, false_val);
+    pub fn set_cond(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_cond(allocs, val);
+    }
+
+    pub fn then_use(&self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).then_use()
+    }
+    pub fn get_then(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_then(allocs)
+    }
+    pub fn set_then(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_then(allocs, val);
+    }
+
+    pub fn else_use(&self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).else_use()
+    }
+    pub fn get_else(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_else(allocs)
+    }
+    pub fn set_else(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_else(allocs, val);
     }
 }

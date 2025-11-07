@@ -1,12 +1,22 @@
 use crate::typing::{
-    IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass,
+    IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
     ValTypeID,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FPKind {
     Ieee32,
     Ieee64,
+}
+
+impl std::fmt::Debug for FPKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            FPKind::Ieee32 => "float",
+            FPKind::Ieee64 => "double",
+        };
+        write!(f, "{}", name)
+    }
 }
 
 impl IValType for FPKind {
@@ -14,7 +24,7 @@ impl IValType for FPKind {
         if let ValTypeID::Float(kind) = ty {
             Ok(kind)
         } else {
-            Err(TypeMismatchError::NotClass(ty, ValTypeClass::Float))
+            Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Float))
         }
     }
 
@@ -55,15 +65,20 @@ impl IValType for FPKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct IntType(pub u8);
 
+impl std::fmt::Debug for IntType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "i{}", self.0)
+    }
+}
 impl IValType for IntType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         if let ValTypeID::Int(bits) = ty {
             Ok(IntType(bits))
         } else {
-            Err(TypeMismatchError::NotClass(ty, ValTypeClass::Int))
+            Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Int))
         }
     }
 
@@ -101,7 +116,7 @@ impl IValType for PtrType {
         if ty == ValTypeID::Ptr {
             Ok(PtrType)
         } else {
-            Err(TypeMismatchError::NotClass(ty, ValTypeClass::Ptr))
+            Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Ptr))
         }
     }
 
@@ -118,11 +133,11 @@ impl IValType for PtrType {
     }
 
     fn try_get_size_full(self, _: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        Some(tctx.arch.ptr_nbits.div_ceil(8))
+        Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
     fn try_get_align_full(self, _: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
-        Some(tctx.arch.ptr_nbits.div_ceil(8))
+        Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
     fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {

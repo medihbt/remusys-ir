@@ -1,6 +1,6 @@
 use crate::{
     base::APInt,
-    ir::{IRAllocs, IRWriter, ISubValueSSA, ValueSSA},
+    ir::{IRAllocs, ISubValueSSA, UserList, ValueClass, ValueSSA},
     typing::{FPKind, IValType, ScalarType, ValTypeID},
 };
 use std::{
@@ -62,9 +62,12 @@ impl Eq for ConstData {
 }
 
 impl ISubValueSSA for ConstData {
-    fn try_from_ir(value: ValueSSA) -> Option<Self> {
-        match value {
-            ValueSSA::ConstData(data) => Some(data),
+    fn get_class(self) -> ValueClass {
+        ValueClass::ConstData
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::ConstData(cd) => Some(cd),
             _ => None,
         }
     }
@@ -81,34 +84,21 @@ impl ISubValueSSA for ConstData {
             ConstData::Float(kind, _) => ValTypeID::Float(kind),
         }
     }
-
-    fn try_gettype_noalloc(self) -> Option<ValTypeID> {
-        Some((&self).get_valtype_noalloc())
-    }
-
-    fn is_zero(&self, _: &IRAllocs) -> bool {
-        self.is_zero()
-    }
-
-    fn fmt_ir(&self, writer: &IRWriter) -> std::io::Result<()> {
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
         match self {
-            ConstData::Undef(_) => writer.write_str("undef"),
-            ConstData::Zero(ty) => match ty {
-                ScalarType::Ptr => writer.write_str("null"),
-                ScalarType::Int(_) => writer.write_str("0"),
-                ScalarType::Float(_) => writer.write_str("0.0"),
-            },
-            ConstData::PtrNull(_) => writer.write_str("null"),
-            ConstData::Int(apint) => {
-                write!(writer.output.borrow_mut(), "{}", apint.as_signed())
-            }
-            ConstData::Float(FPKind::Ieee32, fp) => {
-                write!(writer.output.borrow_mut(), "{:.20e}", *fp as f32)
-            }
-            ConstData::Float(FPKind::Ieee64, fp) => {
-                write!(writer.output.borrow_mut(), "{:.20e}", *fp)
-            }
+            ConstData::Zero(_) | ConstData::PtrNull(_) => true,
+            ConstData::Int(apint) => apint.is_zero(),
+            ConstData::Float(FPKind::Ieee32, f) => (f as f32).to_bits() == 0,
+            ConstData::Float(FPKind::Ieee64, f) => (f as f64).to_bits() == 0,
+            _ => false,
         }
+    }
+
+    fn can_trace(self) -> bool {
+        false
+    }
+    fn try_get_users(self, _allocs: &IRAllocs) -> Option<&UserList> {
+        None
     }
 }
 
@@ -163,7 +153,7 @@ impl ConstData {
 
 /// 常量计算错误.
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
-pub enum ConstCalcError {
+pub enum ConstCalcErr {
     #[error("constant value type mismatch")]
     TypeMismatch,
     #[error("constant value operation not supported")]
@@ -171,12 +161,12 @@ pub enum ConstCalcError {
     #[error("constant value division by zero")]
     DivByZero,
 }
-pub type ConstCalcRes<T = ()> = Result<T, ConstCalcError>;
+pub type ConstCalcRes<T = ()> = Result<T, ConstCalcErr>;
 
 impl ConstData {
     pub fn add(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(self.clone()),
@@ -187,7 +177,7 @@ impl ConstData {
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 Ok(ConstData::Float(*lk, *lv + *rv))
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
@@ -207,7 +197,7 @@ impl ConstData {
 
     pub fn mul(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
@@ -218,121 +208,121 @@ impl ConstData {
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 Ok(ConstData::Float(*lk, *lv * *rv))
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn sdiv(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
             (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcError::DivByZero),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
             (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.sdiv(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 if *rv != 0.0 {
                     Ok(ConstData::Float(*lk, *lv / *rv))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn udiv(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
             (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcError::DivByZero),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
             (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.udiv(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 if *rv != 0.0 {
                     Ok(ConstData::Float(*lk, *lv / *rv))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn srem(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
             (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcError::DivByZero),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
             (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.srem(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 if *rv != 0.0 {
                     Ok(ConstData::Float(*lk, lv.rem(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn urem(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
             (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcError::DivByZero),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
             (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.urem(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
             (Self::Float(lk, lv), ConstData::Float(rk, rv)) if lk == rk => {
                 if *rv != 0.0 {
                     Ok(ConstData::Float(*lk, lv.rem(*rv)))
                 } else {
-                    Err(ConstCalcError::DivByZero)
+                    Err(ConstCalcErr::DivByZero)
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn shl(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
@@ -346,13 +336,13 @@ impl ConstData {
                     Ok(self.clone())
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 
     pub fn lshr(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
@@ -366,12 +356,12 @@ impl ConstData {
                     Ok(self.clone())
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
     pub fn ashr(&self, other: &Self) -> ConstCalcRes<Self> {
         if self.get_valtype_noalloc() != other.get_valtype_noalloc() {
-            return Err(ConstCalcError::TypeMismatch);
+            return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
             (Self::Undef(_), _) => Ok(self.clone()),
@@ -385,7 +375,7 @@ impl ConstData {
                     Ok(self.clone())
                 }
             }
-            _ => Err(ConstCalcError::UnsupportedOp),
+            _ => Err(ConstCalcErr::UnsupportedOp),
         }
     }
 }

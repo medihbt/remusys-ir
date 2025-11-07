@@ -1,14 +1,89 @@
-use std::rc::Rc;
-
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
-        InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA,
-        checking::{self, ValueCheckError},
-        inst::ISubInstRef,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
-    typing::{ValTypeClass, ValTypeID},
+    typing::ValTypeID,
 };
+use bitflags::bitflags;
+use std::cell::Cell;
+
+bitflags! {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct BinOPFlags: u8 {
+        const NONE  = 0;
+        const EXACT = 0b0000_0001;
+        const NUW   = 0b0000_0010;
+        const NSW   = 0b0000_0100;
+    }
+}
+impl std::fmt::Display for BinOPFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+impl BinOPFlags {
+    pub fn has_exact(self) -> bool {
+        self.contains(BinOPFlags::EXACT)
+    }
+    pub fn has_nuw(self) -> bool {
+        self.contains(BinOPFlags::NUW)
+    }
+    pub fn has_nsw(self) -> bool {
+        self.contains(BinOPFlags::NSW)
+    }
+
+    pub fn opcode_supports(opcode: Opcode) -> Self {
+        match opcode {
+            // Integer add/sub/mul support no-wrap flags (nuw/nsw)
+            Opcode::Add | Opcode::Sub | Opcode::Mul => BinOPFlags::NUW | BinOPFlags::NSW,
+            // Left shift supports no-wrap flags (nuw/nsw); exact is NOT applicable
+            Opcode::Shl => BinOPFlags::NUW | BinOPFlags::NSW,
+            // Right shifts and integer divisions support exact; no-wrap flags don't apply here
+            Opcode::Lshr | Opcode::Ashr | Opcode::Sdiv | Opcode::Udiv => BinOPFlags::EXACT,
+            _ => BinOPFlags::NONE,
+        }
+    }
+
+    pub fn filter_by_opcode(self, opcode: Opcode) -> Self {
+        let supported = Self::opcode_supports(opcode);
+        Self::from_bits_truncate(self.bits() & supported.bits())
+    }
+
+    /// Canonical, allocation-free textual form (for writer):
+    /// - Order: "nuw nsw exact"
+    /// - Empty set: "" (no flags printed)
+    pub fn as_str(self) -> &'static str {
+        const EXACT_NUW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0011);
+        const EXACT_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0101);
+        const NUW_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0110);
+        const EXACT_NUW_NSW: BinOPFlags = BinOPFlags::from_bits_retain(0b0000_0111);
+        match self {
+            Self::NONE => "",
+            Self::NUW => "nuw",
+            Self::NSW => "nsw",
+            Self::EXACT => "exact",
+            NUW_NSW => "nuw nsw",
+            EXACT_NUW => "nuw exact",
+            EXACT_NSW => "nsw exact",
+            EXACT_NUW_NSW => "nuw nsw exact",
+            _ => "",
+        }
+    }
+    pub fn from_str(s: &str) -> Option<Self> {
+        let mut flags = BinOPFlags::NONE;
+        for part in s.split_whitespace() {
+            match part {
+                "exact" => flags |= BinOPFlags::EXACT,
+                "nuw" => flags |= BinOPFlags::NUW,
+                "nsw" => flags |= BinOPFlags::NSW,
+                _ => return None,
+            }
+        }
+        Some(flags)
+    }
+}
 
 /// 二元操作指令: 执行两个操作数的二元运算（算术运算、逻辑运算、移位运算），并返回结果。
 ///
@@ -17,229 +92,183 @@ use crate::{
 /// ```llvm
 /// %<result> = <opcode> <ty> <op1>, <op2>
 /// ```
-#[derive(Debug)]
-pub struct BinOp {
-    common: InstCommon,
-    operands: [Rc<Use>; 2],
+pub struct BinOPInst {
+    pub common: InstCommon,
+    operands: [UseID; 2],
+    flags: Cell<BinOPFlags>,
 }
-
-impl IUser for BinOp {
+impl_traceable_from_common!(BinOPInst, true);
+impl IUser for BinOPInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.operands
     }
 }
-
-impl ISubInst for BinOp {
-    fn new_empty(opcode: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(opcode, ValTypeID::Void),
-            operands: [Use::new(UseKind::BinOpLhs), Use::new(UseKind::BinOpRhs)],
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        if let InstData::BinOp(binop) = inst { Some(binop) } else { None }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        if let InstData::BinOp(binop) = inst { Some(binop) } else { None }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::BinOp(self)
-    }
+impl ISubInst for BinOPInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
-    fn is_terminator(&self) -> bool {
-        false
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::BinOP(b) => Some(b),
+            _ => None,
+        }
     }
-
-    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        let Some(id) = id else { panic!("Tried to format BinOp without an ID") };
-        write!(writer, "%{} = {} ", id, self.get_opcode().to_string())?;
-        writer.write_type(self.common.ret_type)?;
-        writer.write_str(" ")?;
-        writer.write_operand(self.get_lhs())?;
-        writer.write_str(", ")?;
-        writer.write_operand(self.get_rhs())
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::BinOP(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::BinOP(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::BinOP(self)
+    }
+    fn try_get_jts(&self) -> Option<crate::ir::JumpTargets<'_>> {
+        None
     }
 }
-
-impl BinOp {
+impl BinOPInst {
     pub const OP_LHS: usize = 0;
     pub const OP_RHS: usize = 1;
 
-    pub fn new_raw(opcode: Opcode, ret_type: ValTypeID) -> Self {
+    pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, ty: ValTypeID) -> Self {
+        assert!(
+            opcode.is_binary_op(),
+            "Opcode {opcode:?} is not a binary operation"
+        );
         Self {
-            common: InstCommon::new(opcode, ret_type),
-            operands: [Use::new(UseKind::BinOpLhs), Use::new(UseKind::BinOpRhs)],
+            common: InstCommon::new(opcode, ty),
+            operands: [
+                UseID::new(allocs, UseKind::BinOpLhs),
+                UseID::new(allocs, UseKind::BinOpRhs),
+            ],
+            flags: Cell::new(BinOPFlags::NONE),
         }
     }
-    pub fn new(allocs: &IRAllocs, opcode: Opcode, lhs: ValueSSA, rhs: ValueSSA) -> Self {
-        let binop = Self::new_raw(opcode, lhs.get_valtype(allocs));
-        binop.operands[0].set_operand(allocs, lhs);
-        binop.operands[1].set_operand(allocs, rhs);
-        binop
+
+    pub fn lhs_use(&self) -> UseID {
+        self.operands[Self::OP_LHS]
+    }
+    pub fn get_lhs(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.lhs_use().get_operand(allocs)
+    }
+    pub fn set_lhs(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.lhs_use().set_operand(allocs, val);
     }
 
-    pub fn accepts_opcode(opcode: Opcode) -> bool {
-        matches!(opcode.get_kind(), InstKind::BinOp)
+    pub fn rhs_use(&self) -> UseID {
+        self.operands[Self::OP_RHS]
+    }
+    pub fn get_rhs(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.rhs_use().get_operand(allocs)
+    }
+    pub fn set_rhs(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.rhs_use().set_operand(allocs, val);
     }
 
-    pub fn lhs(&self) -> &Rc<Use> {
-        &self.operands[0]
+    pub fn get_flags(&self) -> BinOPFlags {
+        self.flags.get()
     }
-    pub fn get_lhs(&self) -> ValueSSA {
-        self.lhs().get_operand()
+    pub fn set_flags(&self, flags: BinOPFlags) {
+        let filtered = flags.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
     }
-    pub fn set_lhs(&self, allocs: &IRAllocs, lhs: ValueSSA) {
-        self.lhs().set_operand(allocs, lhs);
+    pub fn add_flags(&self, flags: BinOPFlags) {
+        let current = self.flags.get();
+        let combined = current | flags;
+        let filtered = combined.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
     }
-
-    pub fn rhs(&self) -> &Rc<Use> {
-        &self.operands[1]
+    pub fn del_flags(&self, flags: BinOPFlags) {
+        let current = self.flags.get();
+        let removed = current - flags;
+        let filtered = removed.filter_by_opcode(self.common.opcode);
+        self.flags.set(filtered);
     }
-    pub fn get_rhs(&self) -> ValueSSA {
-        self.rhs().get_operand()
+    pub fn has_flag(&self, flag: BinOPFlags) -> bool {
+        let current = self.flags.get();
+        current.contains(flag)
     }
-    pub fn set_rhs(&self, allocs: &IRAllocs, rhs: ValueSSA) {
-        self.rhs().set_operand(allocs, rhs);
-    }
-
-    pub fn check_operands(&self, allocs: &IRAllocs) {
-        self.validate(allocs).unwrap()
-    }
-    pub fn validate(&self, allocs: &IRAllocs) -> Result<(), ValueCheckError> {
-        Self::do_validate_operands(
-            self.get_self_ref(),
-            self.common.opcode,
-            self.common.ret_type,
-            self.get_lhs(),
-            self.get_rhs(),
-            allocs,
-        )
-    }
-
-    fn do_validate_operands(
-        inst: InstRef,
-        opcode: Opcode,
-        retty: ValTypeID,
-        lhs: ValueSSA,
-        rhs: ValueSSA,
-        allocs: &IRAllocs,
-    ) -> Result<(), ValueCheckError> {
-        match opcode {
-            Opcode::Add | Opcode::Sub | Opcode::Mul => {
-                if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::InstTypeNotClass(
-                        inst,
-                        retty,
-                        ValTypeClass::Int,
-                    ));
-                }
-                checking::type_matches(retty, lhs, allocs)?;
-                checking::type_matches(retty, rhs, allocs)
-            }
-            Opcode::Fadd | Opcode::Fsub | Opcode::Fmul | Opcode::Fdiv | Opcode::Frem => {
-                if !retty.isclass_or_vec(ValTypeClass::Float) {
-                    return Err(ValueCheckError::InstTypeNotClass(
-                        inst,
-                        retty,
-                        ValTypeClass::Float,
-                    ));
-                }
-                checking::type_matches(retty, lhs, allocs)?;
-                checking::type_matches(retty, rhs, allocs)
-            }
-            Opcode::Sdiv | Opcode::Udiv | Opcode::Srem | Opcode::Urem => {
-                if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::InstTypeNotClass(
-                        inst,
-                        retty,
-                        ValTypeClass::Int,
-                    ));
-                }
-                checking::type_matches(retty, lhs, allocs)?;
-                checking::type_matches(retty, rhs, allocs)?;
-                if let ValueSSA::ConstData(x) = rhs {
-                    if x.is_zero() {
-                        return Err(ValueCheckError::InvalidZeroOP(
-                            x.into_ir(),
-                            opcode,
-                            UseKind::BinOpRhs,
-                        ));
-                    }
-                }
-                Ok(())
-            }
-            Opcode::BitAnd | Opcode::BitOr | Opcode::BitXor => {
-                if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::InstTypeNotClass(
-                        inst,
-                        retty,
-                        ValTypeClass::Int,
-                    ));
-                }
-                checking::type_matches(retty, lhs, allocs)?;
-                checking::type_matches(retty, rhs, allocs)?;
-                Ok(())
-            }
-            Opcode::Shl | Opcode::Lshr | Opcode::Ashr => {
-                if !retty.isclass_or_vec(ValTypeClass::Int) {
-                    return Err(ValueCheckError::InstTypeNotClass(
-                        inst,
-                        retty,
-                        ValTypeClass::Int,
-                    ));
-                }
-                checking::type_matches(retty, lhs, allocs)?;
-                checking::type_matches(retty, rhs, allocs)?;
-                Ok(())
-            }
-            _ => {
-                if opcode.is_binary_op() {
-                    panic!("Binary operation {:?} is not implemented", opcode);
-                } else {
-                    panic!("Opcode {:?} is not a binary operation", opcode);
-                }
-            }
-        }
+    pub fn has_oneof_flags(&self, flags: BinOPFlags) -> bool {
+        let current = self.flags.get();
+        !(current & flags).is_empty()
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BinOpRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BinOPInstID(pub InstID);
+impl_debug_for_subinst_id!(BinOPInstID);
+impl ISubInstID for BinOPInstID {
+    type InstObjT = BinOPInst;
 
-impl ISubInstRef for BinOpRef {
-    type InstDataT = BinOp;
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        Self(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }
 
-impl BinOpRef {
-    pub fn get_lhs(&self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).get_lhs()
+impl BinOPInstID {
+    pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, ty: ValTypeID) -> Self {
+        let inst = BinOPInst::new_uninit(allocs, opcode, ty);
+        Self::allocate(allocs, inst)
     }
-    pub fn set_lhs(&self, allocs: &impl IRAllocsReadable, lhs: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_lhs(allocs, lhs);
+    pub fn new(allocs: &IRAllocs, opcode: Opcode, lhs: ValueSSA, rhs: ValueSSA) -> Self {
+        let inst_id = Self::new_uninit(allocs, opcode, lhs.get_valtype(allocs));
+        let inst = inst_id.deref_ir(allocs);
+        inst.set_lhs(allocs, lhs);
+        inst.set_rhs(allocs, rhs);
+        inst_id
     }
 
-    pub fn get_rhs(&self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).get_rhs()
+    pub fn lhs_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).lhs_use()
     }
-    pub fn set_rhs(&self, allocs: &impl IRAllocsReadable, rhs: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_rhs(allocs, rhs);
+    pub fn get_lhs(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_lhs(allocs)
+    }
+    pub fn set_lhs(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_lhs(allocs, val);
+    }
+
+    pub fn rhs_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).rhs_use()
+    }
+    pub fn get_rhs(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_rhs(allocs)
+    }
+    pub fn set_rhs(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_rhs(allocs, val);
+    }
+
+    pub fn get_flags(self, allocs: &IRAllocs) -> BinOPFlags {
+        self.deref_ir(allocs).get_flags()
+    }
+    pub fn set_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).set_flags(flags);
+    }
+    pub fn add_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).add_flags(flags);
+    }
+    pub fn del_flags(self, allocs: &IRAllocs, flags: BinOPFlags) {
+        self.deref_ir(allocs).del_flags(flags);
+    }
+    pub fn has_flag(self, allocs: &IRAllocs, flag: BinOPFlags) -> bool {
+        self.deref_ir(allocs).has_flag(flag)
+    }
+    pub fn has_oneof_flags(self, allocs: &IRAllocs, flags: BinOPFlags) -> bool {
+        self.deref_ir(allocs).has_oneof_flags(flags)
     }
 }

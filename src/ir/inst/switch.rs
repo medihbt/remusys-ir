@@ -1,20 +1,20 @@
-use slab::Slab;
-
 use crate::{
-    base::INullableValue,
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockData, BlockRef, IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA,
-        ITerminatorInst, IUser, InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, Opcode,
-        OperandSet, Use, UseKind, ValueSSA, block::jump_target::JumpTargets, inst::ISubInstRef,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst,
+        IUser, InstCommon, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
-    typing::ValTypeID,
+    typing::{IntType, ValTypeID},
 };
+use smallvec::{SmallVec, smallvec};
 use std::{
-    cell::{Ref, RefCell},
-    rc::Rc,
+    cell::{Ref, RefCell, RefMut},
+    collections::{BTreeMap, HashMap},
+    ops::RangeFrom,
 };
 
-/// Switch 指令：实现 LLVM IR 中的 switch 语句，根据条件值跳转到不同的基本块
+/// Switch 指令：根据条件值跳转到不同的基本块
 ///
 /// ### LLVM IR 语法
 ///
@@ -48,380 +48,297 @@ use std::{
 /// - 条件操作数必须是整数类型
 /// - 每个 case 值必须唯一
 /// - 必须有且仅有一个默认跳转目标
-#[derive(Debug)]
-pub struct Switch {
-    /// 指令的公共数据（操作码、类型、用户列表等）
-    common: InstCommon,
-    /// 条件操作数：要匹配的整数值
-    cond: [Rc<Use>; 1],
-    /// 跳转目标列表：[0] 是默认目标，[1..] 是各个 case 目标
-    targets: RefCell<Vec<Rc<JumpTarget>>>,
+pub struct SwitchInst {
+    pub common: InstCommon,
+    pub discrim_ty: IntType,
+    discrim: [UseID; 1],
+    targets: RefCell<SmallVec<[JumpTargetID; 4]>>,
 }
 
-impl IUser for Switch {
+impl_traceable_from_common!(SwitchInst, true);
+impl IUser for SwitchInst {
     fn get_operands(&self) -> OperandSet<'_> {
-        OperandSet::Fixed(&self.cond)
+        OperandSet::Fixed(&self.discrim)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.cond
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut self.discrim
     }
 }
-
-impl ISubInst for Switch {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Switch, ValTypeID::Void),
-            cond: [Use::new(UseKind::BranchCond)],
-            targets: RefCell::new(vec![JumpTarget::new(JumpTargetKind::SwitchDefault)]),
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        match inst {
-            InstData::Switch(switch) => Some(switch),
-            _ => None,
-        }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Switch(switch) => Some(switch),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Switch(self)
-    }
+impl ISubInst for SwitchInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Switch(s) => Some(s),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Switch(s) => Some(s),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Switch(s) => Some(s),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Switch(self)
+    }
 
     fn is_terminator(&self) -> bool {
         true
     }
-
-    fn init_self_reference(&mut self, self_ref: InstRef) {
-        InstData::basic_init_self_reference(self_ref, self);
-        // 设置所有跳转目标的终结指令引用
-        for jt in &self.get_jts() {
-            jt.terminator.set(self_ref);
-        }
-    }
-
-    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        write!(writer, "switch ")?;
-
-        // 写入条件操作数的类型和值
-        let cond = self.get_cond();
-        let cond_type = cond.get_valtype(&writer.allocs);
-        writer.write_type(cond_type)?;
-        write!(writer, " ")?;
-        writer.write_operand(cond)?;
-
-        // 写入默认跳转目标
-        write!(writer, ", label ")?;
-        writer.write_operand(self.get_default())?;
-
-        // 写入各个 case
-        write!(writer, " [")?;
-        writer.inc_indent();
-        for case in self.cases().iter() {
-            let JumpTargetKind::SwitchCase(case_value) = case.kind else {
-                continue;
-            };
-            writer.wrap_indent();
-            writer.write_type(cond_type)?;
-            write!(writer, " {}, label ", case_value)?;
-            writer.write_operand(case.get_block())?;
-        }
-        writer.dec_indent();
-        writer.wrap_indent();
-        // 结束 case 列表
-        write!(writer, "]")
-    }
-
-    fn cleanup(&self) {
-        InstData::basic_cleanup(self);
-        // 清理跳转目标
-        for jt in &*self.targets.borrow() {
-            jt.clean_block();
-        }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        let targets = Ref::map(self.targets.borrow(), SmallVec::as_slice);
+        Some(JumpTargets::Dyn(targets))
     }
 }
-
-impl ITerminatorInst for Switch {
-    fn read_jts<T>(&self, reader: impl FnOnce(&[Rc<JumpTarget>]) -> T) -> T {
-        reader(&self.targets.borrow())
-    }
-
-    fn jts_mut(&mut self) -> &mut [Rc<JumpTarget>] {
-        self.targets.get_mut()
-    }
-
+impl ITerminatorInst for SwitchInst {
     fn get_jts(&self) -> JumpTargets<'_> {
-        JumpTargets::from(self.targets.borrow())
+        let targets = Ref::map(self.targets.borrow(), SmallVec::as_slice);
+        JumpTargets::Dyn(targets)
+    }
+    fn jts_mut(&mut self) -> &mut [JumpTargetID] {
+        self.targets.get_mut().as_mut_slice()
+    }
+    fn terminates_function(&self) -> bool {
+        false
     }
 }
+impl SwitchInst {
+    pub const OP_DISCRIM: usize = 0;
+    pub const JT_DEFAULT: usize = 0;
+    pub const JT_CASES: RangeFrom<usize> = 1..;
+    pub const JT_CASE_START: usize = 1;
 
-impl Switch {
-    pub const OP_COND: usize = 0;
-    pub const TARGET_DEFAULT: usize = 0;
-    pub const TARGET_CASE_BEGIN: usize = 1;
-
-    /// 创建一个新的 Switch 指令
-    ///
-    /// # 参数
-    /// - `allocs`: IR 分配器，用于类型检查
-    /// - `cond`: 条件操作数，必须是整数类型
-    ///
-    /// # Panics
-    /// 如果条件操作数不是整数类型则会 panic
-    pub fn new(allocs: &IRAllocs, cond: ValueSSA, default: BlockRef) -> Self {
-        let switch = Self::new_empty(Opcode::Switch);
-        switch.set_cond(allocs, cond);
-        switch.set_default(&allocs.blocks, default);
-        switch
-    }
-
-    /// 获取条件操作数的 Use 引用
-    pub fn cond(&self) -> &Rc<Use> {
-        &self.cond[0]
-    }
-
-    /// 获取条件操作数的值
-    pub fn get_cond(&self) -> ValueSSA {
-        self.cond[0].get_operand()
-    }
-
-    /// 设置条件操作数
-    ///
-    /// # 参数
-    /// - `allocs`: IR 分配器，用于维护 use-def 链
-    /// - `cond`: 新的条件操作数
-    ///
-    /// # Panics
-    /// 如果条件操作数不是整数类型则会 panic
-    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
-        if cond != ValueSSA::None && !matches!(cond.get_valtype(allocs), ValTypeID::Int(_)) {
-            panic!(
-                "Switch condition must be an integer type, got: {:?}",
-                cond.get_valtype(allocs)
-            );
-        }
-        self.cond[0].set_operand(allocs, cond);
-    }
-
-    /// 获取默认跳转目标的引用
-    pub fn default(&self) -> Ref<'_, Rc<JumpTarget>> {
-        Ref::map(self.targets.borrow(), |targets| &targets[0])
-    }
-
-    /// 克隆默认跳转目标
-    pub fn clone_default(&self) -> Rc<JumpTarget> {
-        self.default().clone()
-    }
-
-    /// 获取默认跳转目标的基本块
-    pub fn get_default(&self) -> BlockRef {
-        self.default().get_block()
-    }
-
-    /// 设置默认跳转目标的基本块
-    pub fn set_default(&self, alloc: &Slab<BlockData>, block: BlockRef) {
-        self.default().set_block(alloc, block);
-    }
-
-    /// 获取所有 case 跳转目标的引用（不包括默认目标）
-    pub fn cases(&self) -> Ref<'_, [Rc<JumpTarget>]> {
-        Ref::map(self.targets.borrow(), |targets| &targets[1..])
-    }
-
-    /// 查找指定 case 值的跳转目标引用
-    ///
-    /// # 修复说明
-    /// 原实现有嵌套借用问题，现在直接从 targets 中查找
-    pub fn ref_case<T: Into<i128>>(&self, case: T) -> Option<Ref<'_, Rc<JumpTarget>>> {
-        let case_value = case.into();
-        let targets = self.targets.borrow();
-
-        // 从索引1开始查找（索引0是默认目标）
-        for (idx, jt) in targets.iter().enumerate().skip(1) {
-            if jt.kind == JumpTargetKind::SwitchCase(case_value) {
-                return Some(Ref::map(targets, |targets| &targets[idx]));
-            }
-        }
-        None
-    }
-
-    /// 获取指定 case 值的目标基本块
-    pub fn get_case<T: Into<i128>>(&self, case: T) -> Option<BlockRef> {
-        self.ref_case(case).map(|jt| jt.get_block())
-    }
-
-    /// 设置已存在的 case 的目标基本块
-    ///
-    /// # 参数
-    /// - `case`: case 值
-    /// - `block`: 新的目标基本块
-    ///
-    /// # 返回值
-    /// 如果 case 存在则返回 `true`，否则返回 `false`
-    pub fn set_existing_case<T: Into<i128>>(
-        &self,
-        alloc: &Slab<BlockData>,
-        case: T,
-        block: BlockRef,
-    ) -> bool {
-        let case_value = case.into();
-        if let Some(case_ref) = self.ref_case(case_value) {
-            case_ref.set_block(alloc, block);
-            true
-        } else {
-            false
+    pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
+        let default = JumpTargetID::new(allocs, JumpTargetKind::SwitchDefault);
+        Self {
+            common: InstCommon::new(Opcode::Switch, ValTypeID::Void),
+            discrim_ty,
+            discrim: [UseID::new(allocs, UseKind::SwitchCond)],
+            targets: RefCell::new(smallvec![default]),
         }
     }
 
-    /// 设置 case 的目标基本块（如果不存在则创建新的 case）
-    ///
-    /// # 参数
-    /// - `case`: case 值
-    /// - `block`: 目标基本块
-    ///
-    /// # 返回值
-    /// 返回对应的跳转目标引用
-    ///
-    /// # 注意
-    /// 这个方法确保不会有重复的 case 值
-    pub fn set_case<T: Into<i128>>(
-        &self,
-        alloc: &Slab<BlockData>,
-        case: T,
-        block: BlockRef,
-    ) -> Rc<JumpTarget> {
-        let case_value = case.into();
-        if let Some(existing_case) = self.ref_case(case_value) {
-            // 更新已存在的 case
-            existing_case.set_block(alloc, block);
-            existing_case.clone()
-        } else {
-            // 创建新的 case
-            let new_case = JumpTarget::new(JumpTargetKind::SwitchCase(case_value));
-            new_case.set_block(alloc, block);
-            new_case.terminator.set(self.get_common().self_ref);
-            self.targets.borrow_mut().push(new_case.clone());
-            new_case
-        }
+    pub fn discrim_use(&self) -> UseID {
+        self.discrim[Self::OP_DISCRIM]
+    }
+    pub fn get_discrim(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.discrim_use().get_operand(allocs)
+    }
+    pub fn set_discrim(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.discrim_use().set_operand(allocs, val);
     }
 
-    /// 移除指定的 case
-    ///
-    /// # 参数
-    /// - `case`: 要移除的 case 值
-    ///
-    /// # 返回值
-    /// 如果成功移除则返回 `true`，否则返回 `false`
-    ///
-    /// # 修复说明
-    /// 使用 `rposition` 从后往前查找，避免重复 case 时的问题
-    pub fn remove_case<T: Into<i128>>(&self, case: T) -> bool {
-        let case_value = case.into();
-        let mut targets = self.targets.borrow_mut();
+    pub fn default_jt(&self) -> JumpTargetID {
+        self.targets.borrow()[Self::JT_DEFAULT]
+    }
+    pub fn get_default_bb(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.default_jt().get_block(allocs)
+    }
+    pub fn set_default_bb(&self, allocs: &IRAllocs, bb: BlockID) {
+        self.default_jt().set_block(allocs, bb);
+    }
 
-        // 从后往前查找，避免索引变化的问题
-        if let Some(index) = targets
+    pub fn case_jts(&self) -> Ref<'_, [JumpTargetID]> {
+        Ref::map(self.targets.borrow(), |targets| &targets[Self::JT_CASES])
+    }
+    pub fn case_jts_mut(&self) -> RefMut<'_, [JumpTargetID]> {
+        RefMut::map(self.targets.borrow_mut(), |targets| {
+            &mut targets[Self::JT_CASES]
+        })
+    }
+    pub fn find_case_pos(&self, allocs: &IRAllocs, case_val: i64) -> Option<usize> {
+        self.case_jts()
             .iter()
-            .rposition(|jt| jt.kind == JumpTargetKind::SwitchCase(case_value))
-        {
-            // 在移除前清理跳转目标的基本块引用
-            targets[index].set_block(&Slab::new(), BlockRef::new_null());
-            targets.remove(index);
-            true
+            .position(|jt| jt.get_kind(allocs) == JumpTargetKind::SwitchCase(case_val))
+    }
+    pub fn find_case_jt(&self, allocs: &IRAllocs, case_val: i64) -> Option<JumpTargetID> {
+        self.case_jts()
+            .iter()
+            .find(|jt| jt.get_kind(allocs) == JumpTargetKind::SwitchCase(case_val))
+            .copied()
+    }
+    pub fn get_case_by_index(&self, allocs: &IRAllocs, case_index: usize) -> Option<BlockID> {
+        self.case_jts()
+            .get(case_index)
+            .and_then(|jt| jt.get_block(allocs))
+    }
+    pub fn find_case(&self, allocs: &IRAllocs, case_val: i64) -> Option<BlockID> {
+        self.find_case_jt(allocs, case_val)
+            .and_then(|jt| jt.get_block(allocs))
+    }
+    pub fn find_or_insert_case(&self, allocs: &IRAllocs, case_val: i64) -> JumpTargetID {
+        if let Some(jt) = self.find_case_jt(allocs, case_val) {
+            jt
         } else {
-            false
+            self.push_case_jt(allocs, case_val)
         }
     }
-
-    /// 根据条件移除多个 case
-    ///
-    /// # 参数
-    /// - `alloc`: 基本块分配器，用于清理引用
-    /// - `condition`: 判断函数，返回 `true` 的 case 将被移除
-    ///
-    /// # 注意
-    /// 默认跳转目标永远不会被移除
-    pub fn remove_cases_when(
-        &self,
-        alloc: &Slab<BlockData>,
-        condition: impl Fn(&Rc<JumpTarget>) -> bool,
-    ) {
+    pub fn find_set_case(&self, allocs: &IRAllocs, case_val: i64, bb: BlockID) -> JumpTargetID {
+        let jt = self.find_or_insert_case(allocs, case_val);
+        jt.set_block(allocs, bb);
+        jt
+    }
+    pub fn remove_case(&self, allocs: &IRAllocs, case_val: i64) -> bool {
+        let Some(pos) = self.find_case_pos(allocs, case_val) else {
+            return false;
+        };
+        let jt = self.remove_case_jt(pos);
+        jt.dispose(allocs)
+            .expect("Broken IR invariant in SwitchInst::remove_case");
+        true
+    }
+    pub fn sort_cases(&self, allocs: &IRAllocs) {
         let mut targets = self.targets.borrow_mut();
-        targets.retain(|jt| {
-            if jt.kind == JumpTargetKind::SwitchDefault || !condition(jt) {
-                true
-            } else {
-                // 在移除前清理跳转目标的基本块引用
-                jt.set_block(alloc, BlockRef::new_null());
-                false
-            }
+        let cases = &mut targets[Self::JT_CASES];
+        cases.sort_by_key(|jt| {
+            let kind = jt.get_kind(allocs);
+            let JumpTargetKind::SwitchCase(case_val) = kind else {
+                unreachable!("Found non-case jump target {kind:?} in case targets");
+            };
+            case_val
         });
     }
+
+    fn push_case_jt(&self, allocs: &IRAllocs, case_val: i64) -> JumpTargetID {
+        let jt = JumpTargetID::new(allocs, JumpTargetKind::SwitchCase(case_val));
+        // Self-reference is stored in every case jump target. SwitchInst has at least one target (the default),
+        // so it's safe to get its ID here.
+        let self_id = self.default_jt().get_terminator(allocs);
+        if let Some(inst_id) = self_id {
+            jt.set_terminator(allocs, inst_id);
+        }
+        self.targets.borrow_mut().push(jt);
+        jt
+    }
+    fn remove_case_jt(&self, case_index: usize) -> JumpTargetID {
+        self.targets
+            .borrow_mut()
+            .remove(Self::JT_CASE_START + case_index)
+    }
+    fn reserve_cases(&self, case_count: usize) {
+        // Reserve exactly the additional number of case entries we plan to push.
+        // Current length already includes the default entry at index 0, so we
+        // only need to reserve `case_count` more slots for cases.
+        self.targets.borrow_mut().reserve(case_count);
+    }
 }
 
-/// Switch 指令的强类型引用
-///
-/// 这是对 `InstRef` 的类型安全封装，确保引用的指令确实是 Switch 类型。
-/// 提供了类型安全的方法来访问和操作 Switch 指令。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SwitchRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SwitchInstID(pub InstID);
+impl_debug_for_subinst_id!(SwitchInstID);
+impl ISubInstID for SwitchInstID {
+    type InstObjT = SwitchInst;
 
-impl ISubInstRef for SwitchRef {
-    type InstDataT = Switch;
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        Self(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
+    }
 }
+impl ITerminatorID for SwitchInstID {}
+impl SwitchInstID {
+    pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
+        Self::allocate(allocs, SwitchInst::new_uninit(allocs, discrim_ty))
+    }
+    pub fn from_cases(
+        allocs: &IRAllocs,
+        discrim: ValueSSA,
+        cases: impl IntoIterator<Item = (i64, BlockID)>,
+        default_bb: BlockID,
+    ) -> Self {
+        let ValTypeID::Int(discrim_bits) = discrim.get_valtype(allocs) else {
+            panic!("SwitchInstID::from_cases_iter: discrim must be of integer type");
+        };
+        let switch = SwitchInst::new_uninit(allocs, IntType(discrim_bits));
+        switch.set_discrim(allocs, discrim);
+        switch.set_default_bb(allocs, default_bb);
 
-impl SwitchRef {
-    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+        let cases: HashMap<i64, BlockID> = cases.into_iter().collect();
+        switch.reserve_cases(cases.len());
+        for (case_val, bb) in cases {
+            let jt = switch.push_case_jt(allocs, case_val);
+            jt.set_block(allocs, bb);
+        }
+        Self::allocate(allocs, switch)
     }
-    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
-        self.to_inst(&allocs.get_allocs_ref().insts)
-            .set_cond(&allocs.get_allocs_ref(), cond);
+    pub fn from_cases_sorted(
+        allocs: &IRAllocs,
+        discrim: ValueSSA,
+        cases: impl IntoIterator<Item = (i64, BlockID)>,
+        default_bb: BlockID,
+    ) -> Self {
+        let ValTypeID::Int(discrim_bits) = discrim.get_valtype(allocs) else {
+            panic!("SwitchInstID::from_cases_sorted: discrim must be of integer type");
+        };
+        let switch = SwitchInst::new_uninit(allocs, IntType(discrim_bits));
+        switch.set_discrim(allocs, discrim);
+        switch.set_default_bb(allocs, default_bb);
+
+        // 使用 BTreeMap 以按 case 值升序、且按 key 去重（最后一次出现覆盖之前）。
+        let cases: BTreeMap<i64, BlockID> = cases.into_iter().collect();
+        switch.reserve_cases(cases.len());
+        for (case_val, bb) in cases {
+            let jt = switch.push_case_jt(allocs, case_val);
+            jt.set_block(allocs, bb);
+        }
+        Self::allocate(allocs, switch)
     }
 
-    pub fn get_default(self, allocs: &impl IRAllocsReadable) -> BlockRef {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_default()
+    pub fn discrim_ty(self, allocs: &IRAllocs) -> IntType {
+        self.deref_ir(allocs).discrim_ty
     }
-    pub fn set_default(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts)
-            .set_default(&allocs.blocks, block);
+    pub fn discrim_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).discrim_use()
+    }
+    pub fn get_discrim(self, allocs: &IRAllocs) -> ValueSSA {
+        self.discrim_use(allocs).get_operand(allocs)
+    }
+    pub fn set_discrim(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.discrim_use(allocs).set_operand(allocs, val);
     }
 
-    pub fn get_case<T: Into<i128>>(
-        self,
-        allocs: &impl IRAllocsReadable,
-        case: T,
-    ) -> Option<BlockRef> {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_case(case)
+    pub fn default_jt(self, allocs: &IRAllocs) -> JumpTargetID {
+        self.deref_ir(allocs).default_jt()
     }
-    pub fn set_case<T: Into<i128>>(
-        self,
-        allocs: &impl IRAllocsReadable,
-        case: T,
-        block: BlockRef,
-    ) -> Rc<JumpTarget> {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts)
-            .set_case(&allocs.blocks, case, block)
+    pub fn get_default_bb(self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.default_jt(allocs).get_block(allocs)
     }
-    pub fn remove_case<T: Into<i128>>(self, allocs: &impl IRAllocsReadable, case: T) -> bool {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).remove_case(case)
+    pub fn set_default_bb(self, allocs: &IRAllocs, bb: BlockID) {
+        self.default_jt(allocs).set_block(allocs, bb);
+    }
+
+    pub fn borrow_cases(self, allocs: &IRAllocs) -> Ref<'_, [JumpTargetID]> {
+        self.deref_ir(allocs).case_jts()
+    }
+    pub fn find_case_jt(self, allocs: &IRAllocs, case_val: i64) -> Option<JumpTargetID> {
+        self.deref_ir(allocs).find_case_jt(allocs, case_val)
+    }
+    pub fn find_case(self, allocs: &IRAllocs, case_val: i64) -> Option<BlockID> {
+        self.deref_ir(allocs).find_case(allocs, case_val)
+    }
+    pub fn find_case_or_default(self, allocs: &IRAllocs, case_val: i64) -> Option<BlockID> {
+        self.find_case(allocs, case_val)
+            .or_else(|| self.get_default_bb(allocs))
+    }
+    pub fn find_set_case(self, allocs: &IRAllocs, case_val: i64, bb: BlockID) -> JumpTargetID {
+        self.deref_ir(allocs).find_set_case(allocs, case_val, bb)
+    }
+    pub fn find_remove_case(self, allocs: &IRAllocs, case_val: i64) -> bool {
+        self.deref_ir(allocs).remove_case(allocs, case_val)
     }
 }

@@ -12,11 +12,11 @@ pub struct APInt {
 impl APInt {
     pub fn new<T: IIntoU128>(value: T, bits: u8) -> Self {
         let value = value.into_u128();
-        let bitmask = (1u128 << bits) - 1;
+        let bitmask = if bits == 128 { u128::MAX } else { (1u128 << bits) - 1 };
         Self { value: Self::split_u128(value & bitmask), bits }
     }
     pub const fn new_full(value: u128, bits: u8) -> Self {
-        let bitmask = (1u128 << bits) - 1;
+        let bitmask = if bits == 128 { u128::MAX } else { (1u128 << bits) - 1 };
         Self { value: Self::split_u128(value & bitmask), bits }
     }
     pub const fn is_zero(&self) -> bool {
@@ -150,10 +150,6 @@ impl APInt {
         let result = self.as_unsigned() % other.as_unsigned();
         Self::new(result, self.bits)
     }
-    // pub fn neg(&self) -> Self {
-    //     Self::new_full((-(self.as_signed())) as u128, self.bits)
-    // }
-
     pub fn is_boolean(&self) -> bool {
         self.bits == 1
     }
@@ -309,7 +305,25 @@ impl Neg for APInt {
     type Output = Self;
 
     fn neg(self) -> Self {
-        Self::new_full((-(self.as_signed())) as u128, self.bits)
+        let [mut u0, mut u1, u2, u3] = self.value;
+        match self.bits {
+            1 => return self,
+            8 => u0 = ((u0 as i8).wrapping_neg() as u8) as u32,
+            16 => u0 = ((u0 as i16).wrapping_neg() as u16) as u32,
+            32 => u0 = (u0 as i32).wrapping_neg() as u32,
+            64 => {
+                let d0 = ((u1 as u64) << 32) | (u0 as u64);
+                let nh = (d0 as i64).wrapping_neg() as u64;
+                u0 = nh as u32;
+                u1 = (nh >> 32) as u32;
+            }
+            128 => {
+                let q0 = self.as_unsigned() as i128;
+                return Self::new_full(q0.wrapping_neg() as u128, self.bits);
+            }
+            _ => return Self::new((self.as_signed().wrapping_neg()) as u128, self.bits),
+        }
+        Self { value: [u0, u1, u2, u3], bits: self.bits }
     }
 }
 

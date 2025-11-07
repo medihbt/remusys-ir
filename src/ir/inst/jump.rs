@@ -1,143 +1,131 @@
-use std::rc::Rc;
-
-use slab::Slab;
-
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockData, BlockRef, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst, IUser,
-        InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode, OperandSet,
-        Use, inst::ISubInstRef,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstCommon,
+        InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
 
-/// 无条件跳转到某个基本块
-///
-/// ### LLVM IR 语法
-///
-/// ```llvm
-/// br label <block>
-/// ```
-#[derive(Debug)]
-pub struct Jump {
-    common: InstCommon,
-    target: [Rc<JumpTarget>; 1],
+pub struct JumpInst {
+    pub common: InstCommon,
+    target: [JumpTargetID; 1],
 }
-
-impl IUser for Jump {
+impl_traceable_from_common!(JumpInst, true);
+impl IUser for JumpInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut []
     }
 }
-
-impl ISubInst for Jump {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Jmp, ValTypeID::Void),
-            target: [JumpTarget::new(JumpTargetKind::Jump)],
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        match inst {
-            InstData::Jump(jump) => Some(jump),
-            _ => None,
-        }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Jump(jump) => Some(jump),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Jump(self)
-    }
+impl ISubInst for JumpInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Jump(j) => Some(j),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Jump(j) => Some(j),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Jump(j) => Some(j),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Jump(self)
+    }
+
     fn is_terminator(&self) -> bool {
         true
     }
-
-    fn init_self_reference(&mut self, self_ref: InstRef) {
-        InstData::basic_init_self_reference(self_ref, self);
-        for jt in &self.target {
-            jt.terminator.set(self_ref);
-        }
-    }
-
-    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        writer.write_str("br label ")?;
-        writer.write_operand(self.get_target())
-    }
-
-    fn cleanup(&self) {
-        InstData::basic_cleanup(self);
-        // 清理跳转目标
-        for jt in &self.target {
-            jt.clean_block();
-        }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        Some(JumpTargets::Fix(&self.target))
     }
 }
-
-impl ITerminatorInst for Jump {
-    fn read_jts<T>(&self, reader: impl FnOnce(&[Rc<JumpTarget>]) -> T) -> T {
-        reader(&self.target)
-    }
-
-    fn jts_mut(&mut self) -> &mut [Rc<JumpTarget>] {
-        &mut self.target
-    }
-
+impl ITerminatorInst for JumpInst {
     fn get_jts(&self) -> JumpTargets<'_> {
         JumpTargets::Fix(&self.target)
     }
+    fn jts_mut(&mut self) -> &mut [JumpTargetID] {
+        &mut self.target
+    }
+    fn terminates_function(&self) -> bool {
+        false
+    }
 }
+impl JumpInst {
+    pub const JT_TARGET: usize = 0;
 
-impl Jump {
-    pub fn new(alloc: &Slab<BlockData>, target: BlockRef) -> Self {
-        let ret = Self {
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
+        Self {
             common: InstCommon::new(Opcode::Jmp, ValTypeID::Void),
-            target: [JumpTarget::new(JumpTargetKind::Jump)],
-        };
-        ret.target[0].set_block(alloc, target);
-        ret
+            target: [JumpTargetID::new(allocs, JumpTargetKind::Jump)],
+        }
+    }
+    pub fn with_target(allocs: &IRAllocs, block: BlockID) -> Self {
+        let inst = Self::new_uninit(allocs);
+        inst.set_target(allocs, block);
+        inst
     }
 
-    pub fn get_target(&self) -> BlockRef {
-        self.target[0].get_block()
+    pub fn target_jt(&self) -> JumpTargetID {
+        self.target[Self::JT_TARGET]
     }
-    pub fn set_target(&self, alloc: &Slab<BlockData>, target: BlockRef) {
-        self.target[0].set_block(alloc, target);
+    pub fn get_target(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.target_jt().get_block(allocs)
+    }
+    pub fn set_target(&self, allocs: &IRAllocs, block: BlockID) {
+        self.target_jt().set_block(allocs, block);
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct JumpRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct JumpInstID(pub InstID);
+impl_debug_for_subinst_id!(JumpInstID);
+impl ISubInstID for JumpInstID {
+    type InstObjT = JumpInst;
 
-impl ISubInstRef for JumpRef {
-    type InstDataT = Jump;
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        Self(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        JumpInstID(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
-}
-
-impl JumpRef {
-    pub fn get_target(self, allocs: &impl IRAllocsReadable) -> BlockRef {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_target()
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
     }
-    pub fn set_target(self, allocs: &impl IRAllocsReadable, target: BlockRef) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts)
-            .set_target(&allocs.blocks, target);
+}
+impl ITerminatorID for JumpInstID {}
+
+impl JumpInstID {
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
+        Self::allocate(allocs, JumpInst::new_uninit(allocs))
+    }
+    pub fn with_target(allocs: &IRAllocs, block: BlockID) -> Self {
+        Self::allocate(allocs, JumpInst::with_target(allocs, block))
+    }
+
+    pub fn target_jt(&self, allocs: &IRAllocs) -> JumpTargetID {
+        self.deref_ir(allocs).target_jt()
+    }
+    pub fn get_target(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.deref_ir(allocs).get_target(allocs)
+    }
+    pub fn set_target(&self, allocs: &IRAllocs, block: BlockID) {
+        self.deref_ir(allocs).set_target(allocs, block);
     }
 }

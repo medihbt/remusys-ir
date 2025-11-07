@@ -1,11 +1,11 @@
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ISubValueSSA, IUser, InstCommon, InstData,
-        InstKind, InstRef, Opcode, OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
+        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
-    typing::ValTypeID,
+    typing::{FPKind, IntType, ValTypeID},
 };
-use std::rc::Rc;
 
 /// Cast 指令：实现 LLVM IR 中的类型转换
 ///
@@ -18,124 +18,129 @@ use std::rc::Rc;
 /// ### 操作数布局
 ///
 /// * `operands[0]`: 源操作数 (CastOpFrom) - 指向要转换的值
-#[derive(Debug)]
-pub struct CastOp {
-    common: InstCommon,
-    fromop: [Rc<Use>; 1],
-    pub fromty: ValTypeID, // 源类型
+pub struct CastInst {
+    pub common: InstCommon,
+    operands: [UseID; 1],
+    pub from_ty: ValTypeID,
 }
-
-impl IUser for CastOp {
+impl_traceable_from_common!(CastInst, true);
+impl IUser for CastInst {
     fn get_operands(&self) -> OperandSet<'_> {
-        OperandSet::Fixed(&self.fromop)
+        OperandSet::Fixed(&self.operands)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
-        &mut self.fromop
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut self.operands
     }
 }
-
-impl ISubInst for CastOp {
-    fn new_empty(opcode: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(opcode, ValTypeID::Void),
-            fromop: [Use::new(UseKind::CastOpFrom)],
-            fromty: ValTypeID::Void, // 初始类型为 Void
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        if let InstData::Cast(cast) = inst { Some(cast) } else { None }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Cast(cast) => Some(cast),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Cast(self)
-    }
+impl ISubInst for CastInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
-    fn is_terminator(&self) -> bool {
-        false
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Cast(cast) => Some(cast),
+            _ => None,
+        }
     }
-
-    fn fmt_ir(&self, id: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        let Some(id) = id else {
-            use std::io::{Error, ErrorKind::InvalidInput};
-            return Err(Error::new(InvalidInput, "ID must be provided for CastOp"));
-        };
-        write!(writer, "%{id} = {} ", self.get_opcode().get_name())?;
-        writer.write_type(self.fromty)?;
-        writer.write_str(" ")?;
-        // 写入源操作数
-        writer.write_operand(self.get_from())?;
-        writer.write_str(" to ")?;
-        writer.write_type(self.get_valtype())?;
-        Ok(())
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Cast(cast) => Some(cast),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Cast(cast) => Some(cast),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Cast(self)
+    }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        None
     }
 }
+impl CastInst {
+    pub const OP_FROM: usize = 0;
 
-impl CastOp {
-    pub fn new_raw(opcode: Opcode, fromty: ValTypeID, to_ty: ValTypeID) -> Self {
-        assert_eq!(opcode.get_kind(), InstKind::Cast);
-        Self {
-            common: InstCommon::new(opcode, to_ty),
-            fromop: [Use::new(UseKind::CastOpFrom)],
-            fromty,
+    pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, fromty: ValTypeID, ty: ValTypeID) -> Self {
+        assert!(
+            opcode.is_cast_op(),
+            "Opcode {opcode:?} is not a cast opcode"
+        );
+        CastInst {
+            common: InstCommon::new(opcode, ty),
+            operands: [UseID::new(allocs, UseKind::CastOpFrom)],
+            from_ty: fromty,
         }
     }
 
-    pub fn new(allocs: &IRAllocs, opcode: Opcode, to_ty: ValTypeID, from: ValueSSA) -> Self {
-        let cast_op = Self::new_raw(opcode, from.get_valtype(allocs), to_ty);
-        cast_op.fromop[0].set_operand(allocs, from);
-        cast_op
+    pub fn from_use(&self) -> UseID {
+        self.operands[Self::OP_FROM]
     }
-
-    pub fn get_to_type(&self) -> ValTypeID {
-        self.get_common().ret_type
+    pub fn get_from(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.from_use().get_operand(allocs)
     }
-
-    pub fn get_from(&self) -> ValueSSA {
-        self.fromop[0].get_operand()
-    }
-    pub fn set_from(&self, allocs: &IRAllocs, from: ValueSSA) {
-        if self.fromty != from.get_valtype(allocs) {
-            let fromty = self.fromty;
-            let new_fromty = from.get_valtype(allocs);
-            panic!("Type mismatch: expected {fromty:?}, got {new_fromty:?}");
-        }
-        self.fromop[0].set_operand(allocs, from);
+    pub fn set_from(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.from_use().set_operand(allocs, val);
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CastOpRef(InstRef);
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CastInstID(pub InstID);
+impl_debug_for_subinst_id!(CastInstID);
+impl ISubInstID for CastInstID {
+    type InstObjT = CastInst;
 
-impl ISubInstRef for CastOpRef {
-    type InstDataT = CastOp;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        CastOpRef(inst_ref)
+    fn raw_from_instid(id: InstID) -> Self {
+        CastInstID(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
 }
+impl CastInstID {
+    pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, fromty: ValTypeID, ty: ValTypeID) -> Self {
+        let inst = CastInst::new_uninit(allocs, opcode, fromty, ty);
+        Self::allocate(allocs, inst)
+    }
+    pub fn new(allocs: &IRAllocs, opcode: Opcode, from: ValueSSA, ty: ValTypeID) -> Self {
+        let inst = Self::new_uninit(allocs, opcode, from.get_valtype(allocs), ty);
+        inst.deref_ir(allocs).set_from(allocs, from);
+        inst
+    }
 
-impl CastOpRef {
-    pub fn get_to_type(self, allocs: &impl IRAllocsReadable) -> ValTypeID {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_to_type()
+    pub fn from_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).from_use()
     }
-    pub fn get_from(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_from()
+    pub fn get_from(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_from(allocs)
     }
-    pub fn set_from(self, allocs: &impl IRAllocsReadable, from: ValueSSA) {
-        self.to_inst(&allocs.get_allocs_ref().insts)
-            .set_from(allocs.get_allocs_ref(), from);
+    pub fn set_from(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_from(allocs, val);
     }
+
+    pub fn from_ty(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).from_ty
+    }
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum CastErr {
+    #[error("invalid cast from {0:?} to {1:?} for opcode {2:?}")]
+    InvalidCast(ValTypeID, ValTypeID, Opcode),
+
+    #[error("integer extension to smaller size is not allowed: from {0:?} to {1:?}")]
+    IntExtToSmaller(IntType, IntType),
+    #[error("integer truncation to larger size is not allowed: from {0:?} to {1:?}")]
+    IntTruncToLarger(IntType, IntType),
+
+    #[error("FP extension to smaller size is not allowed: from {0:?} to {1:?}")]
+    FPExtToSmaller(FPKind, FPKind),
+    #[error("FP truncation to larger size is not allowed: from {0:?} to {1:?}")]
+    FPTruncToLarger(FPKind, FPKind),
 }

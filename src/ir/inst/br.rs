@@ -1,206 +1,186 @@
 use crate::{
+    impl_debug_for_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockData, BlockRef, IRAllocs, IRAllocsReadable, IRWriter, ISubInst, ITerminatorInst,
-        IUser, InstCommon, InstData, InstRef, JumpTarget, JumpTargetKind, JumpTargets, Opcode,
-        OperandSet, Use, UseKind, ValueSSA, inst::ISubInstRef,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst,
+        IUser, InstCommon, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
-use slab::Slab;
-use std::rc::Rc;
 
-/// 条件分支指令: 根据布尔条件表达式的值，跳转到不同的基本块。
-///
-/// ### LLVM 语法
-///
-/// ```llvm
-/// br i1 <cond>, label <if_true>, label <if_false>
-/// ```
-#[derive(Debug)]
-pub struct Br {
-    common: InstCommon,
-
-    /// 条件分支的操作数. 包含一个条件表达式，类型为布尔值。
-    cond: [Rc<Use>; 1],
-
-    /// 跳转目标列表
-    ///
-    /// * `[0] = if_true`: 条件为真时跳转的目标
-    /// * `[1] = if_false`: 条件为假时跳转的目标
-    targets: [Rc<JumpTarget>; 2],
+pub struct BrInst {
+    pub common: InstCommon,
+    cond: [UseID; 1],
+    target: [JumpTargetID; 2],
 }
-
-impl IUser for Br {
+impl_traceable_from_common!(BrInst, true);
+impl IUser for BrInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.cond)
     }
-    fn operands_mut(&mut self) -> &mut [Rc<Use>] {
+    fn operands_mut(&mut self) -> &mut [UseID] {
         &mut self.cond
     }
 }
-
-impl ISubInst for Br {
-    fn new_empty(_: Opcode) -> Self {
-        Self {
-            common: InstCommon::new(Opcode::Br, ValTypeID::Void),
-            cond: [Use::new(UseKind::BranchCond)],
-            targets: [
-                JumpTarget::new(JumpTargetKind::BrTrue),
-                JumpTarget::new(JumpTargetKind::BrFalse),
-            ],
-        }
-    }
-    fn try_from_ir(inst: &InstData) -> Option<&Self> {
-        match inst {
-            InstData::Br(br) => Some(br),
-            _ => None,
-        }
-    }
-    fn try_from_ir_mut(inst: &mut InstData) -> Option<&mut Self> {
-        match inst {
-            InstData::Br(br) => Some(br),
-            _ => None,
-        }
-    }
-    fn into_ir(self) -> InstData {
-        InstData::Br(self)
-    }
+impl ISubInst for BrInst {
     fn get_common(&self) -> &InstCommon {
         &self.common
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
+        match inst {
+            InstObj::Br(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(inst: &mut InstObj) -> Option<&mut Self> {
+        match inst {
+            InstObj::Br(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn try_from_ir(inst: InstObj) -> Option<Self> {
+        match inst {
+            InstObj::Br(b) => Some(b),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> InstObj {
+        InstObj::Br(self)
+    }
+
     fn is_terminator(&self) -> bool {
         true
     }
-
-    fn init_self_reference(&mut self, self_ref: InstRef) {
-        InstData::basic_init_self_reference(self_ref, self);
-        for jt in &self.targets {
-            jt.terminator.set(self_ref);
-        }
-    }
-
-    fn fmt_ir(&self, _: Option<usize>, writer: &IRWriter) -> std::io::Result<()> {
-        write!(writer, "br i1 ")?;
-        writer.write_operand(self.get_cond())?;
-        write!(writer, ", label ")?;
-        writer.write_operand(self.get_if_true())?;
-        write!(writer, ", label ")?;
-        writer.write_operand(self.get_if_false())
-    }
-
-    fn cleanup(&self) {
-        InstData::basic_cleanup(self);
-        // 清理跳转目标
-        for jt in &self.targets {
-            jt.clean_block();
-        }
+    fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
+        Some(JumpTargets::Fix(&self.target))
     }
 }
-
-impl ITerminatorInst for Br {
-    fn read_jts<T>(&self, reader: impl FnOnce(&[Rc<JumpTarget>]) -> T) -> T {
-        reader(&self.targets)
-    }
-
-    fn jts_mut(&mut self) -> &mut [Rc<JumpTarget>] {
-        &mut self.targets
-    }
-
+impl ITerminatorInst for BrInst {
     fn get_jts(&self) -> JumpTargets<'_> {
-        JumpTargets::Fix(&self.targets)
+        JumpTargets::Fix(&self.target)
+    }
+    fn jts_mut(&mut self) -> &mut [JumpTargetID] {
+        &mut self.target
     }
 }
-
-impl Br {
-    pub fn new(allocs: &IRAllocs, cond: ValueSSA, if_true: BlockRef, if_false: BlockRef) -> Self {
-        let br = Self::new_empty(Opcode::Br);
-        br.cond[0].set_operand(allocs, cond);
-        br.targets[0].set_block(&allocs.blocks, if_true);
-        br.targets[1].set_block(&allocs.blocks, if_false);
-        br
-    }
-
-    pub fn cond(&self) -> &Rc<Use> {
-        &self.cond[0]
-    }
-    pub fn get_cond(&self) -> ValueSSA {
-        self.cond[0].get_operand()
-    }
-    pub fn set_cond(&self, allocs: &IRAllocs, cond: ValueSSA) {
-        self.cond[0].set_operand(allocs, cond);
-    }
-}
-
-impl Br {
+impl BrInst {
     pub const OP_COND: usize = 0;
-    pub const TARGET_THEN: usize = 0;
-    pub const TARGET_ELSE: usize = 1;
+    pub const JT_THEN: usize = 0;
+    pub const JT_ELSE: usize = 1;
 
-    pub fn jump_targets(&self) -> &[Rc<JumpTarget>] {
-        &self.targets
-    }
-
-    pub fn if_true(&self) -> &Rc<JumpTarget> {
-        &self.targets[0]
-    }
-    pub fn get_if_true(&self) -> BlockRef {
-        self.targets[0].get_block()
-    }
-    pub fn set_if_true(&self, alloc: &Slab<BlockData>, block: BlockRef) {
-        self.targets[0].set_block(alloc, block);
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
+        Self {
+            common: InstCommon::new(Opcode::Br, ValTypeID::Void),
+            cond: [UseID::new(allocs, UseKind::BranchCond)],
+            target: [
+                JumpTargetID::new(allocs, JumpTargetKind::BrThen),
+                JumpTargetID::new(allocs, JumpTargetKind::BrElse),
+            ],
+        }
     }
 
-    pub fn if_false(&self) -> &Rc<JumpTarget> {
-        &self.targets[1]
+    #[inline]
+    pub fn cond_use(&self) -> UseID {
+        self.cond[Self::OP_COND]
     }
-    pub fn get_if_false(&self) -> BlockRef {
-        self.targets[1].get_block()
+    pub fn get_cond(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.cond_use().get_operand(allocs)
     }
-    pub fn set_if_false(&self, alloc: &Slab<BlockData>, block: BlockRef) {
-        self.targets[1].set_block(alloc, block);
+    pub fn set_cond(&self, allocs: &IRAllocs, val: ValueSSA) {
+        assert_eq!(
+            val.get_valtype(allocs),
+            ValTypeID::Int(1),
+            "br condition must be boolean"
+        );
+        self.cond_use().set_operand(allocs, val);
+    }
+
+    #[inline]
+    pub fn then_jt(&self) -> JumpTargetID {
+        self.target[Self::JT_THEN]
+    }
+    pub fn get_then(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.then_jt().get_block(allocs)
+    }
+    pub fn set_then(&self, allocs: &IRAllocs, block: BlockID) {
+        self.then_jt().set_block(allocs, block);
+    }
+
+    #[inline]
+    pub fn else_jt(&self) -> JumpTargetID {
+        self.target[Self::JT_ELSE]
+    }
+    pub fn get_else(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.else_jt().get_block(allocs)
+    }
+    pub fn set_else(&self, allocs: &IRAllocs, block: BlockID) {
+        self.else_jt().set_block(allocs, block);
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BrRef(InstRef);
-
-impl ISubInstRef for BrRef {
-    type InstDataT = Br;
-
-    fn from_raw_nocheck(inst_ref: InstRef) -> Self {
-        BrRef(inst_ref)
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BrInstID(pub InstID);
+impl_debug_for_subinst_id!(BrInstID);
+impl ISubInstID for BrInstID {
+    type InstObjT = BrInst;
+    fn raw_from_instid(id: InstID) -> Self {
+        BrInstID(id)
     }
-    fn into_raw(self) -> InstRef {
+    fn into_instid(self) -> InstID {
         self.0
     }
+    fn is_terminator(self, _: &IRAllocs) -> bool {
+        true
+    }
 }
+impl ITerminatorID for BrInstID {}
+impl BrInstID {
+    pub fn new_uninit(allocs: &IRAllocs) -> Self {
+        Self::allocate(allocs, BrInst::new_uninit(allocs))
+    }
+    pub fn new(allocs: &IRAllocs, cond: ValueSSA, thenbb: BlockID, elsebb: BlockID) -> Self {
+        let ret = Self::new_uninit(allocs);
+        assert_eq!(
+            cond.get_valtype(allocs),
+            ValTypeID::Int(1),
+            "br condition must be boolean"
+        );
+        ret.set_cond(allocs, cond);
+        ret.set_then(allocs, thenbb);
+        ret.set_else(allocs, elsebb);
+        ret
+    }
 
-impl BrRef {
-    pub fn get_cond(self, allocs: &impl IRAllocsReadable) -> ValueSSA {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_cond()
+    pub fn cond_use(&self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).cond_use()
     }
-    pub fn get_if_true(self, allocs: &impl IRAllocsReadable) -> BlockRef {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_if_true()
+    pub fn get_cond(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_cond(allocs)
     }
-    pub fn get_if_false(self, allocs: &impl IRAllocsReadable) -> BlockRef {
-        self.to_inst(&allocs.get_allocs_ref().insts).get_if_false()
+    pub fn set_cond(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_cond(allocs, val);
     }
 
-    pub fn set_cond(self, allocs: &impl IRAllocsReadable, cond: ValueSSA) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts).set_cond(allocs, cond);
+    pub fn then_jt(&self, allocs: &IRAllocs) -> JumpTargetID {
+        self.deref_ir(allocs).then_jt()
     }
-    pub fn set_if_true(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts)
-            .set_if_true(&allocs.blocks, block);
+    pub fn get_then(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.deref_ir(allocs).get_then(allocs)
     }
-    pub fn set_if_false(self, allocs: &impl IRAllocsReadable, block: BlockRef) {
-        let allocs = allocs.get_allocs_ref();
-        self.to_inst(&allocs.insts)
-            .set_if_false(&allocs.blocks, block);
+    pub fn set_then(&self, allocs: &IRAllocs, block: BlockID) {
+        self.deref_ir(allocs).set_then(allocs, block);
+    }
+
+    pub fn else_jt(&self, allocs: &IRAllocs) -> JumpTargetID {
+        self.deref_ir(allocs).else_jt()
+    }
+    pub fn get_else(&self, allocs: &IRAllocs) -> Option<BlockID> {
+        self.deref_ir(allocs).get_else(allocs)
+    }
+    pub fn set_else(&self, allocs: &IRAllocs, block: BlockID) {
+        self.deref_ir(allocs).set_else(allocs, block);
     }
 }
