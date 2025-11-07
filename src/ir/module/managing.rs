@@ -3,7 +3,7 @@ use crate::ir::{
     UserID, ValueSSA,
     module::allocs::{IPoolAllocated, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes},
 };
-use mtb_entity::{EntityList, IEntityListNode};
+use mtb_entity_slab::{EntityList, IEntityListNode};
 use std::panic::Location;
 
 pub(super) fn traceable_init_id<T: ITraceableValue>(t: &T, self_id: ValueSSA, allocs: &IRAllocs) {

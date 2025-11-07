@@ -1,4 +1,4 @@
-use mtb_entity::{IEntityAllocatable, IndexedID};
+use mtb_entity_slab::{IEntityAllocatable, IndexedID};
 use std::marker::PhantomData;
 
 mod apint;

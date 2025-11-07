@@ -9,7 +9,7 @@ use crate::{
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity::EntityList;
+use mtb_entity_slab::EntityList;
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref},

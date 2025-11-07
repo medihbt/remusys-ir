@@ -9,7 +9,7 @@ use crate::{
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
 };
-use mtb_entity::{
+use mtb_entity_slab::{
     EntityAlloc, EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID,
 };
 use std::{

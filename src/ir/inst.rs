@@ -7,7 +7,7 @@ use crate::{
     },
     typing::{AggrType, TypeContext, ValTypeID},
 };
-use mtb_entity::{
+use mtb_entity_slab::{
     EntityAlloc, EntityListError, EntityListHead, IEntityAllocID, IEntityListNode, IndexedID,
     PtrID, PtrListRes,
 };

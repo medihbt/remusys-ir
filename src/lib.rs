@@ -1,4 +1,4 @@
-pub use {mtb_entity, slab};
+pub use {mtb_entity_slab, slab};
 
 pub mod base;
 pub mod ir;

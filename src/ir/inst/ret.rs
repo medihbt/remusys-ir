@@ -7,7 +7,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity::PtrID;
+use mtb_entity_slab::PtrID;
 
 /// 返回指令
 ///

@@ -12,7 +12,7 @@ use crate::{
     ir::{checking::IRLocation, inst::*, module::allocs::IPoolAllocated, *},
     typing::{FPKind, FixVecType, IntType, PtrType, TypeContext},
 };
-use mtb_entity::{EntityAlloc, IEntityAllocID, IEntityRingListNode, IndexedID};
+use mtb_entity_slab::{EntityAlloc, IEntityAllocID, IEntityRingListNode, IndexedID};
 use std::{
     cell::{Cell, Ref, RefCell},
     collections::{HashMap, HashSet, VecDeque},

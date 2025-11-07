@@ -7,7 +7,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity::{IEntityAllocID, PtrID};
+use mtb_entity_slab::{IEntityAllocID, PtrID};
 use std::cell::Cell;
 
 pub struct ExprCommon {

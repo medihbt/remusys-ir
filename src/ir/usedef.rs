@@ -8,7 +8,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity::{
+use mtb_entity_slab::{
     EntityAlloc, EntityListError, EntityListHead, EntityRingList, EntityRingListReadIter,
     IEntityAllocID, IEntityRingListNode, PtrID,
 };

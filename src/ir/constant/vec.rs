@@ -6,7 +6,7 @@ use crate::{
     },
     typing::{FixVecType, IValType, ValTypeID},
 };
-use mtb_entity::PtrID;
+use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 #[derive(Clone)]

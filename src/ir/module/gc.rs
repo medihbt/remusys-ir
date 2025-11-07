@@ -7,7 +7,7 @@ use crate::{
         module::allocs::IPoolAllocated,
     },
 };
-use mtb_entity::IndexedID;
+use mtb_entity_slab::IndexedID;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]

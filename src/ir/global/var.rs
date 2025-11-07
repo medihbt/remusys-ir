@@ -8,7 +8,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity::PtrID;
+use mtb_entity_slab::PtrID;
 use std::{cell::Cell, sync::Arc};
 
 #[derive(Clone)]

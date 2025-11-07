@@ -3,7 +3,7 @@ use super::managing::{
     user_dispose, user_init_id,
 };
 use crate::ir::*;
-use mtb_entity::{
+use mtb_entity_slab::{
     EntityAlloc, EntityAllocPolicy128, EntityAllocPolicy256, EntityAllocPolicy512,
     EntityAllocPolicy4096, IEntityAllocID, IEntityAllocatable, IEntityListNode,
     IEntityRingListNode, PtrID,

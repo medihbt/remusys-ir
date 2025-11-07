@@ -7,7 +7,7 @@ use crate::{
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity::{EntityListError, IEntityListNode};
+use mtb_entity_slab::{EntityListError, IEntityListNode};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy)]
