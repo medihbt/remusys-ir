@@ -4,7 +4,7 @@ use crate::{
     base::INullableValue,
     typing::{
         ArrayTypeID, FPKind, FixVecType, IValType, IntType, PtrType, StructAliasID, StructTypeID,
-        TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes, ValTypeClass,
+        TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
         ValTypeID,
     },
 };
@@ -33,7 +33,7 @@ impl IValType for ScalarType {
             ValTypeID::Ptr => Ok(ScalarType::Ptr),
             ValTypeID::Int(bits) => Ok(ScalarType::Int(bits)),
             ValTypeID::Float(fp_kind) => Ok(ScalarType::Float(fp_kind)),
-            _ => Err(TypeMismatchError::NotClass(ty, ValTypeClass::Compound)),
+            _ => Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Compound)),
         }
     }
 
@@ -143,7 +143,7 @@ impl IValType for AggrType {
             ValTypeID::Struct(id) => Ok(AggrType::Struct(id)),
             ValTypeID::StructAlias(id) => Ok(AggrType::Alias(id)),
             ValTypeID::FixVec(fv) => Ok(AggrType::FixVec(fv)),
-            _ => Err(TypeMismatchError::NotClass(ty, ValTypeClass::Compound)),
+            _ => Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Compound)),
         }
     }
 

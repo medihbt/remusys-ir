@@ -125,11 +125,20 @@ pub trait IUser: ITraceableValue {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UserID {
     Expr(ExprID),
     Inst(InstID),
     Global(GlobalID),
+}
+impl std::fmt::Debug for UserID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserID::Expr(id) => write!(f, "Expr({:p})", id.as_unit_pointer()),
+            UserID::Inst(id) => write!(f, "Inst({:p})", id.as_unit_pointer()),
+            UserID::Global(id) => write!(f, "Global({:p})", id.as_unit_pointer()),
+        }
+    }
 }
 
 impl From<ExprID> for UserID {

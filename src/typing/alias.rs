@@ -1,8 +1,8 @@
 use crate::{
     base::ISlabID,
     typing::{
-        IValType, StructTypeID, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError,
-        TypingRes, ValTypeClass, ValTypeID,
+        IValType, StructTypeID, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes,
+        ValTypeClass, ValTypeID,
     },
 };
 use std::{cell::Ref, io::Write};
@@ -30,7 +30,7 @@ impl ISlabID for StructAliasID {
 impl IValType for StructAliasID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         let ValTypeID::StructAlias(a) = ty else {
-            return Err(TypeMismatchError::NotClass(ty, ValTypeClass::StructAlias));
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::StructAlias));
         };
         Ok(a)
     }

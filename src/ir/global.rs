@@ -110,7 +110,11 @@ pub trait ISubGlobalID: Copy + 'static {
 
     fn try_from_global(allocs: &IRAllocs, id: GlobalID) -> Option<Self> {
         let g = id.deref(&allocs.globals);
-        if Self::GlobalT::try_from_ir_ref(g).is_some() { Some(Self::raw_from_global(id)) } else { None }
+        if Self::GlobalT::try_from_ir_ref(g).is_some() {
+            Some(Self::raw_from_global(id))
+        } else {
+            None
+        }
     }
     fn from_global(allocs: &IRAllocs, id: GlobalID) -> Self {
         Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")

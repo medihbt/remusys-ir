@@ -1,8 +1,7 @@
 use crate::{
     base::ISlabID,
     typing::{
-        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, ValTypeClass,
-        ValTypeID,
+        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, ValTypeClass, ValTypeID,
     },
 };
 use smallvec::SmallVec;
@@ -92,7 +91,7 @@ impl ISlabID for StructTypeID {
 impl IValType for StructTypeID {
     fn try_from_ir(ty: ValTypeID) -> super::TypingRes<Self> {
         let ValTypeID::Struct(s) = ty else {
-            return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Struct));
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Struct));
         };
         Ok(s)
     }

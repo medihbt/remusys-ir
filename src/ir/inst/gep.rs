@@ -307,6 +307,11 @@ pub enum GEPUnpackErr {
     IndexNotInt(ValTypeID),
     #[error("index out of range")]
     IndexOutOfRange,
+    #[error("index chain overflow")]
+    IndexChainOverflow,
+    #[error("no unpacking occurred")]
+    NoUnpacking,
+
     #[error("unpacking struct {0:?} with variable index {1:?}")]
     UnpackStructWithVariable(StructTypeID, ValueSSA),
     #[error("type {0:?} cannot unpack (expecting array, struct or vector)")]
@@ -455,6 +460,33 @@ impl<'ir> GEPTypeIter<'ir> {
     pub fn run_check_assertion(self) {
         for (..) in self {
             // Just iterate to trigger type unpacking and checks.
+        }
+    }
+    pub fn run_sanity_check(mut self) -> GEPTypeUnpackRes {
+        // 对每个 index operand 做类型与解包检查，捕获潜在 panic 条件并转换为可返回的错误。
+        let allocs = self.allocs();
+        for &use_id in self.indices.iter() {
+            // 终止状态后仍然存在索引 → 多余索引
+            if self.unpacker.ends() {
+                return Err(GEPUnpackErr::IndexChainOverflow);
+            }
+            let op = use_id.get_operand(allocs);
+            let opty = op.get_valtype(allocs);
+            if !matches!(opty, ValTypeID::Int(_)) {
+                return Err(GEPUnpackErr::IndexNotInt(opty));
+            }
+            match self.unpacker.try_unpack(op) {
+                Ok(GEPTypeState::InfLenArray(_)) => return Err(GEPUnpackErr::NoUnpacking),
+                Ok(_) => { /* Normally unpacking */ }
+                Err(e) => return Err(e),
+            }
+            self.index += 1; // 与 next() 行为保持一致，推进内部游标
+        }
+        // 如果遍历完成后仍处在初始无限数组状态，说明没有任何索引消费类型（可能是 0 indices 的非法情形）
+        if let GEPTypeState::InfLenArray(_) = self.unpacker.current_state() {
+            Err(GEPUnpackErr::NoUnpacking)
+        } else {
+            Ok(())
         }
     }
 }

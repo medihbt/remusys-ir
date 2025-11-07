@@ -185,7 +185,11 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     };
     // br i1 %7, label %8, label %19
     builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_7.into_instid()), while_body, final_block)
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_7.into_instid()),
+            while_body,
+            final_block,
+        )
         .unwrap();
 
     // While body (%8): if (c < 100) then goto %11 else %5
@@ -210,7 +214,11 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         cmp
     };
     builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_10.into_instid()), if_block_11, while_header)
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_10.into_instid()),
+            if_block_11,
+            while_header,
+        )
         .unwrap();
 
     // If block (%11): c = c + 42
@@ -252,7 +260,11 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         cmp
     };
     builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_14.into_instid()), if_block_15, while_header)
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_14.into_instid()),
+            if_block_15,
+            while_header,
+        )
         .unwrap();
 
     // If block (%15): if (getint() == 1) then %18 else %5
@@ -279,7 +291,11 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
         cmp
     };
     builder
-        .focus_set_branch_to(ValueSSA::Inst(icmp_17.into_instid()), if_block_18, while_header)
+        .focus_set_branch_to(
+            ValueSSA::Inst(icmp_17.into_instid()),
+            if_block_18,
+            while_header,
+        )
         .unwrap();
 
     // If block (%18): c = 168; br %5

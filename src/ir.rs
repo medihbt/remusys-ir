@@ -1,6 +1,16 @@
 //! ## Remusys IR subsystem
 //!
 //! Core IR structures and utilities.
+//!
+//! ### How to import
+//!
+//! The most recommended way to import this module is writing code like this:
+//!
+//! ```rust,ignore
+//! use remusys_ir::ir::{*, inst::*, checking::*};
+//! ```
+//!
+//! Then remove unused imports as needed.
 
 mod attributes;
 mod block;
@@ -14,14 +24,12 @@ mod opcode;
 mod usedef;
 mod utils;
 
-pub mod checking {
-    //! IR checking utilities.
-}
+pub mod checking;
 pub mod inst;
 
 use crate::{
     base::{APInt, INullableValue},
-    typing::{AggrType, IValType, ScalarType, TypeMismatchError, ValTypeClass, ValTypeID},
+    typing::{AggrType, IValType, ScalarType, TypeMismatchErr, ValTypeClass, ValTypeID},
 };
 
 pub use self::{
@@ -203,7 +211,7 @@ impl ISubValueSSA for ValueSSA {
     }
 }
 impl ValueSSA {
-    pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchError> {
+    pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchErr> {
         let val = match ty {
             ValTypeID::Void => ValueSSA::None,
             ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull(ValTypeID::Void)),
@@ -212,7 +220,7 @@ impl ValueSSA {
             ValTypeID::FixVec(v) => ValueSSA::AggrZero(AggrType::FixVec(v)),
             ValTypeID::Array(a) => ValueSSA::AggrZero(AggrType::Array(a)),
             ValTypeID::Struct(s) => ValueSSA::AggrZero(AggrType::Struct(s)),
-            _ => return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Compound)),
+            _ => return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Compound)),
         };
         Ok(val)
     }

@@ -306,12 +306,21 @@ impl PhiInstID {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum PhiDedupError {
+#[derive(Debug, Clone, Copy, Error)]
+pub enum PhiInstErr {
     #[error("PhiInst has duplicated uses with different operands")]
     DuplicatedUses,
+
+    #[error("PhiInst incoming block {1:?} (related use: {0:?}) not found in parent preds")]
+    IncomingNotInPreds(UseID, BlockID),
+
+    #[error("PhiInst has duplicated incoming block {0:?}")]
+    DuplicateIncoming(BlockID),
+
+    #[error("PhiInst is missing incoming block {0:?}")]
+    MissingIncoming(BlockID),
 }
-pub type PhiDedupRes<T = ()> = Result<T, PhiDedupError>;
+pub type PhiInstRes<T = ()> = Result<T, PhiInstErr>;
 
 pub struct PhiInstDedup<'ir> {
     multimap: HashMap<BlockID, SmallVec<[(u32, Option<ValueSSA>); 4]>>,
@@ -402,9 +411,9 @@ impl<'ir> PhiInstDedup<'ir> {
     }
 
     /// 应用精简结果到 PhiInst 上. 要求每个 slot 只有一个有效的 ValueSSA.
-    pub fn apply(self) -> PhiDedupRes {
+    pub fn apply(self) -> PhiInstRes {
         if !self.nodup {
-            return Err(PhiDedupError::DuplicatedUses);
+            return Err(PhiInstErr::DuplicatedUses);
         }
         // 如果初始就是无重复的，则无需操作
         if self.initial_nodup {

@@ -403,7 +403,7 @@ impl<'ir> IRWriter<'ir> {
             self.wrap_indent();
         }
     }
-    fn format_global_var(&self, gvar: &GlobalVar) {
+    pub fn format_global_var(&self, gvar: &GlobalVar) {
         let name = gvar.get_name();
         let prefix = gvar.get_linkage_prefix(self.allocs);
         write!(self, "@{name} = {prefix} ").unwrap();
@@ -426,7 +426,7 @@ impl<'ir> IRWriter<'ir> {
     ///     ; function body
     /// }
     /// ```
-    fn format_func(&self, func_id: FuncID, func: &FuncObj) {
+    pub fn format_func(&self, func_id: FuncID, func: &FuncObj) {
         let _stat = self.stat.hold_curr_func(func_id);
         let name = func.get_name();
         self.write_str(func.get_linkage_prefix(self.allocs))
@@ -476,7 +476,16 @@ impl<'ir> IRWriter<'ir> {
         self.write_str("}").unwrap();
     }
 
-    fn format_block(&self, block_id: BlockID, block: &BlockObj) {
+    pub fn focus_to_func(&self, func: FuncID) {
+        self.stat.curr_func.set(Some(func));
+        self.set_numbers(func);
+    }
+    pub fn clean_focus(&self) {
+        self.stat.curr_func.set(None);
+        self.numbering.borrow_mut().take();
+    }
+
+    pub fn format_block(&self, block_id: BlockID, block: &BlockObj) {
         let number = self.numbers().block_get_number(block_id);
         if number.is_some() {
             self.wrap_indent();
@@ -497,7 +506,7 @@ impl<'ir> IRWriter<'ir> {
         }
         self.dec_indent();
     }
-    fn format_inst(&self, inst_id: InstID, inst: &InstObj, number: Option<usize>) {
+    pub fn format_inst(&self, inst_id: InstID, inst: &InstObj, number: Option<usize>) {
         if let InstObj::PhiInstEnd(_) = inst {
             // PhiInstEnd 不占用编号
         } else {

@@ -170,7 +170,7 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable {
     fn allocate(allocs: &IRAllocs, obj: Self) -> Self::ModuleID;
 
     fn obj_disposed(&self) -> bool;
-    fn _id_is_live(id: Self::ModuleID, allocs: &IRAllocs) -> bool {
+    fn id_is_live(id: Self::ModuleID, allocs: &IRAllocs) -> bool {
         let alloc = Self::get_alloc(allocs);
         let ptr = Self::from_module_id(id);
         let Some(obj) = ptr.try_deref(alloc) else {
@@ -230,6 +230,7 @@ impl IPoolAllocated for BlockObj {
         let Some(body) = &self.body else {
             return;
         };
+        JumpTargetID(body.preds.sentinel).raw_set_block(allocs, id);
         body.insts.forall_with_sentinel(&allocs.insts, |_, i| {
             i.set_parent(Some(id));
             true

@@ -50,7 +50,7 @@ pub use self::{
     binop::{BinOPFlags, BinOPInst, BinOPInstID},
     br::{BrInst, BrInstID},
     call::{CallInst, CallInstBuilder, CallInstID, ICallInstBuildable},
-    cast::{CastInst, CastInstID},
+    cast::{CastErr, CastInst, CastInstID},
     cmp::{CmpInst, CmpInstID},
     extract::{
         FieldExtractBuilder, FieldExtractInst, FieldExtractInstID, IndexExtractInst,
@@ -65,7 +65,7 @@ pub use self::{
     },
     jump::{JumpInst, JumpInstID},
     load::{LoadInst, LoadInstID},
-    phi::{PhiDedupError, PhiDedupRes, PhiInst, PhiInstDedup, PhiInstID},
+    phi::{PhiInst, PhiInstDedup, PhiInstErr, PhiInstID, PhiInstRes},
     ret::{RetInst, RetInstID},
     select::{SelectInst, SelectInstID},
     store::{StoreInst, StoreInstID},

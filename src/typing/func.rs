@@ -1,8 +1,8 @@
 use crate::{
     base::ISlabID,
     typing::{
-        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes,
-        ValTypeClass, ValTypeID,
+        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
+        ValTypeID,
     },
 };
 use std::{
@@ -76,7 +76,7 @@ impl ISlabID for FuncTypeID {
 impl IValType for FuncTypeID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         let ValTypeID::Func(f) = ty else {
-            return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Func));
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Func));
         };
         Ok(f)
     }

@@ -1,8 +1,8 @@
 use crate::{
     base::ISlabID,
     typing::{
-        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchError, TypingRes,
-        ValTypeClass, ValTypeID,
+        IValType, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes, ValTypeClass,
+        ValTypeID,
     },
 };
 use std::{
@@ -79,7 +79,7 @@ impl ISlabID for ArrayTypeID {
 impl IValType for ArrayTypeID {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         let ValTypeID::Array(arr_id) = ty else {
-            return Err(TypeMismatchError::NotClass(ty, ValTypeClass::Array));
+            return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Array));
         };
         Ok(arr_id)
     }

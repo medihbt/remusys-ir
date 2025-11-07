@@ -22,18 +22,23 @@ pub use self::{
     vec::FixVecType,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub enum TypeMismatchError {
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum TypeMismatchErr {
+    #[error("Type {0:?} is not equal to type {1:?}")]
     IDNotEqual(ValTypeID, ValTypeID),
+    #[error("Type {0:?} layout is not equal to type {1:?}")]
     LayoutNotEqual(ValTypeID, ValTypeID),
+    #[error("Type {0:?} kind does not match expected kind {1:?}")]
     KindNotMatch(ValTypeID, ValTypeID),
+    #[error("Type {0:?} is not of class {1:?}")]
     NotClass(ValTypeID, ValTypeClass),
 
+    #[error("Type {0:?} is not an aggregate type")]
     NotAggregate(ValTypeID),
+    #[error("Type {0:?} is not a primitive type")]
     NotPrimitive(ValTypeID),
 }
-
-pub type TypingRes<T = ()> = Result<T, TypeMismatchError>;
+pub type TypingRes<T = ()> = Result<T, TypeMismatchErr>;
 
 pub trait IValType: Copy {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self>;

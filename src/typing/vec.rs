@@ -7,7 +7,7 @@ impl IValType for FixVecType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         match ty {
             ValTypeID::FixVec(FixVecType(scalar, len_log2)) => Ok(FixVecType(scalar, len_log2)),
-            _ => Err(TypeMismatchError::NotClass(ty, ValTypeClass::FixVec)),
+            _ => Err(TypeMismatchErr::NotClass(ty, ValTypeClass::FixVec)),
         }
     }
 

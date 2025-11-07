@@ -4,7 +4,7 @@ use crate::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
         JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
-    typing::ValTypeID,
+    typing::{FPKind, IntType, ValTypeID},
 };
 
 /// Cast 指令：实现 LLVM IR 中的类型转换
@@ -127,4 +127,20 @@ impl CastInstID {
     pub fn from_ty(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).from_ty
     }
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum CastErr {
+    #[error("invalid cast from {0:?} to {1:?} for opcode {2:?}")]
+    InvalidCast(ValTypeID, ValTypeID, Opcode),
+
+    #[error("integer extension to smaller size is not allowed: from {0:?} to {1:?}")]
+    IntExtToSmaller(IntType, IntType),
+    #[error("integer truncation to larger size is not allowed: from {0:?} to {1:?}")]
+    IntTruncToLarger(IntType, IntType),
+
+    #[error("FP extension to smaller size is not allowed: from {0:?} to {1:?}")]
+    FPExtToSmaller(FPKind, FPKind),
+    #[error("FP truncation to larger size is not allowed: from {0:?} to {1:?}")]
+    FPTruncToLarger(FPKind, FPKind),
 }
