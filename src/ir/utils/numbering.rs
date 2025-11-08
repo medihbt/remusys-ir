@@ -70,7 +70,7 @@ impl IRNumberValueMap {
         let mut blocks = Vec::with_capacity(nblocks);
         let mut inst_num = 0;
         for (i, (bid, bb)) in body.blocks.iter(&allocs.blocks).enumerate() {
-            blocks.push((BlockID(bid), i));
+            blocks.push((bid, i));
             inst_num += bb.get_body().insts.len() - 1; // exclude PhiEnd splitter
         }
         Some((blocks.into_boxed_slice(), inst_num))

@@ -338,7 +338,7 @@ impl IEntityRingListNode for Use {
         self.user.set(None);
         self.operand.set(ValueSSA::None);
     }
-    fn on_self_unplug(&self, _: PtrID<Self>, _: &EntityAlloc<Self>) {
+    fn on_self_unplug(&self, _: UseID, _: &EntityAlloc<Self>) {
         self.operand.set(ValueSSA::None);
     }
 }
@@ -361,7 +361,16 @@ impl Use {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UseID(pub PtrID<Use>);
-
+impl From<PtrID<Use>> for UseID {
+    fn from(id: PtrID<Use>) -> Self {
+        UseID(id)
+    }
+}
+impl Into<PtrID<Use>> for UseID {
+    fn into(self) -> PtrID<Use> {
+        self.0
+    }
+}
 impl std::fmt::Debug for UseID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "UseID({:p})", self.0.as_unit_pointer())
@@ -442,7 +451,7 @@ impl<'ir> Iterator for UseIter<'ir> {
     type Item = (UseID, &'ir Use);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(id, obj)| (UseID(id), obj))
+        self.0.next().map(|(id, obj)| (id, obj))
     }
 }
 
@@ -469,7 +478,7 @@ pub trait ITraceableValue {
 
     fn add_user(&self, new_use: UseID, allocs: &IRAllocs) {
         self.users()
-            .push_back_id(new_use.inner(), &allocs.uses)
+            .push_back_id(new_use, &allocs.uses)
             .expect("ITraceableValue add_user failed");
     }
 
@@ -521,8 +530,8 @@ pub trait ITraceableValue {
     ) -> Result<(), EntityListError<Use>> {
         let alloc = &allocs.uses;
         if let Some(new_users) = new_value.try_get_users(allocs) {
-            return self.users().move_all_to(new_users, &allocs.uses, |uptr| {
-                uptr.deref(alloc).operand.set(new_value);
+            return self.users().move_all_to(new_users, &allocs.uses, |uid| {
+                uid.inner().deref(alloc).operand.set(new_value);
             });
         }
         loop {

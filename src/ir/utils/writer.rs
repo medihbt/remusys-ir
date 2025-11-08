@@ -466,7 +466,6 @@ impl<'ir> IRWriter<'ir> {
         self.format_block(body.entry, body.entry.deref_ir(self.allocs));
         self.wrap_indent();
         for (block_id, block) in body.blocks.iter(&self.allocs.blocks) {
-            let block_id = BlockID(block_id);
             if block_id == body.entry {
                 continue;
             }

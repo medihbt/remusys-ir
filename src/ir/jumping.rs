@@ -75,7 +75,7 @@ impl IEntityRingListNode for JumpTarget {
             block: Cell::new(None),
         }
     }
-    fn on_self_unplug(&self, _: PtrID<Self>, _: &EntityAlloc<Self>) {
+    fn on_self_unplug(&self, _: JumpTargetID, _: &EntityAlloc<Self>) {
         self.block.set(None);
     }
 }
@@ -104,6 +104,17 @@ impl JumpTarget {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpTargetID(pub PtrID<JumpTarget>);
+
+impl From<PtrID<JumpTarget>> for JumpTargetID {
+    fn from(ptr: PtrID<JumpTarget>) -> Self {
+        JumpTargetID(ptr)
+    }
+}
+impl Into<PtrID<JumpTarget>> for JumpTargetID {
+    fn into(self) -> PtrID<JumpTarget> {
+        self.0
+    }
+}
 impl Debug for JumpTargetID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "JumpTargetID({:p})", self.inner())

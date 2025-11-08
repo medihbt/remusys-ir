@@ -1,6 +1,6 @@
 use crate::ir::{
-    IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, ITraceableValue, IUser, InstID, Module, UseID,
-    UserID, ValueSSA,
+    IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, ITraceableValue, IUser, InstID, Module, UserID,
+    ValueSSA,
     module::allocs::{IPoolAllocated, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes},
 };
 use mtb_entity_slab::{EntityList, IEntityListNode};
@@ -33,7 +33,7 @@ where
 {
     let alloc = T::get_alloc(pool.as_ref());
     while let Ok(id) = list.pop_front(alloc) {
-        let id = T::make_module_id(id);
+        let id = T::make_module_id(T::ptr_of_id(id));
         T::dispose_id(id, pool)?;
     }
     let head = T::make_module_id(list.head);
@@ -49,7 +49,7 @@ pub(super) fn traceable_dispose<T: ITraceableValue>(
         return Ok(());
     };
     users.clean(&allocs.uses);
-    UseID(users.sentinel).dispose(allocs)
+    users.sentinel.dispose(allocs)
 }
 pub(super) fn user_dispose<T: IUser>(t: &T, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
     for u in t.get_operands() {

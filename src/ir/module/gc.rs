@@ -3,8 +3,7 @@ use crate::{
     ir::{
         BlockID, ExprID, FuncID, GlobalID, GlobalObj, IRAllocs, ISubExprID, ISubGlobal,
         ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID,
-        JumpTargetID, PoolAllocatedClass, PoolAllocatedID, UseID, ValueSSA,
-        module::allocs::IPoolAllocated,
+        PoolAllocatedClass, PoolAllocatedID, ValueSSA, module::allocs::IPoolAllocated,
     },
 };
 use mtb_entity_slab::IndexedID;
@@ -95,7 +94,7 @@ impl IRLiveSet {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = u.dispose_obj(UseID(up), allocs);
+            let _ = u.dispose_obj(up, allocs);
             allocs.push_disposed(up);
         }
         for (id, jp, jt) in allocs.jts.iter() {
@@ -103,7 +102,7 @@ impl IRLiveSet {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = jt.dispose_obj(JumpTargetID(jp), allocs);
+            let _ = jt.dispose_obj(jp, allocs);
             allocs.push_disposed(jp);
         }
         let mut num_freed = allocs.num_pending_disposed();

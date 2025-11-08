@@ -2,7 +2,7 @@ use crate::{
     ir::{
         BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
         IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseID, UseKind, ValueSSA,
+        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseKind, ValueSSA,
         inst::{BrInstID, JumpInstID, PhiInstID, RetInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
@@ -451,7 +451,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
             return Err(IRBuildError::FocusFuncIsExtern(focus.func));
         };
         blocks
-            .node_add_next(insert_after.inner(), bb.inner(), &allocs.blocks)
+            .node_add_next(insert_after, bb, &allocs.blocks)
             .map_err(From::from)
     }
 
@@ -488,12 +488,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
                 back_half.deref_ir(allocs).users(),
                 &allocs.uses,
                 |_, u| matches!(u.get_kind(), UseKind::PhiIncomingBlock(_)),
-                |up| {
-                    UseID(up)
-                        .deref_ir(allocs)
-                        .operand
-                        .set(ValueSSA::Block(back_half))
-                },
+                |up| up.deref_ir(allocs).operand.set(ValueSSA::Block(back_half)),
             )
             .map_err(IRBuildError::from)?;
         // repair focus if needed

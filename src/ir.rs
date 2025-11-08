@@ -111,7 +111,7 @@ pub trait ISubValueSSA: Copy {
             return false;
         };
         users
-            .push_back_id(user_use.inner(), &allocs.uses)
+            .push_back_id(user_use, &allocs.uses)
             .expect("Failed to add User to ValueSSA users");
         true
     }

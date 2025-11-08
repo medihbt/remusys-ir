@@ -199,6 +199,8 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable {
 impl IEntityAllocatable for BlockObj {
     /// Allocate 256 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy256<Self>;
+
+    type PtrID = BlockID;
 }
 impl IPoolAllocated for BlockObj {
     type ModuleID = BlockID;
@@ -230,7 +232,7 @@ impl IPoolAllocated for BlockObj {
         let Some(body) = &self.body else {
             return;
         };
-        JumpTargetID(body.preds.sentinel).raw_set_block(allocs, id);
+        body.preds.sentinel.raw_set_block(allocs, id);
         body.insts.forall_with_sentinel(&allocs.insts, |_, i| {
             i.set_parent(Some(id));
             true
@@ -250,7 +252,7 @@ impl IPoolAllocated for BlockObj {
             && let Some(bbs) = parent.get_body(allocs)
         {
             bbs.blocks
-                .node_unplug(id.inner(), &allocs.blocks)
+                .node_unplug(id, &allocs.blocks)
                 .expect("Block not found in parent function's block list");
         }
         let Some(body) = &self.body else {
@@ -261,7 +263,7 @@ impl IPoolAllocated for BlockObj {
 
         // clean up predecessors
         body.preds.clean(&allocs.jts);
-        JumpTargetID(body.preds.sentinel).dispose(allocs)?;
+        body.preds.sentinel.dispose(allocs)?;
         Ok(())
     }
 }
@@ -269,6 +271,8 @@ impl IPoolAllocated for BlockObj {
 impl IEntityAllocatable for InstObj {
     /// Allocate 512 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy512<Self>;
+
+    type PtrID = InstID;
 }
 impl IPoolAllocated for InstObj {
     type ModuleID = InstID;
@@ -343,6 +347,8 @@ impl IPoolAllocated for InstObj {
 impl IEntityAllocatable for ExprObj {
     /// Allocate 256 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy256<Self>;
+
+    type PtrID = ExprID;
 }
 impl IPoolAllocated for ExprObj {
     type ModuleID = ExprID;
@@ -392,6 +398,8 @@ impl IPoolAllocated for ExprObj {
 impl IEntityAllocatable for GlobalObj {
     /// Allocate 128 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy128<Self>;
+
+    type PtrID = GlobalID;
 }
 impl IPoolAllocated for GlobalObj {
     type ModuleID = GlobalID;
@@ -466,6 +474,8 @@ impl IPoolAllocated for GlobalObj {
 impl IEntityAllocatable for Use {
     /// Allocate 4096 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy4096<Self>;
+
+    type PtrID = UseID;
 }
 impl IPoolAllocated for Use {
     type ModuleID = UseID;
@@ -518,6 +528,8 @@ impl IPoolAllocated for Use {
 impl IEntityAllocatable for JumpTarget {
     /// Allocate 256 entities per allocation block.
     type AllocatePolicyT = EntityAllocPolicy256<Self>;
+
+    type PtrID = JumpTargetID;
 }
 impl IPoolAllocated for JumpTarget {
     type ModuleID = JumpTargetID;

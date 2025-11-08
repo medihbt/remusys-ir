@@ -331,7 +331,7 @@ impl FuncBuilder {
             let blocks = EntityList::new(&allocs.blocks);
             let terminator = self.build_terminator(allocs);
             let entry = BlockID::new_with_terminator(allocs, terminator.into_ir());
-            match blocks.push_back_id(entry.inner(), &allocs.blocks) {
+            match blocks.push_back_id(entry, &allocs.blocks) {
                 Ok(_) => {}
                 Err(e) => {
                     let name = &self.name;

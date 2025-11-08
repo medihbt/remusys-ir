@@ -305,7 +305,7 @@ impl<'ir> SanityCheckCtx<'ir> {
             return Ok(());
         };
         let sentinel = users.sentinel;
-        let mut curr = UseID(sentinel);
+        let mut curr = sentinel;
         let allocs = self.allocs();
         loop {
             let Some(use_obj) = curr.inner().try_deref(&allocs.uses) else {
@@ -324,7 +324,7 @@ impl<'ir> SanityCheckCtx<'ir> {
             if next_ptr == sentinel {
                 break Ok(());
             }
-            curr = UseID(next_ptr);
+            curr = next_ptr;
         }
     }
 
@@ -368,8 +368,7 @@ impl<'ir> SanityCheckCtx<'ir> {
         let mut entry_pos = None;
         let allocs = self.allocs();
         let func_guard = self.begin_func(fid);
-        for (idx, (bptr, bb)) in body.blocks.iter(&allocs.blocks).enumerate() {
-            let bid = BlockID(bptr);
+        for (idx, (bid, bb)) in body.blocks.iter(&allocs.blocks).enumerate() {
             if !BlockObj::id_is_live(bid, allocs) {
                 return Err(IRSanityErr::DeadBlock(bid));
             }
@@ -427,7 +426,7 @@ impl<'ir> SanityCheckCtx<'ir> {
         }
 
         let sentinel = preds.sentinel;
-        let mut curr = JumpTargetID(sentinel);
+        let mut curr = sentinel;
         loop {
             let Some(jt_obj) = curr.inner().try_deref(&allocs.jts) else {
                 return Err(IRSanityErr::DeadJT(curr));
@@ -450,7 +449,7 @@ impl<'ir> SanityCheckCtx<'ir> {
             if next_ptr == sentinel {
                 break;
             }
-            curr = JumpTargetID(next_ptr);
+            curr = next_ptr;
         }
         Ok(())
     }

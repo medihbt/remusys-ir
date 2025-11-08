@@ -59,38 +59,30 @@ impl IEntityListNode for BlockObj {
         }
     }
 
-    fn on_push_next(
-        curr: PtrID<Self>,
-        next: PtrID<Self>,
-        alloc: &EntityAlloc<Self>,
-    ) -> PtrListRes<Self> {
+    fn on_push_next(curr: BlockID, next: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
         if curr == next {
             return Err(EntityListError::RepeatedNode);
         }
-        let parent = curr.deref(alloc).parent_func.get();
+        let parent = curr.0.deref(alloc).parent_func.get();
         // It is legal to push a block without a parent function, so no assert here.
-        next.deref(alloc).parent_func.set(parent);
+        next.0.deref(alloc).parent_func.set(parent);
         Ok(())
     }
 
-    fn on_push_prev(
-        curr: PtrID<Self>,
-        prev: PtrID<Self>,
-        alloc: &EntityAlloc<Self>,
-    ) -> PtrListRes<Self> {
+    fn on_push_prev(curr: BlockID, prev: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
         if curr == prev {
             return Err(EntityListError::RepeatedNode);
         }
-        let parent = curr.deref(alloc).parent_func.get();
+        let parent = curr.0.deref(alloc).parent_func.get();
         // It is legal to push a block without a parent function, so no assert here.
-        prev.deref(alloc).parent_func.set(parent);
+        prev.0.deref(alloc).parent_func.set(parent);
         Ok(())
     }
 
-    fn on_unplug(curr: PtrID<Self>, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        let curr_obj = curr.deref(alloc);
+    fn on_unplug(curr: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
+        let curr_obj = curr.0.deref(alloc);
         if curr_obj.body.is_none() {
-            return Err(EntityListError::ItemFalselyDetached(curr));
+            return Err(EntityListError::ItemFalselyDetached(curr.0));
         }
         curr_obj.parent_func.set(None);
         Ok(())
@@ -134,7 +126,7 @@ impl BlockObj {
     pub(super) fn add_pred(&self, allocs: &IRAllocs, jt_id: JumpTargetID) {
         self.get_body()
             .preds
-            .push_back_id(jt_id.inner(), &allocs.jts)
+            .push_back_id(jt_id, &allocs.jts)
             .expect("Failed to add JumpTarget to BlockObj preds");
     }
 
@@ -211,6 +203,16 @@ impl BlockObj {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockID(pub PtrID<BlockObj>);
+impl From<PtrID<BlockObj>> for BlockID {
+    fn from(ptr: PtrID<BlockObj>) -> Self {
+        Self(ptr)
+    }
+}
+impl Into<PtrID<BlockObj>> for BlockID {
+    fn into(self) -> PtrID<BlockObj> {
+        self.0
+    }
+}
 impl std::fmt::Debug for BlockID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BlockID({:p})", self.0)
