@@ -1,7 +1,7 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        ExprID, ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
+        ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
         constant::expr::{ExprCommon, ISubExpr},
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
@@ -64,15 +64,15 @@ impl StructExpr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StructExprID(pub ExprID);
+pub struct StructExprID(pub PtrID<ExprObj>);
 
 impl ISubExprID for StructExprID {
     type ExprObjT = StructExpr;
 
-    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
+    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self {
         StructExprID(id)
     }
-    fn into_expr(self) -> PtrID<ExprObj> {
+    fn into_raw_ptr(self) -> PtrID<ExprObj> {
         self.0
     }
 }

@@ -238,7 +238,7 @@ impl<'ir> IRWriter<'ir> {
         }
         let (elems, begin_s, end_s) = match expr.deref_ir(self.allocs) {
             ExprObj::Array(a) => {
-                if self.try_write_string(ArrayExprID(expr), a)? {
+                if self.try_write_string(ArrayExprID::raw_from(expr), a)? {
                     return Ok(());
                 } else {
                     (a.elems.as_slice(), "[", "]")
@@ -397,7 +397,7 @@ impl<'ir> IRWriter<'ir> {
             self.writeln_entity_id(gid).unwrap();
             self.writeln_users(gobj.users()).unwrap();
             match gobj {
-                GlobalObj::Func(f) => self.format_func(FuncID(gid), f),
+                GlobalObj::Func(f) => self.format_func(FuncID::raw_from(gid), f),
                 GlobalObj::Var(g) => self.format_global_var(g),
             }
             self.wrap_indent();

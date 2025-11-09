@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
         Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref, RefCell},
@@ -247,18 +248,8 @@ impl PhiInst {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PhiInstID(pub InstID);
-impl_debug_for_subinst_id!(PhiInstID);
-impl ISubInstID for PhiInstID {
-    type InstObjT = PhiInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        PhiInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct PhiInstID(pub PtrID<InstObj>);
+impl_subinst_id!(PhiInstID, PhiInst);
 impl PhiInstID {
     pub fn new_empty(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = PhiInst::new_empty(ty);

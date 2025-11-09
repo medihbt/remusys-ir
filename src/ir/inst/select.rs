@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj, Opcode,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 
 /// 选择指令: 根据条件选择两个值中的一个作为结果。
 ///
@@ -129,18 +130,8 @@ impl SelectInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SelectInstID(pub InstID);
-impl_debug_for_subinst_id!(SelectInstID);
-impl ISubInstID for SelectInstID {
-    type InstObjT = SelectInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        SelectInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct SelectInstID(pub PtrID<InstObj>);
+impl_subinst_id!(SelectInstID, SelectInst);
 impl SelectInstID {
     pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = SelectInst::new_uninit(allocs, ty);

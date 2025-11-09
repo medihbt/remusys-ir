@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstCommon,
-        InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj,
+        JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 
 pub struct JumpInst {
     pub common: InstCommon,
@@ -94,23 +95,8 @@ impl JumpInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct JumpInstID(pub InstID);
-impl_debug_for_subinst_id!(JumpInstID);
-impl ISubInstID for JumpInstID {
-    type InstObjT = JumpInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        JumpInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-    fn is_terminator(self, _: &IRAllocs) -> bool {
-        true
-    }
-}
-impl ITerminatorID for JumpInstID {}
-
+pub struct JumpInstID(pub PtrID<InstObj>);
+impl_subinst_id!(JumpInstID, JumpInst, terminator);
 impl JumpInstID {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, JumpInst::new_uninit(allocs))

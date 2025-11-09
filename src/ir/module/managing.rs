@@ -33,11 +33,10 @@ where
 {
     let alloc = T::get_alloc(pool.as_ref());
     while let Ok(id) = list.pop_front(alloc) {
-        let id = T::make_module_id(T::ptr_of_id(id));
         T::dispose_id(id, pool)?;
     }
-    let head = T::make_module_id(list.head);
-    let tail = T::make_module_id(list.tail);
+    let head = T::id_of_ptr(list.head);
+    let tail = T::id_of_ptr(list.tail);
     T::dispose_id(head, pool)?;
     T::dispose_id(tail, pool)
 }

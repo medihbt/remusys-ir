@@ -47,6 +47,7 @@ pub enum JumpTargetKind {
 /// - 目标基本块的引用
 ///
 /// 跳转目标通过弱引用链表连接，避免循环引用问题。
+#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = JumpTargetID)]
 pub struct JumpTarget {
     node_head: Cell<EntityListHead<JumpTarget>>,
     /// 跳转目标的类型
@@ -99,25 +100,6 @@ impl JumpTarget {
     }
     pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(JumpTargetKind::Disposed);
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct JumpTargetID(pub PtrID<JumpTarget>);
-
-impl From<PtrID<JumpTarget>> for JumpTargetID {
-    fn from(ptr: PtrID<JumpTarget>) -> Self {
-        JumpTargetID(ptr)
-    }
-}
-impl Into<PtrID<JumpTarget>> for JumpTargetID {
-    fn into(self) -> PtrID<JumpTarget> {
-        self.0
-    }
-}
-impl Debug for JumpTargetID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JumpTargetID({:p})", self.inner())
     }
 }
 impl JumpTargetID {
@@ -287,26 +269,42 @@ pub enum TerminatorObj<'ir> {
     Switch(&'ir SwitchInst),
 }
 impl TerminatorID {
+    pub fn raw_unreach(id: InstID) -> Self {
+        TerminatorID::Unreachable(UnreachableInstID(id.into_raw_ptr()))
+    }
+    pub fn raw_ret(id: InstID) -> Self {
+        TerminatorID::Ret(RetInstID(id.into_raw_ptr()))
+    }
+    pub fn raw_jump(id: InstID) -> Self {
+        TerminatorID::Jump(JumpInstID(id.into_raw_ptr()))
+    }
+    pub fn raw_br(id: InstID) -> Self {
+        TerminatorID::Br(BrInstID(id.into_raw_ptr()))
+    }
+    pub fn raw_switch(id: InstID) -> Self {
+        TerminatorID::Switch(SwitchInstID(id.into_raw_ptr()))
+    }
+
     pub fn try_from_ir(allocs: &IRAllocs, inst_id: impl ISubInstID) -> Option<Self> {
         use TerminatorID::*;
-        let inst_id = inst_id.into_instid();
-        match inst_id.deref_ir(allocs) {
-            InstObj::Unreachable(_) => Some(Unreachable(UnreachableInstID(inst_id))),
-            InstObj::Ret(_) => Some(Ret(RetInstID(inst_id))),
-            InstObj::Jump(_) => Some(Jump(JumpInstID(inst_id))),
-            InstObj::Br(_) => Some(Br(BrInstID(inst_id))),
-            InstObj::Switch(_) => Some(Switch(SwitchInstID(inst_id))),
+        let inst_ptr = inst_id.into_raw_ptr();
+        match inst_ptr.deref(&allocs.insts) {
+            InstObj::Unreachable(_) => Some(Unreachable(UnreachableInstID(inst_ptr))),
+            InstObj::Ret(_) => Some(Ret(RetInstID(inst_ptr))),
+            InstObj::Jump(_) => Some(Jump(JumpInstID(inst_ptr))),
+            InstObj::Br(_) => Some(Br(BrInstID(inst_ptr))),
+            InstObj::Switch(_) => Some(Switch(SwitchInstID(inst_ptr))),
             _ => None,
         }
     }
     pub fn into_ir(self) -> InstID {
         use TerminatorID::*;
         match self {
-            Unreachable(id) => id.into_instid(),
-            Ret(id) => id.into_instid(),
-            Jump(id) => id.into_instid(),
-            Br(id) => id.into_instid(),
-            Switch(id) => id.into_instid(),
+            Unreachable(id) => id.raw_into(),
+            Ret(id) => id.raw_into(),
+            Jump(id) => id.raw_into(),
+            Br(id) => id.raw_into(),
+            Switch(id) => id.raw_into(),
         }
     }
 

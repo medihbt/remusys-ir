@@ -1,8 +1,8 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
-        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -10,6 +10,7 @@ use crate::{
     },
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
+use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 /// 从数组 / 向量聚合值 a 中提取变量索引 i 处的值.
@@ -108,18 +109,8 @@ impl IndexExtractInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndexExtractInstID(pub InstID);
-impl_debug_for_subinst_id!(IndexExtractInstID);
-impl ISubInstID for IndexExtractInstID {
-    type InstObjT = IndexExtractInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct IndexExtractInstID(pub PtrID<InstObj>);
+impl_subinst_id!(IndexExtractInstID, IndexExtractInst);
 impl IndexExtractInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_ty: AggrType) -> Self {
         let inst = IndexExtractInst::new_uninit(allocs, tctx, aggr_ty);
@@ -248,18 +239,8 @@ impl FieldExtractInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldExtractInstID(pub InstID);
-impl_debug_for_subinst_id!(FieldExtractInstID);
-impl ISubInstID for FieldExtractInstID {
-    type InstObjT = FieldExtractInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct FieldExtractInstID(pub PtrID<InstObj>);
+impl_subinst_id!(FieldExtractInstID, FieldExtractInst);
 impl FieldExtractInstID {
     pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
         FieldExtractInst::builder(aggr_type)
@@ -308,7 +289,7 @@ impl IAggrFieldInstBuildable for FieldExtractBuilder {
     fn common_mut(&mut self) -> &mut AggrFieldInstBuilderCommon {
         &mut self.common
     }
-    fn build_inst(&mut self, allocs: &IRAllocs) -> FieldExtractInst {
+    fn build_obj(&mut self, allocs: &IRAllocs) -> FieldExtractInst {
         let inner = self.common_mut();
         let aggr_type = inner.aggr_type;
         let (indices, ret_ty) = {

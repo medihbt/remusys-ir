@@ -104,9 +104,9 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let call_a = builder
         .build_inst(|allocs, tctx| {
             let mut cb = CallInst::builder(tctx, ri32fty);
-            cb.callee(ValueSSA::Global(getint_func.into_global()));
-            let inst = cb.build_inst(allocs);
-            CallInstID::allocate(allocs, inst).into_instid()
+            cb.callee(ValueSSA::Global(getint_func.raw_into()));
+            let inst = cb.build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
         })
         .unwrap();
 
@@ -114,9 +114,9 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let call_b = builder
         .build_inst(|allocs, tctx| {
             let mut cb = CallInst::builder(tctx, ri32fty);
-            cb.callee(ValueSSA::Global(getint_func.into_global()));
-            let inst = cb.build_inst(allocs);
-            CallInstID::allocate(allocs, inst).into_instid()
+            cb.callee(ValueSSA::Global(getint_func.raw_into()));
+            let inst = cb.build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
         })
         .unwrap();
 
@@ -133,8 +133,8 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     // store i32 %4, ptr %1, align 4
     let store_init_c = StoreInstID::new(
         builder.allocs(),
-        ValueSSA::Inst(add_2_3.into_instid()),
-        ValueSSA::Inst(alloca_c.into_instid()),
+        ValueSSA::Inst(add_2_3.raw_into()),
+        ValueSSA::Inst(alloca_c.raw_into()),
         2,
     );
     builder.insert_inst(store_init_c).unwrap();
@@ -147,14 +147,14 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     builder.set_focus(IRFocus::Block(final_block));
     let load_ret = {
         let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
-        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.raw_into()));
         builder.insert_inst(load).unwrap();
         load
     };
     builder
         .focus_set_terminator(RetInstID::with_retval(
             builder.allocs(),
-            ValueSSA::Inst(load_ret.into_instid()),
+            ValueSSA::Inst(load_ret.raw_into()),
         ))
         .unwrap();
 
@@ -166,7 +166,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     // %6 = load i32, ptr %1, align 4
     let load_c_6 = {
         let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
-        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.raw_into()));
         builder.insert_inst(load).unwrap();
         load
     };
@@ -178,18 +178,14 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
             CmpCond::SLT,
             ValTypeID::Int(32),
         );
-        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_6.into_instid()));
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_6.raw_into()));
         cmp.set_rhs(builder.allocs(), APInt::new(75u32, 32).into());
         builder.insert_inst(cmp).unwrap();
         cmp
     };
     // br i1 %7, label %8, label %19
     builder
-        .focus_set_branch_to(
-            ValueSSA::Inst(icmp_7.into_instid()),
-            while_body,
-            final_block,
-        )
+        .focus_set_branch_to(ValueSSA::Inst(icmp_7.raw_into()), while_body, final_block)
         .unwrap();
 
     // While body (%8): if (c < 100) then goto %11 else %5
@@ -197,7 +193,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let if_block_11 = builder.split_block().unwrap();
     let load_c_9 = {
         let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
-        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.raw_into()));
         builder.insert_inst(load).unwrap();
         load
     };
@@ -208,14 +204,14 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
             CmpCond::SLT,
             ValTypeID::Int(32),
         );
-        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_9.into_instid()));
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_c_9.raw_into()));
         cmp.set_rhs(builder.allocs(), APInt::new(100u32, 32).into());
         builder.insert_inst(cmp).unwrap();
         cmp
     };
     builder
         .focus_set_branch_to(
-            ValueSSA::Inst(icmp_10.into_instid()),
+            ValueSSA::Inst(icmp_10.raw_into()),
             if_block_11,
             while_header,
         )
@@ -225,22 +221,22 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     builder.set_focus(IRFocus::Block(if_block_11));
     let load_c_12 = {
         let load = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
-        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.into_instid()));
+        load.set_source(builder.allocs(), ValueSSA::Inst(alloca_c.raw_into()));
         builder.insert_inst(load).unwrap();
         load
     };
     let add_13 = BinOPInstID::new(
         builder.allocs(),
         Opcode::Add,
-        ValueSSA::Inst(load_c_12.into_instid()),
+        ValueSSA::Inst(load_c_12.raw_into()),
         APInt::new(42u32, 32).into(),
     );
     add_13.add_flags(builder.allocs(), BinOPFlags::NSW);
     builder.insert_inst(add_13).unwrap();
     let store_c_13 = StoreInstID::new(
         builder.allocs(),
-        ValueSSA::Inst(add_13.into_instid()),
-        ValueSSA::Inst(alloca_c.into_instid()),
+        ValueSSA::Inst(add_13.raw_into()),
+        ValueSSA::Inst(alloca_c.raw_into()),
         2,
     );
     builder.insert_inst(store_c_13).unwrap();
@@ -254,14 +250,14 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
             CmpCond::SGT,
             ValTypeID::Int(32),
         );
-        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(add_13.into_instid()));
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(add_13.raw_into()));
         cmp.set_rhs(builder.allocs(), APInt::new(99u32, 32).into());
         builder.insert_inst(cmp).unwrap();
         cmp
     };
     builder
         .focus_set_branch_to(
-            ValueSSA::Inst(icmp_14.into_instid()),
+            ValueSSA::Inst(icmp_14.raw_into()),
             if_block_15,
             while_header,
         )
@@ -273,9 +269,9 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let call_16 = builder
         .build_inst(|allocs, tctx| {
             let mut cb = CallInst::builder(tctx, ri32fty);
-            cb.callee(ValueSSA::Global(getint_func.into_global()));
-            let inst = cb.build_inst(allocs);
-            CallInstID::allocate(allocs, inst).into_instid()
+            cb.callee(ValueSSA::Global(getint_func.raw_into()));
+            let inst = cb.build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
         })
         .unwrap();
     let icmp_17 = {
@@ -292,7 +288,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     };
     builder
         .focus_set_branch_to(
-            ValueSSA::Inst(icmp_17.into_instid()),
+            ValueSSA::Inst(icmp_17.raw_into()),
             if_block_18,
             while_header,
         )
@@ -303,7 +299,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let store_168 = StoreInstID::new(
         builder.allocs(),
         APInt::new(168u32, 32).into(),
-        ValueSSA::Inst(alloca_c.into_instid()),
+        ValueSSA::Inst(alloca_c.raw_into()),
         2,
     );
     builder.insert_inst(store_168).unwrap();

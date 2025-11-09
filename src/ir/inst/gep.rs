@@ -1,12 +1,13 @@
 use crate::{
     base::INullableValue,
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
-        InstID, InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
+use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 use std::{cell::Cell, ops::RangeFrom};
 use thiserror::Error;
@@ -185,18 +186,8 @@ impl GEPInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GEPInstID(pub InstID);
-impl_debug_for_subinst_id!(GEPInstID);
-impl ISubInstID for GEPInstID {
-    type InstObjT = GEPInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct GEPInstID(pub PtrID<InstObj>);
+impl_subinst_id!(GEPInstID, GEPInst);
 impl GEPInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,
@@ -589,7 +580,7 @@ impl<'ir> GEPInstBuilder<'ir> {
         operands
     }
 
-    pub fn build_inst(&self) -> GEPInst {
+    pub fn build_obj(&self) -> GEPInst {
         GEPInst {
             common: InstCommon::new(Opcode::IndexPtr, ValTypeID::Ptr),
             operands: self.dump_operands(),
@@ -601,6 +592,6 @@ impl<'ir> GEPInstBuilder<'ir> {
         }
     }
     pub fn build_id(&self) -> GEPInstID {
-        GEPInstID::allocate(self.allocs(), self.build_inst())
+        GEPInstID::allocate(self.allocs(), self.build_obj())
     }
 }

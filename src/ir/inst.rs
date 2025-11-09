@@ -46,10 +46,10 @@ pub use self::{
         IAggrFieldInstBuildable,
     },
     alloca::{AllocaInst, AllocaInstID},
-    amormw::{AmoOrdering, AmoRmwBuilder, AmoRmwInst, AmoRmwInstID, IAmoRmwBuildable, SyncScope},
+    amormw::{AmoOrdering, AmoRmwBuilder, AmoRmwInst, AmoRmwInstID, SyncScope},
     binop::{BinOPFlags, BinOPInst, BinOPInstID},
     br::{BrInst, BrInstID},
-    call::{CallInst, CallInstBuilder, CallInstID, ICallInstBuildable},
+    call::{CallInst, CallInstBuilder, CallInstID},
     cast::{CastErr, CastInst, CastInstID},
     cmp::{CmpInst, CmpInstID},
     extract::{
@@ -179,26 +179,33 @@ pub trait ISubInst: IUser + Sized {
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
 
-    fn raw_from_instid(id: InstID) -> Self;
-    fn into_instid(self) -> InstID;
+    fn from_raw_ptr(ptr: PtrID<InstObj>) -> Self;
+    fn into_raw_ptr(self) -> PtrID<InstObj>;
+
+    fn raw_from(id: InstID) -> Self {
+        Self::from_raw_ptr(id.into())
+    }
+    fn raw_into(self) -> InstID {
+        InstID(self.into_raw_ptr())
+    }
 
     fn try_from_instid(id: InstID, allocs: &IRAllocs) -> Option<Self> {
-        let inst = id.deref(&allocs.insts);
-        Self::InstObjT::try_from_ir_ref(inst).map(|_| Self::raw_from_instid(id))
+        let inst = id.0.deref(&allocs.insts);
+        Self::InstObjT::try_from_ir_ref(inst).map(|_| Self::raw_from(id))
     }
     fn from_instid(id: InstID, allocs: &IRAllocs) -> Self {
         Self::try_from_instid(id, allocs).expect("Invalid sub-instruction ID")
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::InstObjT> {
-        let inst = self.into_instid().try_deref(&allocs.insts)?;
+        let inst = self.into_raw_ptr().try_deref(&allocs.insts)?;
         if inst.is_disposed() {
             return None;
         }
         Self::InstObjT::try_from_ir_ref(inst)
     }
     fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::InstObjT> {
-        let inst = self.into_instid().deref_mut(&mut allocs.insts);
+        let inst = self.into_raw_ptr().deref_mut(&mut allocs.insts);
         if inst.is_disposed() {
             return None;
         }
@@ -216,7 +223,7 @@ pub trait ISubInstID: Copy {
             .expect("Error: Attempted to deref freed InstID")
     }
     fn get_indexed(self, allocs: &IRAllocs) -> IndexedID<InstObj> {
-        self.into_instid()
+        self.into_raw_ptr()
             .as_indexed(&allocs.insts)
             .expect("Error: Attempted to get indexed ID of freed InstID")
     }
@@ -256,24 +263,57 @@ pub trait ISubInstID: Copy {
 
     fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
         let id = InstObj::allocate(allocs, obj.into_ir());
-        Self::raw_from_instid(id)
+        Self::raw_from(id)
     }
 
     fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
-        InstObj::dispose_id(self.into_instid(), allocs)
+        InstObj::dispose_id(self.raw_into(), allocs)
     }
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
 #[macro_export]
-macro_rules! impl_debug_for_subinst_id {
-    ($TypeName:ident) => {
-        impl std::fmt::Debug for $TypeName {
+macro_rules! impl_subinst_id {
+    ($IDType:ident, $ObjType:ident) => {
+        impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let tyname = stringify!($TypeName);
-                let addr = self.into_instid().as_unit_pointer();
+                let tyname = stringify!($IDType);
+                let addr = self.into_raw_ptr().as_unit_pointer();
                 write!(f, "{tyname}({addr:p})",)
             }
         }
+        impl $crate::ir::inst::ISubInstID for $IDType {
+            type InstObjT = $ObjType;
+
+            fn from_raw_ptr(ptr: mtb_entity_slab::PtrID<InstObj>) -> Self {
+                $IDType(ptr)
+            }
+            fn into_raw_ptr(self) -> mtb_entity_slab::PtrID<InstObj> {
+                self.0
+            }
+        }
+    };
+    ($IDType:ident, $ObjType:ident, terminator) => {
+        impl std::fmt::Debug for $IDType {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let tyname = stringify!($IDType);
+                let addr = self.into_raw_ptr().as_unit_pointer();
+                write!(f, "{tyname}({addr:p})",)
+            }
+        }
+        impl $crate::ir::inst::ISubInstID for $IDType {
+            type InstObjT = $ObjType;
+
+            fn from_raw_ptr(ptr: mtb_entity_slab::PtrID<InstObj>) -> Self {
+                $IDType(ptr)
+            }
+            fn into_raw_ptr(self) -> mtb_entity_slab::PtrID<InstObj> {
+                self.0
+            }
+            fn is_terminator(self, _: &IRAllocs) -> bool {
+                true
+            }
+        }
+        impl $crate::ir::ITerminatorID for $IDType {}
     };
 }
 
@@ -313,6 +353,7 @@ pub trait IAggrIndexInst: IAggregateInst {
     fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self;
 }
 
+#[mtb_entity_slab::entity_allocatable(policy = 512, wrapper = InstID)]
 pub enum InstObj {
     /// 指令链表的首尾引导结点, 不参与语义表达.
     GuideNode(InstCommon),
@@ -384,7 +425,6 @@ pub enum InstObj {
     /// 选择指令: 根据条件值选择两个操作数之一作为结果返回。
     Select(SelectInst),
 }
-pub type InstID = PtrID<InstObj>;
 
 impl IUser for InstObj {
     fn get_operands(&self) -> OperandSet<'_> {
@@ -553,33 +593,30 @@ impl IEntityListNode for InstObj {
         InstObj::GuideNode(InstCommon::new_sentinel())
     }
 
-    fn on_push_next(
-        curr: PtrID<Self>,
-        next: PtrID<Self>,
-        alloc: &EntityAlloc<Self>,
-    ) -> PtrListRes<Self> {
+    fn on_push_next(curr: InstID, next: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
         if curr == next {
             return Err(EntityListError::RepeatedNode);
         }
+        let curr = curr.into_raw_ptr();
+        let next = next.into_raw_ptr();
         let parent = curr.deref(alloc).get_common().parent_bb.get();
         // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         next.deref(alloc).get_common().parent_bb.set(parent);
         Ok(())
     }
-    fn on_push_prev(
-        curr: PtrID<Self>,
-        prev: PtrID<Self>,
-        alloc: &EntityAlloc<Self>,
-    ) -> PtrListRes<Self> {
+    fn on_push_prev(curr: InstID, prev: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
         if curr == prev {
             return Err(EntityListError::RepeatedNode);
         }
+        let curr = curr.into_raw_ptr();
+        let prev = prev.into_raw_ptr();
         let parent = curr.deref(alloc).get_common().parent_bb.get();
         // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         prev.deref(alloc).get_common().parent_bb.set(parent);
         Ok(())
     }
-    fn on_unplug(curr: PtrID<Self>, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
+    fn on_unplug(curr: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
+        let curr = curr.into_raw_ptr();
         // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
         curr.deref(alloc).get_common().parent_bb.set(None);
         Ok(())
@@ -598,14 +635,21 @@ impl InstObj {
     }
 }
 
+impl std::fmt::Pointer for InstID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.into_raw_ptr().fmt(f)
+    }
+}
+/// InstID should be implemented manually because of the macro_rules! impl_subinst_id
+/// contains `Debug` implementation which conflicts with the auto-derived one.
 impl ISubInstID for InstID {
     type InstObjT = InstObj;
 
-    fn raw_from_instid(id: InstID) -> Self {
-        id
+    fn from_raw_ptr(ptr: PtrID<InstObj>) -> Self {
+        Self(ptr)
     }
-    fn into_instid(self) -> InstID {
-        self
+    fn into_raw_ptr(self) -> PtrID<InstObj> {
+        self.0
     }
 }
 impl ISubValueSSA for InstID {

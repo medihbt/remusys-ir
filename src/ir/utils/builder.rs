@@ -3,7 +3,7 @@ use crate::{
         BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
         IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
         ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseKind, ValueSSA,
-        inst::{BrInstID, JumpInstID, PhiInstID, RetInstID, SwitchInstID, UnreachableInstID},
+        inst::{BrInstID, JumpInstID, PhiInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
@@ -292,7 +292,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         };
         let block = focus.block.ok_or(IRBuildError::NullFocus)?;
         let allocs = self.allocs();
-        let termi = termi.into_instid();
+        let termi = termi.raw_into();
         let managed = match block.try_set_terminator_inst(allocs, termi) {
             Ok(Some(managed)) => managed,
             Ok(None) => return Err(IRBuildError::BlockHasNoTerminator(block)),
@@ -389,15 +389,13 @@ impl InstIDSummary {
     fn new(id: InstID, allocs: &IRAllocs) -> Self {
         match id.deref_ir(allocs) {
             InstObj::GuideNode(_) => InstIDSummary::Sentinel,
-            InstObj::Phi(_) => InstIDSummary::Phi(PhiInstID(id)),
+            InstObj::Phi(_) => InstIDSummary::Phi(PhiInstID::raw_from(id)),
             InstObj::PhiInstEnd(_) => InstIDSummary::PhiEnd(id),
-            InstObj::Unreachable(_) => {
-                Self::Terminator(TerminatorID::Unreachable(UnreachableInstID(id)))
-            }
-            InstObj::Ret(_) => Self::Terminator(TerminatorID::Ret(RetInstID(id))),
-            InstObj::Jump(_) => Self::Terminator(TerminatorID::Jump(JumpInstID(id))),
-            InstObj::Br(_) => Self::Terminator(TerminatorID::Br(BrInstID(id))),
-            InstObj::Switch(_) => Self::Terminator(TerminatorID::Switch(SwitchInstID(id))),
+            InstObj::Unreachable(_) => Self::Terminator(TerminatorID::raw_unreach(id)),
+            InstObj::Ret(_) => Self::Terminator(TerminatorID::raw_ret(id)),
+            InstObj::Jump(_) => Self::Terminator(TerminatorID::raw_jump(id)),
+            InstObj::Br(_) => Self::Terminator(TerminatorID::raw_br(id)),
+            InstObj::Switch(_) => Self::Terminator(TerminatorID::raw_switch(id)),
             _ => InstIDSummary::Normal(id),
         }
     }
@@ -474,7 +472,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         let back_half = BlockID::new_uninit(self.allocs());
         self.focus_add_block(back_half)?;
         let allocs = self.allocs();
-        let goto_backhalf = JumpInstID::with_target(allocs, back_half).into_instid();
+        let goto_backhalf = JumpInstID::with_target(allocs, back_half).raw_into();
         let Some(old_terminator) = front_half.set_terminator_inst(allocs, goto_backhalf) else {
             return Err(IRBuildError::BlockHasNoTerminator(front_half));
         };
@@ -588,7 +586,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
                 }
                 FocusDegradeOp::Ignore => InstInsertPos::Prepend(inst_pos, block),
             },
-            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.into_instid(), block),
+            (IS::Phi(_), IS::Phi(phi)) => InstInsertPos::Prepend(phi.raw_into(), block),
             (IS::Phi(_), IS::PhiEnd(pe)) => InstInsertPos::Prepend(pe, block),
             (IS::Phi(_), IS::Normal(_)) | (IS::Phi(_), IS::Terminator(_)) => {
                 match self.focus_degrade.add_phi_to_inst {
@@ -627,7 +625,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     }
 
     pub fn insert_inst(&mut self, inst: impl ISubInstID) -> IRBuildRes {
-        let inst = inst.into_instid();
+        let inst = inst.raw_into();
         let inst_summary = InstIDSummary::new(inst, self.allocs());
         match self.get_inst_insert_pos(inst_summary)? {
             InstInsertPos::Prepend(pos, block) => block

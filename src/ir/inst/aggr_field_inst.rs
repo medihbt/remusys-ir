@@ -66,9 +66,9 @@ pub trait IAggrFieldInstBuildable: Clone {
             .expect("Failed to add steps to FieldExtractBuilder")
     }
 
-    fn build_inst(&mut self, allocs: &IRAllocs) -> Self::InstT;
+    fn build_obj(&mut self, allocs: &IRAllocs) -> Self::InstT;
     fn build_id(&mut self, allocs: &IRAllocs) -> Self::InstID {
-        let inst = self.build_inst(allocs);
+        let inst = self.build_obj(allocs);
         Self::InstID::allocate(allocs, inst)
     }
 }

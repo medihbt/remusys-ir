@@ -1,9 +1,6 @@
 use crate::{
     impl_traceable_from_common,
-    ir::{
-        ExprCommon, ExprID, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID,
-        UseKind,
-    },
+    ir::{ExprCommon, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID, UseKind},
     typing::{FixVecType, IValType, ValTypeID},
 };
 use mtb_entity_slab::PtrID;
@@ -75,15 +72,15 @@ impl FixVec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FixVecID(pub ExprID);
+pub struct FixVecID(pub PtrID<ExprObj>);
 
 impl ISubExprID for FixVecID {
     type ExprObjT = FixVec;
 
-    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
+    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self {
         FixVecID(id)
     }
-    fn into_expr(self) -> PtrID<ExprObj> {
+    fn into_raw_ptr(self) -> PtrID<ExprObj> {
         self.0
     }
 }

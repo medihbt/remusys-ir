@@ -1,12 +1,13 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj, Opcode,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
 use bitflags::bitflags;
+use mtb_entity_slab::PtrID;
 use std::cell::Cell;
 
 bitflags! {
@@ -207,19 +208,8 @@ impl BinOPInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BinOPInstID(pub InstID);
-impl_debug_for_subinst_id!(BinOPInstID);
-impl ISubInstID for BinOPInstID {
-    type InstObjT = BinOPInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
-
+pub struct BinOPInstID(pub PtrID<InstObj>);
+impl_subinst_id!(BinOPInstID, BinOPInst);
 impl BinOPInstID {
     pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, ty: ValTypeID) -> Self {
         let inst = BinOPInst::new_uninit(allocs, opcode, ty);

@@ -1,12 +1,13 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst,
-        IUser, InstCommon, InstID, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
+        InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
+        ValueSSA,
     },
     typing::{IntType, ValTypeID},
 };
+use mtb_entity_slab::PtrID;
 use smallvec::{SmallVec, smallvec};
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -235,22 +236,8 @@ impl SwitchInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SwitchInstID(pub InstID);
-impl_debug_for_subinst_id!(SwitchInstID);
-impl ISubInstID for SwitchInstID {
-    type InstObjT = SwitchInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-    fn is_terminator(self, _: &IRAllocs) -> bool {
-        true
-    }
-}
-impl ITerminatorID for SwitchInstID {}
+pub struct SwitchInstID(pub PtrID<InstObj>);
+impl_subinst_id!(SwitchInstID, SwitchInst, terminator);
 impl SwitchInstID {
     pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
         Self::allocate(allocs, SwitchInst::new_uninit(allocs, discrim_ty))

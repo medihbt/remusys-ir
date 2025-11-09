@@ -111,11 +111,11 @@ impl IRLocation {
     fn describe_inst(writer: &mut IRWriter<'_>, allocs: &IRAllocs, inst_id: InstID) {
         let opcode = inst_id.get_opcode(allocs);
         let Some(parent_bb) = inst_id.get_parent(allocs) else {
-            write!(writer, "{inst_id:p} opcode {opcode:?} (orphan)").unwrap();
+            write!(writer, "{inst_id:?} opcode {opcode:?} (orphan)").unwrap();
             return;
         };
         let Some(parent_func) = parent_bb.get_parent_func(allocs) else {
-            write!(writer, "{inst_id:p} opcode {opcode:?} (orphan block)").unwrap();
+            write!(writer, "{inst_id:?} opcode {opcode:?} (orphan block)").unwrap();
             return;
         };
         writer.focus_to_func(parent_func);

@@ -9,7 +9,7 @@ use crate::{
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::EntityList;
+use mtb_entity_slab::{EntityList, PtrID};
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref},
@@ -168,18 +168,19 @@ impl FuncObj {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FuncID(pub GlobalID);
+pub struct FuncID(pub PtrID<GlobalObj>);
 impl std::fmt::Debug for FuncID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FuncID({:p})", self.0.as_unit_pointer())
+        write!(f, "FuncID({:p})", self.0)
     }
 }
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
-    fn raw_from_global(id: GlobalID) -> Self {
-        FuncID(id)
+
+    fn from_raw_ptr(ptr: PtrID<GlobalObj>) -> Self {
+        FuncID(ptr)
     }
-    fn into_global(self) -> GlobalID {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj> {
         self.0
     }
 }
@@ -317,7 +318,7 @@ impl FuncBuilder {
         self.linkage != Linkage::External
     }
 
-    pub fn build_item(&self, allocs: &IRAllocs) -> FuncObj {
+    pub fn build_obj(&self, allocs: &IRAllocs) -> FuncObj {
         let args = {
             let mut v = Vec::with_capacity(self.arg_types.len());
             for (i, &ty) in self.arg_types.iter().enumerate() {
@@ -357,7 +358,7 @@ impl FuncBuilder {
 
     pub fn build_id(&self, module: &Module) -> Result<FuncID, GlobalID> {
         let allocs = &module.allocs;
-        let func = self.build_item(allocs);
+        let func = self.build_obj(allocs);
         let func_id = FuncID::allocate(allocs, func);
         func_id.register_to(module)
     }

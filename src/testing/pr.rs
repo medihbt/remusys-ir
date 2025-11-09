@@ -29,7 +29,7 @@ fn test_builder_smoke_and_writer() {
     builder
         .focus_set_terminator(RetInstID::with_retval(
             builder.allocs(),
-            ValueSSA::Inst(add.into_instid()),
+            ValueSSA::Inst(add.raw_into()),
         ))
         .unwrap();
 
@@ -68,7 +68,7 @@ fn test_gc_unreachable_expr_is_freed() {
         .module
         .symbols
         .borrow_mut()
-        .insert("main".into(), main_func.into_global());
+        .insert("main".into(), main_func.raw_into());
 
     let mut module = builder.module;
     module.begin_gc().finish();
@@ -108,7 +108,7 @@ fn test_jump_target_invariants_via_sanity_check() {
     let then_bb = builder.split_block().unwrap();
     let else_bb = builder.split_block().unwrap();
     builder
-        .focus_set_branch_to(ValueSSA::Inst(cond.into_instid()), then_bb, else_bb)
+        .focus_set_branch_to(ValueSSA::Inst(cond.raw_into()), then_bb, else_bb)
         .unwrap();
 
     // then: ret 0

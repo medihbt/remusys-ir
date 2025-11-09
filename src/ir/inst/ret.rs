@@ -1,9 +1,8 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorID, ITerminatorInst, IUser,
-        InstCommon, InstID, InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind,
-        ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon, InstObj,
+        JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -94,22 +93,8 @@ impl RetInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RetInstID(pub InstID);
-impl_debug_for_subinst_id!(RetInstID);
-impl ISubInstID for RetInstID {
-    type InstObjT = RetInst;
-
-    fn raw_from_instid(id: PtrID<InstObj>) -> Self {
-        RetInstID(id)
-    }
-    fn into_instid(self) -> PtrID<InstObj> {
-        self.0
-    }
-    fn is_terminator(self, _: &IRAllocs) -> bool {
-        true
-    }
-}
-impl ITerminatorID for RetInstID {}
+pub struct RetInstID(pub PtrID<InstObj>);
+impl_subinst_id!(RetInstID, RetInst, terminator);
 impl RetInstID {
     pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
         Self::allocate(allocs, RetInst::new_uninit(allocs, ret_ty))

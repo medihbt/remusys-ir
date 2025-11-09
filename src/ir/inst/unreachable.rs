@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ITerminatorID, ITerminatorInst, IUser, InstCommon, InstID,
-        InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID,
+        IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj, JumpTargetID,
+        JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 
 /// 不可达指令: 表示函数控制流不可达
 ///
@@ -75,22 +76,8 @@ impl UnreachableInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnreachableInstID(pub InstID);
-impl_debug_for_subinst_id!(UnreachableInstID);
-impl ISubInstID for UnreachableInstID {
-    type InstObjT = UnreachableInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-    fn is_terminator(self, _: &IRAllocs) -> bool {
-        true
-    }
-}
-impl ITerminatorID for UnreachableInstID {}
+pub struct UnreachableInstID(pub PtrID<InstObj>);
+impl_subinst_id!(UnreachableInstID, UnreachableInst, terminator);
 impl UnreachableInstID {
     pub fn new(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, UnreachableInst::new())

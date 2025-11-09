@@ -25,7 +25,7 @@ pub enum IRSanityErr {
     DeadGlobal { name: Option<Arc<str>>, id: GlobalID },
     #[error("Basic block ID {0:?} is unexpectedly dead")]
     DeadBlock(BlockID),
-    #[error("Instruction ID {0:p} is unexpectedly dead")]
+    #[error("Instruction ID {0:?} is unexpectedly dead")]
     DeadInst(InstID),
     #[error("Constant expression ID {0:p} is unexpectedly dead")]
     DeadConstExpr(ExprID),
@@ -80,9 +80,9 @@ pub enum IRSanityErr {
     TypeErr(#[from] TypeMismatchErr),
     #[error("Value type mismatch: expected {1:?}, found {2:?} for ValueSSA {0:?}")]
     ValueNotType(ValueSSA, ValTypeID, ValTypeID),
-    #[error("Instruction ID {0:p} type mismatch: expected {1:?}, found {2:?}")]
+    #[error("Instruction ID {0:?} type mismatch: expected {1:?}, found {2:?}")]
     InstNotType(InstID, ValTypeID, ValTypeID),
-    #[error("Instruction ID {0:p} type class mismatch: expected {1:?}, found {2:?}")]
+    #[error("Instruction ID {0:?} type class mismatch: expected {1:?}, found {2:?}")]
     InstTypeNotClass(InstID, ValTypeClass, ValTypeID),
     #[error("Use ID {0:?} (kind {1:?}) operand type mismatch: expected {2:?}, found {3:?}")]
     OperandNotType(UseID, UseKind, ValTypeID, ValTypeID),
@@ -95,7 +95,7 @@ pub enum IRSanityErr {
     #[error("Use ID {0:?} (kind {1:?}) operand class mismatch: expected {2:?}, found {3:?}")]
     OperandNotClass(UseID, UseKind, ValueClass, ValueSSA),
 
-    #[error("Instruction {0:p} not attached to any basic block")]
+    #[error("Instruction {0:?} not attached to any basic block")]
     InstNotAttached(InstID),
     #[error("GEP unpack error for {0:?}: {1}")]
     GEPUnpackErr(GEPInstID, GEPUnpackErr),
@@ -119,8 +119,8 @@ impl IRSanityErr {
         let allocs = &module.allocs;
         match self {
             IRSanityErr::DeadGlobal { id, .. } => match id.deref_ir(allocs) {
-                GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID(*id)),
-                GlobalObj::Func(_) => IRLocation::Func(FuncID(*id)),
+                GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID::raw_from(*id)),
+                GlobalObj::Func(_) => IRLocation::Func(FuncID::raw_from(*id)),
             },
             IRSanityErr::DeadBlock(block_id) => IRLocation::Block(*block_id),
             IRSanityErr::DeadInst(inst) => IRLocation::Inst(*inst),
@@ -134,8 +134,8 @@ impl IRSanityErr {
                 UserID::Expr(expr) => IRLocation::Operand(expr.into_ir()),
                 UserID::Inst(inst) => IRLocation::Inst(*inst),
                 UserID::Global(glob) => match glob.deref_ir(allocs) {
-                    GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID(*glob)),
-                    GlobalObj::Func(_) => IRLocation::Func(FuncID(*glob)),
+                    GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID::raw_from(*glob)),
+                    GlobalObj::Func(_) => IRLocation::Func(FuncID::raw_from(*glob)),
                 },
             },
             IRSanityErr::DeadJT(jt)
@@ -162,9 +162,9 @@ impl IRSanityErr {
             | IRSanityErr::OperandTypeNotClass(use_id, ..)
             | IRSanityErr::OperandNotClass(use_id, ..) => IRLocation::Use(*use_id),
             IRSanityErr::InstNotAttached(inst_id) => IRLocation::Inst(*inst_id),
-            IRSanityErr::GEPUnpackErr(gepinst_id, _) => IRLocation::Inst(gepinst_id.into_instid()),
-            IRSanityErr::CastErr(castinst_id, _) => IRLocation::Inst(castinst_id.into_instid()),
-            IRSanityErr::PhiErr(phiinst_id, _) => IRLocation::Inst(phiinst_id.into_instid()),
+            IRSanityErr::GEPUnpackErr(gepinst_id, _) => IRLocation::Inst(gepinst_id.raw_into()),
+            IRSanityErr::CastErr(castinst_id, _) => IRLocation::Inst(castinst_id.raw_into()),
+            IRSanityErr::PhiErr(phiinst_id, _) => IRLocation::Inst(phiinst_id.raw_into()),
         }
     }
 }
@@ -199,7 +199,7 @@ impl ExprSet {
     fn insert(&mut self, allocs: &IRAllocs, eid: ExprID) {
         match self {
             ExprSet::Dense(bs) => {
-                bs.enable(eid.as_indexed(&allocs.exprs).unwrap().0);
+                bs.enable(eid.into_raw_ptr().as_indexed(&allocs.exprs).unwrap().0);
             }
             ExprSet::Sparse(set) => {
                 set.insert(eid);
@@ -209,7 +209,7 @@ impl ExprSet {
     fn contains(&self, allocs: &IRAllocs, eid: ExprID) -> bool {
         match self {
             ExprSet::Dense(bs) => {
-                let Some(IndexedID(idx, _)) = eid.as_indexed(&allocs.exprs) else {
+                let Some(IndexedID(idx, _)) = eid.into_raw_ptr().as_indexed(&allocs.exprs) else {
                     return false;
                 };
                 bs.get(idx)
@@ -293,8 +293,8 @@ impl<'ir> SanityCheckCtx<'ir> {
                 return Err(IRSanityErr::DeadGlobal { name, id: gid });
             }
             match gid.deref_ir(allocs) {
-                GlobalObj::Var(gvar) => self.global_var_sane(GlobalVarID(gid), gvar),
-                GlobalObj::Func(func) => self.func_sane(FuncID(gid), func),
+                GlobalObj::Var(gvar) => self.global_var_sane(GlobalVarID::raw_from(gid), gvar),
+                GlobalObj::Func(func) => self.func_sane(FuncID::raw_from(gid), func),
             }?;
         }
         self.all_operands_sane()
@@ -350,11 +350,11 @@ impl<'ir> SanityCheckCtx<'ir> {
     }
 
     fn global_var_sane(&self, gid: GlobalVarID, gvar: &GlobalVar) -> IRSanityRes {
-        self.user_sane(UserID::Global(gid.into_global()), gvar)
+        self.user_sane(UserID::Global(gid.raw_into()), gvar)
     }
 
     fn func_sane(&self, fid: FuncID, func: &FuncObj) -> IRSanityRes {
-        self.user_sane(UserID::Global(fid.into_global()), func)?;
+        self.user_sane(UserID::Global(fid.raw_into()), func)?;
         for (idx, arg) in func.args.iter().enumerate() {
             let arg_id = FuncArgID(fid, arg.index);
             if arg.index as usize != idx {
@@ -485,20 +485,22 @@ impl<'ir> SanityCheckCtx<'ir> {
                 let retty = self.curr_func_retty();
                 self.use_type_match(ret.retval_use(), retty)
             }
-            InstObj::Jump(_) => self.terminator_sane(TerminatorID::Jump(JumpInstID(inst_id))),
+            InstObj::Jump(_) => {
+                self.terminator_sane(TerminatorID::Jump(JumpInstID::raw_from(inst_id)))
+            }
             InstObj::Br(br) => {
                 self.use_type_match(br.cond_use(), ValTypeID::Int(1))?;
-                self.terminator_sane(TerminatorID::Br(BrInstID(inst_id)))
+                self.terminator_sane(TerminatorID::Br(BrInstID::raw_from(inst_id)))
             }
             InstObj::Switch(sw) => {
                 self.use_typeclass_match(sw.discrim_use(), ValTypeClass::Int)?;
-                self.terminator_sane(TerminatorID::Switch(SwitchInstID(inst_id)))
+                self.terminator_sane(TerminatorID::Switch(SwitchInstID::raw_from(inst_id)))
             }
 
             // Memory Operation
             InstObj::Alloca(_) => Ok(()),
             InstObj::GEP(gep) => {
-                let inst_id = GEPInstID(inst_id);
+                let inst_id = GEPInstID::raw_from(inst_id);
                 self.use_type_match(gep.base_use(), ValTypeID::Ptr)?;
                 GEPTypeIter::new(self.tctx(), allocs, inst_id)
                     .run_sanity_check()
@@ -595,7 +597,7 @@ impl<'ir> SanityCheckCtx<'ir> {
     fn inst_sane_cast(&self, inst_id: InstID, cast: &CastInst) -> IRSanityRes {
         let from_ty = cast.from_ty;
         let into_ty = cast.get_valtype();
-        let cast_id = CastInstID(inst_id);
+        let cast_id = CastInstID::raw_from(inst_id);
         self.use_type_match(cast.from_use(), from_ty)?;
         let opcode = cast.get_opcode();
         match opcode {
@@ -706,13 +708,13 @@ impl<'ir> SanityCheckCtx<'ir> {
             self.use_type_match(*uval, phi.get_valtype())?;
             let Some(already_has) = phi_has_incoming.get_mut(&bb) else {
                 return Err(IRSanityErr::PhiErr(
-                    PhiInstID(inst_id),
+                    PhiInstID::raw_from(inst_id),
                     PhiInstErr::IncomingNotInPreds(*ublk, bb),
                 ));
             };
             if *already_has {
                 return Err(IRSanityErr::PhiErr(
-                    PhiInstID(inst_id),
+                    PhiInstID::raw_from(inst_id),
                     PhiInstErr::DuplicateIncoming(bb),
                 ));
             }
@@ -721,7 +723,7 @@ impl<'ir> SanityCheckCtx<'ir> {
         for (pred_bb, has_incoming) in phi_has_incoming {
             if !has_incoming {
                 return Err(IRSanityErr::PhiErr(
-                    PhiInstID(inst_id),
+                    PhiInstID::raw_from(inst_id),
                     PhiInstErr::MissingIncoming(pred_bb),
                 ));
             }

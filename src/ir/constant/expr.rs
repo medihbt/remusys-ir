@@ -59,39 +59,46 @@ pub trait ISubExpr: IUser + Sized {
 pub trait ISubExprID: Copy {
     type ExprObjT: ISubExpr + 'static;
 
-    fn raw_from_expr(id: PtrID<ExprObj>) -> Self;
-    fn into_expr(self) -> PtrID<ExprObj>;
+    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self;
+    fn into_raw_ptr(self) -> PtrID<ExprObj>;
+
+    fn raw_from(id: ExprID) -> Self {
+        Self::from_raw_ptr(id.0)
+    }
+    fn raw_into(self) -> ExprID {
+        ExprID(self.into_raw_ptr())
+    }
 
     fn try_from_expr(id: PtrID<ExprObj>, allocs: &IRAllocs) -> Option<Self> {
         let expr = id.deref(&allocs.exprs);
-        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::raw_from_expr(id))
+        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::from_raw_ptr(id))
     }
     fn deref_ir(self, allocs: &IRAllocs) -> &Self::ExprObjT {
-        let expr = self.into_expr().deref(&allocs.exprs);
+        let expr = self.into_raw_ptr().deref(&allocs.exprs);
         Self::ExprObjT::from_ir_ref(expr)
     }
     fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::ExprObjT {
-        let expr = self.into_expr().deref_mut(&mut allocs.exprs);
+        let expr = self.into_raw_ptr().deref_mut(&mut allocs.exprs);
         Self::ExprObjT::from_ir_mut(expr)
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
         let id = ExprObj::allocate(allocs, obj.into_ir());
-        Self::raw_from_expr(id)
+        Self::raw_from(id)
     }
 
     fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
-        ExprObj::dispose_id(self.into_expr(), allocs)
+        ExprObj::dispose_id(self.raw_into(), allocs)
     }
 }
 
 #[derive(Clone)]
+#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = ExprID)]
 pub enum ExprObj {
     Array(ArrayExpr),
     Struct(StructExpr),
     FixVec(FixVec),
 }
-pub type ExprID = PtrID<ExprObj>;
 
 impl_traceable_from_common!(ExprObj, false);
 impl IUser for ExprObj {
@@ -150,14 +157,19 @@ impl ISubExpr for ExprObj {
         self
     }
 }
+impl std::fmt::Pointer for ExprID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 impl ISubExprID for ExprID {
     type ExprObjT = ExprObj;
 
-    fn raw_from_expr(id: PtrID<ExprObj>) -> Self {
-        id
+    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self {
+        Self(id)
     }
-    fn into_expr(self) -> PtrID<ExprObj> {
-        self
+    fn into_raw_ptr(self) -> PtrID<ExprObj> {
+        self.0
     }
 }
 impl ISubValueSSA for ExprID {

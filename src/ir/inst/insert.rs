@@ -1,8 +1,8 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
-        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -10,6 +10,7 @@ use crate::{
     },
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
+use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 /// 把数组 / 向量值 a 中的索引位 i 替换成元素 v 并返回新的数组 / 向量值。
@@ -130,18 +131,8 @@ impl IndexInsertInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndexInsertInstID(pub InstID);
-impl_debug_for_subinst_id!(IndexInsertInstID);
-impl ISubInstID for IndexInsertInstID {
-    type InstObjT = IndexInsertInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        IndexInsertInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct IndexInsertInstID(pub PtrID<InstObj>);
+impl_subinst_id!(IndexInsertInstID, IndexInsertInst);
 impl IndexInsertInstID {
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
@@ -275,18 +266,8 @@ impl FieldInsertInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldInsertInstID(pub InstID);
-impl_debug_for_subinst_id!(FieldInsertInstID);
-impl ISubInstID for FieldInsertInstID {
-    type InstObjT = FieldInsertInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        FieldInsertInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct FieldInsertInstID(pub PtrID<InstObj>);
+impl_subinst_id!(FieldInsertInstID, FieldInsertInst);
 impl FieldInsertInstID {
     pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
         FieldInsertBuilder::new(aggr_type)
@@ -331,7 +312,7 @@ impl IAggrFieldInstBuildable for FieldInsertBuilder {
     fn common_mut(&mut self) -> &mut AggrFieldInstBuilderCommon {
         &mut self.common
     }
-    fn build_inst(&mut self, allocs: &IRAllocs) -> Self::InstT {
+    fn build_obj(&mut self, allocs: &IRAllocs) -> Self::InstT {
         let elem = self.elem;
         let AggrFieldInstBuilderCommon { aggr, aggr_type, steps } = &self.common;
         let inst = FieldInsertInst {

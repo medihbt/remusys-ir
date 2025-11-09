@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID,
+        IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon,
         InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
+use mtb_entity_slab::PtrID;
 use smallvec::{SmallVec, smallvec};
 use std::{cell::Cell, ops::RangeFrom};
 
@@ -125,17 +126,8 @@ impl CallInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallInstID(pub InstID);
-impl_debug_for_subinst_id!(CallInstID);
-impl ISubInstID for CallInstID {
-    type InstObjT = CallInst;
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct CallInstID(pub PtrID<InstObj>);
+impl_subinst_id!(CallInstID, CallInst);
 impl CallInstID {
     pub fn callee_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).callee_use()
@@ -181,22 +173,6 @@ impl CallInstID {
     }
 }
 
-pub trait ICallInstBuildable: Clone {
-    fn new(tctx: &TypeContext, callee_ty: FuncTypeID) -> Self;
-
-    fn resize_nargs(&mut self, new_nargs: u32) -> Option<&mut Self>;
-    fn set_arg(&mut self, index: usize, arg: ValueSSA) -> &mut Self;
-    fn with_args(&mut self, args: &[ValueSSA]) -> &mut Self;
-
-    fn callee(&mut self, callee: ValueSSA) -> &mut Self;
-    fn is_tail_call(&mut self, is_tail: bool) -> &mut Self;
-
-    fn build_inst(&mut self, allocs: &IRAllocs) -> CallInst;
-    fn build_id(&mut self, allocs: &IRAllocs) -> CallInstID {
-        let inst = self.build_inst(allocs);
-        CallInstID::allocate(allocs, inst)
-    }
-}
 #[derive(Clone)]
 pub struct CallInstBuilder {
     callee_ty: FuncTypeID,
@@ -207,8 +183,8 @@ pub struct CallInstBuilder {
     args: SmallVec<[ValueSSA; 4]>,
     is_tail_call: bool,
 }
-impl ICallInstBuildable for CallInstBuilder {
-    fn new(tctx: &TypeContext, callee_ty: FuncTypeID) -> Self {
+impl CallInstBuilder {
+    pub fn new(tctx: &TypeContext, callee_ty: FuncTypeID) -> Self {
         let (ret_ty, nargs, is_vararg) = {
             let fty = callee_ty.deref_ir(tctx);
             (fty.ret_type, fty.args.len() as u32, fty.is_vararg)
@@ -223,7 +199,7 @@ impl ICallInstBuildable for CallInstBuilder {
             is_tail_call: false,
         }
     }
-    fn resize_nargs(&mut self, new_nargs: u32) -> Option<&mut Self> {
+    pub fn resize_nargs(&mut self, new_nargs: u32) -> Option<&mut Self> {
         if new_nargs < self.fixed_nargs {
             return None;
         }
@@ -234,28 +210,28 @@ impl ICallInstBuildable for CallInstBuilder {
         self.args.resize(new_nargs as usize, ValueSSA::None);
         Some(self)
     }
-    fn set_arg(&mut self, index: usize, arg: ValueSSA) -> &mut Self {
+    pub fn set_arg(&mut self, index: usize, arg: ValueSSA) -> &mut Self {
         if self.args.is_empty() && self.fixed_nargs > 0 {
             self.args = smallvec![ValueSSA::None; self.fixed_nargs as usize];
         }
         self.args[index] = arg;
         self
     }
-    fn with_args(&mut self, args: &[ValueSSA]) -> &mut Self {
+    pub fn with_args(&mut self, args: &[ValueSSA]) -> &mut Self {
         for (i, arg) in args.iter().enumerate() {
             self.set_arg(i, *arg);
         }
         self
     }
-    fn callee(&mut self, callee: ValueSSA) -> &mut Self {
+    pub fn callee(&mut self, callee: ValueSSA) -> &mut Self {
         self.callee = callee;
         self
     }
-    fn is_tail_call(&mut self, is_tail: bool) -> &mut Self {
+    pub fn is_tail_call(&mut self, is_tail: bool) -> &mut Self {
         self.is_tail_call = is_tail;
         self
     }
-    fn build_inst(&mut self, allocs: &IRAllocs) -> CallInst {
+    pub fn build_obj(&mut self, allocs: &IRAllocs) -> CallInst {
         let nargs = if self.args.is_empty() { self.fixed_nargs as usize } else { self.args.len() };
         let operands = {
             let mut ops = SmallVec::with_capacity(1 + nargs);
@@ -282,5 +258,9 @@ impl ICallInstBuildable for CallInstBuilder {
             use_id.set_operand(allocs, arg);
         }
         ret
+    }
+    pub fn build_id(&mut self, allocs: &IRAllocs) -> CallInstID {
+        let inst = self.build_obj(allocs);
+        CallInstID::allocate(allocs, inst)
     }
 }

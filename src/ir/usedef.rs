@@ -134,9 +134,9 @@ pub enum UserID {
 impl std::fmt::Debug for UserID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserID::Expr(id) => write!(f, "Expr({:p})", id.as_unit_pointer()),
-            UserID::Inst(id) => write!(f, "Inst({:p})", id.as_unit_pointer()),
-            UserID::Global(id) => write!(f, "Global({:p})", id.as_unit_pointer()),
+            UserID::Expr(id) => write!(f, "Expr({:p})", id.into_raw_ptr()),
+            UserID::Inst(id) => write!(f, "Inst({:p})", id.into_raw_ptr()),
+            UserID::Global(id) => write!(f, "Global({:p})", id.into_raw_ptr()),
         }
     }
 }
@@ -304,6 +304,7 @@ impl UseKind {
 }
 
 #[derive(Clone)]
+#[mtb_entity_slab::entity_allocatable(policy = 4096, wrapper = UseID)]
 pub struct Use {
     list_head: Cell<EntityListHead<Use>>,
     kind: Cell<UseKind>,
@@ -359,23 +360,6 @@ impl Use {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UseID(pub PtrID<Use>);
-impl From<PtrID<Use>> for UseID {
-    fn from(id: PtrID<Use>) -> Self {
-        UseID(id)
-    }
-}
-impl Into<PtrID<Use>> for UseID {
-    fn into(self) -> PtrID<Use> {
-        self.0
-    }
-}
-impl std::fmt::Debug for UseID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UseID({:p})", self.0.as_unit_pointer())
-    }
-}
 impl UseID {
     pub fn inner(self) -> PtrID<Use> {
         self.0

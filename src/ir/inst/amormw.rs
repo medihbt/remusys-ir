@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
+        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmoOrdering {
@@ -189,18 +190,8 @@ impl AmoRmwInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AmoRmwInstID(pub InstID);
-impl_debug_for_subinst_id!(AmoRmwInstID);
-impl ISubInstID for AmoRmwInstID {
-    type InstObjT = AmoRmwInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        Self(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct AmoRmwInstID(pub PtrID<InstObj>);
+impl_subinst_id!(AmoRmwInstID, AmoRmwInst);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)
@@ -246,19 +237,6 @@ impl AmoRmwInstID {
     }
 }
 
-pub trait IAmoRmwBuildable: Sized {
-    fn new(opcode: Opcode, value_ty: ValTypeID) -> Self;
-    fn value_ty(self, ty: ValTypeID) -> Self;
-    fn ordering(self, ordering: AmoOrdering) -> Self;
-    fn scope(self, scope: SyncScope) -> Self;
-    fn is_volatile(self, is_volatile: bool) -> Self;
-    fn align_log2(self, align_log2: u8) -> Self;
-
-    fn build_obj(self, allocs: &IRAllocs) -> AmoRmwInst;
-    fn build_id(self, allocs: &IRAllocs) -> AmoRmwInstID {
-        AmoRmwInstID::allocate(allocs, self.build_obj(allocs))
-    }
-}
 pub struct AmoRmwBuilder {
     opcode: Opcode,
     value_ty: ValTypeID,
@@ -267,8 +245,8 @@ pub struct AmoRmwBuilder {
     is_volatile: bool,
     align_log2: u8,
 }
-impl IAmoRmwBuildable for AmoRmwBuilder {
-    fn new(opcode: Opcode, value_ty: ValTypeID) -> Self {
+impl AmoRmwBuilder {
+    pub fn new(opcode: Opcode, value_ty: ValTypeID) -> Self {
         Self {
             opcode,
             value_ty,
@@ -278,28 +256,28 @@ impl IAmoRmwBuildable for AmoRmwBuilder {
             align_log2: 0,
         }
     }
-    fn value_ty(mut self, ty: ValTypeID) -> Self {
+    pub fn value_ty(mut self, ty: ValTypeID) -> Self {
         self.value_ty = ty;
         self
     }
-    fn ordering(mut self, ordering: AmoOrdering) -> Self {
+    pub fn ordering(mut self, ordering: AmoOrdering) -> Self {
         self.ordering = ordering;
         self
     }
-    fn scope(mut self, scope: SyncScope) -> Self {
+    pub fn scope(mut self, scope: SyncScope) -> Self {
         self.scope = scope;
         self
     }
-    fn is_volatile(mut self, is_volatile: bool) -> Self {
+    pub fn is_volatile(mut self, is_volatile: bool) -> Self {
         self.is_volatile = is_volatile;
         self
     }
-    fn align_log2(mut self, align_log2: u8) -> Self {
+    pub fn align_log2(mut self, align_log2: u8) -> Self {
         self.align_log2 = align_log2;
         self
     }
 
-    fn build_obj(self, allocs: &IRAllocs) -> AmoRmwInst {
+    pub fn build_obj(self, allocs: &IRAllocs) -> AmoRmwInst {
         AmoRmwInst {
             common: InstCommon::new(self.opcode, self.value_ty),
             operands: [
@@ -312,5 +290,8 @@ impl IAmoRmwBuildable for AmoRmwBuilder {
             is_volatile: self.is_volatile,
             align_log2: self.align_log2,
         }
+    }
+    pub fn build_id(self, allocs: &IRAllocs) -> AmoRmwInstID {
+        AmoRmwInstID::allocate(allocs, self.build_obj(allocs))
     }
 }

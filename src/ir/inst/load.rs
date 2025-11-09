@@ -1,11 +1,12 @@
 use crate::{
-    impl_debug_for_subinst_id, impl_traceable_from_common,
+    impl_subinst_id, impl_traceable_from_common,
     ir::{
-        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstID, InstObj, Opcode,
+        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
+use mtb_entity_slab::PtrID;
 
 /// Load 指令：从内存中加载数据到寄存器或变量
 ///
@@ -110,18 +111,8 @@ impl LoadInst {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LoadInstID(pub InstID);
-impl_debug_for_subinst_id!(LoadInstID);
-impl ISubInstID for LoadInstID {
-    type InstObjT = LoadInst;
-
-    fn raw_from_instid(id: InstID) -> Self {
-        LoadInstID(id)
-    }
-    fn into_instid(self) -> InstID {
-        self.0
-    }
-}
+pub struct LoadInstID(pub PtrID<InstObj>);
+impl_subinst_id!(LoadInstID, LoadInst);
 impl LoadInstID {
     pub fn new_uninit(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, LoadInst::new_uninit(allocs, pointee_ty, align_log2))

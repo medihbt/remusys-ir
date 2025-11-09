@@ -14,6 +14,7 @@ use std::cell::Cell;
 
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstObj>>;
 
+#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = BlockID)]
 pub struct BlockObj {
     pub(crate) head: Cell<EntityListHead<BlockObj>>,
     pub(crate) parent_func: Cell<Option<FuncID>>,
@@ -201,23 +202,6 @@ impl BlockObj {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BlockID(pub PtrID<BlockObj>);
-impl From<PtrID<BlockObj>> for BlockID {
-    fn from(ptr: PtrID<BlockObj>) -> Self {
-        Self(ptr)
-    }
-}
-impl Into<PtrID<BlockObj>> for BlockID {
-    fn into(self) -> PtrID<BlockObj> {
-        self.0
-    }
-}
-impl std::fmt::Debug for BlockID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BlockID({:p})", self.0)
-    }
-}
 impl ISubValueSSA for BlockID {
     fn try_from_ir(ir: ValueSSA) -> Option<Self> {
         match ir {
@@ -315,7 +299,7 @@ impl BlockID {
     }
     pub fn new_with_terminator(allocs: &IRAllocs, terminator: impl ISubInstID) -> Self {
         let ret = Self::new_uninit(allocs);
-        ret.set_terminator_inst(allocs, terminator.into_instid());
+        ret.set_terminator_inst(allocs, terminator.raw_into());
         ret
     }
     pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {

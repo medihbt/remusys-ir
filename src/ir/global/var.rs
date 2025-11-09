@@ -105,19 +105,19 @@ impl GlobalVar {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalVarID(pub GlobalID);
+pub struct GlobalVarID(pub PtrID<GlobalObj>);
 impl std::fmt::Debug for GlobalVarID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "GlobalVarID({:p})", self.0.as_unit_pointer())
+        write!(f, "GlobalVarID({:p})", self.0)
     }
 }
 impl ISubGlobalID for GlobalVarID {
     type GlobalT = GlobalVar;
 
-    fn raw_from_global(id: PtrID<GlobalObj>) -> Self {
+    fn from_raw_ptr(id: PtrID<GlobalObj>) -> Self {
         GlobalVarID(id)
     }
-    fn into_global(self) -> PtrID<GlobalObj> {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj> {
         self.0
     }
 }
@@ -202,7 +202,7 @@ pub trait IGlobalVarBuildable: Clone {
         self
     }
 
-    fn build_item(&self, allocs: &IRAllocs) -> GlobalVar {
+    fn build_obj(&self, allocs: &IRAllocs) -> GlobalVar {
         let inner = self.inner();
         let gvar = GlobalVar {
             common: GlobalCommon::new(
@@ -227,7 +227,7 @@ pub trait IGlobalVarBuildable: Clone {
     }
     fn build_id(&self, module: &Module) -> Result<GlobalVarID, GlobalID> {
         let allocs = &module.allocs;
-        let gvar = self.build_item(allocs);
+        let gvar = self.build_obj(allocs);
         let gid = GlobalVarID::allocate(allocs, gvar);
         gid.register_to(module)
     }

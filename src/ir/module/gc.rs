@@ -67,7 +67,7 @@ impl IRLiveSet {
             ValueSSA::Block(id) => self.add(allocs, id),
             ValueSSA::ConstExpr(id) => self.add(allocs, id),
             ValueSSA::Global(id) => self.add(allocs, id),
-            ValueSSA::FuncArg(func, _) => self.add(allocs, func.into_global()),
+            ValueSSA::FuncArg(func, _) => self.add(allocs, func.raw_into()),
             _ => {}
         }
     }
@@ -77,7 +77,7 @@ impl IRLiveSet {
             ValueSSA::Block(id) => self.is_alive(allocs, id),
             ValueSSA::ConstExpr(id) => self.is_alive(allocs, id),
             ValueSSA::Global(id) => self.is_alive(allocs, id),
-            ValueSSA::FuncArg(func, _) => self.is_alive(allocs, func.into_global()),
+            ValueSSA::FuncArg(func, _) => self.is_alive(allocs, func.raw_into()),
             _ => false,
         }
     }
@@ -167,7 +167,7 @@ impl<'ir> IRMarker<'ir> {
             ValueSSA::Block(id) => self.push_mark(id),
             ValueSSA::ConstExpr(id) => self.push_mark(id),
             ValueSSA::Global(id) => self.push_mark(id),
-            ValueSSA::FuncArg(func, _) => self.push_mark(func.into_global()),
+            ValueSSA::FuncArg(func, _) => self.push_mark(func.raw_into()),
             _ => self,
         }
     }
@@ -271,7 +271,7 @@ impl<'ir> IRMarker<'ir> {
             GlobalObj::Func(f) => (f.args.as_ref(), f.body.as_ref()),
         };
 
-        let func_id = FuncID(global_id);
+        let func_id = FuncID::raw_from(global_id);
         for arg in args {
             Self::do_push_mark(&mut proxy, arg.users().sentinel);
         }

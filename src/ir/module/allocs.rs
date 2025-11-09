@@ -4,9 +4,7 @@ use super::managing::{
 };
 use crate::ir::*;
 use mtb_entity_slab::{
-    EntityAlloc, EntityAllocPolicy128, EntityAllocPolicy256, EntityAllocPolicy512,
-    EntityAllocPolicy4096, IEntityAllocID, IEntityAllocatable, IEntityListNode,
-    IEntityRingListNode, PtrID,
+    EntityAlloc, IEntityAllocID, IEntityAllocatable, IEntityListNode, IEntityRingListNode,
 };
 use std::{cell::RefCell, collections::VecDeque};
 use thiserror::Error;
@@ -80,13 +78,13 @@ impl IRAllocs {
                     b.inner().free(blocks);
                 }
                 Inst(i) => {
-                    i.free(insts);
+                    i.into_raw_ptr().free(insts);
                 }
                 Expr(e) => {
-                    e.free(exprs);
+                    e.into_raw_ptr().free(exprs);
                 }
                 Global(g) => {
-                    g.free(globals);
+                    g.into_raw_ptr().free(globals);
                 }
                 Use(u) => {
                     u.inner().free(uses);
@@ -154,8 +152,7 @@ pub enum PoolAllocatedDisposeErr {
 }
 pub type PoolAllocatedDisposeRes<T = ()> = Result<T, PoolAllocatedDisposeErr>;
 
-pub(crate) trait IPoolAllocated: IEntityAllocatable {
-    type ModuleID: Copy + Into<PoolAllocatedID>;
+pub(crate) trait IPoolAllocated: IEntityAllocatable<PtrID: Into<PoolAllocatedID>> {
     type MinRelatedPoolT: AsRef<IRAllocs>;
 
     const _CLASS: PoolAllocatedClass;
@@ -163,30 +160,24 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable {
     fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self>;
     fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self>;
 
-    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID;
-    fn from_module_id(id: Self::ModuleID) -> PtrID<Self>;
-
-    fn init_self_id(&self, id: Self::ModuleID, allocs: &IRAllocs);
-    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::ModuleID;
+    fn init_self_id(&self, id: Self::PtrID, allocs: &IRAllocs);
+    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PtrID;
 
     fn obj_disposed(&self) -> bool;
-    fn id_is_live(id: Self::ModuleID, allocs: &IRAllocs) -> bool {
+    fn id_is_live(id: Self::PtrID, allocs: &IRAllocs) -> bool {
         let alloc = Self::get_alloc(allocs);
-        let ptr = Self::from_module_id(id);
+        let ptr = Self::ptr_of_id(id);
         let Some(obj) = ptr.try_deref(alloc) else {
             return false;
         };
         !obj.obj_disposed()
     }
 
-    fn dispose_obj(
-        &self,
-        id: Self::ModuleID,
-        pool: &Self::MinRelatedPoolT,
-    ) -> PoolAllocatedDisposeRes;
-    fn dispose_id(id: Self::ModuleID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
+    fn dispose_obj(&self, id: Self::PtrID, pool: &Self::MinRelatedPoolT)
+    -> PoolAllocatedDisposeRes;
+    fn dispose_id(id: Self::PtrID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
         let alloc = Self::get_alloc(pool.as_ref());
-        let ptr = Self::from_module_id(id);
+        let ptr = Self::ptr_of_id(id);
         let Some(obj) = ptr.try_deref(alloc) else {
             return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
         };
@@ -196,14 +187,7 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable {
     }
 }
 
-impl IEntityAllocatable for BlockObj {
-    /// Allocate 256 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy256<Self>;
-
-    type PtrID = BlockID;
-}
 impl IPoolAllocated for BlockObj {
-    type ModuleID = BlockID;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Block;
@@ -215,12 +199,6 @@ impl IPoolAllocated for BlockObj {
         &mut ir_allocs.blocks
     }
 
-    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID {
-        BlockID(raw)
-    }
-    fn from_module_id(id: Self::ModuleID) -> PtrID<Self> {
-        id.0
-    }
     fn allocate(allocs: &IRAllocs, obj: Self) -> BlockID {
         let alloc = &allocs.blocks;
         let ptr = alloc.allocate(obj);
@@ -268,14 +246,7 @@ impl IPoolAllocated for BlockObj {
     }
 }
 
-impl IEntityAllocatable for InstObj {
-    /// Allocate 512 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy512<Self>;
-
-    type PtrID = InstID;
-}
 impl IPoolAllocated for InstObj {
-    type ModuleID = InstID;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Inst;
@@ -285,13 +256,6 @@ impl IPoolAllocated for InstObj {
     }
     fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
         &mut ir_allocs.insts
-    }
-
-    fn make_module_id(raw: PtrID<Self>) -> InstID {
-        raw
-    }
-    fn from_module_id(id: InstID) -> PtrID<Self> {
-        id
     }
 
     fn init_self_id(&self, id: InstID, allocs: &IRAllocs) {
@@ -320,8 +284,8 @@ impl IPoolAllocated for InstObj {
         }
         let alloc = &allocs.insts;
         let ptr = alloc.allocate(obj);
-        ptr.deref(alloc).init_self_id(ptr, allocs);
-        ptr
+        ptr.deref(alloc).init_self_id(InstID(ptr), allocs);
+        InstID(ptr)
     }
 
     fn obj_disposed(&self) -> bool {
@@ -344,14 +308,7 @@ impl IPoolAllocated for InstObj {
     }
 }
 
-impl IEntityAllocatable for ExprObj {
-    /// Allocate 256 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy256<Self>;
-
-    type PtrID = ExprID;
-}
 impl IPoolAllocated for ExprObj {
-    type ModuleID = ExprID;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Expr;
@@ -363,13 +320,6 @@ impl IPoolAllocated for ExprObj {
         &mut ir_allocs.exprs
     }
 
-    fn make_module_id(raw: PtrID<Self>) -> Self::ModuleID {
-        raw
-    }
-    fn from_module_id(id: ExprID) -> PtrID<Self> {
-        id
-    }
-
     fn init_self_id(&self, id: ExprID, allocs: &IRAllocs) {
         user_init_id(self, id.into(), allocs);
     }
@@ -379,8 +329,8 @@ impl IPoolAllocated for ExprObj {
         }
         let alloc = &allocs.exprs;
         let id = alloc.allocate(obj);
-        id.deref(alloc).init_self_id(id, allocs);
-        id
+        id.deref(alloc).init_self_id(ExprID(id), allocs);
+        ExprID(id)
     }
     fn obj_disposed(&self) -> bool {
         self.get_common().dispose_mark.get()
@@ -395,14 +345,7 @@ impl IPoolAllocated for ExprObj {
     }
 }
 
-impl IEntityAllocatable for GlobalObj {
-    /// Allocate 128 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy128<Self>;
-
-    type PtrID = GlobalID;
-}
 impl IPoolAllocated for GlobalObj {
-    type ModuleID = GlobalID;
     type MinRelatedPoolT = Module;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Global;
@@ -414,20 +357,13 @@ impl IPoolAllocated for GlobalObj {
         &mut ir_allocs.globals
     }
 
-    fn make_module_id(raw: PtrID<Self>) -> GlobalID {
-        raw
-    }
-    fn from_module_id(id: GlobalID) -> PtrID<Self> {
-        id
-    }
-
     fn init_self_id(&self, id: GlobalID, allocs: &IRAllocs) {
         user_init_id(self, UserID::Global(id), allocs);
         let f = match self {
             GlobalObj::Var(_) => return,
             GlobalObj::Func(f) => f,
         };
-        let func_id = FuncID(id);
+        let func_id = FuncID::raw_from(id);
         for arg in &f.args {
             arg.func.set(Some(func_id));
             let arg_val = ValueSSA::FuncArg(func_id, arg.index);
@@ -447,8 +383,8 @@ impl IPoolAllocated for GlobalObj {
         }
         let alloc = &allocs.globals;
         let id = alloc.allocate(obj);
-        id.deref(alloc).init_self_id(id, allocs);
-        id
+        id.deref(alloc).init_self_id(GlobalID(id), allocs);
+        GlobalID(id)
     }
 
     fn obj_disposed(&self) -> bool {
@@ -471,14 +407,7 @@ impl IPoolAllocated for GlobalObj {
     }
 }
 
-impl IEntityAllocatable for Use {
-    /// Allocate 4096 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy4096<Self>;
-
-    type PtrID = UseID;
-}
 impl IPoolAllocated for Use {
-    type ModuleID = UseID;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Use;
@@ -488,13 +417,6 @@ impl IPoolAllocated for Use {
     }
     fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
         &mut ir_allocs.uses
-    }
-
-    fn make_module_id(raw: PtrID<Self>) -> UseID {
-        UseID(raw)
-    }
-    fn from_module_id(id: UseID) -> PtrID<Self> {
-        id.0
     }
 
     fn init_self_id(&self, _: UseID, _: &IRAllocs) {}
@@ -525,14 +447,7 @@ impl IPoolAllocated for Use {
     }
 }
 
-impl IEntityAllocatable for JumpTarget {
-    /// Allocate 256 entities per allocation block.
-    type AllocatePolicyT = EntityAllocPolicy256<Self>;
-
-    type PtrID = JumpTargetID;
-}
 impl IPoolAllocated for JumpTarget {
-    type ModuleID = JumpTargetID;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::JumpTarget;
@@ -542,13 +457,6 @@ impl IPoolAllocated for JumpTarget {
     }
     fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
         &mut ir_allocs.jts
-    }
-
-    fn make_module_id(raw: PtrID<Self>) -> JumpTargetID {
-        JumpTargetID(raw)
-    }
-    fn from_module_id(id: JumpTargetID) -> PtrID<Self> {
-        id.0
     }
 
     fn init_self_id(&self, _: JumpTargetID, _: &IRAllocs) {}
@@ -587,10 +495,10 @@ impl std::fmt::Debug for PoolAllocatedID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use PoolAllocatedID::*;
         match self {
-            Block(b) => write!(f, "BlockID({:p})", b.0),
-            Inst(i) => write!(f, "InstID({:p})", i.as_unit_pointer()),
-            Expr(e) => write!(f, "ExprID({:p})", e.as_unit_pointer()),
-            Global(g) => write!(f, "GlobalID({:p})", g.as_unit_pointer()),
+            Block(b) => write!(f, "BlockID({:p})", b.inner()),
+            Inst(i) => write!(f, "InstID({:p})", i.into_raw_ptr()),
+            Expr(e) => write!(f, "ExprID({:p})", e.into_raw_ptr()),
+            Global(g) => write!(f, "GlobalID({:p})", g.into_raw_ptr()),
             Use(u) => write!(f, "UseID({:p})", u.0),
             JumpTarget(j) => write!(f, "JumpTargetID({:p})", j.0),
         }
@@ -599,11 +507,6 @@ impl std::fmt::Debug for PoolAllocatedID {
 impl From<BlockID> for PoolAllocatedID {
     fn from(id: BlockID) -> Self {
         PoolAllocatedID::Block(id)
-    }
-}
-impl From<PtrID<BlockObj>> for PoolAllocatedID {
-    fn from(id: PtrID<BlockObj>) -> Self {
-        PoolAllocatedID::Block(BlockID(id))
     }
 }
 impl From<InstID> for PoolAllocatedID {
@@ -626,19 +529,9 @@ impl From<UseID> for PoolAllocatedID {
         PoolAllocatedID::Use(id)
     }
 }
-impl From<PtrID<Use>> for PoolAllocatedID {
-    fn from(id: PtrID<Use>) -> Self {
-        PoolAllocatedID::Use(UseID(id))
-    }
-}
 impl From<JumpTargetID> for PoolAllocatedID {
     fn from(id: JumpTargetID) -> Self {
         PoolAllocatedID::JumpTarget(id)
-    }
-}
-impl From<PtrID<JumpTarget>> for PoolAllocatedID {
-    fn from(id: PtrID<JumpTarget>) -> Self {
-        PoolAllocatedID::JumpTarget(JumpTargetID(id))
     }
 }
 impl PoolAllocatedID {
@@ -666,9 +559,9 @@ impl PoolAllocatedID {
         use PoolAllocatedID::*;
         match self {
             Block(b) => b.inner().as_indexed(&ir_allocs.blocks).map(|x| x.0),
-            Inst(i) => i.as_indexed(&ir_allocs.insts).map(|x| x.0),
-            Expr(e) => e.as_indexed(&ir_allocs.exprs).map(|x| x.0),
-            Global(g) => g.as_indexed(&ir_allocs.globals).map(|x| x.0),
+            Inst(i) => i.into_raw_ptr().as_indexed(&ir_allocs.insts).map(|x| x.0),
+            Expr(e) => e.into_raw_ptr().as_indexed(&ir_allocs.exprs).map(|x| x.0),
+            Global(g) => g.into_raw_ptr().as_indexed(&ir_allocs.globals).map(|x| x.0),
             Use(u) => u.0.as_indexed(&ir_allocs.uses).map(|x| x.0),
             JumpTarget(j) => j.0.as_indexed(&ir_allocs.jts).map(|x| x.0),
         }
