@@ -56,7 +56,7 @@
 ### BlockObj
 
 - 结构：`parent_func: Option<FuncID>` 与 `body: Option<BlockObjBody>`（None 表示链表哨兵）
-- `BlockObjBody`：`insts: EntityList<InstObj>`、`phi_end: InstID`、`users: UserList`、`preds: PredList`
+- `BlockObjBody`：`insts: EntityList<InstID>`、`phi_end: InstID`、`users: UserList`、`preds: PredList`
 - 初始化：`init_self_id` 会为 `insts` 的所有节点（含哨兵/phi_end）设置 `parent_bb = Some(block)`，并回填自身 users 环的 Use.operands
 - 处置：从父函数块表中 `node_unplug`，`dispose_entity_list(insts)` 逐个处置指令并处置 head/tail 哨兵；`traceable_dispose(self)` 清 users 环；清空 `preds` 并处置其哨兵
 

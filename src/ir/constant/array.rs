@@ -2,11 +2,10 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
-        constant::expr::{ExprCommon, ISubExpr},
+        constant::expr::{ExprCommon, ExprRawPtr, ISubExpr},
     },
     typing::{ArrayTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 #[derive(Clone)]
@@ -66,15 +65,15 @@ impl ArrayExpr {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayExprID(pub PtrID<ExprObj>);
+pub struct ArrayExprID(pub ExprRawPtr);
 
 impl ISubExprID for ArrayExprID {
     type ExprObjT = ArrayExpr;
 
-    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self {
+    fn from_raw_ptr(id: ExprRawPtr) -> Self {
         ArrayExprID(id)
     }
-    fn into_raw_ptr(self) -> PtrID<ExprObj> {
+    fn into_raw_ptr(self) -> ExprRawPtr {
         self.0
     }
 }

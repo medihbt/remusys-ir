@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
+    subinst_id,
     typing::{FPKind, IntType, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 
 /// Cast 指令：实现 LLVM IR 中的类型转换
 ///
@@ -91,9 +91,7 @@ impl CastInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CastInstID(pub PtrID<InstObj>);
-impl_subinst_id!(CastInstID, CastInst);
+subinst_id!(CastInstID, CastInst);
 impl CastInstID {
     pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, fromty: ValTypeID, ty: ValTypeID) -> Self {
         let inst = CastInst::new_uninit(allocs, opcode, fromty, ty);

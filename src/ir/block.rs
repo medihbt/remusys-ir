@@ -7,22 +7,24 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityAlloc, EntityList, EntityListError, EntityListHead, IEntityAllocID, IEntityListNode,
-    IndexedID, PtrID, PtrListRes,
+    EntityList, EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID,
+    IEntityListNodeID, IPolicyPtrID, IndexedID, PtrID, entity_ptr_id,
 };
 use std::cell::Cell;
 
-type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstObj>>;
+type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstID>>;
 
-#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = BlockID)]
+#[entity_ptr_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
 pub struct BlockObj {
-    pub(crate) head: Cell<EntityListHead<BlockObj>>,
+    pub(crate) head: Cell<EntityListNodeHead<BlockID>>,
     pub(crate) parent_func: Cell<Option<FuncID>>,
     pub(crate) body: Option<BlockObjBody>,
     pub(crate) dispose_mark: Cell<bool>,
 }
+pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPolicyPtrID>::PolicyT>;
+pub(in crate::ir) type BlockIndex = IndexedID<BlockObj, <BlockID as IPolicyPtrID>::PolicyT>;
 pub struct BlockObjBody {
-    pub insts: EntityList<InstObj>,
+    pub insts: EntityList<InstID>,
     pub phi_end: InstID,
     pub users: UserList,
     pub preds: PredList,
@@ -39,51 +41,46 @@ impl BlockObjBody {
         Self { insts, phi_end, users, preds }
     }
 }
-
-impl IEntityListNode for BlockObj {
-    fn load_head(&self) -> EntityListHead<Self> {
-        self.head.get()
+impl IEntityListNodeID for BlockID {
+    fn obj_load_head(obj: &BlockObj) -> EntityListNodeHead<Self> {
+        obj.head.get()
     }
-    fn store_head(&self, head: EntityListHead<Self>) {
-        self.head.set(head);
+    fn obj_store_head(obj: &BlockObj, head: EntityListNodeHead<Self>) {
+        obj.head.set(head);
     }
-
-    fn is_sentinel(&self) -> bool {
-        self.body.is_none()
+    fn obj_is_sentinel(obj: &BlockObj) -> bool {
+        obj.body.is_none()
     }
-    fn new_sentinel() -> Self {
-        Self {
-            head: Cell::new(EntityListHead::none()),
+    fn new_sentinel_obj() -> BlockObj {
+        BlockObj {
+            head: Cell::new(EntityListNodeHead::none()),
             parent_func: Cell::new(None),
             body: None,
             dispose_mark: Cell::new(false),
         }
     }
-
-    fn on_push_next(curr: BlockID, next: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        if curr == next {
+    fn on_push_prev(self, prev: Self, alloc: &BlockAlloc) -> EntityListRes<Self> {
+        if self == prev {
             return Err(EntityListError::RepeatedNode);
         }
-        let parent = curr.0.deref(alloc).parent_func.get();
+        let parent = self.deref_alloc(alloc).get_parent_func();
         // It is legal to push a block without a parent function, so no assert here.
-        next.0.deref(alloc).parent_func.set(parent);
+        prev.deref_alloc(alloc).parent_func.set(parent);
         Ok(())
     }
-
-    fn on_push_prev(curr: BlockID, prev: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        if curr == prev {
+    fn on_push_next(self, next: Self, alloc: &BlockAlloc) -> EntityListRes<Self> {
+        if self == next {
             return Err(EntityListError::RepeatedNode);
         }
-        let parent = curr.0.deref(alloc).parent_func.get();
+        let parent = self.deref_alloc(alloc).get_parent_func();
         // It is legal to push a block without a parent function, so no assert here.
-        prev.0.deref(alloc).parent_func.set(parent);
+        next.deref_alloc(alloc).parent_func.set(parent);
         Ok(())
     }
-
-    fn on_unplug(curr: BlockID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        let curr_obj = curr.0.deref(alloc);
+    fn on_unplug(self, alloc: &BlockAlloc) -> EntityListRes<Self> {
+        let curr_obj = self.deref_alloc(alloc);
         if curr_obj.body.is_none() {
-            return Err(EntityListError::ItemFalselyDetached(curr.0));
+            return Err(EntityListError::ItemFalselyDetached(self));
         }
         curr_obj.parent_func.set(None);
         Ok(())
@@ -100,7 +97,7 @@ impl ITraceableValue for BlockObj {
 impl BlockObj {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self {
-            head: Cell::new(EntityListHead::none()),
+            head: Cell::new(EntityListNodeHead::none()),
             parent_func: Cell::new(None),
             body: Some(BlockObjBody::new(allocs)),
             dispose_mark: Cell::new(false),
@@ -127,7 +124,7 @@ impl BlockObj {
     pub(super) fn add_pred(&self, allocs: &IRAllocs, jt_id: JumpTargetID) {
         self.get_body()
             .preds
-            .push_back_id(jt_id, &allocs.jts)
+            .push_back(jt_id, &allocs.jts)
             .expect("Failed to add JumpTarget to BlockObj preds");
     }
 
@@ -232,7 +229,7 @@ impl ISubValueSSA for BlockID {
 }
 
 impl BlockID {
-    pub fn inner(self) -> PtrID<BlockObj> {
+    pub fn inner(self) -> BlockRawPtr {
         self.0
     }
 
@@ -242,10 +239,12 @@ impl BlockID {
     pub fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut BlockObj {
         self.inner().deref_mut(&mut allocs.blocks)
     }
-    pub fn get_indexed(self, allocs: &IRAllocs) -> IndexedID<BlockObj> {
-        self.inner()
-            .as_indexed(&allocs.blocks)
-            .expect("Error: Attempted to get indexed ID of freed BlockID")
+    pub fn get_indexed(self, allocs: &IRAllocs) -> BlockIndex {
+        let index = self
+            .inner()
+            .get_index(&allocs.blocks)
+            .expect("Error: Attempted to get indexed ID of freed BlockID");
+        BlockIndex::from(index)
     }
 
     pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {
@@ -258,7 +257,7 @@ impl BlockID {
     pub fn get_body(self, allocs: &IRAllocs) -> &BlockObjBody {
         self.deref_ir(allocs).get_body()
     }
-    pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstObj> {
+    pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstID> {
         &self.get_body(allocs).insts
     }
     pub fn get_phi_end(self, allocs: &IRAllocs) -> InstID {

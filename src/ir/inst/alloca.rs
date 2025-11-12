@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
         OperandSet, UseID,
     },
+    subinst_id,
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 /// 在栈上分配一段固定大小的内存. 这个指令的特殊之处在于, 该指令分配得到的内存
 /// 在函数内全局有效、全局存活, 直到函数返回或被销毁.
@@ -90,9 +90,7 @@ impl AllocaInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AllocaInstID(pub PtrID<InstObj>);
-impl_subinst_id!(AllocaInstID, AllocaInst);
+subinst_id!(AllocaInstID, AllocaInst);
 impl AllocaInstID {
     pub fn new(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, AllocaInst::new(pointee_ty, align_log2))

@@ -8,7 +8,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
+use mtb_entity_slab::{IPolicyPtrID, PtrID};
 use std::{cell::Cell, sync::Arc};
 
 #[derive(Clone)]
@@ -105,7 +105,7 @@ impl GlobalVar {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalVarID(pub PtrID<GlobalObj>);
+pub struct GlobalVarID(pub PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>);
 impl std::fmt::Debug for GlobalVarID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "GlobalVarID({:p})", self.0)
@@ -114,10 +114,10 @@ impl std::fmt::Debug for GlobalVarID {
 impl ISubGlobalID for GlobalVarID {
     type GlobalT = GlobalVar;
 
-    fn from_raw_ptr(id: PtrID<GlobalObj>) -> Self {
+    fn from_raw_ptr(id: PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>) -> Self {
         GlobalVarID(id)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj> {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT> {
         self.0
     }
 }

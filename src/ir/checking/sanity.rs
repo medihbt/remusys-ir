@@ -12,7 +12,7 @@ use crate::{
     ir::{checking::IRLocation, inst::*, module::allocs::IPoolAllocated, *},
     typing::{FPKind, FixVecType, IntType, PtrType, TypeContext},
 };
-use mtb_entity_slab::{EntityAlloc, IEntityAllocID, IEntityRingListNode, IndexedID};
+use mtb_entity_slab::{EntityAlloc, IEntityAllocID};
 use std::{
     cell::{Cell, Ref, RefCell},
     collections::{HashMap, HashSet, VecDeque},
@@ -199,7 +199,7 @@ impl ExprSet {
     fn insert(&mut self, allocs: &IRAllocs, eid: ExprID) {
         match self {
             ExprSet::Dense(bs) => {
-                bs.enable(eid.into_raw_ptr().as_indexed(&allocs.exprs).unwrap().0);
+                bs.enable(eid.into_raw_ptr().get_index(&allocs.exprs).unwrap());
             }
             ExprSet::Sparse(set) => {
                 set.insert(eid);
@@ -209,7 +209,7 @@ impl ExprSet {
     fn contains(&self, allocs: &IRAllocs, eid: ExprID) -> bool {
         match self {
             ExprSet::Dense(bs) => {
-                let Some(IndexedID(idx, _)) = eid.into_raw_ptr().as_indexed(&allocs.exprs) else {
+                let Some(idx) = eid.into_raw_ptr().get_index(&allocs.exprs) else {
                     return false;
                 };
                 bs.get(idx)

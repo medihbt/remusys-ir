@@ -1,7 +1,7 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        BlockID, BlockObj, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
+        BlockID, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
         ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
         UseID, UserList, ValueClass, ValueSSA,
         global::{GlobalCommon, Linkage},
@@ -9,7 +9,7 @@ use crate::{
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{EntityList, PtrID};
+use mtb_entity_slab::{EntityList, IPolicyPtrID, PtrID};
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref},
@@ -95,7 +95,7 @@ pub struct FuncObj {
 }
 
 pub struct FuncBody {
-    pub blocks: EntityList<BlockObj>,
+    pub blocks: EntityList<BlockID>,
     pub entry: BlockID,
 }
 
@@ -168,7 +168,7 @@ impl FuncObj {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FuncID(pub PtrID<GlobalObj>);
+pub struct FuncID(pub PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>);
 impl std::fmt::Debug for FuncID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "FuncID({:p})", self.0)
@@ -177,10 +177,10 @@ impl std::fmt::Debug for FuncID {
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj>) -> Self {
+    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>) -> Self {
         FuncID(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj> {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT> {
         self.0
     }
 }
@@ -192,7 +192,7 @@ impl FuncID {
     pub fn get_body(self, allocs: &IRAllocs) -> Option<&FuncBody> {
         self.deref_ir(allocs).body.as_ref()
     }
-    pub fn get_blocks(self, allocs: &IRAllocs) -> Option<&EntityList<BlockObj>> {
+    pub fn get_blocks(self, allocs: &IRAllocs) -> Option<&EntityList<BlockID>> {
         self.get_body(allocs).map(|b| &b.blocks)
     }
     pub fn get_entry(self, allocs: &IRAllocs) -> Option<BlockID> {

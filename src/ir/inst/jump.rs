@@ -1,12 +1,11 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj,
         JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 pub struct JumpInst {
     pub common: InstCommon,
@@ -94,9 +93,7 @@ impl JumpInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct JumpInstID(pub PtrID<InstObj>);
-impl_subinst_id!(JumpInstID, JumpInst, terminator);
+subinst_id!(JumpInstID, JumpInst, terminator);
 impl JumpInstID {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, JumpInst::new_uninit(allocs))

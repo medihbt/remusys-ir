@@ -8,8 +8,8 @@ use crate::{
     typing::{AggrType, TypeContext, ValTypeID},
 };
 use mtb_entity_slab::{
-    EntityAlloc, EntityListError, EntityListHead, IEntityAllocID, IEntityListNode, IndexedID,
-    PtrID, PtrListRes,
+    EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID, IEntityListNodeID,
+    IPolicyPtrID, IndexedID, PtrID, entity_ptr_id,
 };
 use std::cell::Cell;
 
@@ -74,7 +74,7 @@ pub use self::{
 };
 
 pub struct InstCommon {
-    pub node_head: Cell<EntityListHead<InstObj>>,
+    pub node_head: Cell<EntityListNodeHead<InstID>>,
     pub parent_bb: Cell<Option<BlockID>>,
     pub users: Option<UserList>,
     pub opcode: Opcode,
@@ -84,7 +84,7 @@ pub struct InstCommon {
 impl Clone for InstCommon {
     fn clone(&self) -> Self {
         Self {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             parent_bb: Cell::new(self.parent_bb.get()),
             users: None,
             opcode: self.opcode,
@@ -96,7 +96,7 @@ impl Clone for InstCommon {
 impl InstCommon {
     pub fn deep_cloned(&self, allocs: &IRAllocs) -> Self {
         Self {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             parent_bb: Cell::new(None),
             users: Some(UserList::new(&allocs.uses)),
             opcode: self.opcode,
@@ -107,7 +107,7 @@ impl InstCommon {
 
     pub fn new_sentinel() -> Self {
         Self {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             parent_bb: Cell::new(None),
             users: None,
             opcode: Opcode::GuideNode,
@@ -121,7 +121,7 @@ impl InstCommon {
 
     pub fn new(opcode: Opcode, ret_ty: ValTypeID) -> Self {
         Self {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             parent_bb: Cell::new(None),
             users: None,
             opcode,
@@ -179,8 +179,8 @@ pub trait ISubInst: IUser + Sized {
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
 
-    fn from_raw_ptr(ptr: PtrID<InstObj>) -> Self;
-    fn into_raw_ptr(self) -> PtrID<InstObj>;
+    fn from_raw_ptr(ptr: PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>) -> Self;
+    fn into_raw_ptr(self) -> PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
 
     fn raw_from(id: InstID) -> Self {
         Self::from_raw_ptr(id.into())
@@ -222,10 +222,12 @@ pub trait ISubInstID: Copy {
         self.try_deref_ir_mut(allocs)
             .expect("Error: Attempted to deref freed InstID")
     }
-    fn get_indexed(self, allocs: &IRAllocs) -> IndexedID<InstObj> {
-        self.into_raw_ptr()
-            .as_indexed(&allocs.insts)
-            .expect("Error: Attempted to get indexed ID of freed InstID")
+    fn get_indexed(self, allocs: &IRAllocs) -> InstIndex {
+        let index = self
+            .into_raw_ptr()
+            .get_index(&allocs.insts)
+            .expect("Error: Attempted to get indexed ID of freed InstID");
+        InstIndex::from(index)
     }
 
     fn get_common(self, allocs: &IRAllocs) -> &InstCommon {
@@ -272,43 +274,62 @@ pub trait ISubInstID: Copy {
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
 #[macro_export]
-macro_rules! impl_subinst_id {
+macro_rules! subinst_id {
     ($IDType:ident, $ObjType:ident) => {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $IDType(
+            pub  mtb_entity_slab::PtrID<
+                InstObj,
+                <$crate::ir::InstID as mtb_entity_slab::IPolicyPtrID>::PolicyT,
+            >,
+        );
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
-                let addr = self.into_raw_ptr().as_unit_pointer();
+                let addr = self.into_raw_ptr();
                 write!(f, "{tyname}({addr:p})",)
             }
         }
         impl $crate::ir::inst::ISubInstID for $IDType {
             type InstObjT = $ObjType;
 
-            fn from_raw_ptr(ptr: mtb_entity_slab::PtrID<InstObj>) -> Self {
+            #[inline]
+            fn from_raw_ptr(ptr: $crate::ir::inst::InstRawPtr) -> Self {
                 $IDType(ptr)
             }
-            fn into_raw_ptr(self) -> mtb_entity_slab::PtrID<InstObj> {
+            #[inline]
+            fn into_raw_ptr(self) -> $crate::ir::inst::InstRawPtr {
                 self.0
             }
         }
     };
     ($IDType:ident, $ObjType:ident, terminator) => {
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $IDType(
+            pub  mtb_entity_slab::PtrID<
+                InstObj,
+                <$crate::ir::InstID as mtb_entity_slab::IPolicyPtrID>::PolicyT,
+            >,
+        );
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
-                let addr = self.into_raw_ptr().as_unit_pointer();
+                let addr = self.into_raw_ptr();
                 write!(f, "{tyname}({addr:p})",)
             }
         }
         impl $crate::ir::inst::ISubInstID for $IDType {
             type InstObjT = $ObjType;
 
-            fn from_raw_ptr(ptr: mtb_entity_slab::PtrID<InstObj>) -> Self {
+            #[inline]
+            fn from_raw_ptr(ptr: $crate::ir::inst::InstRawPtr) -> Self {
                 $IDType(ptr)
             }
-            fn into_raw_ptr(self) -> mtb_entity_slab::PtrID<InstObj> {
+            #[inline]
+            fn into_raw_ptr(self) -> $crate::ir::inst::InstRawPtr {
                 self.0
             }
+            #[inline]
             fn is_terminator(self, _: &IRAllocs) -> bool {
                 true
             }
@@ -353,7 +374,7 @@ pub trait IAggrIndexInst: IAggregateInst {
     fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self;
 }
 
-#[mtb_entity_slab::entity_allocatable(policy = 512, wrapper = InstID)]
+#[entity_ptr_id(InstID, policy = 512, allocator_type = InstAlloc)]
 pub enum InstObj {
     /// 指令链表的首尾引导结点, 不参与语义表达.
     GuideNode(InstCommon),
@@ -425,6 +446,9 @@ pub enum InstObj {
     /// 选择指令: 根据条件值选择两个操作数之一作为结果返回。
     Select(SelectInst),
 }
+
+pub type InstIndex = IndexedID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
+pub(in crate::ir) type InstRawPtr = PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
 
 impl IUser for InstObj {
     fn get_operands(&self) -> OperandSet<'_> {
@@ -578,47 +602,45 @@ impl ISubInst for InstObj {
         }
     }
 }
-impl IEntityListNode for InstObj {
-    fn load_head(&self) -> EntityListHead<Self> {
-        self.get_common().node_head.get()
+impl IEntityListNodeID for InstID {
+    fn obj_load_head(obj: &InstObj) -> EntityListNodeHead<Self> {
+        obj.get_common().node_head.get()
     }
-    fn store_head(&self, head: EntityListHead<Self>) {
-        self.get_common().node_head.set(head);
+    fn obj_store_head(obj: &InstObj, head: EntityListNodeHead<Self>) {
+        obj.get_common().node_head.set(head);
     }
 
-    fn is_sentinel(&self) -> bool {
-        matches!(self, InstObj::GuideNode(_))
+    fn obj_is_sentinel(obj: &InstObj) -> bool {
+        matches!(obj, InstObj::GuideNode(_))
     }
-    fn new_sentinel() -> Self {
+    fn new_sentinel_obj() -> InstObj {
         InstObj::GuideNode(InstCommon::new_sentinel())
     }
 
-    fn on_push_next(curr: InstID, next: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        if curr == next {
+    fn on_push_prev(self, prev: Self, alloc: &InstAlloc) -> EntityListRes<Self> {
+        if self == prev {
             return Err(EntityListError::RepeatedNode);
         }
-        let curr = curr.into_raw_ptr();
-        let next = next.into_raw_ptr();
-        let parent = curr.deref(alloc).get_common().parent_bb.get();
-        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
-        next.deref(alloc).get_common().parent_bb.set(parent);
+        let parent = self.deref_alloc(alloc).get_parent();
+        // Parent block CAN BE None here. e.g. when parent block has not allocated
+        // into IRAllocs yet.
+        prev.deref_alloc(alloc).set_parent(parent);
         Ok(())
     }
-    fn on_push_prev(curr: InstID, prev: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        if curr == prev {
+    fn on_push_next(self, next: Self, alloc: &InstAlloc) -> EntityListRes<Self> {
+        if self == next {
             return Err(EntityListError::RepeatedNode);
         }
-        let curr = curr.into_raw_ptr();
-        let prev = prev.into_raw_ptr();
-        let parent = curr.deref(alloc).get_common().parent_bb.get();
-        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
-        prev.deref(alloc).get_common().parent_bb.set(parent);
+        let parent = self.deref_alloc(alloc).get_parent();
+        // Parent block CAN BE None here. e.g. when parent block has not allocated
+        // into IRAllocs yet.
+        next.deref_alloc(alloc).set_parent(parent);
         Ok(())
     }
-    fn on_unplug(curr: InstID, alloc: &EntityAlloc<Self>) -> PtrListRes<Self> {
-        let curr = curr.into_raw_ptr();
-        // Parent block CAN BE None here. e.g. when parent block has not allocated into IRAllocs yet.
-        curr.deref(alloc).get_common().parent_bb.set(None);
+    fn on_unplug(self, alloc: &InstAlloc) -> EntityListRes<Self> {
+        // Parent block CAN BE None here. e.g. when parent block has not allocated
+        // into IRAllocs yet.
+        self.deref_alloc(alloc).set_parent(None);
         Ok(())
     }
 }
@@ -640,15 +662,17 @@ impl std::fmt::Pointer for InstID {
         self.into_raw_ptr().fmt(f)
     }
 }
-/// InstID should be implemented manually because of the macro_rules! impl_subinst_id
+/// InstID should be implemented manually because of the macro_rules! subinst_id
 /// contains `Debug` implementation which conflicts with the auto-derived one.
 impl ISubInstID for InstID {
     type InstObjT = InstObj;
 
-    fn from_raw_ptr(ptr: PtrID<InstObj>) -> Self {
+    #[inline]
+    fn from_raw_ptr(ptr: InstRawPtr) -> Self {
         Self(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<InstObj> {
+    #[inline]
+    fn into_raw_ptr(self) -> InstRawPtr {
         self.0
     }
 }

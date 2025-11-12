@@ -1,5 +1,5 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
         InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
@@ -7,7 +7,6 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 pub struct BrInst {
     pub common: InstCommon,
@@ -122,9 +121,7 @@ impl BrInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BrInstID(pub PtrID<InstObj>);
-impl_subinst_id!(BrInstID, BrInst, terminator);
+subinst_id!(BrInstID, BrInst, terminator);
 impl BrInstID {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, BrInst::new_uninit(allocs))

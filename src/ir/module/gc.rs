@@ -3,7 +3,8 @@ use crate::{
     ir::{
         BlockID, ExprID, FuncID, GlobalID, GlobalObj, IRAllocs, ISubExprID, ISubGlobal,
         ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID,
-        PoolAllocatedClass, PoolAllocatedID, ValueSSA, module::allocs::IPoolAllocated,
+        JumpTargetID, PoolAllocatedClass, PoolAllocatedID, UseID, ValueSSA,
+        module::allocs::IPoolAllocated,
     },
 };
 use mtb_entity_slab::IndexedID;
@@ -94,16 +95,16 @@ impl IRLiveSet {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = u.dispose_obj(up, allocs);
-            allocs.push_disposed(up);
+            let _ = u.dispose_obj(UseID(up), allocs);
+            allocs.push_disposed(UseID(up));
         }
         for (id, jp, jt) in allocs.jts.iter() {
             if self.jts.get(id) {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = jt.dispose_obj(jp, allocs);
-            allocs.push_disposed(jp);
+            let _ = jt.dispose_obj(JumpTargetID(jp), allocs);
+            allocs.push_disposed(JumpTargetID(jp));
         }
         let mut num_freed = allocs.num_pending_disposed();
         // 清理掉已经 dispose 的对象.
@@ -216,15 +217,17 @@ impl<'ir> IRMarker<'ir> {
         let Some(body) = block.deref_ir(allocs).try_get_body() else {
             return; // sentinel 也会被扫描到, 跳过
         };
-        body.insts.forall_with_sentinel(&allocs.insts, |ip, inst| {
-            assert_eq!(
-                inst.get_parent(),
-                Some(block),
-                "IRMarker discovered broken Block -> Inst relationship."
-            );
-            Self::do_push_mark(&mut proxy, ip);
-            true
-        });
+        body.insts
+            .forall_with_sentinel(&allocs.insts, |ip, inst| {
+                assert_eq!(
+                    inst.get_parent(),
+                    Some(block),
+                    "IRMarker discovered broken Block -> Inst relationship."
+                );
+                Self::do_push_mark(&mut proxy, ip);
+                Ok(())
+            })
+            .unwrap();
         Self::do_push_mark(&mut proxy, body.preds.sentinel);
         Self::do_push_mark(&mut proxy, body.users.sentinel);
     }
@@ -282,15 +285,17 @@ impl<'ir> IRMarker<'ir> {
                 "Function @{} entry NOT attached.",
                 global.get_name()
             );
-            body.blocks.forall_with_sentinel(&allocs.blocks, |bid, bb| {
-                assert_eq!(
-                    bb.get_parent_func(),
-                    Some(func_id),
-                    "IRMarker discovered broken GlobalFunc -> Block relationship."
-                );
-                Self::do_push_mark(&mut proxy, bid);
-                true
-            });
+            body.blocks
+                .forall_with_sentinel(&allocs.blocks, |bid, bb| {
+                    assert_eq!(
+                        bb.get_parent_func(),
+                        Some(func_id),
+                        "IRMarker discovered broken GlobalFunc -> Block relationship."
+                    );
+                    Self::do_push_mark(&mut proxy, bid);
+                    Ok(())
+                })
+                .unwrap();
         }
     }
 }

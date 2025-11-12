@@ -2,20 +2,24 @@ use super::managing::{
     dispose_entity_list, global_common_dispose, inst_dispose, traceable_dispose, traceable_init_id,
     user_dispose, user_init_id,
 };
-use crate::ir::*;
+use crate::ir::{
+    block::BlockAlloc, constant::expr::ExprAlloc, global::GlobalAlloc, inst::InstAlloc,
+    jumping::JumpTargetAlloc, usedef::UseAlloc, *,
+};
 use mtb_entity_slab::{
-    EntityAlloc, IEntityAllocID, IEntityAllocatable, IEntityListNode, IEntityRingListNode,
+    EntityAlloc, IAllocPolicy, IEntityAllocID, IEntityListNodeID, IEntityRingListNodeID,
+    IPolicyPtrID,
 };
 use std::{cell::RefCell, collections::VecDeque};
 use thiserror::Error;
 
 pub struct IRAllocs {
-    pub exprs: EntityAlloc<ExprObj>,
-    pub insts: EntityAlloc<InstObj>,
-    pub globals: EntityAlloc<GlobalObj>,
-    pub blocks: EntityAlloc<BlockObj>,
-    pub uses: EntityAlloc<Use>,
-    pub jts: EntityAlloc<JumpTarget>,
+    pub exprs: ExprAlloc,
+    pub insts: InstAlloc,
+    pub globals: GlobalAlloc,
+    pub blocks: BlockAlloc,
+    pub uses: UseAlloc,
+    pub jts: JumpTargetAlloc,
     pub disposed_queue: RefCell<VecDeque<PoolAllocatedID>>,
 }
 
@@ -152,13 +156,15 @@ pub enum PoolAllocatedDisposeErr {
 }
 pub type PoolAllocatedDisposeRes<T = ()> = Result<T, PoolAllocatedDisposeErr>;
 
-pub(crate) trait IPoolAllocated: IEntityAllocatable<PtrID: Into<PoolAllocatedID>> {
+pub(crate) trait IPoolAllocated: Sized {
+    type PolicyT: IAllocPolicy;
+    type PtrID: IPolicyPtrID<ObjectT = Self, PolicyT = Self::PolicyT> + Into<PoolAllocatedID>;
     type MinRelatedPoolT: AsRef<IRAllocs>;
 
     const _CLASS: PoolAllocatedClass;
 
-    fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self>;
-    fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self>;
+    fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self, Self::PolicyT>;
+    fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self, Self::PolicyT>;
 
     fn init_self_id(&self, id: Self::PtrID, allocs: &IRAllocs);
     fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PtrID;
@@ -166,7 +172,7 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable<PtrID: Into<PoolAllocatedID>
     fn obj_disposed(&self) -> bool;
     fn id_is_live(id: Self::PtrID, allocs: &IRAllocs) -> bool {
         let alloc = Self::get_alloc(allocs);
-        let ptr = Self::ptr_of_id(id);
+        let ptr = id.into_raw_ptrid();
         let Some(obj) = ptr.try_deref(alloc) else {
             return false;
         };
@@ -177,7 +183,7 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable<PtrID: Into<PoolAllocatedID>
     -> PoolAllocatedDisposeRes;
     fn dispose_id(id: Self::PtrID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
         let alloc = Self::get_alloc(pool.as_ref());
-        let ptr = Self::ptr_of_id(id);
+        let ptr = id.into_raw_ptrid();
         let Some(obj) = ptr.try_deref(alloc) else {
             return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
         };
@@ -188,6 +194,8 @@ pub(crate) trait IPoolAllocated: IEntityAllocatable<PtrID: Into<PoolAllocatedID>
 }
 
 impl IPoolAllocated for BlockObj {
+    type PtrID = BlockID;
+    type PolicyT = <BlockID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Block;
@@ -211,10 +219,12 @@ impl IPoolAllocated for BlockObj {
             return;
         };
         body.preds.sentinel.raw_set_block(allocs, id);
-        body.insts.forall_with_sentinel(&allocs.insts, |_, i| {
-            i.set_parent(Some(id));
-            true
-        });
+        body.insts
+            .forall_with_sentinel(&allocs.insts, |_, i| {
+                i.set_parent(Some(id));
+                Ok(())
+            })
+            .unwrap();
     }
 
     fn obj_disposed(&self) -> bool {
@@ -236,7 +246,7 @@ impl IPoolAllocated for BlockObj {
         let Some(body) = &self.body else {
             return Ok(());
         };
-        dispose_entity_list(&body.insts, allocs)?;
+        dispose_entity_list::<InstObj>(&body.insts, allocs)?;
         traceable_dispose(self, allocs)?;
 
         // clean up predecessors
@@ -247,14 +257,16 @@ impl IPoolAllocated for BlockObj {
 }
 
 impl IPoolAllocated for InstObj {
+    type PtrID = InstID;
+    type PolicyT = <InstID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Inst;
 
-    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self, Self::PolicyT> {
         &ir_allocs.insts
     }
-    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self, Self::PolicyT> {
         &mut ir_allocs.insts
     }
 
@@ -279,7 +291,7 @@ impl IPoolAllocated for InstObj {
         }
     }
     fn allocate(allocs: &IRAllocs, mut obj: Self) -> InstID {
-        if !obj.is_sentinel() && obj.common_mut().users.is_none() {
+        if !InstID::obj_is_sentinel(&obj) && obj.common_mut().users.is_none() {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.insts;
@@ -309,6 +321,8 @@ impl IPoolAllocated for InstObj {
 }
 
 impl IPoolAllocated for ExprObj {
+    type PtrID = ExprID;
+    type PolicyT = <ExprID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Expr;
@@ -346,14 +360,16 @@ impl IPoolAllocated for ExprObj {
 }
 
 impl IPoolAllocated for GlobalObj {
+    type PtrID = GlobalID;
+    type PolicyT = <GlobalID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = Module;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Global;
 
-    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+    fn get_alloc(ir_allocs: &IRAllocs) -> &GlobalAlloc {
         &ir_allocs.globals
     }
-    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut GlobalAlloc {
         &mut ir_allocs.globals
     }
 
@@ -372,10 +388,12 @@ impl IPoolAllocated for GlobalObj {
         let Some(body) = &f.body else {
             return;
         };
-        body.blocks.forall_with_sentinel(&allocs.blocks, |_, b| {
-            b.set_parent_func(func_id);
-            true
-        });
+        body.blocks
+            .forall_with_sentinel(&allocs.blocks, |_, b| {
+                b.set_parent_func(func_id);
+                Ok(())
+            })
+            .unwrap();
     }
     fn allocate(allocs: &IRAllocs, mut obj: Self) -> GlobalID {
         if let None = &obj.common_mut().users {
@@ -403,19 +421,21 @@ impl IPoolAllocated for GlobalObj {
         let Some(body) = &func.body else {
             return Ok(());
         };
-        dispose_entity_list(&body.blocks, &pool.allocs)
+        dispose_entity_list::<BlockObj>(&body.blocks, &pool.allocs)
     }
 }
 
 impl IPoolAllocated for Use {
+    type PtrID = UseID;
+    type PolicyT = <UseID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::Use;
 
-    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+    fn get_alloc(ir_allocs: &IRAllocs) -> &UseAlloc {
         &ir_allocs.uses
     }
-    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut UseAlloc {
         &mut ir_allocs.uses
     }
 
@@ -434,13 +454,12 @@ impl IPoolAllocated for Use {
     fn obj_disposed(&self) -> bool {
         self.get_kind() == UseKind::DisposedUse
     }
-    fn dispose_obj(&self, _: UseID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+    fn dispose_obj(&self, uid: UseID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
         if self.obj_disposed() {
             return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
         }
         self.mark_disposed();
-        self.detach(&allocs.uses)
-            .expect("Use dispose detach failed");
+        uid.detach(&allocs.uses).expect("Use dispose detach failed");
         self.user.set(None);
         self.operand.set(ValueSSA::None);
         Ok(())
@@ -448,14 +467,16 @@ impl IPoolAllocated for Use {
 }
 
 impl IPoolAllocated for JumpTarget {
+    type PtrID = JumpTargetID;
+    type PolicyT = <JumpTargetID as IPolicyPtrID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
     const _CLASS: PoolAllocatedClass = PoolAllocatedClass::JumpTarget;
 
-    fn get_alloc(ir_allocs: &IRAllocs) -> &EntityAlloc<Self> {
+    fn get_alloc(ir_allocs: &IRAllocs) -> &JumpTargetAlloc {
         &ir_allocs.jts
     }
-    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut EntityAlloc<Self> {
+    fn _alloc_mut(ir_allocs: &mut IRAllocs) -> &mut JumpTargetAlloc {
         &mut ir_allocs.jts
     }
 
@@ -469,12 +490,12 @@ impl IPoolAllocated for JumpTarget {
     fn obj_disposed(&self) -> bool {
         self.get_kind() == JumpTargetKind::Disposed
     }
-    fn dispose_obj(&self, _: JumpTargetID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
+    fn dispose_obj(&self, jtid: JumpTargetID, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
         if self.obj_disposed() {
             return Err(PoolAllocatedDisposeErr::AlreadyDisposed);
         }
         self.mark_disposed();
-        self.detach(&allocs.jts)
+        jtid.detach(&allocs.jts)
             .expect("JumpTarget dispose detach failed");
         self.terminator.set(None);
         self.block.set(None);
@@ -558,12 +579,12 @@ impl PoolAllocatedID {
     pub fn get_indexed(self, ir_allocs: &IRAllocs) -> Option<usize> {
         use PoolAllocatedID::*;
         match self {
-            Block(b) => b.inner().as_indexed(&ir_allocs.blocks).map(|x| x.0),
-            Inst(i) => i.into_raw_ptr().as_indexed(&ir_allocs.insts).map(|x| x.0),
-            Expr(e) => e.into_raw_ptr().as_indexed(&ir_allocs.exprs).map(|x| x.0),
-            Global(g) => g.into_raw_ptr().as_indexed(&ir_allocs.globals).map(|x| x.0),
-            Use(u) => u.0.as_indexed(&ir_allocs.uses).map(|x| x.0),
-            JumpTarget(j) => j.0.as_indexed(&ir_allocs.jts).map(|x| x.0),
+            Block(b) => b.inner().get_index(&ir_allocs.blocks),
+            Inst(i) => i.into_raw_ptr().get_index(&ir_allocs.insts),
+            Expr(e) => e.into_raw_ptr().get_index(&ir_allocs.exprs),
+            Global(g) => g.into_raw_ptr().get_index(&ir_allocs.globals),
+            Use(u) => u.0.get_index(&ir_allocs.uses),
+            JumpTarget(j) => j.0.get_index(&ir_allocs.jts),
         }
     }
 }

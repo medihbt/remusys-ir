@@ -9,7 +9,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IEntityAllocID, PtrID};
+use mtb_entity_slab::{IEntityAllocID, IPolicyPtrID, PtrID, entity_ptr_id};
 use std::{cell::Cell, sync::Arc};
 
 pub mod func;
@@ -105,8 +105,8 @@ impl<T: ISubGlobal> IPtrValue for T {
 pub trait ISubGlobalID: Copy + 'static {
     type GlobalT: ISubGlobal;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj>) -> Self;
-    fn into_raw_ptr(self) -> PtrID<GlobalObj>;
+    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>) -> Self;
+    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>;
     fn raw_from(id: GlobalID) -> Self {
         Self::from_raw_ptr(id.0)
     }
@@ -183,7 +183,7 @@ pub trait ISubGlobalID: Copy + 'static {
     }
 }
 
-#[mtb_entity_slab::entity_allocatable(policy = 128, wrapper = GlobalID)]
+#[entity_ptr_id(GlobalID, policy = 128, allocator_type = GlobalAlloc)]
 pub enum GlobalObj {
     Var(GlobalVar),
     Func(FuncObj),
@@ -264,10 +264,10 @@ impl std::fmt::Pointer for GlobalID {
 impl ISubGlobalID for GlobalID {
     type GlobalT = GlobalObj;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj>) -> Self {
+    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>) -> Self {
         GlobalID(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj> {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT> {
         self.0
     }
 }

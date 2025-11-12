@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
+    subinst_id,
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmoOrdering {
@@ -189,9 +189,7 @@ impl AmoRmwInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AmoRmwInstID(pub PtrID<InstObj>);
-impl_subinst_id!(AmoRmwInstID, AmoRmwInst);
+subinst_id!(AmoRmwInstID, AmoRmwInst);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)

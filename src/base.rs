@@ -1,4 +1,4 @@
-use mtb_entity_slab::{IEntityAllocatable, IndexedID};
+use mtb_entity_slab::{IAllocPolicy, IndexedID};
 use std::marker::PhantomData;
 
 mod apint;
@@ -36,7 +36,7 @@ pub trait INullableValue: Copy + Eq {
     }
 }
 
-impl<E: IEntityAllocatable> INullableValue for IndexedID<E> {
+impl<E, P: IAllocPolicy> INullableValue for IndexedID<E, P> {
     fn new_null() -> Self {
         IndexedID(usize::MAX, PhantomData)
     }

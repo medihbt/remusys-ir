@@ -7,7 +7,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IEntityAllocID, PtrID};
+use mtb_entity_slab::{IEntityAllocID, IPolicyPtrID, PtrID, entity_ptr_id};
 use std::cell::Cell;
 
 pub struct ExprCommon {
@@ -59,8 +59,8 @@ pub trait ISubExpr: IUser + Sized {
 pub trait ISubExprID: Copy {
     type ExprObjT: ISubExpr + 'static;
 
-    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self;
-    fn into_raw_ptr(self) -> PtrID<ExprObj>;
+    fn from_raw_ptr(id: ExprRawPtr) -> Self;
+    fn into_raw_ptr(self) -> ExprRawPtr;
 
     fn raw_from(id: ExprID) -> Self {
         Self::from_raw_ptr(id.0)
@@ -69,7 +69,10 @@ pub trait ISubExprID: Copy {
         ExprID(self.into_raw_ptr())
     }
 
-    fn try_from_expr(id: PtrID<ExprObj>, allocs: &IRAllocs) -> Option<Self> {
+    fn try_from_expr(
+        id: PtrID<ExprObj, <ExprID as IPolicyPtrID>::PolicyT>,
+        allocs: &IRAllocs,
+    ) -> Option<Self> {
         let expr = id.deref(&allocs.exprs);
         Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::from_raw_ptr(id))
     }
@@ -93,12 +96,13 @@ pub trait ISubExprID: Copy {
 }
 
 #[derive(Clone)]
-#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = ExprID)]
+#[entity_ptr_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
 pub enum ExprObj {
     Array(ArrayExpr),
     Struct(StructExpr),
     FixVec(FixVec),
 }
+pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPolicyPtrID>::PolicyT>;
 
 impl_traceable_from_common!(ExprObj, false);
 impl IUser for ExprObj {
@@ -165,10 +169,10 @@ impl std::fmt::Pointer for ExprID {
 impl ISubExprID for ExprID {
     type ExprObjT = ExprObj;
 
-    fn from_raw_ptr(id: PtrID<ExprObj>) -> Self {
+    fn from_raw_ptr(id: ExprRawPtr) -> Self {
         Self(id)
     }
-    fn into_raw_ptr(self) -> PtrID<ExprObj> {
+    fn into_raw_ptr(self) -> ExprRawPtr {
         self.0
     }
 }

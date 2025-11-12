@@ -1,13 +1,12 @@
 use crate::{
     base::INullableValue,
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
         InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 use std::{cell::Cell, ops::RangeFrom};
 use thiserror::Error;
@@ -185,9 +184,7 @@ impl GEPInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GEPInstID(pub PtrID<InstObj>);
-impl_subinst_id!(GEPInstID, GEPInst);
+subinst_id!(GEPInstID, GEPInst);
 impl GEPInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

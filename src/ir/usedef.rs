@@ -1,7 +1,6 @@
 use crate::{
     ir::{
-        ExprID, GlobalID, IRAllocs, ISubValueSSA, InstID, ValueClass, ValueSSA,
-        constant::expr::ISubExprID,
+        ExprID, GlobalID, IRAllocs, ISubExprID, ISubValueSSA, InstID, ValueClass, ValueSSA,
         global::ISubGlobalID,
         inst::ISubInstID,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
@@ -9,8 +8,8 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityAlloc, EntityListError, EntityListHead, EntityRingList, EntityRingListReadIter,
-    IEntityAllocID, IEntityRingListNode, PtrID,
+    EntityListError, EntityListNodeHead, EntityListRes, EntityRingList, EntityRingListIter,
+    IEntityAllocID, IEntityRingListNodeID, IPolicyPtrID, PtrID, entity_ptr_id,
 };
 use std::{
     cell::{Cell, Ref},
@@ -304,43 +303,35 @@ impl UseKind {
 }
 
 #[derive(Clone)]
-#[mtb_entity_slab::entity_allocatable(policy = 4096, wrapper = UseID)]
+#[entity_ptr_id(UseID, policy = 4096, allocator_type = UseAlloc)]
 pub struct Use {
-    list_head: Cell<EntityListHead<Use>>,
+    list_head: Cell<EntityListNodeHead<UseID>>,
     kind: Cell<UseKind>,
     pub user: Cell<Option<UserID>>,
     pub operand: Cell<ValueSSA>,
 }
-
-impl IEntityRingListNode for Use {
-    fn load_head(&self) -> EntityListHead<Self> {
-        self.list_head.get()
+pub(in crate::ir) type UseRawPtr = PtrID<Use, <UseID as IPolicyPtrID>::PolicyT>;
+impl IEntityRingListNodeID for UseID {
+    fn obj_load_head(obj: &Use) -> EntityListNodeHead<Self> {
+        obj.list_head.get()
     }
-    fn store_head(&self, head: EntityListHead<Self>) {
-        self.list_head.set(head);
+    fn obj_store_head(obj: &Use, head: EntityListNodeHead<Self>) {
+        obj.list_head.set(head);
     }
-
-    fn is_sentinel(&self) -> bool {
-        matches!(self.kind.get(), UseKind::Sentinel)
+    fn obj_is_sentinel(obj: &Use) -> bool {
+        matches!(obj.kind.get(), UseKind::Sentinel)
     }
-
-    fn new_sentinel() -> Self {
-        Self {
-            list_head: Cell::new(EntityListHead::none()),
+    fn new_sentinel_obj() -> Use {
+        Use {
+            list_head: Cell::new(EntityListNodeHead::none()),
             kind: Cell::new(UseKind::Sentinel),
             user: Cell::new(None),
             operand: Cell::new(ValueSSA::None),
         }
     }
-
-    fn ring_list_node_dispose(&self, alloc: &EntityAlloc<Self>) {
-        self.detach(alloc)
-            .expect("Use ring list node dispose detach failed");
-        self.user.set(None);
-        self.operand.set(ValueSSA::None);
-    }
-    fn on_self_unplug(&self, _: UseID, _: &EntityAlloc<Self>) {
-        self.operand.set(ValueSSA::None);
+    fn on_unplug(self, obj: &Use, _: &UseAlloc) -> EntityListRes<Self> {
+        obj.operand.set(ValueSSA::None);
+        Ok(())
     }
 }
 impl Use {
@@ -358,10 +349,14 @@ impl Use {
     pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(UseKind::DisposedUse);
     }
+
+    pub(in crate::ir) fn get_next_id(&self) -> Option<UseID> {
+        self.list_head.get().next
+    }
 }
 
 impl UseID {
-    pub fn inner(self) -> PtrID<Use> {
+    pub fn inner(self) -> UseRawPtr {
         self.0
     }
 
@@ -397,7 +392,7 @@ impl UseID {
         if obj.operand.get() == operand {
             return true;
         }
-        obj.detach(&allocs.uses)
+        self.detach(&allocs.uses)
             .expect("Use set_operand detach failed");
         obj.operand.set(operand);
         operand.try_add_user(allocs, self)
@@ -407,8 +402,8 @@ impl UseID {
         if obj.operand.get() == ValueSSA::None {
             return;
         }
-        obj.detach(&allocs.uses)
-            .expect("Use clean_operand detach failed");
+        self.detach(&allocs.uses)
+            .expect("Use set_operand detach failed");
         obj.operand.set(ValueSSA::None);
     }
     pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
@@ -420,7 +415,7 @@ impl UseID {
         Use::allocate(
             allocs,
             Use {
-                list_head: Cell::new(EntityListHead::none()),
+                list_head: Cell::new(EntityListNodeHead::none()),
                 kind: Cell::new(kind),
                 user: Cell::new(None),
                 operand: Cell::new(ValueSSA::None),
@@ -429,7 +424,7 @@ impl UseID {
     }
 }
 
-pub struct UseIter<'ir>(EntityRingListReadIter<'ir, Use>);
+pub struct UseIter<'ir>(EntityRingListIter<'ir, UseID>);
 
 impl<'ir> Iterator for UseIter<'ir> {
     type Item = (UseID, &'ir Use);
@@ -439,7 +434,7 @@ impl<'ir> Iterator for UseIter<'ir> {
     }
 }
 
-pub type UserList = EntityRingList<Use>;
+pub type UserList = EntityRingList<UseID>;
 
 pub trait ITraceableValue {
     fn try_get_users(&self) -> Option<&UserList> {
@@ -462,7 +457,7 @@ pub trait ITraceableValue {
 
     fn add_user(&self, new_use: UseID, allocs: &IRAllocs) {
         self.users()
-            .push_back_id(new_use, &allocs.uses)
+            .push_back(new_use, &allocs.uses)
             .expect("ITraceableValue add_user failed");
     }
 
@@ -511,7 +506,7 @@ pub trait ITraceableValue {
         &self,
         allocs: &IRAllocs,
         new_value: ValueSSA,
-    ) -> Result<(), EntityListError<Use>> {
+    ) -> Result<(), EntityListError<UseID>> {
         let alloc = &allocs.uses;
         if let Some(new_users) = new_value.try_get_users(allocs) {
             return self.users().move_all_to(new_users, &allocs.uses, |uid| {
@@ -520,7 +515,7 @@ pub trait ITraceableValue {
         }
         loop {
             match self.users().pop_front(alloc) {
-                Ok(uptr) => uptr.deref(alloc).operand.set(new_value),
+                Ok(u) => u.deref_alloc(alloc).operand.set(new_value),
                 Err(EntityListError::EmptyList) => break Ok(()),
                 Err(e) => break Err(e),
             }

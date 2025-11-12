@@ -1,5 +1,5 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -8,9 +8,9 @@ use crate::{
             IAggregateInst,
         },
     },
+    subinst_id,
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 /// 从数组 / 向量聚合值 a 中提取变量索引 i 处的值.
@@ -108,9 +108,7 @@ impl IndexExtractInst {
     pub const OP_INDEX: usize = 1;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndexExtractInstID(pub PtrID<InstObj>);
-impl_subinst_id!(IndexExtractInstID, IndexExtractInst);
+subinst_id!(IndexExtractInstID, IndexExtractInst);
 impl IndexExtractInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_ty: AggrType) -> Self {
         let inst = IndexExtractInst::new_uninit(allocs, tctx, aggr_ty);
@@ -238,9 +236,7 @@ impl FieldExtractInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldExtractInstID(pub PtrID<InstObj>);
-impl_subinst_id!(FieldExtractInstID, FieldExtractInst);
+subinst_id!(FieldExtractInstID, FieldExtractInst);
 impl FieldExtractInstID {
     pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
         FieldExtractInst::builder(aggr_type)

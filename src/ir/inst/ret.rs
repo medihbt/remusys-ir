@@ -1,12 +1,11 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon, InstObj,
         JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 /// 返回指令
 ///
@@ -92,9 +91,7 @@ impl RetInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct RetInstID(pub PtrID<InstObj>);
-impl_subinst_id!(RetInstID, RetInst, terminator);
+subinst_id!(RetInstID, RetInst, terminator);
 impl RetInstID {
     pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
         Self::allocate(allocs, RetInst::new_uninit(allocs, ret_ty))

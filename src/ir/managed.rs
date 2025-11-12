@@ -1,6 +1,6 @@
 //! Managed IR structures with auto-disposal capabilities.
 use crate::ir::{module::allocs::IPoolAllocated, *};
-use mtb_entity_slab::IEntityAllocID;
+use mtb_entity_slab::IPolicyPtrID;
 
 struct IRManagedImpl<'ir, T: IPoolAllocated> {
     pool: &'ir T::MinRelatedPoolT,
@@ -17,9 +17,8 @@ impl<'ir, T: IPoolAllocated> IRManagedImpl<'ir, T> {
     }
 
     pub fn as_ref(&self) -> &'ir T {
-        let ptr = T::ptr_of_id(self.id);
         let alloc = T::get_alloc(self.pool.as_ref());
-        ptr.deref(alloc)
+        self.id.deref_alloc(alloc)
     }
 
     pub fn release(self) -> T::PtrID {

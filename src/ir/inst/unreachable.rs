@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj, JumpTargetID,
         JumpTargets, Opcode, OperandSet, UseID,
     },
+    subinst_id,
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 /// 不可达指令: 表示函数控制流不可达
 ///
@@ -75,9 +75,7 @@ impl UnreachableInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnreachableInstID(pub PtrID<InstObj>);
-impl_subinst_id!(UnreachableInstID, UnreachableInst, terminator);
+subinst_id!(UnreachableInstID, UnreachableInst, terminator);
 impl UnreachableInstID {
     pub fn new(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, UnreachableInst::new())

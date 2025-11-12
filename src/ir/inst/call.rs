@@ -1,12 +1,11 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon,
         InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 use smallvec::{SmallVec, smallvec};
 use std::{cell::Cell, ops::RangeFrom};
 
@@ -125,9 +124,7 @@ impl CallInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CallInstID(pub PtrID<InstObj>);
-impl_subinst_id!(CallInstID, CallInst);
+subinst_id!(CallInstID, CallInst);
 impl CallInstID {
     pub fn callee_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).callee_use()

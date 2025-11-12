@@ -1,5 +1,5 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -10,7 +10,6 @@ use crate::{
     },
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 use smallvec::SmallVec;
 
 /// 把数组 / 向量值 a 中的索引位 i 替换成元素 v 并返回新的数组 / 向量值。
@@ -130,9 +129,7 @@ impl IndexInsertInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndexInsertInstID(pub PtrID<InstObj>);
-impl_subinst_id!(IndexInsertInstID, IndexInsertInst);
+subinst_id!(IndexInsertInstID, IndexInsertInst);
 impl IndexInsertInstID {
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
@@ -265,9 +262,7 @@ impl FieldInsertInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FieldInsertInstID(pub PtrID<InstObj>);
-impl_subinst_id!(FieldInsertInstID, FieldInsertInst);
+subinst_id!(FieldInsertInstID, FieldInsertInst);
 impl FieldInsertInstID {
     pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
         FieldInsertBuilder::new(aggr_type)

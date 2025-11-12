@@ -10,7 +10,8 @@ use crate::{
     },
 };
 use mtb_entity_slab::{
-    EntityAlloc, EntityListHead, EntityRingList, IEntityAllocID, IEntityRingListNode, PtrID,
+    EntityListNodeHead, EntityListRes, EntityRingList, IEntityAllocID, IEntityRingListNodeID,
+    IPolicyPtrID, PtrID, entity_ptr_id,
 };
 use std::{
     cell::Cell,
@@ -47,9 +48,9 @@ pub enum JumpTargetKind {
 /// - 目标基本块的引用
 ///
 /// 跳转目标通过弱引用链表连接，避免循环引用问题。
-#[mtb_entity_slab::entity_allocatable(policy = 256, wrapper = JumpTargetID)]
+#[entity_ptr_id(JumpTargetID, policy = 256, allocator_type = JumpTargetAlloc)]
 pub struct JumpTarget {
-    node_head: Cell<EntityListHead<JumpTarget>>,
+    node_head: Cell<EntityListNodeHead<JumpTargetID>>,
     /// 跳转目标的类型
     kind: Cell<JumpTargetKind>,
     /// 源终结指令的引用
@@ -57,27 +58,29 @@ pub struct JumpTarget {
     /// 目标基本块的引用
     pub block: Cell<Option<BlockID>>,
 }
-impl IEntityRingListNode for JumpTarget {
-    fn load_head(&self) -> EntityListHead<Self> {
-        self.node_head.get()
+impl IEntityRingListNodeID for JumpTargetID {
+    fn obj_load_head(obj: &JumpTarget) -> EntityListNodeHead<Self> {
+        obj.node_head.get()
     }
-    fn store_head(&self, head: EntityListHead<Self>) {
-        self.node_head.set(head);
+    fn obj_store_head(obj: &JumpTarget, head: EntityListNodeHead<Self>) {
+        obj.node_head.set(head);
     }
 
-    fn is_sentinel(&self) -> bool {
-        self.get_kind() == JumpTargetKind::None
+    fn obj_is_sentinel(obj: &JumpTarget) -> bool {
+        obj.kind.get() == JumpTargetKind::None
     }
-    fn new_sentinel() -> Self {
+
+    fn new_sentinel_obj() -> JumpTarget {
         JumpTarget {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             kind: Cell::new(JumpTargetKind::None),
             terminator: Cell::new(None),
             block: Cell::new(None),
         }
     }
-    fn on_self_unplug(&self, _: JumpTargetID, _: &EntityAlloc<Self>) {
-        self.block.set(None);
+    fn on_unplug(self, obj: &JumpTarget, _: &JumpTargetAlloc) -> EntityListRes<Self> {
+        obj.block.set(None);
+        Ok(())
     }
 }
 impl JumpTarget {
@@ -85,7 +88,7 @@ impl JumpTarget {
         use JumpTargetKind::*;
         assert_ne!(kind, Disposed, "Cannot allocate a disposed JumpTarget");
         JumpTarget {
-            node_head: Cell::new(EntityListHead::none()),
+            node_head: Cell::new(EntityListNodeHead::none()),
             kind: Cell::new(kind),
             terminator: Cell::new(Option::None),
             block: Cell::new(Option::None),
@@ -101,9 +104,15 @@ impl JumpTarget {
     pub(in crate::ir) fn mark_disposed(&self) {
         self.kind.set(JumpTargetKind::Disposed);
     }
+    pub(in crate::ir) fn get_next_id(&self) -> Option<JumpTargetID> {
+        self.node_head.get().next
+    }
+    pub(in crate::ir) fn detach(&self, alloc: &JumpTargetAlloc) -> EntityListRes<JumpTargetID> {
+        JumpTargetID::obj_detach(self, alloc)
+    }
 }
 impl JumpTargetID {
-    pub fn inner(self) -> PtrID<JumpTarget> {
+    pub fn inner(self) -> PtrID<JumpTarget, <Self as IPolicyPtrID>::PolicyT> {
         self.0
     }
 
@@ -156,7 +165,7 @@ impl JumpTargetID {
     }
 }
 
-pub type PredList = EntityRingList<JumpTarget>;
+pub type PredList = EntityRingList<JumpTargetID>;
 pub type JumpTargets<'ir> = MixRef<'ir, [JumpTargetID]>;
 
 #[derive(Clone)]

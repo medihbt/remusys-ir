@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         CmpCond, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
+    subinst_id,
     typing::{FixVecType, ScalarType, ValTypeID},
 };
-use mtb_entity_slab::PtrID;
 
 /// 比较指令
 ///
@@ -125,9 +125,7 @@ impl CmpInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct CmpInstID(pub PtrID<InstObj>);
-impl_subinst_id!(CmpInstID, CmpInst);
+subinst_id!(CmpInstID, CmpInst);
 impl CmpInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

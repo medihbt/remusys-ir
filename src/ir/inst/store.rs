@@ -1,12 +1,12 @@
 use crate::{
-    impl_subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
+    subinst_id,
     typing::ValTypeID,
 };
-use mtb_entity_slab::PtrID;
 
 /// Store 指令: 存储一个 SSA 值到指针所示的存储区域
 ///
@@ -114,9 +114,7 @@ impl StoreInst {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct StoreInstID(pub PtrID<InstObj>);
-impl_subinst_id!(StoreInstID, StoreInst);
+subinst_id!(StoreInstID, StoreInst);
 impl StoreInstID {
     pub fn new_uninit(allocs: &IRAllocs, source_ty: ValTypeID, align_log2: u8) -> Self {
         let inst = StoreInst::new_uninit(allocs, source_ty, align_log2);

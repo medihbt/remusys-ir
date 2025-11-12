@@ -1,13 +1,13 @@
 use crate::{
     ir::{
-        BlockID, BlockObj, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
+        BlockID, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
         IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, Use, UseKind, ValueSSA,
+        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, UseID, UseKind, ValueSSA,
         inst::{BrInstID, JumpInstID, PhiInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{EntityListError, IEntityListNode};
+use mtb_entity_slab::{EntityListError, IEntityListNodeID};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy)]
@@ -120,11 +120,11 @@ pub enum IRBuildError {
     GlobalDefNotFound(String),
 
     #[error("Instruction list error: {0:?}")]
-    InstListError(EntityListError<InstObj>),
+    InstListError(EntityListError<InstID>),
     #[error("Block list error: {0:?}")]
-    BlockListError(EntityListError<BlockObj>),
+    BlockListError(EntityListError<BlockID>),
     #[error("Use-def list error: {0:?}")]
-    UsedefListError(#[from] EntityListError<Use>),
+    UsedefListError(#[from] EntityListError<UseID>),
 
     #[error("Null focus")]
     NullFocus,
@@ -158,13 +158,13 @@ pub enum IRBuildError {
     #[error("Dispose error: {0:?}")]
     DisposeErr(#[from] PoolAllocatedDisposeErr),
 }
-impl From<EntityListError<InstObj>> for IRBuildError {
-    fn from(e: EntityListError<InstObj>) -> Self {
+impl From<EntityListError<InstID>> for IRBuildError {
+    fn from(e: EntityListError<InstID>) -> Self {
         IRBuildError::InstListError(e)
     }
 }
-impl From<EntityListError<BlockObj>> for IRBuildError {
-    fn from(e: EntityListError<BlockObj>) -> Self {
+impl From<EntityListError<BlockID>> for IRBuildError {
+    fn from(e: EntityListError<BlockID>) -> Self {
         IRBuildError::BlockListError(e)
     }
 }
@@ -518,7 +518,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
             .try_get_terminator(allocs)
             .ok_or(IRBuildError::BlockHasNoTerminator(back_half))?;
         loop {
-            let Some(to_unplug) = front_last.deref_ir(allocs).get_next_id() else {
+            let Some(to_unplug) = front_last.get_next_id(&allocs.insts) else {
                 panic!("Broken IR: should quit at terminator but got `null`");
             };
             let to_unplug = match InstIDSummary::new(to_unplug, allocs) {
