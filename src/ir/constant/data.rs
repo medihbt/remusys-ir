@@ -154,7 +154,7 @@ impl ConstData {
         match sty {
             ScalarType::Ptr => ConstData::PtrNull(ValTypeID::Void),
             ScalarType::Int(bits) => ConstData::Int(APInt::new(0, bits)),
-            ScalarType::Float(fk) => ConstData::Float(fk, 0.0)
+            ScalarType::Float(fk) => ConstData::Float(fk, 0.0),
         }
     }
 }

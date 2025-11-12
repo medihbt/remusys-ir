@@ -1,10 +1,11 @@
 use crate::{
-    subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
         InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
         ValueSSA,
     },
+    subinst_id,
     typing::ValTypeID,
 };
 

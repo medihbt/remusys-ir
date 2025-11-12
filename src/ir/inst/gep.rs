@@ -1,10 +1,11 @@
 use crate::{
     base::INullableValue,
-    subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
         InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
+    subinst_id,
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;

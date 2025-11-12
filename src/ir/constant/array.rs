@@ -290,11 +290,7 @@ impl ArrayExprID {
             if k == ck {
                 continue;
             }
-            const_kind = if k.is_int() && ck.is_int() {
-                Some(ConstKind::APInt)
-            } else {
-                None
-            };
+            const_kind = if k.is_int() && ck.is_int() { Some(ConstKind::APInt) } else { None };
         }
         (is_identical, const_kind)
     }

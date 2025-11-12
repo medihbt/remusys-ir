@@ -1,5 +1,5 @@
 use crate::{
-    subinst_id, impl_traceable_from_common,
+    impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -8,6 +8,7 @@ use crate::{
             IAggregateInst,
         },
     },
+    subinst_id,
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
