@@ -17,5 +17,4 @@ log = "0.4.27"
 slab = "0.4.9"
 thiserror = "2"
 smallvec = { version = "1", features = ["union"] }
-# mtb-entity-slab = { git = "https://codeberg.org/medihbt/mtb-entity-slab", branch = "master" }
-mtb-entity-slab = { path = "../../mtblib/mtb-entity-slab" }
+mtb-entity-slab = { git = "https://codeberg.org/medihbt/mtb-entity-slab", branch = "master" }
