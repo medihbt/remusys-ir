@@ -290,6 +290,7 @@ impl UseKind {
             UseKind::Sentinel
             | UseKind::GlobalInit
             | UseKind::ArrayElem(_)
+            | UseKind::SplatArrayElem
             | UseKind::StructField(_)
             | UseKind::VecElem(_) => false,
             _ => true,
@@ -298,7 +299,9 @@ impl UseKind {
     pub fn get_user_kind(&self) -> ValueClass {
         match self {
             Self::GlobalInit => ValueClass::Global,
-            Self::ArrayElem(_) | Self::StructField(_) | Self::VecElem(_) => ValueClass::ConstExpr,
+            Self::ArrayElem(_) | Self::SplatArrayElem | Self::StructField(_) | Self::VecElem(_) => {
+                ValueClass::ConstExpr
+            }
             _ => ValueClass::Inst,
         }
     }

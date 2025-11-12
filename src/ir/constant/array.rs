@@ -2,8 +2,8 @@ use crate::{
     base::APInt,
     impl_traceable_from_common,
     ir::{
-        ConstData, ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID, UseKind,
-        ValueSSA,
+        ConstData, ExprID, ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID,
+        UseKind, ValueSSA,
         constant::expr::{ExprCommon, ExprRawPtr, ISubExpr},
     },
     typing::{ArrayTypeID, FPKind, IValType, ScalarType, TypeContext, ValTypeID},
@@ -172,6 +172,174 @@ impl ArrayExprID {
     }
     pub fn get_elems(self, allocs: &IRAllocs) -> &[UseID] {
         &self.deref_ir(allocs).elems
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConstKind {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    F32,
+    F64,
+    APInt,
+    FreeStyle,
+}
+impl ConstKind {
+    fn from_cdata(cdata: &ConstData) -> Self {
+        match cdata {
+            ConstData::Int(apint) => match apint.bits() {
+                8 => ConstKind::I8,
+                16 => ConstKind::I16,
+                32 => ConstKind::I32,
+                64 => ConstKind::I64,
+                128 => ConstKind::I128,
+                _ => ConstKind::APInt,
+            },
+            ConstData::Float(fp_kind, _) => match fp_kind {
+                FPKind::Ieee32 => ConstKind::F32,
+                FPKind::Ieee64 => ConstKind::F64,
+            },
+            _ => ConstKind::FreeStyle,
+        }
+    }
+    fn from_value(val: &ValueSSA) -> Option<Self> {
+        let ValueSSA::ConstData(cdata) = val else {
+            return None;
+        };
+        Some(Self::from_cdata(cdata))
+    }
+
+    fn is_int(self) -> bool {
+        use ConstKind::*;
+        matches!(self, I8 | I16 | I32 | I64 | I128 | APInt)
+    }
+}
+impl ArrayExprID {
+    /// Try to zip the array expression into a more compact representation, if possible.
+    pub fn zip(self, allocs: &IRAllocs) -> ExprID {
+        let arr_expr = self.deref_ir(allocs);
+        let elemty = arr_expr.elemty;
+        let nelems = arr_expr.elems.len();
+        if nelems <= 4 {
+            // Small array, no need to zip.
+            return self.raw_into();
+        }
+        // Check if all elements are identical.
+        let initial = arr_expr.index_get(allocs, 0);
+        let (is_identical, const_kind) = Self::evaluate_const_uniformity(allocs, arr_expr, initial);
+
+        if is_identical {
+            return SplatArrayExprID::new_full(allocs, arr_expr.arrty, elemty, nelems, initial)
+                .raw_into();
+        }
+        let Some(const_kind) = const_kind else {
+            return self.raw_into();
+        };
+        let Ok(sclty) = ScalarType::try_from_ir(elemty) else {
+            return self.raw_into();
+        };
+        // Try to build a ConstArrayData.
+        let mut inner = match const_kind {
+            ConstKind::I8 => ConstArrayData::I8(SmallVec::from_elem(0, nelems)),
+            ConstKind::I16 => ConstArrayData::I16(SmallVec::from_elem(0, nelems)),
+            ConstKind::I32 => ConstArrayData::I32(SmallVec::from_elem(0, nelems)),
+            ConstKind::I64 => ConstArrayData::I64(SmallVec::from_elem(0, nelems)),
+            ConstKind::I128 => ConstArrayData::I128(vec![0; nelems].into_boxed_slice()),
+            ConstKind::F32 => ConstArrayData::F32(SmallVec::from_elem(0.0, nelems)),
+            ConstKind::F64 => ConstArrayData::F64(SmallVec::from_elem(0.0, nelems)),
+            ConstKind::APInt => {
+                ConstArrayData::APInt(vec![APInt::new(0, 0); nelems].into_boxed_slice())
+            }
+            ConstKind::FreeStyle => ConstArrayData::FreeStyle(
+                vec![ConstData::Int(APInt::new(0, 0)); nelems].into_boxed_slice(),
+            ),
+        };
+        for (i, u) in arr_expr.operands_iter().enumerate() {
+            Self::zipped_init_at(const_kind, &mut inner, i, u.get_operand(allocs));
+        }
+        let data_array = DataArrayExpr {
+            common: ExprCommon::none(),
+            arrty: arr_expr.arrty,
+            elemty: sclty,
+            data: inner,
+        };
+        DataArrayExprID::allocate(allocs, data_array).raw_into()
+    }
+    fn evaluate_const_uniformity(
+        allocs: &IRAllocs,
+        arr_expr: &ArrayExpr,
+        initial: ValueSSA,
+    ) -> (bool, Option<ConstKind>) {
+        let mut is_identical = true;
+        let mut const_kind = ConstKind::from_value(&initial);
+        for u in arr_expr.operands_iter() {
+            if const_kind.is_none() && !is_identical {
+                break;
+            }
+            let val = u.get_operand(allocs);
+            if val != initial {
+                is_identical = false;
+            }
+            let (Some(k), Some(ck)) = (ConstKind::from_value(&val), const_kind) else {
+                const_kind = None;
+                continue;
+            };
+            if k == ck {
+                continue;
+            }
+            const_kind = if k.is_int() && ck.is_int() {
+                Some(ConstKind::APInt)
+            } else {
+                None
+            };
+        }
+        (is_identical, const_kind)
+    }
+    fn zipped_init_at(ck: ConstKind, inner: &mut ConstArrayData, i: usize, val: ValueSSA) {
+        let val_int = val.as_apint();
+        let val_cdata = ConstData::from_ir(val);
+        let val_fp = if let ConstData::Float(_, v) = val_cdata { Some(v) } else { None };
+        match ck {
+            ConstKind::I8 => {
+                let ConstArrayData::I8(vec) = inner else { unreachable!() };
+                vec[i] = val_int.unwrap().as_unsigned() as i8;
+            }
+            ConstKind::I16 => {
+                let ConstArrayData::I16(vec) = inner else { unreachable!() };
+                vec[i] = val_int.unwrap().as_unsigned() as i16;
+            }
+            ConstKind::I32 => {
+                let ConstArrayData::I32(vec) = inner else { unreachable!() };
+                vec[i] = val_int.unwrap().as_unsigned() as i32;
+            }
+            ConstKind::I64 => {
+                let ConstArrayData::I64(vec) = inner else { unreachable!() };
+                vec[i] = val_int.unwrap().as_unsigned() as i64;
+            }
+            ConstKind::I128 => {
+                let ConstArrayData::I128(boxed) = inner else { unreachable!() };
+                boxed[i] = val_int.unwrap().as_unsigned() as i128;
+            }
+            ConstKind::F32 => {
+                let ConstArrayData::F32(vec) = inner else { unreachable!() };
+                vec[i] = val_fp.unwrap() as f32;
+            }
+            ConstKind::F64 => {
+                let ConstArrayData::F64(vec) = inner else { unreachable!() };
+                vec[i] = val_fp.unwrap();
+            }
+            ConstKind::APInt => {
+                let ConstArrayData::APInt(boxed) = inner else { unreachable!() };
+                boxed[i] = val_int.unwrap();
+            }
+            ConstKind::FreeStyle => {
+                let ConstArrayData::FreeStyle(boxed) = inner else { unreachable!() };
+                boxed[i] = val_cdata;
+            }
+        }
     }
 }
 
@@ -479,18 +647,27 @@ impl SplatArrayExpr {
         tctx: &TypeContext,
         arrty: ArrayTypeID,
         element: ValueSSA,
-    ) -> Option<Self> {
+    ) -> Self {
         let elemty = arrty.get_element_type(tctx);
         let nelems = arrty.get_num_elements(tctx);
+        Self::new_full(allocs, arrty, elemty, nelems, element)
+    }
+    fn new_full(
+        allocs: &IRAllocs,
+        arrty: ArrayTypeID,
+        elemty: ValTypeID,
+        nelems: usize,
+        element: ValueSSA,
+    ) -> Self {
         let use_id = UseID::new(allocs, UseKind::SplatArrayElem);
         use_id.set_operand(allocs, element);
-        Some(Self {
+        Self {
             common: ExprCommon::none(),
             arrty,
             elemty,
             nelems,
             element: [use_id],
-        })
+        }
     }
 }
 impl ISubExprID for SplatArrayExprID {
@@ -518,8 +695,18 @@ impl SplatArrayExprID {
         tctx: &TypeContext,
         arrty: ArrayTypeID,
         element: ValueSSA,
-    ) -> Option<Self> {
-        let splat_array = SplatArrayExpr::new(allocs, tctx, arrty, element)?;
-        Some(Self::allocate(allocs, splat_array))
+    ) -> Self {
+        let splat_array = SplatArrayExpr::new(allocs, tctx, arrty, element);
+        Self::allocate(allocs, splat_array)
+    }
+    fn new_full(
+        allocs: &IRAllocs,
+        arrty: ArrayTypeID,
+        elemty: ValTypeID,
+        nelems: usize,
+        element: ValueSSA,
+    ) -> Self {
+        let splat_array = SplatArrayExpr::new_full(allocs, arrty, elemty, nelems, element);
+        Self::allocate(allocs, splat_array)
     }
 }
