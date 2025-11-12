@@ -149,6 +149,14 @@ impl ConstData {
             _ => None,
         }
     }
+
+    pub fn new_zeroed(sty: ScalarType) -> Self {
+        match sty {
+            ScalarType::Ptr => ConstData::PtrNull(ValTypeID::Void),
+            ScalarType::Int(bits) => ConstData::Int(APInt::new(0, bits)),
+            ScalarType::Float(fk) => ConstData::Float(fk, 0.0)
+        }
+    }
 }
 
 /// 常量计算错误.

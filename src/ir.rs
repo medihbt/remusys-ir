@@ -36,7 +36,10 @@ pub use self::{
     block::{BlockID, BlockObj},
     cmp_cond::CmpCond,
     constant::{
-        array::{ArrayExpr, ArrayExprID},
+        array::{
+            ArrayExpr, ArrayExprID, ConstArrayData, DataArrayExpr, DataArrayExprID, IArrayExpr,
+            IArrayExprID, SplatArrayExpr, SplatArrayExprID,
+        },
         data::ConstData,
         expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
         structure::{StructExpr, StructExprID},

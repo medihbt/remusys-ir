@@ -269,6 +269,8 @@ pub enum UseKind {
     // 以下为非指令操作数
     GlobalInit,
     ArrayElem(usize),
+    // 用于 SplatArray 常量表达式. 这类数组的所有元素均相同, 因此只需要一个 Use 来表示所有元素.
+    SplatArrayElem,
     StructField(usize),
     VecElem(usize),
 

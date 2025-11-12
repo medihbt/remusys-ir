@@ -1,7 +1,8 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        DataArrayExpr, FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr, UseID,
+        UserList, ValueClass, ValueSSA,
         constant::{array::ArrayExpr, structure::StructExpr},
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
@@ -44,6 +45,8 @@ pub trait ISubExpr: IUser + Sized {
     fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self>;
     fn try_from_ir(expr: ExprObj) -> Option<Self>;
     fn into_ir(self) -> ExprObj;
+
+    fn is_zero_const(&self, allocs: &IRAllocs) -> bool;
 
     fn from_ir_ref(expr: &ExprObj) -> &Self {
         Self::try_from_ir_ref(expr).expect("Invalid ExprObj type for ISubExpr")
@@ -99,6 +102,8 @@ pub trait ISubExprID: Copy {
 #[entity_ptr_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
 pub enum ExprObj {
     Array(ArrayExpr),
+    DataArray(DataArrayExpr),
+    SplatArray(SplatArrayExpr),
     Struct(StructExpr),
     FixVec(FixVec),
 }
@@ -110,6 +115,8 @@ impl IUser for ExprObj {
         use ExprObj::*;
         match self {
             Array(arr) => arr.get_operands(),
+            DataArray(arr) => arr.get_operands(),
+            SplatArray(arr) => arr.get_operands(),
             Struct(struc) => struc.get_operands(),
             FixVec(vec) => vec.get_operands(),
         }
@@ -118,6 +125,8 @@ impl IUser for ExprObj {
         use ExprObj::*;
         match self {
             Array(arr) => arr.operands_mut(),
+            DataArray(arr) => arr.operands_mut(),
+            SplatArray(arr) => arr.operands_mut(),
             Struct(struc) => struc.operands_mut(),
             FixVec(vec) => vec.operands_mut(),
         }
@@ -128,6 +137,8 @@ impl ISubExpr for ExprObj {
         use ExprObj::*;
         match self {
             Array(arr) => &arr.common,
+            DataArray(arr) => &arr.common,
+            SplatArray(arr) => &arr.common,
             Struct(struc) => &struc.common,
             FixVec(vec) => &vec.common,
         }
@@ -136,6 +147,8 @@ impl ISubExpr for ExprObj {
         use ExprObj::*;
         match self {
             Array(arr) => &mut arr.common,
+            DataArray(arr) => &mut arr.common,
+            SplatArray(arr) => &mut arr.common,
             Struct(struc) => &mut struc.common,
             FixVec(vec) => &mut vec.common,
         }
@@ -144,8 +157,20 @@ impl ISubExpr for ExprObj {
         use ExprObj::*;
         match self {
             Array(arr) => arr.get_valtype(),
+            DataArray(arr) => arr.get_valtype(),
+            SplatArray(arr) => arr.get_valtype(),
             Struct(struc) => struc.get_valtype(),
             FixVec(vec) => vec.get_valtype(),
+        }
+    }
+    fn is_zero_const(&self, allocs: &IRAllocs) -> bool {
+        use ExprObj::*;
+        match self {
+            Array(arr) => arr.is_zero_const(allocs),
+            DataArray(arr) => arr.is_zero_const(allocs),
+            SplatArray(arr) => arr.is_zero_const(allocs),
+            Struct(struc) => struc.is_zero_const(allocs),
+            FixVec(vec) => vec.is_zero_const(allocs),
         }
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -190,14 +215,7 @@ impl ISubValueSSA for ExprID {
         ValueSSA::ConstExpr(self)
     }
     fn is_zero_const(self, allocs: &IRAllocs) -> bool {
-        let operands = match self.deref_ir(allocs) {
-            ExprObj::Array(arr) => arr.elems.as_slice(),
-            ExprObj::Struct(struc) => struc.fields.as_slice(),
-            ExprObj::FixVec(vec) => vec.elems.as_slice(),
-        };
-        operands
-            .iter()
-            .all(|&use_id| use_id.get_operand(allocs).is_zero_const(allocs))
+        self.deref_ir(allocs).is_zero_const(allocs)
     }
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {

@@ -1,11 +1,12 @@
 use crate::{
     base::INullableValue,
     ir::{
-        ArrayExpr, ArrayExprID, BlockID, BlockObj, ConstData, ExprID, ExprObj, FuncID, FuncObj,
-        GlobalID, GlobalKind, GlobalObj, GlobalVar, IPtrUniqueUser, IPtrValue, IRAllocs,
-        IRNumberValueMap, ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA,
-        ITraceableValue, InstID, InstObj, JumpTargetKind, Module, NumberOption, PoolAllocatedID,
-        PredList, UseID, UserList, ValueSSA, inst::*,
+        ArrayExpr, ArrayExprID, BlockID, BlockObj, ConstArrayData, ConstData, DataArrayExpr,
+        ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj, GlobalVar, IArrayExpr,
+        IPtrUniqueUser, IPtrValue, IRAllocs, IRNumberValueMap, ISubExpr, ISubExprID, ISubGlobal,
+        ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, InstObj,
+        JumpTargetKind, Module, NumberOption, PoolAllocatedID, PredList, SplatArrayExpr, UseID,
+        UserList, ValueSSA, inst::*,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
@@ -65,7 +66,7 @@ pub struct IRWriter<'ir> {
     pub numbering: RefCell<Option<IRNumberValueMap>>,
     pub globals: Vec<(GlobalID, GlobalKind)>,
     type_names: RefCell<HashMap<ValTypeID, String>>,
-    str_literals: RefCell<BTreeMap<ArrayExprID, String>>,
+    str_literals: RefCell<BTreeMap<ExprID, String>>,
 }
 
 impl<'ir> IRWriter<'ir> {
@@ -246,44 +247,118 @@ impl<'ir> IRWriter<'ir> {
             }
             ExprObj::Struct(s) => (s.fields.as_slice(), "{", "}"),
             ExprObj::FixVec(v) => (v.elems.as_slice(), "<", ">"),
+            ExprObj::DataArray(da) => return self.format_data_array(expr, da),
+            ExprObj::SplatArray(sa) => return self.format_splat_array(expr, sa),
         };
         self.format_aggregate(elems, begin_s, end_s)
+    }
+    fn bytes_as_string(&self, bytes: impl IntoIterator<Item = Option<u8>>) -> Option<String> {
+        use std::fmt::Write;
+        let bytes_iter = bytes.into_iter();
+        let mut ret = String::with_capacity(bytes_iter.size_hint().0 + 4);
+        ret.push_str("c\"");
+        for ch in bytes_iter {
+            let Some(ch) = ch else {
+                return None;
+            };
+            match ch {
+                b'"' => ret.push_str("\\22"),
+                b'\\' => ret.push_str("\\5c"),
+                0x20..=0x7e if ch.is_ascii_graphic() => ret.push(ch as char),
+                b' ' => ret.push(' '),
+                _ => write!(ret, "\\{ch:02x}").unwrap(),
+            }
+        }
+        ret.push('"');
+        Some(ret)
+    }
+    fn try_write_cached_str(&self, expr: ExprID) -> std::io::Result<bool> {
+        if let Some(cached) = self.str_literals.borrow().get(&expr) {
+            self.write_str(cached)?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+    fn write_and_insert_cached_str(&self, expr: ExprID, s: String) -> std::io::Result<()> {
+        self.write_str(&s)?;
+        self.str_literals.borrow_mut().insert(expr, s);
+        Ok(())
     }
     fn try_write_string(&self, aid: ArrayExprID, a: &ArrayExpr) -> std::io::Result<bool> {
         let ValTypeID::Int(8) = a.elemty else {
             return Ok(false);
         };
-        if let Some(cached) = self.str_literals.borrow().get(&aid) {
-            self.write_str(cached)?;
+        if self.try_write_cached_str(aid.raw_into())? {
             return Ok(true);
         }
         let bytes = {
-            use std::fmt::Write;
-            let mut bytes = String::with_capacity(a.elems.len() + 4);
-            bytes.push_str("c\"");
-            for (_, u) in a.user_iter(self.allocs) {
-                let ValueSSA::ConstData(cx) = u.operand.get() else {
-                    return Ok(false);
-                };
-                let ch = match cx {
-                    ConstData::Int(ch) => ch.as_unsigned() as u8,
-                    ConstData::Zero(_) => 0u8,
-                    _ => return Ok(false),
-                };
-                match ch {
-                    b'"' => bytes.push_str("\\22"),
-                    b'\\' => bytes.push_str("\\5c"),
-                    0x20..=0x7e if ch.is_ascii_graphic() => bytes.push(ch as char),
-                    b' ' => bytes.push(' '),
-                    _ => write!(bytes, "\\{ch:02x}").unwrap(),
-                }
+            let bytes = a.operands_iter().map(|useid| {
+                useid
+                    .get_operand(self.allocs)
+                    .as_apint()
+                    .map(|x| x.as_unsigned() as u8)
+            });
+            match self.bytes_as_string(bytes) {
+                Some(s) => s,
+                None => return Ok(false),
             }
-            bytes.push('"');
-            bytes
         };
-        self.write_str(&bytes)?;
-        self.str_literals.borrow_mut().insert(aid, bytes);
+        self.write_and_insert_cached_str(aid.raw_into(), bytes)?;
         Ok(true)
+    }
+    fn format_data_array(&self, id: ExprID, da: &DataArrayExpr) -> std::io::Result<()> {
+        if let ConstArrayData::I8(i8arr) = &da.data {
+            if self.try_write_cached_str(id)? {
+                return Ok(());
+            }
+            let bytes = i8arr.iter().map(|b| Some(*b as u8));
+            let bytes_str = self.bytes_as_string(bytes).unwrap();
+            return self.write_and_insert_cached_str(id, bytes_str);
+        }
+        if da.is_zero_const(self.allocs) {
+            return self.write_str("zeroinitializer");
+        }
+        self.write_str("[")?;
+        let elemty = da.get_elem_type();
+        for i in 0..da.get_nelems() {
+            let value = da.index_get(self.allocs, i);
+            if i > 0 {
+                self.write_str(", ")?;
+            }
+            self.write_type(elemty)?;
+            self.write_str(" ")?;
+            self.write_operand(value)?;
+        }
+        self.write_str("]")
+    }
+    fn format_splat_array(&self, id: ExprID, sa: &SplatArrayExpr) -> std::io::Result<()> {
+        let nelems = sa.get_nelems();
+        let elemty = sa.get_elem_type();
+        let elem = sa.element[0].get_operand(self.allocs);
+        if let Some(apint) = elem.as_apint()
+            && apint.bits() == 8
+        {
+            if self.try_write_cached_str(id)? {
+                return Ok(());
+            }
+            let byte = apint.as_unsigned() as u8;
+            let bytes = std::iter::repeat(Some(byte)).take(nelems);
+            let s = self.bytes_as_string(bytes).unwrap();
+            return self.write_and_insert_cached_str(id, s);
+        }
+        if sa.is_zero_const(self.allocs) {
+            return self.write_str("zeroinitializer");
+        }
+        self.write_str("[")?;
+        for i in 0..nelems {
+            if i > 0 {
+                self.write_str(", ")?;
+            }
+            self.write_type(elemty)?;
+            self.write_str(" ")?;
+            self.write_operand(elem)?;
+        }
+        self.write_str("]")
     }
     fn format_aggregate(&self, elems: &[UseID], begin_s: &str, end_s: &str) -> std::io::Result<()> {
         self.write_str(begin_s)?;
@@ -294,6 +369,7 @@ impl<'ir> IRWriter<'ir> {
             }
             let operand = useid.get_operand(allocs);
             self.write_type(operand.get_valtype(allocs))?;
+            self.write_str(" ")?;
             self.write_operand(operand)?;
         }
         self.write_str(end_s)

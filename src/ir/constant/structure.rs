@@ -1,7 +1,7 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        ExprObj, IRAllocs, ISubExprID, IUser, OperandSet, UseID, UseKind,
+        ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID, UseKind,
         constant::expr::{ExprCommon, ExprRawPtr, ISubExpr},
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
@@ -44,6 +44,15 @@ impl ISubExpr for StructExpr {
     }
     fn into_ir(self) -> ExprObj {
         ExprObj::Struct(self)
+    }
+
+    fn is_zero_const(&self, allocs: &IRAllocs) -> bool {
+        if self.fields.is_empty() {
+            return true;
+        }
+        self.fields
+            .iter()
+            .all(|f| f.get_operand(allocs).is_zero_const(allocs))
     }
 }
 impl StructExpr {

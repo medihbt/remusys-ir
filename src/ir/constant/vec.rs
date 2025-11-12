@@ -1,8 +1,8 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        ExprCommon, ExprObj, IRAllocs, ISubExpr, ISubExprID, IUser, OperandSet, UseID,
-        UseKind, constant::expr::ExprRawPtr,
+        ExprCommon, ExprObj, IRAllocs, ISubExpr, ISubExprID, ISubValueSSA, IUser, OperandSet,
+        UseID, UseKind, constant::expr::ExprRawPtr,
     },
     typing::{FixVecType, IValType, ValTypeID},
 };
@@ -56,6 +56,14 @@ impl ISubExpr for FixVec {
     }
     fn into_ir(self) -> ExprObj {
         ExprObj::FixVec(self)
+    }
+    fn is_zero_const(&self, allocs: &IRAllocs) -> bool {
+        if self.elems.is_empty() {
+            return true;
+        }
+        self.elems
+            .iter()
+            .all(|e| e.get_operand(allocs).is_zero_const(allocs))
     }
 }
 impl FixVec {

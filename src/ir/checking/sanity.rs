@@ -103,6 +103,9 @@ pub enum IRSanityErr {
     CastErr(CastInstID, CastErr),
     #[error("Phi instruction ID {0:?} error: {1}")]
     PhiErr(PhiInstID, PhiInstErr),
+
+    #[error("DataArray{0:?} length mismatch: expected {1}, found {2}")]
+    DataArrayLengthMismatch(DataArrayExprID, usize, usize),
 }
 pub type IRSanityRes<T = ()> = Result<T, IRSanityErr>;
 
@@ -165,6 +168,10 @@ impl IRSanityErr {
             IRSanityErr::GEPUnpackErr(gepinst_id, _) => IRLocation::Inst(gepinst_id.raw_into()),
             IRSanityErr::CastErr(castinst_id, _) => IRLocation::Inst(castinst_id.raw_into()),
             IRSanityErr::PhiErr(phiinst_id, _) => IRLocation::Inst(phiinst_id.raw_into()),
+
+            IRSanityErr::DataArrayLengthMismatch(id, ..) => {
+                IRLocation::Operand(id.raw_into().into_ir())
+            }
         }
     }
 }
@@ -837,6 +844,24 @@ impl<'ir> SanityCheckCtx<'ir> {
                 }
                 Ok(())
             }
+            ExprObj::DataArray(da) => {
+                if da.get_nelems() != da.data.len() {
+                    return Err(IRSanityErr::DataArrayLengthMismatch(
+                        DataArrayExprID::raw_from(expr),
+                        da.get_nelems(),
+                        da.data.len(),
+                    ));
+                }
+                let Some(inner_ty) = da.data.elem_type() else {
+                    // 返回 None 意味着里边数组是空的，没法检查类型，直接返回通过
+                    return Ok(());
+                };
+                if inner_ty != da.elemty.into_ir() {
+                    return Err(TypeMismatchErr::IDNotEqual(inner_ty, da.elemty.into_ir()).into());
+                }
+                Ok(())
+            }
+            ExprObj::SplatArray(sa) => self.use_type_match(sa.element[0], sa.elemty),
         }
     }
 }
