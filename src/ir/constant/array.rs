@@ -220,121 +220,27 @@ impl ConstKind {
 impl ArrayExprID {
     /// Try to zip the array expression into a more compact representation, if possible.
     pub fn zip(self, allocs: &IRAllocs) -> ExprID {
-        let arr_expr = self.deref_ir(allocs);
-        let elemty = arr_expr.elemty;
-        let nelems = arr_expr.elems.len();
+        let arrobj = self.deref_ir(allocs);
+        let elemty = arrobj.get_elem_type();
+        let nelems = arrobj.get_nelems();
         if nelems <= 4 {
-            // Small array, no need to zip.
             return self.raw_into();
         }
-        // Check if all elements are identical.
-        let initial = arr_expr.index_get(allocs, 0);
-        let (is_identical, const_kind) = Self::evaluate_const_uniformity(allocs, arr_expr, initial);
 
-        if is_identical {
-            return SplatArrayExprID::new_full(allocs, arr_expr.arrty, elemty, nelems, initial)
-                .raw_into();
-        }
-        let Some(const_kind) = const_kind else {
-            return self.raw_into();
-        };
-        let Ok(sclty) = ScalarType::try_from_ir(elemty) else {
-            return self.raw_into();
-        };
-        // Try to build a ConstArrayData.
-        let mut inner = match const_kind {
-            ConstKind::I8 => ConstArrayData::I8(SmallVec::from_elem(0, nelems)),
-            ConstKind::I16 => ConstArrayData::I16(SmallVec::from_elem(0, nelems)),
-            ConstKind::I32 => ConstArrayData::I32(SmallVec::from_elem(0, nelems)),
-            ConstKind::I64 => ConstArrayData::I64(SmallVec::from_elem(0, nelems)),
-            ConstKind::I128 => ConstArrayData::I128(vec![0; nelems].into_boxed_slice()),
-            ConstKind::F32 => ConstArrayData::F32(SmallVec::from_elem(0.0, nelems)),
-            ConstKind::F64 => ConstArrayData::F64(SmallVec::from_elem(0.0, nelems)),
-            ConstKind::APInt => {
-                ConstArrayData::APInt(vec![APInt::new(0, 0); nelems].into_boxed_slice())
-            }
-            ConstKind::FreeStyle => ConstArrayData::FreeStyle(
-                vec![ConstData::Int(APInt::new(0, 0)); nelems].into_boxed_slice(),
-            ),
-        };
-        for (i, u) in arr_expr.operands_iter().enumerate() {
-            Self::zipped_init_at(const_kind, &mut inner, i, u.get_operand(allocs));
-        }
-        let data_array = DataArrayExpr {
-            common: ExprCommon::none(),
-            arrty: arr_expr.arrty,
-            elemty: sclty,
-            data: inner,
-        };
-        DataArrayExprID::allocate(allocs, data_array).raw_into()
-    }
-    fn evaluate_const_uniformity(
-        allocs: &IRAllocs,
-        arr_expr: &ArrayExpr,
-        initial: ValueSSA,
-    ) -> (bool, Option<ConstKind>) {
-        let mut is_identical = true;
-        let mut const_kind = ConstKind::from_value(&initial);
-        for u in arr_expr.operands_iter() {
-            if const_kind.is_none() && !is_identical {
-                break;
-            }
+        let mut builder = ArrayBuilder::new_internal(arrobj.arrty, elemty, nelems);
+        for (i, &u) in arrobj.elems.iter().enumerate() {
             let val = u.get_operand(allocs);
-            if val != initial {
-                is_identical = false;
-            }
-            let (Some(k), Some(ck)) = (ConstKind::from_value(&val), const_kind) else {
-                const_kind = None;
-                continue;
+            let Ok(_) = builder.push(allocs, val) else {
+                log::debug!("{self:?}::zip: failed to push value (#{i}) during zip");
+                return self.raw_into();
             };
-            if k == ck {
-                continue;
-            }
-            const_kind = if k.is_int() && ck.is_int() { Some(ConstKind::APInt) } else { None };
         }
-        (is_identical, const_kind)
-    }
-    fn zipped_init_at(ck: ConstKind, inner: &mut ConstArrayData, i: usize, val: ValueSSA) {
-        let val_int = val.as_apint();
-        let val_cdata = ConstData::from_ir(val);
-        let val_fp = if let ConstData::Float(_, v) = val_cdata { Some(v) } else { None };
-        match ck {
-            ConstKind::I8 => {
-                let ConstArrayData::I8(vec) = inner else { unreachable!() };
-                vec[i] = val_int.unwrap().as_unsigned() as i8;
-            }
-            ConstKind::I16 => {
-                let ConstArrayData::I16(vec) = inner else { unreachable!() };
-                vec[i] = val_int.unwrap().as_unsigned() as i16;
-            }
-            ConstKind::I32 => {
-                let ConstArrayData::I32(vec) = inner else { unreachable!() };
-                vec[i] = val_int.unwrap().as_unsigned() as i32;
-            }
-            ConstKind::I64 => {
-                let ConstArrayData::I64(vec) = inner else { unreachable!() };
-                vec[i] = val_int.unwrap().as_unsigned() as i64;
-            }
-            ConstKind::I128 => {
-                let ConstArrayData::I128(boxed) = inner else { unreachable!() };
-                boxed[i] = val_int.unwrap().as_unsigned() as i128;
-            }
-            ConstKind::F32 => {
-                let ConstArrayData::F32(vec) = inner else { unreachable!() };
-                vec[i] = val_fp.unwrap() as f32;
-            }
-            ConstKind::F64 => {
-                let ConstArrayData::F64(vec) = inner else { unreachable!() };
-                vec[i] = val_fp.unwrap();
-            }
-            ConstKind::APInt => {
-                let ConstArrayData::APInt(boxed) = inner else { unreachable!() };
-                boxed[i] = val_int.unwrap();
-            }
-            ConstKind::FreeStyle => {
-                let ConstArrayData::FreeStyle(boxed) = inner else { unreachable!() };
-                boxed[i] = val_cdata;
-            }
+        match builder.mode {
+            ArrayBuildStat::Empty | ArrayBuildStat::Full => self.raw_into(),
+            _ => builder.build_id(allocs).unwrap_or_else(|e| {
+                log::debug!("{self:?}::zip: failed to build zipped array: {e}");
+                self.raw_into()
+            }),
         }
     }
 }
@@ -382,6 +288,40 @@ impl ConstArrayData {
             ConstArrayData::FreeStyle(v) => v[index].into_ir(),
         }
     }
+    fn index_set_unwrap(&mut self, index: usize, val: ValueSSA) {
+        let val_int = val.as_apint();
+        let val_cdata = ConstData::from_ir(val);
+        let val_fp = if let ConstData::Float(_, v) = val_cdata { Some(v) } else { None };
+        match self {
+            ConstArrayData::I8(vec) => {
+                vec[index] = val_int.unwrap().as_unsigned() as i8;
+            }
+            ConstArrayData::I16(vec) => {
+                vec[index] = val_int.unwrap().as_unsigned() as i16;
+            }
+            ConstArrayData::I32(vec) => {
+                vec[index] = val_int.unwrap().as_unsigned() as i32;
+            }
+            ConstArrayData::I64(vec) => {
+                vec[index] = val_int.unwrap().as_unsigned() as i64;
+            }
+            ConstArrayData::I128(boxed) => {
+                boxed[index] = val_int.unwrap().as_unsigned() as i128;
+            }
+            ConstArrayData::F32(vec) => {
+                vec[index] = val_fp.unwrap() as f32;
+            }
+            ConstArrayData::F64(vec) => {
+                vec[index] = val_fp.unwrap();
+            }
+            ConstArrayData::APInt(boxed) => {
+                boxed[index] = val_int.unwrap();
+            }
+            ConstArrayData::FreeStyle(boxed) => {
+                boxed[index] = val_cdata;
+            }
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -414,6 +354,25 @@ impl ConstArrayData {
             _ => return None,
         };
         return Some(id);
+    }
+
+    fn new_zeroed_internal(kind: ConstKind, len: usize) -> Self {
+        match kind {
+            ConstKind::I8 => ConstArrayData::I8(SmallVec::from_elem(0i8, len)),
+            ConstKind::I16 => ConstArrayData::I16(SmallVec::from_elem(0i16, len)),
+            ConstKind::I32 => ConstArrayData::I32(SmallVec::from_elem(0i32, len)),
+            ConstKind::I64 => ConstArrayData::I64(SmallVec::from_elem(0i64, len)),
+            ConstKind::I128 => ConstArrayData::I128(vec![0i128; len].into_boxed_slice()),
+            ConstKind::F32 => ConstArrayData::F32(SmallVec::from_elem(0.0f32, len)),
+            ConstKind::F64 => ConstArrayData::F64(SmallVec::from_elem(0.0f64, len)),
+            ConstKind::APInt => {
+                ConstArrayData::APInt(vec![APInt::new(0, 0); len].into_boxed_slice())
+            }
+            ConstKind::FreeStyle => ConstArrayData::FreeStyle(
+                // 占位仅供分配，后续每位覆盖
+                vec![ConstData::new_zeroed(ScalarType::Int(8)); len].into_boxed_slice(),
+            ),
+        }
     }
 }
 #[derive(Clone)]
@@ -678,31 +637,176 @@ impl ISubExprID for SplatArrayExprID {
 }
 impl IArrayExprID for SplatArrayExprID {}
 impl SplatArrayExprID {
-    pub fn pattern_use(self, allocs: &IRAllocs) -> UseID {
+    pub fn elem_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).element[0]
     }
-    pub fn get_pattern(self, allocs: &IRAllocs) -> ValueSSA {
+    pub fn get_elem(self, allocs: &IRAllocs) -> ValueSSA {
         let use_id = self.deref_ir(allocs).element[0];
         use_id.deref_ir(allocs).operand.get()
     }
-
-    pub fn new(
-        allocs: &IRAllocs,
-        tctx: &TypeContext,
-        arrty: ArrayTypeID,
-        element: ValueSSA,
-    ) -> Self {
-        let splat_array = SplatArrayExpr::new(allocs, tctx, arrty, element);
+    pub fn set_elem(self, allocs: &IRAllocs, val: ValueSSA) {
+        let use_id = self.deref_ir(allocs).element[0];
+        use_id.set_operand(allocs, val);
+    }
+    pub fn new(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID, elem: ValueSSA) -> Self {
+        let splat_array = SplatArrayExpr::new(allocs, tctx, arrty, elem);
         Self::allocate(allocs, splat_array)
     }
-    fn new_full(
-        allocs: &IRAllocs,
-        arrty: ArrayTypeID,
-        elemty: ValTypeID,
-        nelems: usize,
-        element: ValueSSA,
-    ) -> Self {
-        let splat_array = SplatArrayExpr::new_full(allocs, arrty, elemty, nelems, element);
-        Self::allocate(allocs, splat_array)
+}
+
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+pub enum ArrayBuildErr {
+    #[error("Array element type mismatch: expected {0:?}, got {1:?}")]
+    TypeMismatch(ValTypeID, ValTypeID),
+
+    #[error("Array builder is full with elements")]
+    Full,
+
+    #[error("Building process NOT finished: {0} elems remaining")]
+    Unfinished(usize),
+}
+pub type ArrayBuildRes<T = ()> = Result<T, ArrayBuildErr>;
+
+pub struct ArrayBuilder {
+    arrty: ArrayTypeID,
+    elemty: ValTypeID,
+    nelems: usize,
+    elems: Vec<ValueSSA>,
+    mode: ArrayBuildStat,
+}
+
+impl ArrayBuilder {
+    pub fn new(tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        let elemty = arrty.get_element_type(tctx);
+        let nelems = arrty.get_num_elements(tctx);
+        Self {
+            arrty,
+            elemty,
+            nelems,
+            elems: Vec::with_capacity(nelems),
+            mode: ArrayBuildStat::Empty,
+        }
+    }
+    fn new_internal(arrty: ArrayTypeID, elemty: ValTypeID, nelems: usize) -> Self {
+        Self {
+            arrty,
+            elemty,
+            nelems,
+            elems: Vec::with_capacity(nelems),
+            mode: ArrayBuildStat::Empty,
+        }
+    }
+    pub fn push(&mut self, allocs: &IRAllocs, val: ValueSSA) -> ArrayBuildRes {
+        if self.elems.len() >= self.nelems {
+            return Err(ArrayBuildErr::Full);
+        }
+        let valty = val.get_valtype(allocs);
+        if valty != self.elemty {
+            return Err(ArrayBuildErr::TypeMismatch(self.elemty, valty));
+        }
+        self.mode = self.mode.update(val);
+        self.elems.push(val);
+        Ok(())
+    }
+    pub fn set_elems(&mut self, allocs: &IRAllocs, vals: &[ValueSSA]) -> ArrayBuildRes {
+        self.mode = ArrayBuildStat::Empty;
+        self.elems.clear();
+        for val in vals {
+            self.push(allocs, val.clone())?;
+        }
+        Ok(())
+    }
+
+    pub fn build_id(&mut self, allocs: &IRAllocs) -> ArrayBuildRes<ExprID> {
+        if self.elems.len() < self.nelems {
+            return Err(ArrayBuildErr::Unfinished(self.nelems - self.elems.len()));
+        }
+        let id = match self.mode {
+            ArrayBuildStat::Empty => self.build_empty_array(allocs),
+            ArrayBuildStat::ConstUniform(_, val) | ArrayBuildStat::NonConstUniform(val) => {
+                self.build_splat_array(allocs, val)
+            }
+            ArrayBuildStat::ConstNonUniform(ck) => self.build_data_array(allocs, ck),
+            ArrayBuildStat::Full => self.build_full_array(allocs),
+        };
+        Ok(id)
+    }
+    fn build_empty_array(&mut self, allocs: &IRAllocs) -> ExprID {
+        let data_array = DataArrayExpr {
+            common: ExprCommon::none(),
+            arrty: self.arrty,
+            elemty: ScalarType::from_ir(self.elemty),
+            data: ConstArrayData::FreeStyle(Box::new([])),
+        };
+        let data_array_id = DataArrayExprID::allocate(allocs, data_array);
+        data_array_id.raw_into()
+    }
+    fn build_data_array(&mut self, allocs: &IRAllocs, ck: ConstKind) -> ExprID {
+        let mut inner = ConstArrayData::new_zeroed_internal(ck, self.nelems);
+        for (i, val) in self.elems.iter().cloned().enumerate() {
+            inner.index_set_unwrap(i, val);
+        }
+        let data_array = DataArrayExpr {
+            common: ExprCommon::none(),
+            arrty: self.arrty,
+            elemty: ScalarType::from_ir(self.elemty),
+            data: inner,
+        };
+        let data_array_id = DataArrayExprID::allocate(allocs, data_array);
+        data_array_id.raw_into()
+    }
+    fn build_splat_array(&mut self, allocs: &IRAllocs, val: ValueSSA) -> ExprID {
+        let splat_array =
+            SplatArrayExpr::new_full(allocs, self.arrty, self.elemty, self.nelems, val);
+        let splat_array_id = SplatArrayExprID::allocate(allocs, splat_array);
+        splat_array_id.raw_into()
+    }
+    fn build_full_array(&mut self, allocs: &IRAllocs) -> ExprID {
+        let arr_expr = ArrayExpr::new_full_uninit(allocs, self.arrty, self.elemty, self.nelems);
+        for (i, val) in self.elems.iter().cloned().enumerate() {
+            let use_id = arr_expr.elems[i];
+            use_id.set_operand(allocs, val);
+        }
+        let arr_expr_id = ArrayExprID::allocate(allocs, arr_expr);
+        arr_expr_id.raw_into()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArrayBuildStat {
+    Empty,
+    ConstUniform(ConstKind, ValueSSA),
+    NonConstUniform(ValueSSA),
+    ConstNonUniform(ConstKind),
+    Full,
+}
+impl ArrayBuildStat {
+    fn update(self, val: ValueSSA) -> Self {
+        match self {
+            ArrayBuildStat::Empty => match ConstKind::from_value(&val) {
+                Some(ck) => ArrayBuildStat::ConstUniform(ck, val.clone()),
+                None => ArrayBuildStat::NonConstUniform(val.clone()),
+            },
+            // 已经是常量且目前全同，遇到不同的值时根据常量种类收敛
+            ArrayBuildStat::ConstUniform(ck, initial) if val != initial => {
+                Self::classify_value_constant(val, ck)
+            }
+            ArrayBuildStat::NonConstUniform(initial) if val != initial => ArrayBuildStat::Full,
+            ArrayBuildStat::ConstNonUniform(ck) => Self::classify_value_constant(val, ck),
+            _ => self,
+        }
+    }
+    fn classify_value_constant(val: ValueSSA, ck: ConstKind) -> ArrayBuildStat {
+        let Some(val_ck) = ConstKind::from_value(&val) else {
+            // 出现了非常量，无法保持 DataArray 形态
+            return ArrayBuildStat::Full;
+        };
+        if val_ck == ck {
+            ArrayBuildStat::ConstNonUniform(ck)
+        } else if val_ck.is_int() && ck.is_int() {
+            ArrayBuildStat::ConstNonUniform(ConstKind::APInt)
+        } else {
+            ArrayBuildStat::ConstNonUniform(ConstKind::FreeStyle)
+        }
     }
 }

@@ -37,8 +37,9 @@ pub use self::{
     cmp_cond::CmpCond,
     constant::{
         array::{
-            ArrayExpr, ArrayExprID, ConstArrayData, DataArrayExpr, DataArrayExprID, IArrayExpr,
-            IArrayExprID, SplatArrayExpr, SplatArrayExprID,
+            ArrayBuildErr, ArrayBuildRes, ArrayBuilder, ArrayExpr, ArrayExprID, ConstArrayData,
+            DataArrayExpr, DataArrayExprID, IArrayExpr, IArrayExprID, SplatArrayExpr,
+            SplatArrayExprID,
         },
         data::ConstData,
         expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
