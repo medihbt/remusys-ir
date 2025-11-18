@@ -1,6 +1,6 @@
 use crate::ir::{
     IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, ITraceableValue, IUser, InstID, Module, UserID,
-    ValueSSA,
+    ValueSSA, GlobalID,
     module::allocs::{IPoolAllocated, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes},
 };
 use mtb_entity_slab::{EntityList, IEntityListNodeID};
@@ -84,6 +84,7 @@ pub(super) fn inst_dispose<T: ISubInst>(
 }
 pub(super) fn global_common_dispose<T: ISubGlobal>(
     global: &T,
+    id: GlobalID,
     module: &Module,
 ) -> PoolAllocatedDisposeRes {
     let common = global.get_common();
@@ -92,20 +93,17 @@ pub(super) fn global_common_dispose<T: ISubGlobal>(
     }
     common.dispose_mark.set(true);
 
-    let symbol_registered = {
-        let symbols = module.symbols.borrow();
-        symbols.contains_key(&common.name)
-    };
-    if symbol_registered {
-        let symbols = module.symbols.try_borrow_mut();
-        let mut symbols = match symbols {
+    // If this global is pinned (regardless of whether it is exported or not), unpin it by ID.
+    if module.symbol_pinned(id) {
+        let mut symbols = match module.symbols.try_borrow_mut() {
             Ok(s) => s,
             Err(_) => {
-                let err = PoolAllocatedDisposeErr::SymtabBorrowError(Location::caller());
-                return Err(err);
+                return Err(PoolAllocatedDisposeErr::SymtabBorrowError(
+                    Location::caller(),
+                ));
             }
         };
-        symbols.remove(&common.name);
+        symbols.unpin_symbol(id, &module.allocs);
     }
     user_dispose(global, &module.allocs)
 }

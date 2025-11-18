@@ -87,9 +87,11 @@ impl<'ir> IRWriter<'ir> {
 
     fn make_symbols(module: &'ir Module) -> Vec<(GlobalID, GlobalKind)> {
         let symbols = module.symbols.borrow();
+        // We only print exported symbols.
+        let exported = &symbols.exported;
         let allocs = &module.allocs;
-        let mut globals = Vec::with_capacity(symbols.len());
-        for (_, gid) in symbols.iter() {
+        let mut globals = Vec::with_capacity(exported.len());
+        for (_, gid) in exported.iter() {
             globals.push((*gid, gid.get_kind(allocs)));
         }
         globals.sort_unstable_by(|&(lp, lk), &(rp, rk)| {

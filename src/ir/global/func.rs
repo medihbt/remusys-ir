@@ -359,8 +359,16 @@ impl FuncBuilder {
     pub fn build_id(&self, module: &Module) -> Result<FuncID, GlobalID> {
         let allocs = &module.allocs;
         let func = self.build_obj(allocs);
-        let func_id = FuncID::allocate(allocs, func);
-        func_id.register_to(module)
+        FuncID::allocate_export(module, func)
+    }
+    pub fn build_pinned(&self, module: &Module) -> FuncID {
+        let allocs = &module.allocs;
+        let func = self.build_obj(allocs);
+        FuncID::allocate_pinned(module, func)
+    }
+    pub fn build_unpinned(&self, allocs: &IRAllocs) -> FuncID {
+        let func = self.build_obj(allocs);
+        FuncID::allocate_unpinned(allocs, func)
     }
 
     fn build_terminator(&self, allocs: &IRAllocs) -> TerminatorID {

@@ -408,8 +408,8 @@ impl IPoolAllocated for GlobalObj {
     fn obj_disposed(&self) -> bool {
         self.get_common().dispose_mark.get()
     }
-    fn dispose_obj(&self, _: GlobalID, pool: &Module) -> PoolAllocatedDisposeRes {
-        global_common_dispose(self, pool)?;
+    fn dispose_obj(&self, id: GlobalID, pool: &Module) -> PoolAllocatedDisposeRes {
+        global_common_dispose(self, id, pool)?;
         let func = match self {
             GlobalObj::Var(_) => return Ok(()),
             GlobalObj::Func(gf) => gf,

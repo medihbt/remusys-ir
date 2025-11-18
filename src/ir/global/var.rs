@@ -228,8 +228,16 @@ pub trait IGlobalVarBuildable: Clone {
     fn build_id(&self, module: &Module) -> Result<GlobalVarID, GlobalID> {
         let allocs = &module.allocs;
         let gvar = self.build_obj(allocs);
-        let gid = GlobalVarID::allocate(allocs, gvar);
-        gid.register_to(module)
+        GlobalVarID::allocate_export(module, gvar)
+    }
+    fn build_pinned(&self, module: &Module) -> GlobalVarID {
+        let allocs = &module.allocs;
+        let gvar = self.build_obj(allocs);
+        GlobalVarID::allocate_pinned(module, gvar)
+    }
+    fn build_unpinned(&self, allocs: &IRAllocs) -> GlobalVarID {
+        let gvar = self.build_obj(allocs);
+        GlobalVarID::allocate_unpinned(allocs, gvar)
     }
 }
 #[derive(Clone)]

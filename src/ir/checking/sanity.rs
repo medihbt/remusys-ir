@@ -23,6 +23,8 @@ use std::{
 pub enum IRSanityErr {
     #[error("Global `{name:?}` (ID {id:p}) is unexpectedly dead")]
     DeadGlobal { name: Option<Arc<str>>, id: GlobalID },
+    #[error("Global `{name}` is unpinned but still referenced")]
+    UnpinnedGlobal { name: Arc<str>, id: GlobalID },
     #[error("Basic block ID {0:?} is unexpectedly dead")]
     DeadBlock(BlockID),
     #[error("Instruction ID {0:?} is unexpectedly dead")]
@@ -121,10 +123,12 @@ impl IRSanityErr {
     pub fn get_location(&self, module: &Module) -> IRLocation {
         let allocs = &module.allocs;
         match self {
-            IRSanityErr::DeadGlobal { id, .. } => match id.deref_ir(allocs) {
-                GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID::raw_from(*id)),
-                GlobalObj::Func(_) => IRLocation::Func(FuncID::raw_from(*id)),
-            },
+            IRSanityErr::DeadGlobal { id, .. } | IRSanityErr::UnpinnedGlobal { id, .. } => {
+                match id.deref_ir(allocs) {
+                    GlobalObj::Var(_) => IRLocation::GlobalVar(GlobalVarID::raw_from(*id)),
+                    GlobalObj::Func(_) => IRLocation::Func(FuncID::raw_from(*id)),
+                }
+            }
             IRSanityErr::DeadBlock(block_id) => IRLocation::Block(*block_id),
             IRSanityErr::DeadInst(inst) => IRLocation::Inst(*inst),
             IRSanityErr::DeadConstExpr(expr) => IRLocation::Operand(expr.into_ir()),
@@ -274,7 +278,7 @@ impl<'ir> SanityCheckCtx<'ir> {
         &self.module.tctx
     }
     fn symbols(&self) -> Ref<'_, HashMap<Arc<str>, GlobalID>> {
-        self.module.symbols.borrow()
+        Ref::map(self.module.symbols.borrow(), |x| &x.exported)
     }
     fn push_mark_expr(&self, eid: ExprID) {
         let mut borrow = self.exprs.borrow_mut();
@@ -349,8 +353,17 @@ impl<'ir> SanityCheckCtx<'ir> {
             if use_obj.user.get() != Some(user_id) {
                 return Err(IRSanityErr::InConsistentOperandUse(user_id, idx, use_id));
             }
-            if let ValueSSA::ConstExpr(exp) = use_obj.operand.get() {
-                self.push_mark_expr(exp);
+            match use_obj.operand.get() {
+                ValueSSA::ConstExpr(exp) => {
+                    self.push_mark_expr(exp);
+                }
+                ValueSSA::Global(glob) => {
+                    if !self.module.symbol_pinned(glob) {
+                        let name = glob.deref_ir(allocs).name_arc();
+                        return Err(IRSanityErr::UnpinnedGlobal { name, id: glob });
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())

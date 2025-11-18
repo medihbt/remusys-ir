@@ -58,18 +58,11 @@ fn test_gc_unreachable_expr_is_freed() {
 
     // 同时构造一个活体函数放在符号表，避免整模块清空
     let ri32fty = FuncTypeID::new(builder.tctx(), ValTypeID::Int(32), false, []);
-    let main_func = FuncID::builder(builder.tctx(), "main", ri32fty)
+    let _ = FuncID::builder(builder.tctx(), "main", ri32fty)
         .make_defined()
         .terminate_mode(FuncTerminateMode::ReturnDefault)
         .build_id(&builder.module)
         .unwrap();
-    // 把 main 插入符号表作为根
-    builder
-        .module
-        .symbols
-        .borrow_mut()
-        .insert("main".into(), main_func.raw_into());
-
     let mut module = builder.module;
     module.begin_gc().finish();
     let post_expr_len = module.allocs.exprs.len();

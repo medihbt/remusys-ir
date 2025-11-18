@@ -1,19 +1,107 @@
 use crate::{
-    ir::{GlobalID, IRAllocs, IRMarker},
+    ir::{FuncID, GlobalID, GlobalObj, GlobalVarID, IRAllocs, IRMarker, ISubGlobal, ISubGlobalID},
     typing::{ArchInfo, TypeContext},
 };
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Mutex;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    borrow::Borrow,
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    sync::Arc,
+};
 
 pub mod allocs;
 pub mod gc;
 pub mod managing;
 
+pub struct SymbolPool {
+    pub(super) exported: HashMap<Arc<str>, GlobalID>,
+    pub(super) func_pool: HashSet<FuncID>,
+    pub(super) var_pool: HashSet<GlobalVarID>,
+}
+impl SymbolPool {
+    fn new() -> RefCell<Self> {
+        RefCell::new(Self {
+            exported: HashMap::new(),
+            func_pool: HashSet::new(),
+            var_pool: HashSet::new(),
+        })
+    }
+    pub fn func_pool(&self) -> &HashSet<FuncID> {
+        &self.func_pool
+    }
+    pub fn var_pool(&self) -> &HashSet<GlobalVarID> {
+        &self.var_pool
+    }
+    pub(super) fn pool_add(&mut self, allocs: &IRAllocs, id: GlobalID) -> bool {
+        match id.deref_ir(allocs) {
+            GlobalObj::Func(_) => self.func_pool.insert(FuncID::raw_from(id)),
+            GlobalObj::Var(_) => self.var_pool.insert(GlobalVarID::raw_from(id)),
+        }
+    }
+    pub fn get_symbol_by_name(&self, name: impl Borrow<str>) -> Option<GlobalID> {
+        self.exported.get(name.borrow()).copied()
+    }
+    /// Return true if the given GlobalID is present in the exported symbol table.
+    pub fn is_id_exported(&self, id: GlobalID) -> bool {
+        self.exported.values().any(|&v| v == id)
+    }
+    pub fn symbol_pinned(&self, id: GlobalID, allocs: &IRAllocs) -> bool {
+        match id.deref_ir(allocs) {
+            GlobalObj::Func(_) => self.func_pool.contains(&FuncID::raw_from(id)),
+            GlobalObj::Var(_) => self.var_pool.contains(&GlobalVarID::raw_from(id)),
+        }
+    }
+    pub fn unpin_symbol(&mut self, id: GlobalID, allocs: &IRAllocs) -> bool {
+        self.exported.remove(id.get_name(allocs));
+        match id.deref_ir(allocs) {
+            GlobalObj::Func(_) => self.func_pool.remove(&FuncID::raw_from(id)),
+            GlobalObj::Var(_) => self.var_pool.remove(&GlobalVarID::raw_from(id)),
+        }
+    }
+
+    pub(super) fn try_export_symbol(
+        &mut self,
+        id: GlobalID,
+        allocs: &IRAllocs,
+    ) -> Result<GlobalID, GlobalID> {
+        use std::collections::hash_map::Entry;
+        let obj = id.deref_ir(allocs);
+        debug_assert!(self.symbol_pinned(id, allocs), "Exporting unpinned symbol");
+        let name_arc = obj.name_arc();
+        match self.exported.entry(name_arc) {
+            Entry::Occupied(existed) => Err(*existed.get()),
+            Entry::Vacant(v) => {
+                v.insert(id);
+                Ok(id)
+            }
+        }
+    }
+
+    fn gc_mark(&self, marker: &mut IRMarker<'_>) {
+        if cfg!(debug_assertions) {
+            for (_, id) in &self.exported {
+                debug_assert!(
+                    self.symbol_pinned(*id, marker.ir_allocs),
+                    "Symbol table contains unpinned symbol during GC marking"
+                );
+            }
+        }
+        for &fid in &self.func_pool {
+            marker.push_mark(fid.raw_into());
+        }
+        for &gid in &self.var_pool {
+            marker.push_mark(gid.raw_into());
+        }
+    }
+}
+
 pub struct Module {
     pub allocs: IRAllocs,
     pub tctx: TypeContext,
-    pub symbols: RefCell<HashMap<Arc<str>, GlobalID>>,
+    pub symbols: RefCell<SymbolPool>,
     pub name: String,
 }
 
@@ -43,7 +131,7 @@ impl Module {
         Self {
             allocs: IRAllocs::new(),
             tctx: TypeContext::new(arch),
-            symbols: RefCell::new(HashMap::new()),
+            symbols: SymbolPool::new(),
             name: name.into(),
         }
     }
@@ -61,7 +149,7 @@ impl Module {
         Self {
             allocs: IRAllocs::with_capacity(base_cap),
             tctx: TypeContext::new(arch),
-            symbols: RefCell::new(HashMap::new()),
+            symbols: SymbolPool::new(),
             name: name.into(),
         }
     }
@@ -84,7 +172,63 @@ impl Module {
     }
 
     pub fn get_global_by_name(&self, name: &str) -> Option<GlobalID> {
-        self.symbols.borrow().get(name).copied()
+        self.symbols.borrow().get_symbol_by_name(name)
+    }
+
+    pub fn symbol_pinned(&self, id: GlobalID) -> bool {
+        self.symbols.borrow().symbol_pinned(id, &self.allocs)
+    }
+    pub fn symbol_pinned_by_name(&self, name: &str) -> bool {
+        let id = match self.get_global_by_name(name) {
+            Some(id) => id,
+            None => return false,
+        };
+        assert!(
+            self.symbol_pinned(id),
+            "Internal error: symbol not pinned but found in symbol table"
+        );
+        true
+    }
+    pub fn unpin_symbol(&self, id: GlobalID) -> bool {
+        let mut symbols = match self.symbols.try_borrow_mut() {
+            Ok(s) => s,
+            Err(e) => panic!("Are you trying to unpin a symbol while traversing symtab? {e}"),
+        };
+        symbols.unpin_symbol(id, &self.allocs)
+    }
+    pub fn unpin_symbol_by_name(&self, name: &str) -> Option<GlobalID> {
+        let id = self.get_global_by_name(name)?;
+        self.unpin_symbol(id);
+        Some(id)
+    }
+
+    /// List all pinned global IDs that are not exported.
+    /// Intended to be used by lowering to ensure emission completeness.
+    pub fn list_unexported_pinned(&self) -> Vec<GlobalID> {
+        let symbols = self.symbols.borrow();
+        let mut missing = Vec::new();
+        // Functions
+        for &fid in symbols.func_pool.iter() {
+            let gid = fid.raw_into();
+            if !symbols.is_id_exported(gid) {
+                missing.push(gid);
+            }
+        }
+        // Global variables
+        for &gid_t in symbols.var_pool.iter() {
+            let gid = gid_t.raw_into();
+            if !symbols.is_id_exported(gid) {
+                missing.push(gid);
+            }
+        }
+        missing
+    }
+
+    /// Check whether all pinned globals are exported.
+    /// Returns Ok(()) if satisfied, or Err(Vec<GlobalID>) with the list of missing ones.
+    pub fn check_all_pinned_exported(&self) -> Result<(), Vec<GlobalID>> {
+        let missing = self.list_unexported_pinned();
+        if missing.is_empty() { Ok(()) } else { Err(missing) }
     }
 
     /// Begin a garbage collection cycle.
@@ -93,9 +237,7 @@ impl Module {
         self.allocs.free_disposed();
         let Self { allocs, symbols, .. } = self;
         let mut marker = IRMarker::new(allocs);
-        for (_, &gid) in symbols.get_mut().iter() {
-            marker.push_mark(gid);
-        }
+        symbols.get_mut().gc_mark(&mut marker);
         marker
     }
 

@@ -22,6 +22,18 @@ pub enum Linkage {
     Private,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GlobalExportErr {
+    #[error("Global symbol name {0:?} was already taken by {1:?}")]
+    NameTaken(Arc<str>, GlobalID),
+
+    #[error("Global symbol {0:?} was already exported with a different name")]
+    AlreadyExported(GlobalID),
+
+    #[error("The symbol to export is not pinned: {0:?}")]
+    SymbolUnpinned(GlobalID),
+}
+
 pub struct GlobalCommon {
     pub name: Arc<str>,
     pub content_ty: ValTypeID,
@@ -158,26 +170,58 @@ pub trait ISubGlobalID: Copy + 'static {
         self.deref_ir(allocs).get_kind(allocs)
     }
 
-    fn allocate(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
+    fn allocate_unpinned(allocs: &IRAllocs, obj: Self::GlobalT) -> Self {
         let id = GlobalObj::allocate(allocs, obj.into_ir());
         Self::raw_from(id)
     }
-    fn register_to(self, module: &Module) -> Result<Self, GlobalID> {
-        use std::collections::hash_map::Entry;
-        let mut symbols = module.symbols.borrow_mut();
-        let allocs = &module.allocs;
-        let name_arc = self.deref_ir(allocs).name_arc();
-        match symbols.entry(name_arc) {
-            Entry::Occupied(v) => {
-                let existing = v.get();
-                Err(*existing)
-            }
-            Entry::Vacant(v) => {
-                v.insert(self.raw_into());
-                Ok(self)
-            }
-        }
+    fn allocate_pinned(module: &Module, obj: Self::GlobalT) -> Self {
+        let id = Self::allocate_unpinned(&module.allocs, obj);
+        module
+            .symbols
+            .borrow_mut()
+            .pool_add(&module.allocs, id.raw_into());
+        id
     }
+    fn allocate_export(module: &Module, obj: Self::GlobalT) -> Result<Self, GlobalID> {
+        let id = Self::allocate_pinned(module, obj);
+        module
+            .symbols
+            .borrow_mut()
+            .try_export_symbol(id.raw_into(), &module.allocs)?;
+        Ok(id)
+    }
+    fn export(self, module: &Module) -> Result<Self, GlobalID> {
+        module
+            .symbols
+            .borrow_mut()
+            .try_export_symbol(self.raw_into(), &module.allocs)?;
+        Ok(self)
+    }
+    /// 如果自己没有导出, 就重命名为 name 并导出全局符号.
+    /// 如果 name 已被占用, 或者自己已经被导出, 则返回 Err (已有符号ID).
+    fn rename_and_export(self, name: &str, module: &mut Module) -> Result<Self, GlobalExportErr> {
+        let Module { allocs, symbols, .. } = module;
+        let symbols = symbols.get_mut();
+
+        if !symbols.symbol_pinned(self.raw_into(), allocs) {
+            return Err(GlobalExportErr::SymbolUnpinned(self.raw_into()));
+        }
+        if let Some(id) = symbols.get_symbol_by_name(name) {
+            return if id == self.raw_into() {
+                Ok(self)
+            } else {
+                Err(GlobalExportErr::NameTaken(Arc::from(name), id))
+            };
+        }
+        if symbols.get_symbol_by_name(self.get_name(allocs)).is_some() {
+            return Err(GlobalExportErr::AlreadyExported(self.raw_into()));
+        }
+        self.deref_ir_mut(allocs).common_mut().name = Arc::from(name);
+        symbols.try_export_symbol(self.raw_into(), allocs)
+            .expect("Internal Error: should not fail exporting after name check");
+        Ok(self)
+    }
+
     fn dispose(self, module: &Module) -> PoolAllocatedDisposeRes {
         GlobalObj::dispose_id(self.raw_into(), module)
     }
