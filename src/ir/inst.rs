@@ -9,7 +9,7 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID, IEntityListNodeID,
-    IPolicyPtrID, IndexedID, PtrID, entity_ptr_id,
+    IPoliciedID, IndexedID, entity_id,
 };
 use std::cell::Cell;
 
@@ -179,8 +179,8 @@ pub trait ISubInst: IUser + Sized {
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
 
-    fn from_raw_ptr(ptr: PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>) -> Self;
-    fn into_raw_ptr(self) -> PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
+    fn from_raw_ptr(ptr: <InstID as IPoliciedID>::BackID) -> Self;
+    fn into_raw_ptr(self) -> <InstID as IPoliciedID>::BackID;
 
     fn raw_from(id: InstID) -> Self {
         Self::from_raw_ptr(id.into())
@@ -277,12 +277,7 @@ pub trait ISubInstID: Copy {
 macro_rules! subinst_id {
     ($IDType:ident, $ObjType:ident) => {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDType(
-            pub  mtb_entity_slab::PtrID<
-                InstObj,
-                <$crate::ir::InstID as mtb_entity_slab::IPolicyPtrID>::PolicyT,
-            >,
-        );
+        pub struct $IDType(pub $crate::ir::inst::InstBackID);
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
@@ -294,23 +289,18 @@ macro_rules! subinst_id {
             type InstObjT = $ObjType;
 
             #[inline]
-            fn from_raw_ptr(ptr: $crate::ir::inst::InstRawPtr) -> Self {
+            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
                 $IDType(ptr)
             }
             #[inline]
-            fn into_raw_ptr(self) -> $crate::ir::inst::InstRawPtr {
+            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
                 self.0
             }
         }
     };
     ($IDType:ident, $ObjType:ident, terminator) => {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDType(
-            pub  mtb_entity_slab::PtrID<
-                InstObj,
-                <$crate::ir::InstID as mtb_entity_slab::IPolicyPtrID>::PolicyT,
-            >,
-        );
+        pub struct $IDType(pub $crate::ir::inst::InstBackID);
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
@@ -322,11 +312,11 @@ macro_rules! subinst_id {
             type InstObjT = $ObjType;
 
             #[inline]
-            fn from_raw_ptr(ptr: $crate::ir::inst::InstRawPtr) -> Self {
+            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
                 $IDType(ptr)
             }
             #[inline]
-            fn into_raw_ptr(self) -> $crate::ir::inst::InstRawPtr {
+            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
                 self.0
             }
             #[inline]
@@ -374,7 +364,7 @@ pub trait IAggrIndexInst: IAggregateInst {
     fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self;
 }
 
-#[entity_ptr_id(InstID, policy = 512, allocator_type = InstAlloc)]
+#[entity_id(InstID, policy = 512, allocator_type = InstAlloc)]
 pub enum InstObj {
     /// 指令链表的首尾引导结点, 不参与语义表达.
     GuideNode(InstCommon),
@@ -447,8 +437,8 @@ pub enum InstObj {
     Select(SelectInst),
 }
 
-pub type InstIndex = IndexedID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
-pub(in crate::ir) type InstRawPtr = PtrID<InstObj, <InstID as IPolicyPtrID>::PolicyT>;
+pub type InstIndex = IndexedID<InstObj, <InstID as IPoliciedID>::PolicyT>;
+pub type InstBackID = <InstID as IPoliciedID>::BackID;
 
 impl IUser for InstObj {
     fn get_operands(&self) -> OperandSet<'_> {
@@ -668,11 +658,11 @@ impl ISubInstID for InstID {
     type InstObjT = InstObj;
 
     #[inline]
-    fn from_raw_ptr(ptr: InstRawPtr) -> Self {
+    fn from_raw_ptr(ptr: <InstID as IPoliciedID>::BackID) -> Self {
         Self(ptr)
     }
     #[inline]
-    fn into_raw_ptr(self) -> InstRawPtr {
+    fn into_raw_ptr(self) -> <InstID as IPoliciedID>::BackID {
         self.0
     }
 }

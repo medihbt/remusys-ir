@@ -9,7 +9,7 @@ use crate::{
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{EntityList, IPolicyPtrID, PtrID};
+use mtb_entity_slab::{EntityList, IPoliciedID, PtrID};
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref},
@@ -168,7 +168,7 @@ impl FuncObj {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FuncID(pub PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>);
+pub struct FuncID(pub PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>);
 impl std::fmt::Debug for FuncID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "FuncID({:p})", self.0)
@@ -177,10 +177,10 @@ impl std::fmt::Debug for FuncID {
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT>) -> Self {
+    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>) -> Self {
         FuncID(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPolicyPtrID>::PolicyT> {
+    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
         self.0
     }
 }

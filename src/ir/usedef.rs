@@ -9,7 +9,7 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityListError, EntityListNodeHead, EntityListRes, EntityRingList, EntityRingListIter,
-    IEntityAllocID, IEntityRingListNodeID, IPolicyPtrID, PtrID, entity_ptr_id,
+    IEntityAllocID, IEntityRingListNodeID, IPoliciedID, PtrID, entity_id,
 };
 use std::{
     cell::{Cell, Ref},
@@ -308,14 +308,14 @@ impl UseKind {
 }
 
 #[derive(Clone)]
-#[entity_ptr_id(UseID, policy = 4096, allocator_type = UseAlloc)]
+#[entity_id(UseID, policy = 4096, allocator_type = UseAlloc)]
 pub struct Use {
     list_head: Cell<EntityListNodeHead<UseID>>,
     kind: Cell<UseKind>,
     pub user: Cell<Option<UserID>>,
     pub operand: Cell<ValueSSA>,
 }
-pub(in crate::ir) type UseRawPtr = PtrID<Use, <UseID as IPolicyPtrID>::PolicyT>;
+pub(in crate::ir) type UseRawPtr = PtrID<Use, <UseID as IPoliciedID>::PolicyT>;
 impl IEntityRingListNodeID for UseID {
     fn obj_load_head(obj: &Use) -> EntityListNodeHead<Self> {
         obj.list_head.get()

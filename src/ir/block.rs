@@ -8,21 +8,21 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityList, EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID,
-    IEntityListNodeID, IPolicyPtrID, IndexedID, PtrID, entity_ptr_id,
+    IEntityListNodeID, IPoliciedID, IndexedID, PtrID, entity_id,
 };
 use std::cell::Cell;
 
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstID>>;
 
-#[entity_ptr_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
+#[entity_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
 pub struct BlockObj {
     pub(crate) head: Cell<EntityListNodeHead<BlockID>>,
     pub(crate) parent_func: Cell<Option<FuncID>>,
     pub(crate) body: Option<BlockObjBody>,
     pub(crate) dispose_mark: Cell<bool>,
 }
-pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPolicyPtrID>::PolicyT>;
-pub(in crate::ir) type BlockIndex = IndexedID<BlockObj, <BlockID as IPolicyPtrID>::PolicyT>;
+pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
+pub(in crate::ir) type BlockIndex = IndexedID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
 pub struct BlockObjBody {
     pub insts: EntityList<InstID>,
     pub phi_end: InstID,

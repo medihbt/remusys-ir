@@ -11,7 +11,7 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityListNodeHead, EntityListRes, EntityRingList, IEntityAllocID, IEntityRingListNodeID,
-    IPolicyPtrID, PtrID, entity_ptr_id,
+    IPoliciedID, PtrID, entity_id,
 };
 use std::{
     cell::Cell,
@@ -48,7 +48,7 @@ pub enum JumpTargetKind {
 /// - 目标基本块的引用
 ///
 /// 跳转目标通过弱引用链表连接，避免循环引用问题。
-#[entity_ptr_id(JumpTargetID, policy = 256, allocator_type = JumpTargetAlloc)]
+#[entity_id(JumpTargetID, policy = 256, allocator_type = JumpTargetAlloc)]
 pub struct JumpTarget {
     node_head: Cell<EntityListNodeHead<JumpTargetID>>,
     /// 跳转目标的类型
@@ -112,7 +112,7 @@ impl JumpTarget {
     }
 }
 impl JumpTargetID {
-    pub fn inner(self) -> PtrID<JumpTarget, <Self as IPolicyPtrID>::PolicyT> {
+    pub fn inner(self) -> PtrID<JumpTarget, <Self as IPoliciedID>::PolicyT> {
         self.0
     }
 

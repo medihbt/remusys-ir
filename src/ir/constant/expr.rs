@@ -8,7 +8,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IEntityAllocID, IPolicyPtrID, PtrID, entity_ptr_id};
+use mtb_entity_slab::{IEntityAllocID, IPoliciedID, PtrID, entity_id};
 use std::cell::Cell;
 
 pub struct ExprCommon {
@@ -73,7 +73,7 @@ pub trait ISubExprID: Copy {
     }
 
     fn try_from_expr(
-        id: PtrID<ExprObj, <ExprID as IPolicyPtrID>::PolicyT>,
+        id: PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>,
         allocs: &IRAllocs,
     ) -> Option<Self> {
         let expr = id.deref(&allocs.exprs);
@@ -99,7 +99,7 @@ pub trait ISubExprID: Copy {
 }
 
 #[derive(Clone)]
-#[entity_ptr_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
+#[entity_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
 pub enum ExprObj {
     Array(ArrayExpr),
     DataArray(DataArrayExpr),
@@ -107,7 +107,7 @@ pub enum ExprObj {
     Struct(StructExpr),
     FixVec(FixVec),
 }
-pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPolicyPtrID>::PolicyT>;
+pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
 
 impl_traceable_from_common!(ExprObj, false);
 impl IUser for ExprObj {
