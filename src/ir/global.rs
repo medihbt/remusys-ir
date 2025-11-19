@@ -217,7 +217,8 @@ pub trait ISubGlobalID: Copy + 'static {
             return Err(GlobalExportErr::AlreadyExported(self.raw_into()));
         }
         self.deref_ir_mut(allocs).common_mut().name = Arc::from(name);
-        symbols.try_export_symbol(self.raw_into(), allocs)
+        symbols
+            .try_export_symbol(self.raw_into(), allocs)
             .expect("Internal Error: should not fail exporting after name check");
         Ok(self)
     }

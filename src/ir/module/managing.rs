@@ -1,6 +1,6 @@
 use crate::ir::{
-    IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, ITraceableValue, IUser, InstID, Module, UserID,
-    ValueSSA, GlobalID,
+    GlobalID, IRAllocs, ISubGlobal, ISubInst, ISubValueSSA, ITraceableValue, IUser, InstID, Module,
+    UserID, ValueSSA,
     module::allocs::{IPoolAllocated, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes},
 };
 use mtb_entity_slab::{EntityList, IEntityListNodeID};
