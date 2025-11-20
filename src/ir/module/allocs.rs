@@ -3,13 +3,15 @@ use super::managing::{
     user_dispose, user_init_id,
 };
 use crate::ir::{
+    BlockID, BlockObj, ExprID, ExprObj, FuncID, GlobalID, GlobalObj, ISubExpr, ISubExprID,
+    ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, InstID, InstObj, JumpTarget, JumpTargetID,
+    JumpTargetKind, Module, Use, UseID, UseKind, UserID, UserList, ValueSSA,
     block::BlockAlloc,
     constant::expr::ExprAlloc,
     global::GlobalAlloc,
     inst::{InstAlloc, InstBackID},
     jumping::JumpTargetAlloc,
     usedef::UseAlloc,
-    *,
 };
 use mtb_entity_slab::{
     EntityAlloc, IAllocPolicy, IEntityAllocID, IEntityListNodeID, IEntityRingListNodeID,
