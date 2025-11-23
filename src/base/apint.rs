@@ -3,10 +3,17 @@ use std::ops::{
     Mul, MulAssign, Neg, Not, Rem, RemAssign, Shl, ShlAssign, Shr, Sub, SubAssign,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct APInt {
     value: [u32; 4],
     bits: u8,
+}
+impl std::fmt::Debug for APInt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val = self.as_unsigned();
+        let bits = self.bits;
+        write!(f, "APInt({val:#x}:{bits})")
+    }
 }
 
 impl APInt {

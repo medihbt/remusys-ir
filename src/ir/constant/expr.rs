@@ -3,7 +3,10 @@ use crate::{
     ir::{
         DataArrayExpr, FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr, UseID,
         UserList, ValueClass, ValueSSA,
-        constant::{array::{ArrayExpr, KVArrayExpr}, structure::StructExpr},
+        constant::{
+            array::{ArrayExpr, KVArrayExpr},
+            structure::StructExpr,
+        },
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,

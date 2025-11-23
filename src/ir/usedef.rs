@@ -251,13 +251,13 @@ pub enum UseKind {
     FieldInsertElem,
 
     /// PHI 指令的 incoming block. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
-    /// 
+    ///
     /// The incoming block of a PHI instruction. The semantics are: This Use is
     /// in which group of the PHI instruction incoming list.
     PhiIncomingBlock(u32),
 
     /// PHI 指令的 incoming SSA 值. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
-    /// 
+    ///
     /// The incoming SSA value of a PHI instruction. The semantics are: This Use is
     /// in which group of the PHI instruction incoming list.
     PhiIncomingValue(u32),
