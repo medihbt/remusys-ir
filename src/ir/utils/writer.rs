@@ -5,8 +5,8 @@ use crate::{
         ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj, GlobalVar, IArrayExpr,
         IPtrUniqueUser, IPtrValue, IRAllocs, IRNumberValueMap, ISubExpr, ISubExprID, ISubGlobal,
         ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, InstObj,
-        JumpTargetKind, Module, NumberOption, PoolAllocatedID, PredList, SplatArrayExpr, UseID,
-        UserList, ValueSSA, inst::*,
+        JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID, PredList,
+        SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
@@ -251,6 +251,7 @@ impl<'ir> IRWriter<'ir> {
             ExprObj::FixVec(v) => (v.elems.as_slice(), "<", ">"),
             ExprObj::DataArray(da) => return self.format_data_array(expr, da),
             ExprObj::SplatArray(sa) => return self.format_splat_array(expr, sa),
+            ExprObj::KVArray(kv) => return self.format_kvarray(kv),
         };
         self.format_aggregate(elems, begin_s, end_s)
     }
@@ -360,6 +361,19 @@ impl<'ir> IRWriter<'ir> {
             self.write_str(" ")?;
             self.write_operand(elem)?;
         }
+        self.write_str("]")
+    }
+    fn format_kvarray(&self, kv: &KVArrayExpr) -> std::io::Result<()> {
+        self.write_str("[")?;
+        for (index, val, _) in kv.elem_iter(self.allocs) {
+            write!(self, "[{index}] = ")?;
+            self.write_type(val.get_valtype(self.allocs))?;
+            self.write_str(" ")?;
+            self.write_operand(val)?;
+            self.write_str(", ")?;
+        }
+        self.write_str("..=")?;
+        self.write_operand(kv.get_default(self.allocs))?;
         self.write_str("]")
     }
     fn format_aggregate(&self, elems: &[UseID], begin_s: &str, end_s: &str) -> std::io::Result<()> {

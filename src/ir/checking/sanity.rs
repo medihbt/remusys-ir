@@ -875,6 +875,13 @@ impl<'ir> SanityCheckCtx<'ir> {
                 Ok(())
             }
             ExprObj::SplatArray(sa) => self.use_type_match(sa.element[0], sa.elemty),
+            ExprObj::KVArray(kv) => {
+                let elemty = kv.elemty;
+                for uelem in kv.get_operands() {
+                    self.use_type_match(uelem, elemty)?;
+                }
+                Ok(())
+            }
         }
     }
 }

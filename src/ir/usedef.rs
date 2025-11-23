@@ -251,9 +251,15 @@ pub enum UseKind {
     FieldInsertElem,
 
     /// PHI 指令的 incoming block. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    /// 
+    /// The incoming block of a PHI instruction. The semantics are: This Use is
+    /// in which group of the PHI instruction incoming list.
     PhiIncomingBlock(u32),
 
     /// PHI 指令的 incoming SSA 值. 语义是: 这个 Use 处在 PHI 指令 incoming 列表的第几组.
+    /// 
+    /// The incoming SSA value of a PHI instruction. The semantics are: This Use is
+    /// in which group of the PHI instruction incoming list.
     PhiIncomingValue(u32),
 
     SelectCond,
@@ -267,10 +273,28 @@ pub enum UseKind {
     AmoRmwVal,
 
     // 以下为非指令操作数
+    // Variants below are used for constant expressions.
     GlobalInit,
     ArrayElem(usize),
-    // 用于 SplatArray 常量表达式. 这类数组的所有元素均相同, 因此只需要一个 Use 来表示所有元素.
+    /// 用于 SplatArray 常量表达式. 这类数组的所有元素均相同, 因此只需要一个 Use 来表示所有元素.
+    ///
+    /// Used for SplatArray constant expressions. All elements of this array are the same,
+    /// so only one Use is needed to represent all elements.
     SplatArrayElem,
+    /// 用于 KVArray 常量表达式. 这类数组的元素是稀疏存储的, key 是真实数组的索引. 规定 KVArray 中
+    /// 所有 Use 的排列都是升序的.
+    ///
+    /// Used for KVArray constant expressions. The elements of this array are stored sparsely,
+    /// with the key being the actual index in the array. It is stipulated that all Uses in
+    /// a KVArray are arranged in ascending order.
+    KVArrayElem(usize),
+    /// 用于 KVArray 常量表达式的默认元素. 这个元素用于填充未显式指定的索引位置. 该类型的元素放在
+    /// 操作数列表的最开头.
+    ///
+    /// Used for the default element of KVArray constant expressions. This element is
+    /// used to fill in index positions that are not explicitly specified. Elements of
+    /// this type are placed at the very beginning of the operand list.
+    KVArrayDefaultElem,
     StructField(usize),
     VecElem(usize),
 

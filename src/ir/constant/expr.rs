@@ -3,7 +3,7 @@ use crate::{
     ir::{
         DataArrayExpr, FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr, UseID,
         UserList, ValueClass, ValueSSA,
-        constant::{array::ArrayExpr, structure::StructExpr},
+        constant::{array::{ArrayExpr, KVArrayExpr}, structure::StructExpr},
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::ValTypeID,
@@ -104,6 +104,7 @@ pub enum ExprObj {
     Array(ArrayExpr),
     DataArray(DataArrayExpr),
     SplatArray(SplatArrayExpr),
+    KVArray(KVArrayExpr),
     Struct(StructExpr),
     FixVec(FixVec),
 }
@@ -117,6 +118,7 @@ impl IUser for ExprObj {
             Array(arr) => arr.get_operands(),
             DataArray(arr) => arr.get_operands(),
             SplatArray(arr) => arr.get_operands(),
+            KVArray(arr) => arr.get_operands(),
             Struct(struc) => struc.get_operands(),
             FixVec(vec) => vec.get_operands(),
         }
@@ -127,6 +129,7 @@ impl IUser for ExprObj {
             Array(arr) => arr.operands_mut(),
             DataArray(arr) => arr.operands_mut(),
             SplatArray(arr) => arr.operands_mut(),
+            KVArray(arr) => arr.operands_mut(),
             Struct(struc) => struc.operands_mut(),
             FixVec(vec) => vec.operands_mut(),
         }
@@ -139,6 +142,7 @@ impl ISubExpr for ExprObj {
             Array(arr) => &arr.common,
             DataArray(arr) => &arr.common,
             SplatArray(arr) => &arr.common,
+            KVArray(arr) => &arr.common,
             Struct(struc) => &struc.common,
             FixVec(vec) => &vec.common,
         }
@@ -149,6 +153,7 @@ impl ISubExpr for ExprObj {
             Array(arr) => &mut arr.common,
             DataArray(arr) => &mut arr.common,
             SplatArray(arr) => &mut arr.common,
+            KVArray(arr) => &mut arr.common,
             Struct(struc) => &mut struc.common,
             FixVec(vec) => &mut vec.common,
         }
@@ -159,6 +164,7 @@ impl ISubExpr for ExprObj {
             Array(arr) => arr.get_valtype(),
             DataArray(arr) => arr.get_valtype(),
             SplatArray(arr) => arr.get_valtype(),
+            KVArray(arr) => arr.get_valtype(),
             Struct(struc) => struc.get_valtype(),
             FixVec(vec) => vec.get_valtype(),
         }
@@ -169,6 +175,7 @@ impl ISubExpr for ExprObj {
             Array(arr) => arr.is_zero_const(allocs),
             DataArray(arr) => arr.is_zero_const(allocs),
             SplatArray(arr) => arr.is_zero_const(allocs),
+            KVArray(arr) => arr.is_zero_const(allocs),
             Struct(struc) => struc.is_zero_const(allocs),
             FixVec(vec) => vec.is_zero_const(allocs),
         }

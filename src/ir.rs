@@ -38,8 +38,8 @@ pub use self::{
     constant::{
         array::{
             ArrayBuildErr, ArrayBuildRes, ArrayBuilder, ArrayExpr, ArrayExprID, ConstArrayData,
-            DataArrayExpr, DataArrayExprID, IArrayExpr, IArrayExprID, SplatArrayExpr,
-            SplatArrayExprID,
+            DataArrayExpr, DataArrayExprID, IArrayExpr, IArrayExprID, KVArrayBuilder,
+            KVArrayElemIter, KVArrayExpr, KVArrayExprID, SplatArrayExpr, SplatArrayExprID,
         },
         data::ConstData,
         expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},

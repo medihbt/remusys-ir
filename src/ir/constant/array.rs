@@ -9,6 +9,7 @@ use crate::{
     typing::{ArrayTypeID, FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
+use std::{collections::BTreeMap, ops::RangeFrom};
 
 pub trait IArrayExpr: ISubExpr {
     fn get_array_type(&self) -> ArrayTypeID;
@@ -664,6 +665,9 @@ pub enum ArrayBuildErr {
 
     #[error("Building process NOT finished: {0} elems remaining")]
     Unfinished(usize),
+
+    #[error("KVArray index out of bounds: {1} >= {0}")]
+    IndexOutOfRange(usize, usize),
 }
 pub type ArrayBuildRes<T = ()> = Result<T, ArrayBuildErr>;
 
@@ -808,5 +812,268 @@ impl ArrayBuildStat {
         } else {
             ArrayBuildStat::ConstNonUniform(ConstKind::FreeStyle)
         }
+    }
+}
+
+/// 稀疏存储、按键值对初始化的数组表达式。规定未指定的元素均为默认值 (operands[0])，放在操作数列表的最开头；
+/// 后续为按键值对形式存储的非默认值元素。Key 以 `UseKind::KVArrayElem(i)` 形式存储在 `UseID` 中，
+/// 按照升序排列。若最后一个键等于元素个数减一且无间隙，则判定前缀致密（`is_front_dense = true`）。
+#[derive(Clone)]
+pub struct KVArrayExpr {
+    pub common: ExprCommon,
+    pub arrty: ArrayTypeID,
+    pub nelems: usize,
+    pub elemty: ValTypeID,
+    operands: SmallVec<[UseID; 4]>,
+    pub is_front_dense: bool,
+}
+impl_traceable_from_common!(KVArrayExpr, false);
+impl IUser for KVArrayExpr {
+    fn get_operands(&self) -> OperandSet<'_> {
+        OperandSet::Fixed(&self.operands)
+    }
+    fn operands_mut(&mut self) -> &mut [UseID] {
+        &mut self.operands
+    }
+}
+impl ISubExpr for KVArrayExpr {
+    fn get_common(&self) -> &ExprCommon {
+        &self.common
+    }
+    fn common_mut(&mut self) -> &mut ExprCommon {
+        &mut self.common
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        self.arrty.into_ir()
+    }
+    fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
+        match expr {
+            ExprObj::KVArray(kv) => Some(kv),
+            _ => None,
+        }
+    }
+    fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self> {
+        match expr {
+            ExprObj::KVArray(kv) => Some(kv),
+            _ => None,
+        }
+    }
+    fn try_from_ir(expr: ExprObj) -> Option<Self> {
+        match expr {
+            ExprObj::KVArray(kv) => Some(kv),
+            _ => None,
+        }
+    }
+    fn into_ir(self) -> ExprObj {
+        ExprObj::KVArray(self)
+    }
+    fn is_zero_const(&self, allocs: &IRAllocs) -> bool {
+        self.operands
+            .iter()
+            .all(|&use_id| use_id.get_operand(allocs).is_zero_const(allocs))
+    }
+}
+impl IArrayExpr for KVArrayExpr {
+    fn get_array_type(&self) -> ArrayTypeID {
+        self.arrty
+    }
+    fn get_elem_type(&self) -> ValTypeID {
+        self.elemty
+    }
+    fn get_nelems(&self) -> usize {
+        self.nelems
+    }
+    fn index_get(&self, allocs: &IRAllocs, index: usize) -> ValueSSA {
+        if index >= self.nelems {
+            return ValueSSA::None;
+        }
+        self.get_elem_use(allocs, index)
+            .unwrap_or(self.default_use())
+            .get_operand(allocs)
+    }
+    fn expand_to_array(&self, allocs: &IRAllocs) -> ArrayExpr {
+        let arr = ArrayExpr::new_full_uninit(allocs, self.arrty, self.elemty, self.nelems);
+        for i in 0..self.nelems {
+            let val = self.index_get(allocs, i);
+            let use_id = arr.elems[i];
+            use_id.set_operand(allocs, val);
+        }
+        arr
+    }
+}
+impl KVArrayExpr {
+    pub const OP_DEFAULT: usize = 0;
+    pub const OP_ELEMS: RangeFrom<usize> = 1..;
+    pub const OP_ELEMS_BEGIN: usize = 1;
+
+    pub fn builder(tctx: &TypeContext, arrty: ArrayTypeID) -> KVArrayBuilder {
+        KVArrayBuilder::new(tctx, arrty)
+    }
+
+    pub fn default_use(&self) -> UseID {
+        self.operands[Self::OP_DEFAULT]
+    }
+    pub fn get_default(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.default_use().get_operand(allocs)
+    }
+    pub fn set_default(&self, allocs: &IRAllocs, val: ValueSSA) {
+        self.default_use().set_operand(allocs, val);
+    }
+
+    pub fn elem_uses(&self) -> &[UseID] {
+        &self.operands[Self::OP_ELEMS]
+    }
+    pub fn get_elem_use(&self, allocs: &IRAllocs, index: usize) -> Option<UseID> {
+        if index >= self.nelems {
+            return None;
+        }
+        if self.is_front_dense {
+            self.elem_uses().get(index).copied()
+        } else {
+            let index = self
+                .elem_uses()
+                .binary_search_by_key(&index, |u| {
+                    let UseKind::KVArrayElem(uk) = u.get_kind(allocs) else {
+                        unreachable!("Internal error: invalid UseKind in KVArrayExpr");
+                    };
+                    uk
+                })
+                .ok();
+            index.map(|index| self.elem_uses()[index])
+        }
+    }
+
+    pub fn elem_iter<'kv>(&'kv self, allocs: &'kv IRAllocs) -> KVArrayElemIter<'kv> {
+        KVArrayElemIter { inner: self.elem_uses().iter(), allocs }
+    }
+}
+pub struct KVArrayElemIter<'kv> {
+    inner: std::slice::Iter<'kv, UseID>,
+    allocs: &'kv IRAllocs,
+}
+impl<'kv> Iterator for KVArrayElemIter<'kv> {
+    type Item = (usize, ValueSSA, UseID);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let uid = *self.inner.next()?;
+        let uobj = uid.deref_ir(self.allocs);
+        let UseKind::KVArrayElem(index) = uobj.get_kind() else {
+            unreachable!("Internal Error: Unexpected UseKind in KVArrayElem segment");
+        };
+        Some((index, uobj.operand.get(), uid))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KVArrayExprID(pub ExprRawPtr);
+
+impl ISubExprID for KVArrayExprID {
+    type ExprObjT = KVArrayExpr;
+    fn from_raw_ptr(id: ExprRawPtr) -> Self {
+        Self(id)
+    }
+    fn into_raw_ptr(self) -> ExprRawPtr {
+        self.0
+    }
+}
+impl IArrayExprID for KVArrayExprID {}
+impl KVArrayExprID {
+    pub fn builder(tctx: &TypeContext, arrty: ArrayTypeID) -> KVArrayBuilder {
+        KVArrayBuilder::new(tctx, arrty)
+    }
+
+    pub fn default_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).default_use()
+    }
+    pub fn get_default(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_default(allocs)
+    }
+    pub fn set_default(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_default(allocs, val);
+    }
+
+    pub fn elem_uses(self, allocs: &IRAllocs) -> &[UseID] {
+        self.deref_ir(allocs).elem_uses()
+    }
+    pub fn elem_iter(self, allocs: &IRAllocs) -> KVArrayElemIter<'_> {
+        self.deref_ir(allocs).elem_iter(allocs)
+    }
+}
+
+pub struct KVArrayBuilder {
+    pub arrty: ArrayTypeID,
+    pub elemty: ValTypeID,
+    pub nelems: usize,
+    pub default_val: ValueSSA,
+    pub elems: BTreeMap<usize, ValueSSA>,
+}
+
+impl KVArrayBuilder {
+    pub fn new(tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        let elemty = arrty.get_element_type(tctx);
+        Self {
+            arrty,
+            elemty,
+            nelems: arrty.get_num_elements(tctx),
+            default_val: ValueSSA::ConstData(ConstData::Undef(elemty)),
+            elems: BTreeMap::new(),
+        }
+    }
+    pub fn default_val(&mut self, val: ValueSSA) -> &mut Self {
+        self.default_val = val;
+        self
+    }
+
+    pub fn add_elem(&mut self, index: usize, elem: ValueSSA) -> ArrayBuildRes<&mut Self> {
+        if index >= self.nelems {
+            return Err(ArrayBuildErr::IndexOutOfRange(self.nelems, index));
+        }
+        self.elems.insert(index, elem);
+        Ok(self)
+    }
+    pub fn with_kv_elems(
+        &mut self,
+        elems: impl IntoIterator<Item = (usize, ValueSSA)>,
+    ) -> &mut Self {
+        for (cnt, (index, elem)) in elems.into_iter().enumerate() {
+            match self.add_elem(index, elem) {
+                Ok(_) => {}
+                Err(e) => panic!("Cannot add elem at count {cnt} index {index}: {e}"),
+            }
+        }
+        self
+    }
+    pub fn with_arr_elems(&mut self, elems: &[ValueSSA]) -> &mut Self {
+        self.with_kv_elems(elems.iter().copied().enumerate())
+    }
+
+    pub fn build_item(&mut self, allocs: &IRAllocs) -> KVArrayExpr {
+        let mut operands: SmallVec<[UseID; 4]> = SmallVec::with_capacity(self.elems.len() + 1);
+        operands.push({
+            let elem = UseID::new(allocs, UseKind::KVArrayDefaultElem);
+            elem.set_operand(allocs, self.default_val);
+            elem
+        });
+        for (&index, &val) in &self.elems {
+            let elem = UseID::new(allocs, UseKind::KVArrayElem(index));
+            elem.set_operand(allocs, val);
+            operands.push(elem);
+        }
+        let is_front_dense = match self.elems.last_key_value() {
+            None => true,
+            Some((&idx, _)) => idx + 1 == self.elems.len(),
+        };
+        KVArrayExpr {
+            common: ExprCommon::new(allocs),
+            arrty: self.arrty,
+            nelems: self.nelems,
+            elemty: self.elemty,
+            operands,
+            is_front_dense,
+        }
+    }
+
+    pub fn build_id(&mut self, allocs: &IRAllocs) -> KVArrayExprID {
+        KVArrayExprID::allocate(allocs, self.build_item(allocs))
     }
 }
