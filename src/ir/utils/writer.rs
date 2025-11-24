@@ -1,12 +1,12 @@
 use crate::{
     base::INullableValue,
     ir::{
-        ArrayExpr, ArrayExprID, BlockID, BlockObj, ConstArrayData, ConstData, DataArrayExpr,
-        ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj, GlobalVar, IArrayExpr,
-        IPtrUniqueUser, IPtrValue, IRAllocs, IRNumberValueMap, ISubExpr, ISubExprID, ISubGlobal,
-        ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstID, InstObj,
-        JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID, PredList,
-        SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
+        ArrayExpr, ArrayExprID, AttrSet, Attribute, BlockID, BlockObj, ConstArrayData, ConstData,
+        DataArrayExpr, ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj,
+        GlobalVar, IArrayExpr, IPtrUniqueUser, IPtrValue, IRAllocs, IRNumberValueMap, ISubExpr,
+        ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue,
+        IUser, InstID, InstObj, JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID,
+        PredList, PtrArgTargetAttr, SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
@@ -489,11 +489,41 @@ impl<'ir> IRWriter<'ir> {
             self.writeln_entity_id(gid).unwrap();
             self.writeln_users(gobj.users()).unwrap();
             match gobj {
-                GlobalObj::Func(f) => self.format_func(FuncID::raw_from(gid), f),
+                GlobalObj::Func(f) => self.format_func(FuncID::raw_from(gid), f).unwrap(),
                 GlobalObj::Var(g) => self.format_global_var(g),
             }
             self.wrap_indent();
         }
+    }
+    pub fn format_attr(&self, attr: &Attribute) -> std::io::Result<()> {
+        match attr {
+            Attribute::NoUndef => self.write_str("noundef"),
+            Attribute::IntExt(iext) => self.write_str(iext.as_str()),
+            Attribute::PtrReadOnly => self.write_str("readonly"),
+            Attribute::PtrNoCapture => self.write_str("nocapture"),
+            Attribute::FuncNoReturn => self.write_str("noreturn"),
+            Attribute::FuncInline(inline) => self.write_str(inline.as_str()),
+            Attribute::FuncAlignStack(log2) => write!(self, "alignstack({})", 1 << log2),
+            Attribute::FuncPure => self.write_str("pure"),
+            Attribute::ArgPtrTarget(target) => {
+                let (name, ty) = match *target {
+                    PtrArgTargetAttr::ByRef(ty) => ("byref", ty),
+                    PtrArgTargetAttr::ByVal(ty) => ("byval", ty),
+                    PtrArgTargetAttr::DynArray(ty) => ("elementtype", ty),
+                };
+                write!(self, "{}(", name)?;
+                self.write_type(ty)?;
+                write!(self, ")")
+            }
+            Attribute::ArgPtrDerefBytes(nbytes) => write!(self, "dereferenceable({})", nbytes),
+        }
+    }
+    pub fn format_attr_set(&self, attrs: &AttrSet) -> std::io::Result<()> {
+        for attr in attrs.iter() {
+            self.write_str(" ")?;
+            self.format_attr(&attr)?;
+        }
+        Ok(())
     }
     pub fn format_global_var(&self, gvar: &GlobalVar) {
         let name = gvar.get_name();
@@ -518,42 +548,43 @@ impl<'ir> IRWriter<'ir> {
     ///     ; function body
     /// }
     /// ```
-    pub fn format_func(&self, func_id: FuncID, func: &FuncObj) {
+    pub fn format_func(&self, func_id: FuncID, func: &FuncObj) -> std::io::Result<()> {
         let _stat = self.stat.hold_curr_func(func_id);
         let name = func.get_name();
-        self.write_str(func.get_linkage_prefix(self.allocs))
-            .unwrap();
-        self.write_str(" ").unwrap();
-        self.write_type(func.ret_type).unwrap();
-        self.write_str(" @").unwrap();
-        self.write_str(name).unwrap();
-        self.write_str("(").unwrap();
+        self.write_str(func.get_linkage_prefix(self.allocs))?;
+        self.format_attr_set(&func.attrs())?;
+        self.write_str(" ")?;
+        self.write_type(func.ret_type)?;
+        self.write_str(" @")?;
+        self.write_str(name)?;
+        self.write_str("(")?;
         let is_extern = func.is_extern(self.allocs);
         for arg in &func.args {
             if arg.index > 0 {
-                self.write_str(", ").unwrap();
+                self.write_str(", ")?;
             }
-            self.write_type(arg.ty).unwrap();
+            self.write_type(arg.ty)?;
+            self.format_attr_set(&arg.attrs())?;
             if !is_extern {
-                write!(self, " %{}", arg.index).unwrap();
+                write!(self, " %{}", arg.index)?;
             }
         }
         if func.is_vararg {
             let prompt = if func.args.is_empty() { "..." } else { ", ..." };
-            self.write_str(prompt).unwrap();
+            self.write_str(prompt)?;
         }
-        self.write_str(")").unwrap();
+        self.write_str(")")?;
 
         if is_extern {
-            self.write_str(" ; extern").unwrap();
+            self.write_str(" ; extern")?;
             self.wrap_indent();
-            return;
+            return Ok(());
         }
         let Some(body) = &func.body else {
-            panic!("Function body must be present for defined function {name}");
+            panic!("Internal Error: Function body must be present for defined function {name}");
         };
 
-        self.write_str(" {").unwrap();
+        self.write_str(" {")?;
         self.set_numbers(func_id);
         self.format_block(body.entry, body.entry.deref_ir(self.allocs));
         self.wrap_indent();
@@ -564,7 +595,7 @@ impl<'ir> IRWriter<'ir> {
             self.format_block(block_id, block);
             self.wrap_indent();
         }
-        self.write_str("}").unwrap();
+        self.write_str("}")
     }
 
     pub fn focus_to_func(&self, func: FuncID) {

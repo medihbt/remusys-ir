@@ -1,9 +1,8 @@
 //! IR attributes and metadata.
 
+use crate::typing::ValTypeID;
 use smallvec::SmallVec;
 use std::fmt::Debug;
-
-use crate::typing::ValTypeID;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Attribute {
@@ -219,7 +218,7 @@ pub enum AttrError {
 }
 pub type AttrRes<T = ()> = Result<T, AttrError>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AttrSet {
     bits: AttrSetBits,
     /// 3 by default
@@ -248,7 +247,7 @@ bitflags::bitflags! {
     ///     ArgPtrDerefBytes(usize),
     /// }
     /// ```
-    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     struct AttrSetBits: u64 {
         const NONE          = 0x0000_0000;
 
@@ -288,7 +287,11 @@ impl Default for AttrSet {
     }
 }
 impl AttrSet {
-    const INTEXT_SHIFT: u32 = 32;
+    pub fn new(pos: AttributePos) -> Self {
+        let mut attr_set = Self::default();
+        attr_set.attr_pos = pos;
+        attr_set
+    }
 
     pub fn is_noundef(&self) -> bool {
         self.bits.contains(AttrSetBits::NO_UNDEF)
@@ -297,6 +300,7 @@ impl AttrSet {
         self.bits.set(AttrSetBits::NO_UNDEF, val);
     }
 
+    const INTEXT_SHIFT: u32 = 32;
     pub fn get_int_ext(&self) -> Option<IntExtAttr> {
         let bits = (self.bits & AttrSetBits::MASK_INT_EXT).bits() >> Self::INTEXT_SHIFT;
         IntExtAttr::from_bits(bits as u8)
@@ -442,25 +446,49 @@ impl AttrSet {
     }
 
     /// Set the positional context of this attribute set (e.g. function / func arg / call arg).
-    pub fn set_pos(&mut self, pos: AttributePos) { self.attr_pos = pos; }
+    pub fn set_pos(&mut self, pos: AttributePos) {
+        self.attr_pos = pos;
+    }
     /// Get current positional context.
-    pub fn pos(&self) -> AttributePos { self.attr_pos }
+    pub fn pos(&self) -> AttributePos {
+        self.attr_pos
+    }
 
     /// Iterate over all currently active (logically present) attributes in a stable order.
     /// Attributes whose value is the implicit default (e.g. InlineAttr::Normal, func_align==3) are omitted.
     pub fn iter(&self) -> impl Iterator<Item = Attribute> + '_ {
         let mut list = SmallVec::<[Attribute; 12]>::new();
-        if self.is_noundef() { list.push(Attribute::NoUndef); }
-        if let Some(ext) = self.get_int_ext() { list.push(Attribute::IntExt(ext)); }
-        if self.is_ptr_readonly() { list.push(Attribute::PtrReadOnly); }
-        if self.is_ptr_nocapture() { list.push(Attribute::PtrNoCapture); }
-        if self.is_func_noreturn() { list.push(Attribute::FuncNoReturn); }
+        if self.is_noundef() {
+            list.push(Attribute::NoUndef);
+        }
+        if let Some(ext) = self.get_int_ext() {
+            list.push(Attribute::IntExt(ext));
+        }
+        if self.is_ptr_readonly() {
+            list.push(Attribute::PtrReadOnly);
+        }
+        if self.is_ptr_nocapture() {
+            list.push(Attribute::PtrNoCapture);
+        }
+        if self.is_func_noreturn() {
+            list.push(Attribute::FuncNoReturn);
+        }
         let inline = self.get_func_inline();
-        if inline != InlineAttr::Normal { list.push(Attribute::FuncInline(inline)); }
-        if self.func_align != 3 { list.push(Attribute::FuncAlignStack(self.func_align)); }
-        if self.is_func_pure() { list.push(Attribute::FuncPure); }
-        if let Some(target) = self.get_ptr_arg_target() { list.push(Attribute::ArgPtrTarget(target)); }
-        if let Some(bytes) = self.get_ptr_arg_deref_bytes() { list.push(Attribute::ArgPtrDerefBytes(bytes)); }
+        if inline != InlineAttr::Normal {
+            list.push(Attribute::FuncInline(inline));
+        }
+        if self.func_align != 3 {
+            list.push(Attribute::FuncAlignStack(self.func_align));
+        }
+        if self.is_func_pure() {
+            list.push(Attribute::FuncPure);
+        }
+        if let Some(target) = self.get_ptr_arg_target() {
+            list.push(Attribute::ArgPtrTarget(target));
+        }
+        if let Some(bytes) = self.get_ptr_arg_deref_bytes() {
+            list.push(Attribute::ArgPtrDerefBytes(bytes));
+        }
         list.into_iter()
     }
 

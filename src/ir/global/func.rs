@@ -1,9 +1,9 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        BlockID, GlobalID, GlobalObj, IPtrUniqueUser, IPtrValue, IRAllocs, ISubGlobal,
-        ISubGlobalID, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet, TerminatorID,
-        UseID, UserList, ValueClass, ValueSSA,
+        AttrClass, AttrSet, Attribute, AttributePos, BlockID, GlobalID, GlobalObj, IPtrUniqueUser,
+        IPtrValue, IRAllocs, ISubGlobal, ISubGlobalID, ISubValueSSA, ITraceableValue, IUser,
+        Module, OperandSet, TerminatorID, UseID, UserList, ValueClass, ValueSSA,
         global::{GlobalCommon, Linkage},
         inst::{RetInstID, UnreachableInstID},
     },
@@ -12,7 +12,7 @@ use crate::{
 use mtb_entity_slab::{EntityList, IPoliciedID, PtrID};
 use smallvec::SmallVec;
 use std::{
-    cell::{Cell, Ref},
+    cell::{Cell, Ref, RefCell, RefMut},
     sync::Arc,
 };
 
@@ -59,6 +59,7 @@ pub struct FuncArg {
     pub ty: ValTypeID,
     pub index: u32,
     pub users: UserList,
+    pub attrs: RefCell<AttrSet>,
     pub(in crate::ir) func: Cell<Option<FuncID>>,
 }
 impl ITraceableValue for FuncArg {
@@ -75,6 +76,7 @@ impl FuncArg {
             ty,
             index,
             users: UserList::new(&allocs.uses),
+            attrs: RefCell::new(AttrSet::default()),
             func: Cell::new(None),
         }
     }
@@ -84,6 +86,24 @@ impl FuncArg {
             .get()
             .ok_or("FuncArg does not have a parent FuncID assigned")
     }
+
+    pub fn attrs(&self) -> Ref<'_, AttrSet> {
+        self.attrs.borrow()
+    }
+    pub fn attrs_mut(&self) -> RefMut<'_, AttrSet> {
+        self.attrs.borrow_mut()
+    }
+    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attrs.borrow_mut().set_attr(attr);
+        self
+    }
+    pub fn has_attr_class(&self, class: AttrClass) -> bool {
+        self.attrs.borrow().has_attr_class(class)
+    }
+    pub fn del_attr_class(&self, class: AttrClass) -> &Self {
+        self.attrs.borrow_mut().clean_attr(class);
+        self
+    }
 }
 
 pub struct FuncObj {
@@ -92,6 +112,7 @@ pub struct FuncObj {
     pub ret_type: ValTypeID,
     pub is_vararg: bool,
     pub body: Option<FuncBody>,
+    pub attrs: RefCell<AttrSet>,
 }
 
 pub struct FuncBody {
@@ -165,6 +186,24 @@ impl FuncObj {
     pub fn get_nargs(&self) -> usize {
         self.args.len()
     }
+
+    pub fn attrs(&self) -> Ref<'_, AttrSet> {
+        self.attrs.borrow()
+    }
+    pub fn attrs_mut(&self) -> RefMut<'_, AttrSet> {
+        self.attrs.borrow_mut()
+    }
+    pub fn set_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attrs.borrow_mut().set_attr(attr);
+        self
+    }
+    pub fn has_attr_class(&self, class: AttrClass) -> bool {
+        self.attrs.borrow().has_attr_class(class)
+    }
+    pub fn del_attr_class(&self, class: AttrClass) -> &Self {
+        self.attrs.borrow_mut().clean_attr(class);
+        self
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -197,6 +236,11 @@ impl FuncID {
     }
     pub fn get_entry(self, allocs: &IRAllocs) -> Option<BlockID> {
         self.get_body(allocs).map(|b| b.entry)
+    }
+
+    pub fn get_arg(self, allocs: &IRAllocs, index: usize) -> Option<&FuncArg> {
+        let func = self.deref_ir(allocs);
+        func.args.get(index)
     }
 }
 
@@ -268,9 +312,19 @@ pub struct FuncBuilder {
     is_vararg: bool,
     pub linkage: Linkage,
     pub terminate_mode: FuncTerminateMode,
+    pub attrs: AttrSet,
+    pub arg_attrs: Box<[AttrSet]>,
 }
 impl FuncBuilder {
     pub fn new(tctx: &TypeContext, name: impl Into<String>, functype: FuncTypeID) -> Self {
+        let arg_attrs = {
+            let nargs = functype.get_nargs(tctx);
+            let mut v = Vec::with_capacity(nargs);
+            for _ in 0..nargs {
+                v.push(AttrSet::new(AttributePos::FUNCARG));
+            }
+            v.into_boxed_slice()
+        };
         Self {
             name: name.into(),
             functype,
@@ -279,6 +333,8 @@ impl FuncBuilder {
             is_vararg: false,
             linkage: Linkage::External,
             terminate_mode: FuncTerminateMode::Unreachable,
+            attrs: AttrSet::new(AttributePos::FUNC),
+            arg_attrs,
         }
     }
 
@@ -317,6 +373,26 @@ impl FuncBuilder {
     pub fn is_defined(&self) -> bool {
         self.linkage != Linkage::External
     }
+    pub fn add_attr(&mut self, attr: Attribute) -> &mut Self {
+        self.attrs.set_attr(attr);
+        self
+    }
+    pub fn del_attr_class(&mut self, class: AttrClass) -> &mut Self {
+        self.attrs.clean_attr(class);
+        self
+    }
+    pub fn add_arg_attr(&mut self, index: usize, attr: Attribute) -> &mut Self {
+        if let Some(arg_attr) = self.arg_attrs.get_mut(index) {
+            arg_attr.set_attr(attr);
+        }
+        self
+    }
+    pub fn del_arg_attr_class(&mut self, index: usize, class: AttrClass) -> &mut Self {
+        if let Some(arg_attr) = self.arg_attrs.get_mut(index) {
+            arg_attr.clean_attr(class);
+        }
+        self
+    }
 
     pub fn build_obj(&self, allocs: &IRAllocs) -> FuncObj {
         let args = {
@@ -351,6 +427,7 @@ impl FuncBuilder {
             ret_type: self.ret_type,
             is_vararg: self.is_vararg,
             body,
+            attrs: RefCell::new(self.attrs.clone()),
         };
         f.set_back_linkage(self.linkage);
         f

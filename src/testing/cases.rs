@@ -89,6 +89,7 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
     let main_func = FuncID::builder(builder.tctx(), "main", ri32fty)
         .make_defined()
         .terminate_mode(FuncTerminateMode::ReturnDefault)
+        .add_attr(Attribute::NoUndef)
         .build_id(&builder.module)
         .unwrap();
 
