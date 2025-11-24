@@ -8,10 +8,10 @@
         - [ ] 怎么调用 Intrinsic 函数
         - [ ] 支持常见的 Intrinsic: `memcpy` `memset`
     - [ ] 支持向量
-        - [ ] 向量类型 (Fixed Vector)
+        - [x] 向量类型 (Fixed Vector)
         - [ ] 向量运算
-        - [ ] 向量元素的插入和提取
-        - [ ] 与向量有关的基本检查
+        - [x] 向量元素的插入和提取
+        - [x] 与向量有关的基本检查
 - [x] DFG
     - [x] 实现 use-def 关系
     - [x] 实现 Use-Def 反图, 并可以按需启用

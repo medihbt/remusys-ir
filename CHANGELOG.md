@@ -3,6 +3,17 @@
 本文件记录 `remusys-ir` 的可视语义变更。遵循 (MAJOR.MINOR.PATCH) 版本语义：
 在 0.x 阶段，MINOR 代表潜在破坏性重构；PATCH 为向后兼容修补与小改。
 
+## [0.2.1] - 2025-11-24
+### 摘要 (相对 0.2.0)
+在 0.2.0 基础上添加新 Value 类型，尝试添加一个实验性的属性系统; 同时适配下层依赖 `mtb-entity-slab` 的更新.
+
+### Added
+- 新操作数类型: `DataArrayExpr` `SplatArrayExpr` `KVArrayExpr` 等数组表达式, 用于不同场景下的数组数据表示.
+- 实验性属性系统: `ir::attributes::Attribute` 枚举及相关 API, 支持为 IR 元素附加元数据.
+
+### Changed
+- 适配 `mtb-entity-slab` 更新: 迁移至最新版本, 更换引用模型.
+
 ## [0.2.0] - 2025-11-07
 ### 重构摘要 (相对 0.1.0)
 主要完成“内存池替换 + API 打磨”：统一生命周期与引用管理；移除旧 MIR/优化/属性细分模块；将 use-def、JumpTarget 与 GC 迁移到基于 Entity 的实现并校准接口。
