@@ -33,6 +33,10 @@ use crate::{
 };
 
 pub use self::{
+    attributes::{
+        AttrClass, AttrError, AttrRes, AttrSet, Attribute, AttributePos, InlineAttr, IntExtAttr,
+        PtrArgTargetAttr,
+    },
     block::{BlockID, BlockObj},
     cmp_cond::CmpCond,
     constant::{

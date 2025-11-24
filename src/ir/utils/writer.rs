@@ -364,7 +364,7 @@ impl<'ir> IRWriter<'ir> {
         self.write_str("]")
     }
     fn format_kvarray(&self, kv: &KVArrayExpr) -> std::io::Result<()> {
-        self.write_str("[")?;
+        self.write_str("sparse [")?;
         for (index, val, _) in kv.elem_iter(self.allocs) {
             write!(self, "[{index}] = ")?;
             self.write_type(val.get_valtype(self.allocs))?;
