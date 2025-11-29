@@ -72,7 +72,7 @@ impl BinOPFlags {
             _ => "",
         }
     }
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_name_str(s: &str) -> Option<Self> {
         let mut flags = BinOPFlags::NONE;
         for part in s.split_whitespace() {
             match part {

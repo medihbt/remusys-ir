@@ -26,8 +26,8 @@ use thiserror::Error;
 /// ### 操作数布局
 ///
 /// - `operands[0]`: 基础指针 (Base Pointer)
-/// - `operands[1..]`: 索引操作数 (Index Operands). 索引操作数必须是整数类型的, 而且不论什么
-///    类型的索引都统一视为有符号整数索引.
+/// - `operands[1..]`: 索引操作数 (Index Operands). 索引操作数必须是整数类型的,
+///   而且不论什么类型的索引都统一视为有符号整数索引.
 pub struct GEPInst {
     pub common: InstCommon,
     operands: SmallVec<[UseID; 3]>,

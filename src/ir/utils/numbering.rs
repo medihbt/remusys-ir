@@ -34,10 +34,14 @@ pub struct IRNumberValueMap {
     pub blocks: Box<[(BlockID, usize)]>,
     pub func: FuncID,
 }
+struct FuncObjCounts {
+    blocks: Box<[(BlockID, usize)]>,
+    inst_num: usize,
+}
 
 impl IRNumberValueMap {
     pub fn new(allocs: &IRAllocs, func: FuncID, option: NumberOption) -> Option<Self> {
-        let (mut blocks, inst_num) = Self::collect_blocks(allocs, func)?;
+        let FuncObjCounts { mut blocks, inst_num } = Self::collect_blocks(allocs, func)?;
 
         let mut insts = Vec::with_capacity(inst_num);
         let mut number_counter = func.deref_ir(allocs).get_nargs();
@@ -64,7 +68,7 @@ impl IRNumberValueMap {
         Some(Self { insts, blocks, func })
     }
 
-    fn collect_blocks(allocs: &IRAllocs, func: FuncID) -> Option<(Box<[(BlockID, usize)]>, usize)> {
+    fn collect_blocks(allocs: &IRAllocs, func: FuncID) -> Option<FuncObjCounts> {
         let body = func.get_body(allocs)?;
         let nblocks = body.blocks.len();
         let mut blocks = Vec::with_capacity(nblocks);
@@ -73,10 +77,11 @@ impl IRNumberValueMap {
             blocks.push((bid, i));
             inst_num += bb.get_body().insts.len() - 1; // exclude PhiEnd splitter
         }
-        Some((blocks.into_boxed_slice(), inst_num))
+        // Some((blocks.into_boxed_slice(), inst_num))
+        Some(FuncObjCounts { blocks: blocks.into_boxed_slice(), inst_num })
     }
-    fn first<T: Copy, U>((p, _): &(T, U)) -> T {
-        *p
+    fn first<T: Copy, U>(x: &(T, U)) -> T {
+        x.0
     }
 
     pub fn inst_get_number(&self, inst: InstID) -> Option<usize> {

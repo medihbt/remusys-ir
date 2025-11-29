@@ -67,6 +67,12 @@ impl ITerminatorInst for UnreachableInst {
         true
     }
 }
+impl Default for UnreachableInst {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnreachableInst {
     pub fn new() -> Self {
         Self {

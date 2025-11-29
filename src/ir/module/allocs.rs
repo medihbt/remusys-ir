@@ -41,6 +41,12 @@ impl AsMut<IRAllocs> for IRAllocs {
     }
 }
 
+impl Default for IRAllocs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IRAllocs {
     pub fn new() -> Self {
         Self {
@@ -125,12 +131,7 @@ impl IRAllocs {
         const QUEUE_SOFT_TARGET_MAX: usize = 8 * 1024; // typical soft ceiling
 
         let mut target = num_total_allocated / 8; // scale with module size
-        if target < QUEUE_SOFT_TARGET_MIN {
-            target = QUEUE_SOFT_TARGET_MIN;
-        }
-        if target > QUEUE_SOFT_TARGET_MAX {
-            target = QUEUE_SOFT_TARGET_MAX;
-        }
+        target = target.clamp(QUEUE_SOFT_TARGET_MIN, QUEUE_SOFT_TARGET_MAX);
         let cap = queue.capacity();
         if cap > QUEUE_HARD_CAP || cap > (target.saturating_mul(2)) {
             let new_cap = target.min(QUEUE_HARD_CAP);
@@ -403,7 +404,7 @@ impl IPoolAllocated for GlobalObj {
             .unwrap();
     }
     fn allocate(allocs: &IRAllocs, mut obj: Self) -> GlobalID {
-        if let None = &obj.common_mut().users {
+        if obj.common_mut().users.is_none() {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.globals;

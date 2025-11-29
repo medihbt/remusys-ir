@@ -54,35 +54,34 @@ bitflags! {
 }
 
 impl CmpCond {
-    pub fn is_signed(&self) -> Option<bool> {
+    pub fn is_signed(self) -> Option<bool> {
         if self.contains(Self::FLOAT_SWITCH) {
             None
         } else {
             Some(self.contains(Self::SIGNED_ORDERED))
         }
     }
-    pub fn is_float(&self) -> bool {
+    pub fn is_float(self) -> bool {
         self.contains(Self::FLOAT_SWITCH)
     }
-    pub fn is_int(&self) -> bool {
+    pub fn is_int(self) -> bool {
         !self.contains(Self::FLOAT_SWITCH)
     }
 
-    pub fn is_signed_ordered(&self) -> bool {
+    pub fn is_signed_ordered(self) -> bool {
         self.contains(Self::SIGNED_ORDERED)
     }
-    pub fn switch_to_float(&self) -> Self {
-        *self | Self::FLOAT_SWITCH
+    pub fn switch_to_float(self) -> Self {
+        self | Self::FLOAT_SWITCH
     }
-    pub fn switch_to_int(&self) -> Self {
-        *self & !Self::FLOAT_SWITCH
+    pub fn switch_to_int(self) -> Self {
+        self & !Self::FLOAT_SWITCH
     }
 
     /// 获取不包含符号和浮点信息的基本比较条件.
-    pub fn get_basic_cond(&self) -> Self {
-        let mut ret = self.clone();
-        ret.remove(Self::SIGNED_ORDERED | Self::FLOAT_SWITCH);
-        ret
+    pub fn get_basic_cond(mut self) -> Self {
+        self.remove(Self::SIGNED_ORDERED | Self::FLOAT_SWITCH);
+        self
     }
 
     pub fn as_str(self) -> &'static str {

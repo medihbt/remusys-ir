@@ -29,9 +29,7 @@ impl PartialEq for ConstData {
             (Float(Ieee32, l1), Float(Ieee32, r1)) => {
                 (*l1 as f32).to_bits() == (*r1 as f32).to_bits()
             }
-            (Float(Ieee64, l1), Float(Ieee64, r1)) => {
-                (*l1 as f64).to_bits() == (*r1 as f64).to_bits()
-            }
+            (Float(Ieee64, l1), Float(Ieee64, r1)) => l1.to_bits() == r1.to_bits(),
             _ => false,
         }
     }
@@ -51,7 +49,7 @@ impl Hash for ConstData {
                 (*value as f32).to_bits().hash(state);
             }
             Float(Ieee64, value) => {
-                (*value as f64).to_bits().hash(state);
+                { *value }.to_bits().hash(state);
             }
         }
     }
@@ -89,7 +87,7 @@ impl ISubValueSSA for ConstData {
             ConstData::Zero(_) | ConstData::PtrNull(_) => true,
             ConstData::Int(apint) => apint.is_zero(),
             ConstData::Float(FPKind::Ieee32, f) => (f as f32).to_bits() == 0,
-            ConstData::Float(FPKind::Ieee64, f) => (f as f64).to_bits() == 0,
+            ConstData::Float(FPKind::Ieee64, f) => f.to_bits() == 0,
             _ => false,
         }
     }
@@ -138,7 +136,7 @@ impl ConstData {
             Zero(_) | PtrNull(_) => true,
             Int(x) => *x == 0,
             Float(Ieee32, f) => (*f as f32).to_bits() == 0,
-            Float(Ieee64, f) => (*f as f64).to_bits() == 0,
+            Float(Ieee64, f) => f.to_bits() == 0,
             _ => false,
         }
     }
@@ -177,8 +175,8 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(self.clone()),
-            (_, Self::Undef(_)) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(other.clone()),
+            (Self::Undef(_), _) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
+            (_, Self::Undef(_)) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*other),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 Ok(ConstData::Int(*lv + *rv))
             }
@@ -208,8 +206,8 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(other.clone()),
+            (Self::Undef(_), _) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Undef(_)) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*other),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 Ok(ConstData::Int(*lv * *rv))
             }
@@ -225,10 +223,10 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
             (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.sdiv(*rv)))
@@ -252,10 +250,10 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
             (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.udiv(*rv)))
@@ -279,10 +277,10 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
             (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.srem(*rv)))
@@ -306,10 +304,10 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
             (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.urem(*rv)))
@@ -333,15 +331,15 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(self.clone()),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.shl(*rv)))
                 } else {
-                    Ok(self.clone())
+                    Ok(*self)
                 }
             }
             _ => Err(ConstCalcErr::UnsupportedOp),
@@ -353,15 +351,15 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(self.clone()),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.lshr_with(*rv)))
                 } else {
-                    Ok(self.clone())
+                    Ok(*self)
                 }
             }
             _ => Err(ConstCalcErr::UnsupportedOp),
@@ -372,15 +370,15 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) => Ok(self.clone()),
-            (_, Self::Undef(_)) => Ok(other.clone()),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(self.clone()),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(self.clone()),
+            (Self::Undef(_), _) => Ok(*self),
+            (_, Self::Undef(_)) => Ok(*other),
+            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.ashr_with(*rv)))
                 } else {
-                    Ok(self.clone())
+                    Ok(*self)
                 }
             }
             _ => Err(ConstCalcErr::UnsupportedOp),

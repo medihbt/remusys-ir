@@ -50,7 +50,7 @@ impl SyncScope {
             SyncScope::Other(name) => name,
         }
     }
-    pub fn from_str(name: &'static str) -> Self {
+    pub fn from_static_str(name: &'static str) -> Self {
         match name {
             "singlethread" => SyncScope::SingleThread,
             "system" => SyncScope::System,

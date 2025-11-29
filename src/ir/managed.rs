@@ -16,7 +16,7 @@ impl<'ir, T: IPoolAllocated> IRManagedImpl<'ir, T> {
         Self { pool, id }
     }
 
-    pub fn as_ref(&self) -> &'ir T {
+    pub fn as_object(&self) -> &'ir T {
         let alloc = T::get_alloc(self.pool.as_ref());
         self.id.deref_alloc(alloc)
     }
@@ -37,8 +37,8 @@ macro_rules! define_managed {
             pub fn new(pool: &'ir $PoolT, id: $ModuleID) -> Self {
                 Self { inner: IRManagedImpl::new(pool, id) }
             }
-            pub fn as_ref(&self) -> &'ir $Typaname {
-                self.inner.as_ref()
+            pub fn as_object(&self) -> &'ir $Typaname {
+                self.inner.as_object()
             }
             pub fn release(self) -> $ModuleID {
                 self.inner.release()

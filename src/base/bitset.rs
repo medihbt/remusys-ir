@@ -12,7 +12,7 @@ impl<const N: usize> FixBitSet<N> {
         if len <= N * 64 {
             Self::Small([0; N], len)
         } else {
-            let size = (len + 63) / 64;
+            let size = len.div_ceil(64);
             let vec = vec![0; size];
             Self::Large(vec.into_boxed_slice(), len)
         }
@@ -92,8 +92,8 @@ impl<const N: usize> FixBitSet<N> {
         let full_words = self.len() / 64;
 
         // 计算完整 u64 字的位数
-        for i in 0..full_words {
-            count += slice[i].count_ones() as usize;
+        for word in slice.iter().take(full_words) {
+            count += word.count_ones() as usize;
         }
 
         // 处理最后一个不完整的字

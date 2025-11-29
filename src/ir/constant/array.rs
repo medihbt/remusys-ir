@@ -311,9 +311,9 @@ impl ConstArrayData {
                 ValueSSA::ConstData(ConstData::Float(FPKind::Ieee32, v[index] as f64))
             }
             ConstArrayData::F64(v) => {
-                ValueSSA::ConstData(ConstData::Float(FPKind::Ieee64, v[index] as f64))
+                ValueSSA::ConstData(ConstData::Float(FPKind::Ieee64, v[index]))
             }
-            ConstArrayData::APInt(v) => v[index].clone().into(),
+            ConstArrayData::APInt(v) => v[index].into(),
             ConstArrayData::FreeStyle(v) => v[index].into_ir(),
         }
     }
@@ -382,7 +382,7 @@ impl ConstArrayData {
             ConstArrayData::FreeStyle(v) if !v.is_empty() => v[0].get_valtype_noalloc(),
             _ => return None,
         };
-        return Some(id);
+        Some(id)
     }
 
     fn new_zeroed_internal(kind: ConstKind, len: usize) -> Self {
@@ -759,7 +759,7 @@ impl ArrayBuilder {
         self.mode = ArrayBuildStat::Empty;
         self.elems.clear();
         for val in vals {
-            self.push(allocs, val.clone())?;
+            self.push(allocs, *val)?;
         }
         Ok(())
     }
@@ -831,8 +831,8 @@ impl ArrayBuildStat {
     fn update(self, val: ValueSSA) -> Self {
         match self {
             ArrayBuildStat::Empty => match ConstKind::from_value(&val) {
-                Some(ck) => ArrayBuildStat::ConstUniform(ck, val.clone()),
-                None => ArrayBuildStat::NonConstUniform(val.clone()),
+                Some(ck) => ArrayBuildStat::ConstUniform(ck, val),
+                None => ArrayBuildStat::NonConstUniform(val),
             },
             // 已经是常量且目前全同，遇到不同的值时根据常量种类收敛
             ArrayBuildStat::ConstUniform(ck, initial) if val != initial => {

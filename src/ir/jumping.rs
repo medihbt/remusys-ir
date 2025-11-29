@@ -149,7 +149,7 @@ impl JumpTargetID {
     }
     pub fn clean_block(self, allocs: &IRAllocs) {
         let obj = self.deref_ir(allocs);
-        if let None = obj.block.get() {
+        if obj.block.get().is_none() {
             return;
         }
         obj.block.set(None);

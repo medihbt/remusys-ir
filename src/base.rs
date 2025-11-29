@@ -28,11 +28,11 @@ pub trait INullableValue: Copy + Eq {
         opt.unwrap_or_else(Self::new_null)
     }
     fn to_option(&self) -> Option<Self> {
-        if self.is_null() { None } else { Some(self.clone()) }
+        if self.is_null() { None } else { Some(*self) }
     }
 
     fn unwrap(&self) -> Self {
-        if self.is_null() { panic!("Tried to unwrap a null value") } else { self.clone() }
+        if self.is_null() { panic!("Tried to unwrap a null value") } else { *self }
     }
 }
 

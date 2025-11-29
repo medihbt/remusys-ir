@@ -32,6 +32,12 @@ pub struct TypeAllocs {
     pub funcs: Slab<FuncTypeObj>,
 }
 
+impl Default for TypeAllocs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeAllocs {
     pub fn new() -> Self {
         Self {

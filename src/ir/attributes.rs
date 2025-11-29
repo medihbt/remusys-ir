@@ -2,7 +2,7 @@
 
 use crate::typing::ValTypeID;
 use smallvec::SmallVec;
-use std::fmt::Debug;
+use std::{fmt::Debug, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Attribute {
@@ -117,16 +117,20 @@ pub enum InlineAttr {
     Hint,
     Always,
 }
-impl InlineAttr {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for InlineAttr {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "never" => Some(InlineAttr::Never),
-            "normal" => Some(InlineAttr::Normal),
-            "inline" => Some(InlineAttr::Hint),
-            "always" => Some(InlineAttr::Always),
-            _ => None,
+            "never" => Ok(InlineAttr::Never),
+            "normal" => Ok(InlineAttr::Normal),
+            "inline" => Ok(InlineAttr::Hint),
+            "always" => Ok(InlineAttr::Always),
+            _ => Err(()),
         }
     }
+}
+impl InlineAttr {
     pub fn as_str(&self) -> &'static str {
         match self {
             InlineAttr::Never => "never",
@@ -169,16 +173,19 @@ pub enum IntExtAttr {
     ZeroExt,
     SignExt,
 }
+impl FromStr for IntExtAttr {
+    type Err = ();
 
-impl IntExtAttr {
-    pub fn from_str(s: &str) -> Option<Self> {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "zeroext" => Some(IntExtAttr::ZeroExt),
-            "signext" => Some(IntExtAttr::SignExt),
-            "noext" => Some(IntExtAttr::NoExt),
-            _ => None,
+            "zeroext" => Ok(IntExtAttr::ZeroExt),
+            "signext" => Ok(IntExtAttr::SignExt),
+            "noext" => Ok(IntExtAttr::NoExt),
+            _ => Err(()),
         }
     }
+}
+impl IntExtAttr {
     pub fn as_str(&self) -> &'static str {
         match self {
             IntExtAttr::ZeroExt => "zeroext",
@@ -288,9 +295,7 @@ impl Default for AttrSet {
 }
 impl AttrSet {
     pub fn new(pos: AttributePos) -> Self {
-        let mut attr_set = Self::default();
-        attr_set.attr_pos = pos;
-        attr_set
+        Self { attr_pos: pos, ..Self::default() }
     }
 
     pub fn is_noundef(&self) -> bool {

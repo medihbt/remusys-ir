@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr};
 
 #[rustfmt::skip]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,11 +45,12 @@ impl Opcode {
     }
     pub fn is_binary_op(self) -> bool {
         use Opcode::*;
-        match self {
-            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv | Srem | Urem | Fadd | Fsub
-            | Fmul | Fdiv | Frem => true,
-            _ => false,
-        }
+        #[rustfmt::skip]
+        return matches!(
+            self,
+            BitAnd | BitOr | BitXor | Add | Sub | Mul | Sdiv | Udiv
+            | Srem | Urem | Fadd | Fsub | Fmul | Fdiv | Frem
+        );
     }
     pub fn is_divrem_op(self) -> bool {
         matches!(
@@ -90,7 +91,7 @@ impl Opcode {
     fn init_name_map() -> HashMap<&'static str, Opcode> {
         let mut m = HashMap::new();
         for (i, &name) in OPCODE_NAMES.iter().enumerate() {
-            m.insert(name, unsafe { std::mem::transmute(i as u8) });
+            m.insert(name, unsafe { std::mem::transmute::<u8, Opcode>(i as u8) });
         }
         m
     }
@@ -155,9 +156,9 @@ impl Opcode {
         }
     }
 }
-impl ToString for Opcode {
-    fn to_string(&self) -> String {
-        self.get_name().to_string()
+impl Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_name())
     }
 }
 impl FromStr for Opcode {
@@ -169,7 +170,7 @@ impl FromStr for Opcode {
 impl From<u8> for Opcode {
     fn from(value: u8) -> Self {
         if (Self::None as usize..Self::ReservedCnt as usize).contains(&(value as usize)) {
-            unsafe { std::mem::transmute(value) }
+            unsafe { std::mem::transmute::<u8, Opcode>(value) }
         } else {
             Self::None
         }

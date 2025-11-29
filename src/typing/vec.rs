@@ -31,7 +31,7 @@ impl IValType for FixVecType {
 
     fn try_get_size_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
         let scalar_size = self.0.try_get_size_full(alloc, tctx)?;
-        Some(scalar_size.checked_mul(1 << self.1)?)
+        scalar_size.checked_mul(1 << self.1)
     }
 
     fn try_get_align_full(self, alloc: &TypeAllocs, tctx: &TypeContext) -> Option<usize> {
@@ -56,7 +56,7 @@ impl FixVecType {
             return None;
         }
         let elem_size = self.get_elem().get_size(tctx);
-        Some(elem_size.checked_mul(index)?)
+        elem_size.checked_mul(index)
     }
     pub fn get_offset(self, index: usize, tctx: &TypeContext) -> usize {
         self.try_get_offset(index, tctx)

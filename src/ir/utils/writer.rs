@@ -36,6 +36,12 @@ impl IRWriteOption {
     }
 }
 
+impl Default for IRWriterStat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IRWriterStat {
     pub fn new() -> Self {
         Self { curr_func: Cell::new(None) }
@@ -261,9 +267,7 @@ impl<'ir> IRWriter<'ir> {
         let mut ret = String::with_capacity(bytes_iter.size_hint().0 + 4);
         ret.push_str("c\"");
         for ch in bytes_iter {
-            let Some(ch) = ch else {
-                return None;
-            };
+            let ch = ch?;
             match ch {
                 b'"' => ret.push_str("\\22"),
                 b'\\' => ret.push_str("\\5c"),
@@ -345,7 +349,7 @@ impl<'ir> IRWriter<'ir> {
                 return Ok(());
             }
             let byte = apint.as_unsigned() as u8;
-            let bytes = std::iter::repeat(Some(byte)).take(nelems);
+            let bytes = std::iter::repeat_n(Some(byte), nelems);
             let s = self.bytes_as_string(bytes).unwrap();
             return self.write_and_insert_cached_str(id, s);
         }

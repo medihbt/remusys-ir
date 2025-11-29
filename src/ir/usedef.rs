@@ -155,15 +155,6 @@ impl From<GlobalID> for UserID {
         UserID::Global(id)
     }
 }
-impl Into<ValueSSA> for UserID {
-    fn into(self) -> ValueSSA {
-        match self {
-            UserID::Expr(id) => ValueSSA::ConstExpr(id),
-            UserID::Inst(id) => ValueSSA::Inst(id),
-            UserID::Global(id) => ValueSSA::Global(id),
-        }
-    }
-}
 impl ISubValueSSA for UserID {
     fn get_class(self) -> ValueClass {
         match self {
@@ -310,15 +301,15 @@ impl UseKind {
         )
     }
     pub fn is_inst_operand(&self) -> bool {
-        match self {
+        !matches!(
+            self,
             UseKind::Sentinel
-            | UseKind::GlobalInit
-            | UseKind::ArrayElem(_)
-            | UseKind::SplatArrayElem
-            | UseKind::StructField(_)
-            | UseKind::VecElem(_) => false,
-            _ => true,
-        }
+                | UseKind::GlobalInit
+                | UseKind::ArrayElem(_)
+                | UseKind::SplatArrayElem
+                | UseKind::StructField(_)
+                | UseKind::VecElem(_)
+        )
     }
     pub fn get_user_kind(&self) -> ValueClass {
         match self {
@@ -453,16 +444,7 @@ impl UseID {
     }
 }
 
-pub struct UseIter<'ir>(EntityRingListIter<'ir, UseID>);
-
-impl<'ir> Iterator for UseIter<'ir> {
-    type Item = (UseID, &'ir Use);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(id, obj)| (id, obj))
-    }
-}
-
+pub type UseIter<'ir> = EntityRingListIter<'ir, UseID>;
 pub type UserList = EntityRingList<UseID>;
 
 pub trait ITraceableValue {
@@ -478,7 +460,7 @@ pub trait ITraceableValue {
 
     /// 获取该 Value 的所有使用者迭代器.
     fn user_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> UseIter<'ir> {
-        UseIter(self.users().iter(&allocs.uses))
+        self.users().iter(&allocs.uses)
     }
 
     /// 这个 Value 是否具有引用唯一性.

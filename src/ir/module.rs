@@ -82,7 +82,7 @@ impl SymbolPool {
 
     fn gc_mark(&self, marker: &mut IRMarker<'_>) {
         if cfg!(debug_assertions) {
-            for (_, id) in &self.exported {
+            for id in self.exported.values() {
                 debug_assert!(
                     self.symbol_pinned(*id, marker.ir_allocs),
                     "Symbol table contains unpinned symbol during GC marking"

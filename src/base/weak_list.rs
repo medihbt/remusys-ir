@@ -56,15 +56,23 @@ pub trait IWeakListNode: Sized {
     /// 将节点插入到指定位置 (在 prev 和 next 之间)
     fn attach(self: &Rc<Self>, prev: Weak<Self>, next: Weak<Self>) {
         self.set_prev_next(prev.clone(), next.clone());
-        prev.upgrade().map(|p| p.set_next(Rc::downgrade(self)));
-        next.upgrade().map(|n| n.set_prev(Rc::downgrade(self)));
+        if let Some(p) = prev.upgrade() {
+            p.set_next(Rc::downgrade(self))
+        }
+        if let Some(n) = next.upgrade() {
+            n.set_prev(Rc::downgrade(self))
+        }
     }
 
     /// 将节点从链表中移除
     fn detach(&self) {
         let (prev, next) = self.load_head();
-        prev.upgrade().map(|p| p.set_next(next.clone()));
-        next.upgrade().map(|n| n.set_prev(prev.clone()));
+        if let Some(p) = prev.upgrade() {
+            p.set_next(next.clone())
+        }
+        if let Some(n) = next.upgrade() {
+            n.set_prev(prev.clone())
+        }
         self.set_prev_next(Weak::new(), Weak::new());
     }
 
@@ -79,7 +87,7 @@ pub struct WeakList<T: IWeakListNode> {
 
 impl<T: IWeakListNode + Debug> Debug for WeakList<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(self.into_iter()).finish()
+        f.debug_list().entries(self).finish()
     }
 }
 
@@ -226,13 +234,17 @@ impl<T: IWeakListNode> WeakList<T> {
         other.sentinel.set_prev(self_back.clone());
 
         // 把自己的链表头接到 other 表尾的后面 -- `other_back.next`.
-        other_back.upgrade().map(|p| p.set_next(self_front.clone()));
+        if let Some(p) = other_back.upgrade() {
+            p.set_next(self_front.clone())
+        }
 
         // 修正被转移链表的边界连接
-        self_back
-            .upgrade()
-            .map(|p| p.set_next(Rc::downgrade(&other.sentinel)));
-        self_front.upgrade().map(|p| p.set_prev(other_back.clone()));
+        if let Some(p) = self_back.upgrade() {
+            p.set_next(Rc::downgrade(&other.sentinel))
+        }
+        if let Some(p) = self_front.upgrade() {
+            p.set_prev(other_back.clone())
+        }
 
         // 旧链表结点的前后指针不需要修正——头尾结点已经接到 new_list 上了, 中间结点的 prev/next 仍然有效.
 

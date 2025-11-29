@@ -130,7 +130,7 @@ impl GlobalVarID {
         self.deref_ir(allocs).is_readonly()
     }
     pub fn set_readonly(self, allocs: &IRAllocs, ro: bool) {
-        self.deref_ir(&allocs).set_readonly(ro);
+        self.deref_ir(allocs).set_readonly(ro);
     }
 
     pub fn enable_init(self, allocs: &IRAllocs, initval: ValueSSA) {

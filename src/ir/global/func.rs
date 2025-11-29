@@ -180,7 +180,7 @@ impl ISubGlobal for FuncObj {
 }
 impl FuncObj {
     pub fn builder(tctx: &TypeContext, name: impl Into<String>, functy: FuncTypeID) -> FuncBuilder {
-        FuncBuilder::new(&tctx, name, functy)
+        FuncBuilder::new(tctx, name, functy)
     }
 
     pub fn get_nargs(&self) -> usize {
@@ -225,7 +225,7 @@ impl ISubGlobalID for FuncID {
 }
 impl FuncID {
     pub fn builder(tctx: &TypeContext, name: impl Into<String>, functy: FuncTypeID) -> FuncBuilder {
-        FuncBuilder::new(&tctx, name, functy)
+        FuncBuilder::new(tctx, name, functy)
     }
 
     pub fn get_body(self, allocs: &IRAllocs) -> Option<&FuncBody> {

@@ -429,7 +429,7 @@ impl<'ir> SanityCheckCtx<'ir> {
                 return Err(IRSanityErr::BlockPhiSegmentErr(bid, inst_id));
             }
             if let Some(termi) = TerminatorID::try_from_ir(allocs, inst_id) {
-                if let Some(_) = terminator {
+                if terminator.is_some() {
                     return Err(IRSanityErr::BlockHasMultipleTerminators(bid));
                 }
                 terminator = Some(termi);

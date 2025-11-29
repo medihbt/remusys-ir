@@ -187,11 +187,11 @@ impl<'ir> IRMarker<'ir> {
                 Expr(e) => self.consume_expr(e),
                 Global(g) => self.consume_global(g),
                 Use(u) => {
-                    let val = u.get_operand(&self.ir_allocs);
+                    let val = u.get_operand(self.ir_allocs);
                     self.push_mark_value(val);
                 }
                 JumpTarget(jt) => {
-                    let Some(bb) = jt.get_block(&self.ir_allocs) else {
+                    let Some(bb) = jt.get_block(self.ir_allocs) else {
                         continue;
                     };
                     self.push_mark(bb);

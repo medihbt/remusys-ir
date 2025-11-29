@@ -123,9 +123,10 @@ pub enum ValTypeClass {
     Compound,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ValTypeID {
     /// Uninhabited type
+    #[default]
     Void,
 
     /// Opaque pointer type (without pointee type)
@@ -151,12 +152,6 @@ pub enum ValTypeID {
 
     /// Function type
     Func(FuncTypeID),
-}
-
-impl Default for ValTypeID {
-    fn default() -> Self {
-        ValTypeID::Void
-    }
 }
 
 impl IValType for ValTypeID {

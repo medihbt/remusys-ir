@@ -100,6 +100,9 @@ impl APInt {
     pub fn zext_to(&self, bits: u8) -> Self {
         Self::new(self.value_raw(), bits)
     }
+    fn zext_as<T>(&self) -> Self {
+        self.zext_to(core::mem::size_of::<T>() as u8 * 8)
+    }
 
     pub fn sext_to(&self, bits: u8) -> Self {
         if bits <= self.bits {
@@ -107,6 +110,9 @@ impl APInt {
         }
         let signed_value = self.as_signed();
         Self::new(signed_value as u128, bits)
+    }
+    fn sext_as<T>(&self) -> Self {
+        self.sext_to(core::mem::size_of::<T>() as u8 * 8)
     }
 
     pub fn zext_with(&self, rhs: APInt) -> Self {
@@ -447,7 +453,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn add(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     APInt::new(
                         (self as u128).wrapping_add(rhs.as_unsigned()),
                         rhs.bits
@@ -475,7 +481,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn sub(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     APInt::new(
                         (self as u128).wrapping_sub(rhs.as_unsigned()),
                         rhs.bits
@@ -503,7 +509,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn mul(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     APInt::new(
                         self as u128 * rhs.as_unsigned(),
                         rhs.bits
@@ -531,7 +537,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn div(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     if rhs.is_zero() {
                         panic!("Division by zero in APInt");
                     }
@@ -561,7 +567,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn rem(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     if rhs.is_zero() {
                         panic!("Division by zero in APInt");
                     }
@@ -592,7 +598,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn bitand(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitand(rhs)
                 }
@@ -616,7 +622,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn bitor(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitor(rhs)
                 }
@@ -640,7 +646,7 @@ macro_rules! impl_add_from_uints {
                 type Output = APInt;
 
                 fn bitxor(self, other: APInt) -> APInt {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitxor(rhs)
                 }
@@ -664,7 +670,7 @@ macro_rules! impl_add_from_uints {
                 type Output = $t;
 
                 fn shl(self, other: APInt) -> $t {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     let shift = rhs.as_unsigned() as u64;
                     if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
                         return 0;
@@ -699,7 +705,7 @@ macro_rules! impl_add_from_uints {
                 type Output = $t;
 
                 fn shr(self, other: APInt) -> $t {
-                    let rhs = other.zext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.zext_as::<$t>();
                     let shift = rhs.as_unsigned() as u64;
                     if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
                         return 0;
@@ -731,7 +737,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn add(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs + rhs
                 }
@@ -757,7 +763,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn sub(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs - rhs
                 }
@@ -783,7 +789,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn mul(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs * rhs
                 }
@@ -812,7 +818,7 @@ macro_rules! impl_add_from_sints {
                     if other.is_zero() {
                         panic!("Division by zero in APInt");
                     }
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.sdiv(rhs)
                 }
@@ -837,7 +843,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn bitand(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitand(rhs)
                 }
@@ -861,7 +867,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn bitor(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitor(rhs)
                 }
@@ -885,7 +891,7 @@ macro_rules! impl_add_from_sints {
                 type Output = APInt;
 
                 fn bitxor(self, other: APInt) -> APInt {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let lhs = APInt::from(self);
                     lhs.bitxor(rhs)
                 }
@@ -909,7 +915,7 @@ macro_rules! impl_add_from_sints {
                 type Output = $t;
 
                 fn shl(self, other: APInt) -> $t {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let shift = rhs.as_unsigned() as u64;
                     if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
                         return 0;
@@ -944,7 +950,7 @@ macro_rules! impl_add_from_sints {
                 type Output = $t;
 
                 fn shr(self, other: APInt) -> $t {
-                    let rhs = other.sext_to(core::mem::size_of::<$t>() as u8 * 8);
+                    let rhs = other.sext_as::<$t>();
                     let shift = rhs.as_unsigned() as u64;
                     if shift >= (core::mem::size_of::<$t>() as u64 * 8) {
                         return 0;

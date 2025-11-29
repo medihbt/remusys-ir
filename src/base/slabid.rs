@@ -7,26 +7,17 @@ pub trait ISlabID: Copy + Eq {
     fn from_handle(handle: u32) -> Self;
     fn into_handle(self) -> u32;
 
-    fn try_deref<'slab>(
-        self,
-        slab: &'slab Slab<Self::RefObject>,
-    ) -> Option<&'slab Self::RefObject> {
+    fn try_deref(self, slab: &Slab<Self::RefObject>) -> Option<&Self::RefObject> {
         slab.get(self.into_handle() as usize)
     }
-    fn try_deref_mut<'slab>(
-        self,
-        slab: &'slab mut Slab<Self::RefObject>,
-    ) -> Option<&'slab mut Self::RefObject> {
+    fn try_deref_mut(self, slab: &mut Slab<Self::RefObject>) -> Option<&mut Self::RefObject> {
         slab.get_mut(self.into_handle() as usize)
     }
 
-    fn deref<'slab>(self, slab: &'slab Slab<Self::RefObject>) -> &'slab Self::RefObject {
+    fn deref(self, slab: &Slab<Self::RefObject>) -> &Self::RefObject {
         self.try_deref(slab).expect("Tried to deref invalid SlabID")
     }
-    fn deref_mut<'slab>(
-        self,
-        slab: &'slab mut Slab<Self::RefObject>,
-    ) -> &'slab mut Self::RefObject {
+    fn deref_mut(self, slab: &mut Slab<Self::RefObject>) -> &mut Self::RefObject {
         self.try_deref_mut(slab)
             .expect("Tried to deref invalid SlabID")
     }
@@ -42,6 +33,6 @@ impl<T: ISlabID> INullableValue for T {
     }
 
     fn is_null(&self) -> bool {
-        self.clone().into_handle() == u32::MAX
+        self.into_handle() == u32::MAX
     }
 }

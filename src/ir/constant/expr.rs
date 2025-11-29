@@ -236,6 +236,10 @@ impl ISubValueSSA for ExprID {
         true
     }
     fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
-        Some(&self.deref_ir(allocs).get_common().users.as_ref().unwrap())
+        let common = self.deref_ir(allocs).get_common();
+        let Some(users) = &common.users else {
+            panic!("Internal error: alocated ExprObj should have a valid UserList");
+        };
+        Some(users)
     }
 }

@@ -229,7 +229,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
 
     /// Switch the focus to the terminator of the current block.
     pub fn switch_focus_to_terminator(&mut self) -> IRBuildRes {
-        let Some(mut focus) = self.full_focus.clone() else {
+        let Some(mut focus) = self.full_focus else {
             return Err(IRBuildError::NullFocus);
         };
         let block = focus.block.ok_or(IRBuildError::NullFocus)?;
@@ -287,7 +287,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     /// - **Success branch**: A pair of terminators, `.0` is the old one, `.1` is the new one.
     /// - **Error branch**: An error.
     pub fn focus_set_terminator(&mut self, termi: impl ISubInstID) -> IRBuildRes<ManagedInst<'_>> {
-        let Some(mut focus) = self.full_focus.clone() else {
+        let Some(mut focus) = self.full_focus else {
             return Err(IRBuildError::NullFocus);
         };
         let block = focus.block.ok_or(IRBuildError::NullFocus)?;
@@ -498,7 +498,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         Ok(back_half)
     }
     fn split_block_at_inst(&mut self, front_last: InstID) -> IRBuildRes<BlockID> {
-        let Some(old_focus) = self.full_focus.clone() else {
+        let Some(old_focus) = self.full_focus else {
             return Err(IRBuildError::NullFocus);
         };
         let front_half = old_focus.block.ok_or(IRBuildError::NullFocus)?;

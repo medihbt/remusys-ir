@@ -575,10 +575,7 @@ impl ISubInst for InstObj {
 
     fn is_terminator(&self) -> bool {
         use InstObj::*;
-        match self {
-            Unreachable(_) | Ret(_) | Jump(_) | Br(_) | Switch(_) => true,
-            _ => false,
-        }
+        matches!(self, Unreachable(_) | Ret(_) | Jump(_) | Br(_) | Switch(_))
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
         use InstObj::*;

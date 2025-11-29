@@ -151,6 +151,15 @@ impl From<APInt> for ValueSSA {
         ValueSSA::ConstData(ConstData::Int(value))
     }
 }
+impl From<UserID> for ValueSSA {
+    fn from(val: UserID) -> Self {
+        match val {
+            UserID::Expr(id) => ValueSSA::ConstExpr(id),
+            UserID::Inst(id) => ValueSSA::Inst(id),
+            UserID::Global(id) => ValueSSA::Global(id),
+        }
+    }
+}
 impl INullableValue for ValueSSA {
     fn new_null() -> Self {
         Self::None

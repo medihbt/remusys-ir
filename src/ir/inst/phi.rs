@@ -175,7 +175,7 @@ impl PhiInst {
                 val.get_valtype(allocs),
                 "Type mismatch in PhiInst incoming value"
             );
-            phi.push_incoming(&allocs, block, val);
+            phi.push_incoming(allocs, block, val);
         }
         phi
     }
@@ -312,13 +312,19 @@ pub enum PhiInstErr {
 pub type PhiInstRes<T = ()> = Result<T, PhiInstErr>;
 
 pub struct PhiInstDedup<'ir> {
-    multimap: HashMap<BlockID, SmallVec<[(u32, Option<ValueSSA>); 4]>>,
+    multimap: HashMap<BlockID, DedupUnits>,
     phi_inst: &'ir PhiInst,
     _lock: Ref<'ir, SmallVec<[UseSlotPair; 2]>>,
     allocs: &'ir IRAllocs,
     nodup: bool,
     initial_nodup: bool,
 }
+
+struct DedupUnit {
+    index: u32,
+    value: Option<ValueSSA>,
+}
+type DedupUnits = SmallVec<[DedupUnit; 4]>;
 
 impl<'ir> PhiInstDedup<'ir> {
     pub fn new(phi_inst: &'ir PhiInst, allocs: &'ir IRAllocs) -> Self {
@@ -335,7 +341,7 @@ impl<'ir> PhiInstDedup<'ir> {
             if !entry.is_empty() {
                 nodup = false;
             }
-            entry.push((index as u32, Some(value)));
+            entry.push(DedupUnit { index: index as u32, value: Some(value) });
         }
         Self {
             multimap,
@@ -364,22 +370,26 @@ impl<'ir> PhiInstDedup<'ir> {
             return true;
         }
         let mut consistent = true;
-        for (_block, slot_vals) in self.multimap.iter_mut() {
-            if slot_vals.len() <= 1 {
-                continue;
-            }
-            let first_val = slot_vals[0].1;
-            for &(_, val) in slot_vals.iter().skip(1) {
-                if val != first_val {
+        for (_, slot_vals) in self.multimap.iter_mut() {
+            let first_val_pos = slot_vals.iter().position(|du| du.value.is_some());
+            let Some(first_val_pos) = first_val_pos else {
+                continue; // 全部都是 None，无需处理
+            };
+            let first_val = slot_vals[first_val_pos].value.unwrap();
+            for &DedupUnit { value, .. } in slot_vals.iter().skip(first_val_pos + 1) {
+                if let Some(val) = value
+                    && val != first_val
+                {
                     consistent = false;
                     break;
                 }
             }
-            if consistent {
+            if !consistent {
+                break;
+            }
+            for slot_val in slot_vals.iter_mut().skip(first_val_pos + 1) {
                 // 全部相同，保留第一个，其他标记为 None
-                for slot_val in slot_vals.iter_mut().skip(1) {
-                    slot_val.1 = None;
-                }
+                slot_val.value = None;
             }
         }
         self.nodup = consistent;
@@ -387,13 +397,13 @@ impl<'ir> PhiInstDedup<'ir> {
     }
 
     pub fn keep_first(&mut self) {
-        for (_block, slot_vals) in self.multimap.iter_mut() {
+        for (_, slot_vals) in self.multimap.iter_mut() {
             if slot_vals.len() <= 1 {
                 continue;
             }
             // 保留第一个，其他标记为 None
             for slot_val in slot_vals.iter_mut().skip(1) {
-                slot_val.1 = None;
+                slot_val.value = None;
             }
         }
         self.nodup = true;
@@ -417,9 +427,9 @@ impl<'ir> PhiInstDedup<'ir> {
         let mut new_opreands = SmallVec::with_capacity(multimap.len());
 
         for (_, dups) in multimap {
-            for (index, val_opt) in dups {
+            for DedupUnit { index, value } in dups {
                 let [uval, ublk] = old_operands[index as usize];
-                if let Some(val) = val_opt {
+                if let Some(val) = value {
                     // 保留该 use
                     uval.set_operand(allocs, val);
                     uval.set_kind(allocs, UseKind::PhiIncomingValue(new_opreands.len() as u32));
