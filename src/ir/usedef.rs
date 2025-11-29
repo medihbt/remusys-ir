@@ -253,6 +253,10 @@ pub enum UseKind {
     /// in which group of the PHI instruction incoming list.
     PhiIncomingValue(u32),
 
+    /// Edge-Phi 指令的 incoming SSA 值. 语义是: 这个 Use 处在 Edge-Phi 指令 incoming 列表的第几组.
+    #[cfg(feature = "edge-phi")]
+    EdgePhiIncoming(u32),
+
     SelectCond,
     SelectThen,
     SelectElse,

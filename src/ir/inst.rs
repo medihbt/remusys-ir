@@ -37,6 +37,9 @@ mod insert;
 mod phi;
 mod select;
 
+#[cfg(feature = "edge-phi")]
+mod edge_phi;
+
 // aggregate field instructions
 mod aggr_field_inst;
 
@@ -52,6 +55,7 @@ pub use self::{
     call::{CallInst, CallInstBuilder, CallInstID},
     cast::{CastErr, CastInst, CastInstID},
     cmp::{CmpInst, CmpInstID},
+    edge_phi::*,
     extract::{
         FieldExtractBuilder, FieldExtractInst, FieldExtractInstID, IndexExtractInst,
         IndexExtractInstID,
@@ -372,6 +376,11 @@ pub enum InstObj {
     /// 表示指令链表 “Phi 指令” 部分结束的结点, 不参与语义表达.
     PhiInstEnd(InstCommon),
 
+    /// 表示基本块中 Edge-Phi 指令部分结束的结点, 不参与语义表达.
+    /// Edge-Phi 指令集中 Phi 区间的前半段, 不与 Phi 混同.
+    #[cfg(feature = "edge-phi")]
+    EdgePhiRegionSep(InstCommon),
+
     // 基本块终结指令
     /// 表示 “所在基本块不可达”, 封死整个基本块的控制流.
     Unreachable(UnreachableInst),
@@ -432,6 +441,9 @@ pub enum InstObj {
 
     /// Phi 节点：实现 SSA 形式中的 φ 函数
     Phi(PhiInst),
+
+    /// Edge-Phi 结点: 执行 Phi 的功能, 但使用 `JumpTarget` 入边来判别.
+    EdgePhi(EdgePhiInst),
 
     /// 选择指令: 根据条件值选择两个操作数之一作为结果返回。
     Select(SelectInst),
