@@ -6,11 +6,12 @@ use crate::{
         ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue,
         IUser, InstID, InstObj, JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID,
         PredList, PtrArgTargetAttr, SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
-        utils::llvm_adapt::LLVMAdaptMapping,
+        module::allocs::IPoolAllocated, utils::llvm_adapt::LLVMAdaptMapping,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
 use log::warn;
+use mtb_entity_slab::IEntityAllocID;
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     collections::{BTreeMap, HashMap},
@@ -442,6 +443,7 @@ impl<'ir> IRWriter<'ir> {
     }
     fn format_aggregate(&self, elems: &[UseID], begin_s: &str, end_s: &str) -> std::io::Result<()> {
         self.write_str(begin_s)?;
+        self.write_str(" ")?;
         let allocs = self.allocs();
         for (i, useid) in elems.iter().enumerate() {
             if i > 0 {
@@ -452,6 +454,7 @@ impl<'ir> IRWriter<'ir> {
             self.write_str(" ")?;
             self.write_operand(operand)?;
         }
+        self.write_str(" ")?;
         self.write_str(end_s)
     }
     fn writeln_entity_id(&self, id: impl Into<PoolAllocatedID>) -> std::io::Result<()> {
@@ -558,6 +561,25 @@ impl<'ir> IRWriter<'ir> {
                 GlobalObj::Var(g) => self.format_global_var(g),
             }
             self.wrap_indent();
+        }
+
+        // 清理 LLVM 兼容模式下的临时表达式对象.
+        self.flush().unwrap();
+        let mut inner = self.inner.borrow_mut();
+        let allocs = &self.module.allocs;
+        // 这些临时分配在内存池中的表达式对象是垃圾对象, 需要手动释放掉.
+        // 但 KVArrayExpr 不是, 因为它们还实际挂在 User 上当操作数.
+        for (_, value) in inner.llvm_mapping.kvarr.drain() {
+            let ValueSSA::ConstExpr(expr) = value else {
+                continue;
+            };
+            let Some(expr_obj) = expr.0.try_deref(&allocs.exprs) else {
+                continue;
+            };
+            if expr_obj.obj_disposed() || expr_obj.has_users(allocs) {
+                continue;
+            }
+            let _ = expr.dispose(allocs);
         }
     }
     pub fn format_attr(&self, attr: &Attribute) -> std::io::Result<()> {

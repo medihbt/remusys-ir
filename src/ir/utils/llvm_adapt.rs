@@ -100,6 +100,7 @@ impl LLVMAdaptMapping {
             fields.push(val);
             // NOTE that val.valtype may differ from elemty due to LLVMAdaptMapping
             field_tys.push(val.get_valtype(allocs));
+            field_idx += 1;
         }
 
         let mut back_len = kv.nelems - nondefault_range.end;
