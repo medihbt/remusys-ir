@@ -762,7 +762,7 @@ impl<'ir> IRWriter<'ir> {
             self.write_str("inbounds ").unwrap();
         }
         self.write_type(gep.initial_ty).unwrap();
-        self.write_str(" ptr ").unwrap();
+        self.write_str(", ptr ").unwrap();
         self.write_operand(gep.get_base(self.allocs)).unwrap();
         for &index_use in gep.index_uses() {
             let index = index_use.get_operand(allocs);
