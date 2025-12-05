@@ -109,7 +109,7 @@ impl IValType for StructTypeID {
     }
 
     fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
-        let (begin_str, end_str) = if self.is_packed(f.tctx) { ("<{", "}>") } else { ("{", "}") };
+        let (begin_str, end_str) = if self.is_packed(f.tctx) { ("<{ ", " }>") } else { ("{ ", " }") };
         f.write_str(begin_str)?;
         let data = self.deref(&f.allocs.structs);
         for (i, field) in data.fields.iter().enumerate() {
