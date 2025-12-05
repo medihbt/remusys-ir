@@ -75,10 +75,8 @@ pub trait ISubExprID: Copy {
         ExprID(self.into_raw_ptr())
     }
 
-    fn try_from_expr(
-        id: PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>,
-        allocs: &IRAllocs,
-    ) -> Option<Self> {
+    fn try_from_expr(id: ExprID, allocs: &IRAllocs) -> Option<Self> {
+        let id = id.0;
         let expr = id.deref(&allocs.exprs);
         Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::from_raw_ptr(id))
     }

@@ -1056,6 +1056,10 @@ impl KVArrayExpr {
         };
         0..back_idx + 1
     }
+
+    pub fn is_full(&self) -> bool {
+        self.elem_uses().len() == self.nelems
+    }
 }
 pub struct KVArrayElemIter<'kv> {
     inner: std::slice::Iter<'kv, UseID>,
@@ -1130,6 +1134,9 @@ impl KVArrayExprID {
 
     pub fn nondefault_index_range(self, allocs: &IRAllocs) -> Range<usize> {
         self.deref_ir(allocs).nondefault_index_range(allocs)
+    }
+    pub fn is_full(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).is_full()
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID, UseKind,
+        ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID, UseKind, ValueSSA,
         constant::expr::{ExprCommon, ExprRawPtr, ISubExpr},
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
@@ -96,7 +96,17 @@ impl StructExprID {
     pub fn get_struct_type(self, allocs: &IRAllocs) -> StructTypeID {
         self.deref_ir(allocs).structty
     }
-    pub fn get_fields(self, allocs: &IRAllocs) -> &[UseID] {
+    pub fn field_uses(self, allocs: &IRAllocs) -> &[UseID] {
         &self.deref_ir(allocs).fields
+    }
+
+    pub fn get_field_use(self, allocs: &IRAllocs, idx: usize) -> UseID {
+        self.deref_ir(allocs).fields[idx]
+    }
+    pub fn get_field(self, allocs: &IRAllocs, idx: usize) -> ValueSSA {
+        self.get_field_use(allocs, idx).get_operand(allocs)
+    }
+    pub fn set_field(self, allocs: &IRAllocs, idx: usize, val: ValueSSA) {
+        self.get_field_use(allocs, idx).set_operand(allocs, val);
     }
 }

@@ -82,9 +82,9 @@ pub use self::{
             FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
-        llvm_adapt::{LLVMAdapt, dump_llvm_adapted},
+        llvm_adapt::LLVMAdaptMapping,
         numbering::{IRNumberValueMap, NumberOption},
-        writer::{IRWriteOption, IRWriter, IRWriterStat},
+        writer::{IRWriteOption, IRWriter, IRWriterStat, write_ir_to_file},
     },
 };
 

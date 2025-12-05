@@ -1,5 +1,4 @@
 use crate::{
-    base::INullableValue,
     ir::{
         ArrayExpr, ArrayExprID, AttrSet, Attribute, BlockID, BlockObj, ConstArrayData, ConstData,
         DataArrayExpr, ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj,
@@ -7,15 +6,24 @@ use crate::{
         ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue,
         IUser, InstID, InstObj, JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID,
         PredList, PtrArgTargetAttr, SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
+        utils::llvm_adapt::LLVMAdaptMapping,
     },
     typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
 };
 use log::warn;
 use std::{
-    cell::{Cell, Ref, RefCell},
+    cell::{Cell, Ref, RefCell, RefMut},
     collections::{BTreeMap, HashMap},
     io::Write,
+    path::Path,
 };
+
+pub fn write_ir_to_file(path: impl AsRef<Path>, module: &Module, option: IRWriteOption) {
+    let mut file = std::fs::File::create(path).unwrap();
+    let mut writer = IRWriter::from_module(&mut file, module);
+    writer.option = option;
+    writer.write_module()
+}
 
 pub struct IRWriterStat {
     curr_func: Cell<Option<FuncID>>,
@@ -26,13 +34,37 @@ pub struct IRWriteOption {
     pub show_ptrid: bool,
     pub show_users: bool,
     pub show_preds: bool,
+    pub llvm_compatible: bool,
 }
 impl IRWriteOption {
     pub fn loud() -> Self {
-        Self { show_ptrid: true, show_users: true, show_preds: true }
+        Self {
+            show_ptrid: true,
+            show_users: true,
+            show_preds: true,
+            llvm_compatible: false,
+        }
     }
     pub fn quiet() -> Self {
-        Self { show_ptrid: false, show_users: false, show_preds: false }
+        Self {
+            show_ptrid: false,
+            show_users: false,
+            show_preds: false,
+            llvm_compatible: false,
+        }
+    }
+
+    pub fn show_ptrid(self, val: bool) -> Self {
+        Self { show_ptrid: val, ..self }
+    }
+    pub fn show_users(self, val: bool) -> Self {
+        Self { show_users: val, ..self }
+    }
+    pub fn show_preds(self, val: bool) -> Self {
+        Self { show_preds: val, ..self }
+    }
+    pub fn llvm_compatible(self, val: bool) -> Self {
+        Self { llvm_compatible: val, ..self }
     }
 }
 
@@ -66,13 +98,17 @@ pub struct IRWriter<'ir> {
     pub output: RefCell<&'ir mut dyn Write>,
     pub stat: IRWriterStat,
     pub option: IRWriteOption,
-    pub tctx: &'ir TypeContext,
-    pub allocs: &'ir IRAllocs,
+    pub module: &'ir Module,
     pub indent: Cell<usize>,
-    pub numbering: RefCell<Option<IRNumberValueMap>>,
-    pub globals: Vec<(GlobalID, GlobalKind)>,
-    type_names: RefCell<HashMap<ValTypeID, String>>,
-    str_literals: RefCell<BTreeMap<ExprID, String>>,
+    inner: RefCell<Inner>,
+}
+
+#[derive(Default)]
+struct Inner {
+    numbering: Option<IRNumberValueMap>,
+    type_names: HashMap<ValTypeID, String>,
+    str_literals: BTreeMap<ExprID, String>,
+    llvm_mapping: LLVMAdaptMapping,
 }
 
 impl<'ir> IRWriter<'ir> {
@@ -81,13 +117,9 @@ impl<'ir> IRWriter<'ir> {
             output: RefCell::new(output),
             stat: IRWriterStat::new(),
             option: IRWriteOption::default(),
-            tctx: &module.tctx,
-            allocs: &module.allocs,
             indent: Cell::new(0),
-            numbering: RefCell::new(None),
-            globals: Self::make_symbols(module),
-            type_names: RefCell::new(HashMap::new()),
-            str_literals: RefCell::new(BTreeMap::new()),
+            module,
+            inner: RefCell::new(Inner::default()),
         }
     }
 
@@ -124,14 +156,29 @@ impl<'ir> IRWriter<'ir> {
         output.write_fmt(args)
     }
     pub fn numbers(&self) -> Ref<'_, IRNumberValueMap> {
-        Ref::map(self.numbering.borrow(), |opt| {
-            opt.as_ref().expect("IRWriter numbering is not set")
+        Ref::map(self.inner.borrow(), |inner| {
+            inner
+                .numbering
+                .as_ref()
+                .expect("IRWriter numbering is not set")
         })
+    }
+    pub fn try_numbers(&self) -> Ref<'_, Option<IRNumberValueMap>> {
+        Ref::map(self.inner.borrow(), |inner| &inner.numbering)
     }
     pub fn set_numbers(&self, func: FuncID) {
         let option = NumberOption::ignore_all();
-        self.numbering
-            .replace(IRNumberValueMap::new(self.allocs, func, option));
+        let mut inner = self.inner.borrow_mut();
+        inner.numbering = IRNumberValueMap::new(self.allocs(), func, option);
+    }
+    fn type_names(&self) -> RefMut<'_, HashMap<ValTypeID, String>> {
+        RefMut::map(self.inner.borrow_mut(), |inner| &mut inner.type_names)
+    }
+    fn allocs(&self) -> &IRAllocs {
+        &self.module.allocs
+    }
+    fn tctx(&self) -> &TypeContext {
+        &self.module.tctx
     }
 
     pub fn inc_indent(&self) {
@@ -149,7 +196,7 @@ impl<'ir> IRWriter<'ir> {
         }
     }
     pub fn write_type(&self, ty: ValTypeID) -> std::io::Result<()> {
-        let mut type_names = self.type_names.borrow_mut();
+        let mut type_names = self.type_names();
         if let Some(name) = type_names.get(&ty) {
             return self.write_str(name);
         }
@@ -159,9 +206,9 @@ impl<'ir> IRWriter<'ir> {
             ValTypeID::Int(bits) => write!(self, "i{bits}"),
             ValTypeID::Float(FPKind::Ieee32) => self.write_str("float"),
             ValTypeID::Float(FPKind::Ieee64) => self.write_str("double"),
-            ValTypeID::StructAlias(sa) => write!(self, "%{}", sa.get_name(self.tctx)),
+            ValTypeID::StructAlias(sa) => write!(self, "%{}", sa.get_name(self.tctx())),
             _ => {
-                let name = ty.get_display_name(self.tctx);
+                let name = ty.get_display_name(self.tctx());
                 self.write_str(&name)?;
                 type_names.insert(ty, name);
                 Ok(())
@@ -169,6 +216,17 @@ impl<'ir> IRWriter<'ir> {
         }
     }
 
+    pub fn map_operand_and_write(&self, operand: impl ISubValueSSA) -> std::io::Result<()> {
+        let mut operand = operand.into_ir();
+        if self.option.llvm_compatible {
+            let mut inner = self.inner.borrow_mut();
+            operand = inner.llvm_mapping.map_value(self.module, operand);
+        }
+        let ty = operand.get_valtype(self.allocs());
+        self.write_type(ty)?;
+        self.write_str(" ")?;
+        self.write_operand(operand)
+    }
     pub fn write_operand(&self, operand: impl ISubValueSSA) -> std::io::Result<()> {
         match operand.into_ir() {
             ValueSSA::None => self.write_str("poison"),
@@ -186,35 +244,34 @@ impl<'ir> IRWriter<'ir> {
             ValueSSA::Block(b) => self.write_block_operand(Some(b)),
             ValueSSA::Inst(i) => self.write_inst_operand(i),
             ValueSSA::Global(g) => {
-                write!(self, "@{}", g.get_name(self.allocs))
+                write!(self, "@{}", g.get_name(self.allocs()))
             }
         }
     }
     fn write_inst_operand(&self, i: InstID) -> std::io::Result<()> {
-        let numbers = self.numbering.borrow();
-        let Some(numbers) = &*numbers else {
-            warn!("Instruction can only be used in its own function");
-            return write!(self, "%inst:{:#x}", i.get_indexed(self.allocs).0);
+        let inner = self.inner.borrow();
+        let Some(numbers) = &inner.numbering else {
+            return write!(self, "%inst:{:#x}", i.get_indexed(self.allocs()).0);
         };
         if let Some(id) = numbers.inst_get_number(i) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%inst:{:#x}", i.get_indexed(self.allocs).0)
+            write!(self, "%inst:{:#x}", i.get_indexed(self.allocs()).0)
         }
     }
     fn write_block_operand(&self, b: Option<BlockID>) -> std::io::Result<()> {
         let Some(b) = b else {
             return self.write_str("%NULL_BLOCK");
         };
-        let numbers = self.numbering.borrow();
-        let Some(numbers) = &*numbers else {
+        let inner = self.inner.borrow();
+        let Some(numbers) = &inner.numbering else {
             warn!("Block can only be used in its own function");
-            return write!(self, "%block:{:#x}", b.get_indexed(self.allocs).0);
+            return write!(self, "%block:{:#x}", b.get_indexed(self.allocs()).0);
         };
         if let Some(id) = numbers.block_get_number(b) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%block:{:#x}", b.get_indexed(self.allocs).0)
+            write!(self, "%block:{:#x}", b.get_indexed(self.allocs()).0)
         }
     }
     fn format_const_data(&self, data: ConstData) -> std::io::Result<()> {
@@ -242,10 +299,10 @@ impl<'ir> IRWriter<'ir> {
         }
     }
     fn format_expr(&self, expr: ExprID) -> std::io::Result<()> {
-        if expr.is_zero_const(self.allocs) {
+        if expr.is_zero_const(self.allocs()) {
             return self.write_str("zeroinitializer");
         }
-        let (elems, begin_s, end_s) = match expr.deref_ir(self.allocs) {
+        let (elems, begin_s, end_s) = match expr.deref_ir(self.allocs()) {
             ExprObj::Array(a) => {
                 if self.try_write_string(ArrayExprID::raw_from(expr), a)? {
                     return Ok(());
@@ -253,7 +310,7 @@ impl<'ir> IRWriter<'ir> {
                     (a.elems.as_slice(), "[", "]")
                 }
             }
-            ExprObj::Struct(s) if s.structty.is_packed(self.tctx) => {
+            ExprObj::Struct(s) if s.structty.is_packed(self.tctx()) => {
                 (s.fields.as_slice(), "<{", "}>")
             }
             ExprObj::Struct(s) => (s.fields.as_slice(), "{", "}"),
@@ -283,7 +340,7 @@ impl<'ir> IRWriter<'ir> {
         Some(ret)
     }
     fn try_write_cached_str(&self, expr: ExprID) -> std::io::Result<bool> {
-        if let Some(cached) = self.str_literals.borrow().get(&expr) {
+        if let Some(cached) = self.inner.borrow().str_literals.get(&expr) {
             self.write_str(cached)?;
             return Ok(true);
         }
@@ -291,7 +348,7 @@ impl<'ir> IRWriter<'ir> {
     }
     fn write_and_insert_cached_str(&self, expr: ExprID, s: String) -> std::io::Result<()> {
         self.write_str(&s)?;
-        self.str_literals.borrow_mut().insert(expr, s);
+        self.inner.borrow_mut().str_literals.insert(expr, s);
         Ok(())
     }
     fn try_write_string(&self, aid: ArrayExprID, a: &ArrayExpr) -> std::io::Result<bool> {
@@ -304,7 +361,7 @@ impl<'ir> IRWriter<'ir> {
         let bytes = {
             let bytes = a.operands_iter().map(|useid| {
                 useid
-                    .get_operand(self.allocs)
+                    .get_operand(self.allocs())
                     .as_apint()
                     .map(|x| x.as_unsigned() as u8)
             });
@@ -325,13 +382,13 @@ impl<'ir> IRWriter<'ir> {
             let bytes_str = self.bytes_as_string(bytes).unwrap();
             return self.write_and_insert_cached_str(id, bytes_str);
         }
-        if da.is_zero_const(self.allocs) {
+        if da.is_zero_const(self.allocs()) {
             return self.write_str("zeroinitializer");
         }
         self.write_str("[")?;
         let elemty = da.get_elem_type();
         for i in 0..da.get_nelems() {
-            let value = da.index_get(self.allocs, i);
+            let value = da.index_get(self.allocs(), i);
             if i > 0 {
                 self.write_str(", ")?;
             }
@@ -344,7 +401,7 @@ impl<'ir> IRWriter<'ir> {
     fn format_splat_array(&self, id: ExprID, sa: &SplatArrayExpr) -> std::io::Result<()> {
         let nelems = sa.get_nelems();
         let elemty = sa.get_elem_type();
-        let elem = sa.element[0].get_operand(self.allocs);
+        let elem = sa.element[0].get_operand(self.allocs());
         if let Some(apint) = elem.as_apint()
             && apint.bits() == 8
         {
@@ -356,7 +413,7 @@ impl<'ir> IRWriter<'ir> {
             let s = self.bytes_as_string(bytes).unwrap();
             return self.write_and_insert_cached_str(id, s);
         }
-        if sa.is_zero_const(self.allocs) {
+        if sa.is_zero_const(self.allocs()) {
             return self.write_str("zeroinitializer");
         }
         self.write_str("[")?;
@@ -372,20 +429,20 @@ impl<'ir> IRWriter<'ir> {
     }
     fn format_kvarray(&self, kv: &KVArrayExpr) -> std::io::Result<()> {
         self.write_str("sparse [")?;
-        for (index, val, _) in kv.elem_iter(self.allocs) {
+        for (index, val, _) in kv.elem_iter(self.allocs()) {
             write!(self, "[{index}] = ")?;
-            self.write_type(val.get_valtype(self.allocs))?;
+            self.write_type(val.get_valtype(self.allocs()))?;
             self.write_str(" ")?;
             self.write_operand(val)?;
             self.write_str(", ")?;
         }
         self.write_str("..=")?;
-        self.write_operand(kv.get_default(self.allocs))?;
+        self.write_operand(kv.get_default(self.allocs()))?;
         self.write_str("]")
     }
     fn format_aggregate(&self, elems: &[UseID], begin_s: &str, end_s: &str) -> std::io::Result<()> {
         self.write_str(begin_s)?;
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         for (i, useid) in elems.iter().enumerate() {
             if i > 0 {
                 self.write_str(", ")?;
@@ -402,7 +459,7 @@ impl<'ir> IRWriter<'ir> {
             return Ok(());
         }
         let id = id.into();
-        let indexed = id.get_indexed(self.allocs);
+        let indexed = id.get_indexed(self.allocs());
         let prefix = match id {
             PoolAllocatedID::Block(_) => "; .id = %block:",
             PoolAllocatedID::Inst(_) => "; .id = %inst:",
@@ -428,7 +485,7 @@ impl<'ir> IRWriter<'ir> {
         Ok(())
     }
     fn writeln_users(&self, users: &UserList) -> std::io::Result<()> {
-        let alloc_use = &self.allocs.uses;
+        let alloc_use = &self.allocs().uses;
         if !self.option.show_users || users.is_empty(alloc_use) {
             return Ok(());
         }
@@ -452,7 +509,7 @@ impl<'ir> IRWriter<'ir> {
         Ok(())
     }
     fn writeln_preds(&self, preds: &PredList) -> std::io::Result<()> {
-        let alloc_jt = &self.allocs.jts;
+        let alloc_jt = &self.allocs().jts;
         if !self.option.show_preds || preds.is_empty(alloc_jt) {
             return Ok(());
         }
@@ -478,21 +535,22 @@ impl<'ir> IRWriter<'ir> {
 
     pub fn write_module(&self) {
         // %{name} = type {struct}
-        self.tctx.foreach_aliases(|name, _, aliasee| {
+        self.tctx().foreach_aliases(|name, _, aliasee| {
             write!(self, "%{name} = type ").unwrap();
             self.write_type(aliasee.into_ir()).unwrap();
             self.wrap_indent();
         });
 
-        let Some((_, mut curr_kind)) = self.globals.first().copied() else {
+        let globals = Self::make_symbols(self.module);
+        let Some((_, mut curr_kind)) = globals.first().copied() else {
             return;
         };
-        for &(gid, gkind) in &self.globals {
+        for &(gid, gkind) in &globals {
             if gkind != curr_kind {
                 self.wrap_indent();
                 curr_kind = gkind;
             }
-            let gobj = gid.deref_ir(self.allocs);
+            let gobj = gid.deref_ir(self.allocs());
             self.writeln_entity_id(gid).unwrap();
             self.writeln_users(gobj.users()).unwrap();
             match gobj {
@@ -534,14 +592,13 @@ impl<'ir> IRWriter<'ir> {
     }
     pub fn format_global_var(&self, gvar: &GlobalVar) {
         let name = gvar.get_name();
-        let prefix = gvar.get_linkage_prefix(self.allocs);
+        let prefix = gvar.get_linkage_prefix(self.allocs());
         write!(self, "@{name} = {prefix} ").unwrap();
-        self.write_type(gvar.get_ptr_pointee_type()).unwrap();
 
-        if let Some(init) = gvar.get_init(self.allocs).to_option() {
-            self.write_str(" ").unwrap();
-            self.write_operand(init).unwrap();
-        };
+        match gvar.get_init(self.allocs()) {
+            ValueSSA::None => self.write_type(gvar.common.content_ty).unwrap(),
+            initval => self.map_operand_and_write(initval).unwrap(),
+        }
         write!(self, ", align {}", gvar.get_ptr_pointee_align()).unwrap();
     }
     /// Syntax:
@@ -558,14 +615,14 @@ impl<'ir> IRWriter<'ir> {
     pub fn format_func(&self, func_id: FuncID, func: &FuncObj) -> std::io::Result<()> {
         let _stat = self.stat.hold_curr_func(func_id);
         let name = func.get_name();
-        self.write_str(func.get_linkage_prefix(self.allocs))?;
+        self.write_str(func.get_linkage_prefix(self.allocs()))?;
         self.format_attr_set(&func.attrs())?;
         self.write_str(" ")?;
         self.write_type(func.ret_type)?;
         self.write_str(" @")?;
         self.write_str(name)?;
         self.write_str("(")?;
-        let is_extern = func.is_extern(self.allocs);
+        let is_extern = func.is_extern(self.allocs());
         for arg in &func.args {
             if arg.index > 0 {
                 self.write_str(", ")?;
@@ -593,9 +650,9 @@ impl<'ir> IRWriter<'ir> {
 
         self.write_str(" {")?;
         self.set_numbers(func_id);
-        self.format_block(body.entry, body.entry.deref_ir(self.allocs));
+        self.format_block(body.entry, body.entry.deref_ir(self.allocs()));
         self.wrap_indent();
-        for (block_id, block) in body.blocks.iter(&self.allocs.blocks) {
+        for (block_id, block) in body.blocks.iter(&self.allocs().blocks) {
             if block_id == body.entry {
                 continue;
             }
@@ -611,7 +668,7 @@ impl<'ir> IRWriter<'ir> {
     }
     pub fn clean_focus(&self) {
         self.stat.curr_func.set(None);
-        self.numbering.borrow_mut().take();
+        self.inner.borrow_mut().numbering = None;
     }
 
     pub fn format_block(&self, block_id: BlockID, block: &BlockObj) {
@@ -627,7 +684,7 @@ impl<'ir> IRWriter<'ir> {
         }
 
         self.inc_indent();
-        let insts = block.get_body().insts.iter(&self.allocs.insts);
+        let insts = block.get_body().insts.iter(&self.allocs().insts);
         for (inst_id, inst) in insts {
             self.wrap_indent();
             let number = self.numbers().inst_get_number(inst_id);
@@ -645,7 +702,7 @@ impl<'ir> IRWriter<'ir> {
         match inst {
             InstObj::GuideNode(_) => {}
             InstObj::PhiInstEnd(_) => {
-                let id = inst_id.get_indexed(self.allocs);
+                let id = inst_id.get_indexed(self.allocs());
                 write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id.0).unwrap()
             }
             InstObj::Unreachable(_) => self.write_str("unreachable").unwrap(),
@@ -657,23 +714,23 @@ impl<'ir> IRWriter<'ir> {
                 } else {
                     self.write_type(ret_type).unwrap();
                     self.write_str(" ").unwrap();
-                    self.write_operand(ret_inst.get_retval(self.allocs))
+                    self.write_operand(ret_inst.get_retval(self.allocs()))
                         .unwrap();
                 }
             }
             InstObj::Jump(jump) => {
                 self.write_str("br label ").unwrap();
-                self.write_block_operand(jump.get_target(self.allocs))
+                self.write_block_operand(jump.get_target(self.allocs()))
                     .unwrap();
             }
             InstObj::Br(br_inst) => {
                 self.write_str("br i1 ").unwrap();
-                self.write_operand(br_inst.get_cond(self.allocs)).unwrap();
+                self.write_operand(br_inst.get_cond(self.allocs())).unwrap();
                 self.write_str(", label ").unwrap();
-                self.write_block_operand(br_inst.get_then(self.allocs))
+                self.write_block_operand(br_inst.get_then(self.allocs()))
                     .unwrap();
                 self.write_str(", label ").unwrap();
-                self.write_block_operand(br_inst.get_else(self.allocs))
+                self.write_block_operand(br_inst.get_else(self.allocs()))
                     .unwrap();
             }
             InstObj::Switch(switch) => self.format_switch_inst(switch),
@@ -719,17 +776,17 @@ impl<'ir> IRWriter<'ir> {
     /// ]
     /// ```
     fn format_switch_inst(&self, switch: &SwitchInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         self.write_str("switch ").unwrap();
         // 写入条件操作数的类型和值
-        let cond = switch.get_discrim(self.allocs);
-        let cond_type = cond.get_valtype(self.allocs);
+        let cond = switch.get_discrim(self.allocs());
+        let cond_type = cond.get_valtype(self.allocs());
         self.write_type(cond_type).unwrap();
         self.write_str(" ").unwrap();
         self.write_operand(cond).unwrap();
         // 写入默认目标块
         self.write_str(", label ").unwrap();
-        self.write_block_operand(switch.get_default_bb(self.allocs))
+        self.write_block_operand(switch.get_default_bb(self.allocs()))
             .unwrap();
         // 写入各个分支目标块
         self.write_str(" [").unwrap();
@@ -741,7 +798,7 @@ impl<'ir> IRWriter<'ir> {
             };
             self.write_type(cond_type).unwrap();
             write!(self, " {case_val}, label ").unwrap();
-            self.write_block_operand(case.get_block(self.allocs))
+            self.write_block_operand(case.get_block(self.allocs()))
                 .unwrap();
         }
         self.dec_indent();
@@ -753,7 +810,7 @@ impl<'ir> IRWriter<'ir> {
     /// getelementptr inbounds <1st unpacked ty>, ptr %<ptr>, <intty0> <sindex0>, <intty1> <sindex1>, ...
     /// ```
     fn format_gep_inst(&self, number: Option<usize>, gep: &GEPInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -763,7 +820,7 @@ impl<'ir> IRWriter<'ir> {
         }
         self.write_type(gep.initial_ty).unwrap();
         self.write_str(", ptr ").unwrap();
-        self.write_operand(gep.get_base(self.allocs)).unwrap();
+        self.write_operand(gep.get_base(self.allocs())).unwrap();
         for &index_use in gep.index_uses() {
             let index = index_use.get_operand(allocs);
             let index_ty = index.get_valtype(allocs);
@@ -788,7 +845,7 @@ impl<'ir> IRWriter<'ir> {
         let pointee_ty = load.get_valtype();
         self.write_type(pointee_ty).unwrap();
         self.write_str(", ptr ").unwrap();
-        self.write_operand(load.get_source(self.allocs)).unwrap();
+        self.write_operand(load.get_source(self.allocs())).unwrap();
         write!(self, ", align {}", load.get_operand_pointee_align()).unwrap();
     }
 
@@ -796,11 +853,10 @@ impl<'ir> IRWriter<'ir> {
     /// store <ty> <value>, ptr <pointer>, align <alignment>
     /// ```
     fn format_store_inst(&self, store: &StoreInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         self.write_str("store ").unwrap();
-        self.write_type(store.source_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(store.get_source(allocs)).unwrap();
+        self.map_operand_and_write(store.get_source(allocs))
+            .unwrap();
         self.write_str(", ptr ").unwrap();
         self.write_operand(store.get_target(allocs)).unwrap();
         write!(self, ", align {}", store.get_operand_pointee_align()).unwrap();
@@ -818,12 +874,13 @@ impl<'ir> IRWriter<'ir> {
             self.write_str("volatile ").unwrap();
         }
         write!(self, "{} ptr ", amo_rmw.subop_name()).unwrap();
-        self.write_operand(amo_rmw.get_pointer(self.allocs))
+        self.write_operand(amo_rmw.get_pointer(self.allocs()))
             .unwrap();
         self.write_str(", ").unwrap();
         self.write_type(amo_rmw.value_ty).unwrap();
         self.write_str(" ").unwrap();
-        self.write_operand(amo_rmw.get_value(self.allocs)).unwrap();
+        self.write_operand(amo_rmw.get_value(self.allocs()))
+            .unwrap();
         if amo_rmw.scope != SyncScope::System {
             write!(self, " syncscope(\"{}\")", amo_rmw.scope.as_str()).unwrap();
         }
@@ -837,7 +894,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<result> = <opcode> <ty> <op1>, <op2>
     /// ```
     fn format_binop_inst(&self, number: Option<usize>, binop: &BinOPInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -862,7 +919,7 @@ impl<'ir> IRWriter<'ir> {
     /// call (...) @function_name(<arg_types>, ...)
     /// ```
     fn format_call_inst(&self, number: Option<usize>, call: &CallInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -882,7 +939,7 @@ impl<'ir> IRWriter<'ir> {
             let arg = arg_use.get_operand(allocs);
             let arg_ty = call
                 .callee_ty
-                .get_args(self.tctx)
+                .get_args(self.tctx())
                 .get(i)
                 .copied()
                 .unwrap_or(arg.get_valtype(allocs));
@@ -897,7 +954,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<result> = <op> <type> <value> to <type>
     /// ```
     fn format_cast_inst(&self, number: Option<usize>, cast: &CastInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -913,7 +970,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<result> = <op> <cond> <type> <lhs>, <rhs>
     /// ```
     fn format_cmp_inst(&self, number: Option<usize>, cmp: &CmpInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -931,7 +988,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<id> = extractelement <aggr_type> %<aggr>, <index_ty> %<index>
     /// ```
     fn format_index_extract_inst(&self, number: Option<usize>, inst: &IndexExtractInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -951,7 +1008,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<id> = extractvalue <aggr_type> %a, <field_idx0>, <field_idx1>, ...
     /// ```
     fn format_field_extract_inst(&self, number: Option<usize>, inst: &FieldExtractInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -968,7 +1025,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<result> = insertelement <aggr_type> %<aggr>, <elem_type> %<elem>, <index_type> %<index>
     /// ```
     fn format_index_insert_inst(&self, number: Option<usize>, inst: &IndexInsertInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -995,7 +1052,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<result> = insertvalue <aggr_type> %<aggr>, <elem_type> %<elem>, <idx0>, <idx1>, ...
     /// ```
     fn format_field_insert_inst(&self, number: Option<usize>, inst: &FieldInsertInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -1016,7 +1073,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<id> = phi <type> [ <value0>, %<label0> ], [ <value1>, %<label1> ], ...
     /// ```
     fn format_phi_inst(&self, number: Option<usize>, phi: &PhiInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
@@ -1050,7 +1107,7 @@ impl<'ir> IRWriter<'ir> {
     /// %<name> = select <type>, i1 <cond>, <true value>, <false value>
     /// ```
     fn format_select_inst(&self, number: Option<usize>, select: &SelectInst) {
-        let allocs = self.allocs;
+        let allocs = self.allocs();
         if let Some(number) = number {
             write!(self, "%{number} = ").unwrap();
         }
