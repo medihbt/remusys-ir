@@ -1,13 +1,12 @@
 use crate::{
     ir::{
         AggrZero, ExprObj, IArrayExpr, IRAllocs, IRWriter, ISubExprID, ISubValueSSA,
-        ITraceableValue, IUser, KVArrayExpr, KVArrayExprID, Module, SplatArrayExprID, StructExpr,
-        StructExprID, UseKind, ValueSSA, module::allocs::IPoolAllocated,
+        ITraceableValue, IUser, KVArrayExpr, KVArrayExprID, Module, SplatArrayExprID, ValueSSA,
+        module::allocs::IPoolAllocated,
     },
-    typing::{AggrType, ArrayTypeID, IValType, StructTypeID, TypeContext, ValTypeID},
+    typing::TypeContext,
 };
-use smallvec::SmallVec;
-use std::{ops::Range, path::Path};
+use std::path::Path;
 
 pub fn dump_llvm_adapted<P: AsRef<Path>>(module: &Module, filepath: P) -> std::io::Result<()> {
     LLVMAdapt::new(module).run();
@@ -80,15 +79,11 @@ impl<'ir> LLVMAdapt<'ir> {
             return;
         }
 
-        // 在这个范围之外的元素都是 default_val —— 统计一下有多少个, 分配到紧凑结构体的后半部分
-        // (当然, 如果数组不是 front_dense 的, 范围之内也有一些元素是 default_val)
-        let right_default_len = kvarray.nelems - nondefault_range.end;
-        if default_val.is_zero_const(allocs) && right_default_len > 4 {
-            self.replace_kvarray_with_packed_struct(kvarray, nondefault_range, default_val);
-            return;
-        }
+        // 在这个范围之外的元素都是 default_val。原本这里会尝试翻译成 LLVM 惯用的紧凑结构体形式，
+        // 但实现较复杂且容易出现微妙的类型错误；目前统一退化为直接展开为普通数组表达式，保证语义正确性，
+        // 牺牲一点文本体积。
 
-        // fallback: 直接展开
+        // 直接展开
         let arrexp = kvarray.expand_to_array_id(allocs);
         kvarray
             .replace_self_with(allocs, arrexp.raw_into().into_ir())
@@ -103,50 +98,6 @@ impl<'ir> LLVMAdapt<'ir> {
             .replace_self_with(allocs, splat.raw_into().into_ir())
             .expect("Internal error");
     }
-    fn replace_kvarray_with_packed_struct(
-        &self,
-        kvarray: &KVArrayExpr,
-        nondefault_range: Range<usize>,
-        default_val: ValueSSA,
-    ) {
-        assert_eq!(
-            nondefault_range.start, 0,
-            "Internal error: non-default range should begin with the leftmost index"
-        );
-        let allocs = self.allocs();
-        let tctx = self.tctx();
-        let mut field_types: SmallVec<[ValTypeID; 8]> =
-            SmallVec::with_capacity(nondefault_range.end + 1);
-        let elemty = kvarray.arrty.get_element_type(tctx);
-        for _ in nondefault_range.clone() {
-            field_types.push(elemty);
-        }
-        let right_default_len = kvarray.nelems - nondefault_range.end;
-        let zarrty = ArrayTypeID::new(tctx, elemty, right_default_len);
-        field_types.push(zarrty.into_ir());
-        let emulated_structy = StructTypeID::new(tctx, true, field_types);
-        let struc = StructExpr::new_uninit(allocs, tctx, emulated_structy);
-        let mut virt_index = 0;
-
-        // 这里每个 useid 对应的 elem_idx 都是单调递增的, 反应这个 use 在展开后数组的实际位置.
-        for &useid in kvarray.elem_uses() {
-            let UseKind::KVArrayElem(elem_idx) = useid.get_kind(allocs) else {
-                panic!("Internal error: KVArray:{kvarray:p} has wrong use kind in elem region")
-            };
-            while virt_index < elem_idx {
-                struc.fields[virt_index].set_operand(allocs, default_val);
-                virt_index += 1;
-            }
-            struc.fields[elem_idx].set_operand(allocs, useid.get_operand(allocs));
-        }
-
-        // 然后把最后一个补上
-        let zarray = ValueSSA::AggrZero(AggrType::Array(zarrty));
-        struc.fields.last().unwrap().set_operand(allocs, zarray);
-        let struc = StructExprID::allocate(allocs, struc).raw_into();
-        kvarray.replace_self_with(allocs, struc.into_ir()).unwrap();
-    }
-
     fn allocs(&self) -> &IRAllocs {
         &self.module.allocs
     }

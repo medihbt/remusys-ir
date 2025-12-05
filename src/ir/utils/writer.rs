@@ -253,6 +253,9 @@ impl<'ir> IRWriter<'ir> {
                     (a.elems.as_slice(), "[", "]")
                 }
             }
+            ExprObj::Struct(s) if s.structty.is_packed(self.tctx) => {
+                (s.fields.as_slice(), "<{", "}>")
+            }
             ExprObj::Struct(s) => (s.fields.as_slice(), "{", "}"),
             ExprObj::FixVec(v) => (v.elems.as_slice(), "<", ">"),
             ExprObj::DataArray(da) => return self.format_data_array(expr, da),
