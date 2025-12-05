@@ -11,7 +11,7 @@ use std::{ops::Range, path::Path};
 
 pub fn dump_llvm_adapted<P: AsRef<Path>>(module: &Module, filepath: P) -> std::io::Result<()> {
     LLVMAdapt::new(module).run();
-    let mut out = std::fs::File::open(filepath)?;
+    let mut out = std::fs::File::create(filepath)?;
     IRWriter::from_module(&mut out, module).write_module();
     Ok(())
 }
