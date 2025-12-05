@@ -7,6 +7,7 @@ use crate::{
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
+use std::ops::RangeFull;
 
 #[derive(Clone)]
 pub struct StructExpr {
@@ -56,6 +57,8 @@ impl ISubExpr for StructExpr {
     }
 }
 impl StructExpr {
+    pub const OP_FIELDS: RangeFull = RangeFull;
+
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, structty: StructTypeID) -> Self {
         let nfields = structty.get_nfields(tctx);
 

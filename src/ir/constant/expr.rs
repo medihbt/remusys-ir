@@ -1,15 +1,15 @@
 use crate::{
     impl_traceable_from_common,
     ir::{
-        DataArrayExpr, FixVec, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr, UseID,
-        UserList, ValueClass, ValueSSA,
+        DataArrayExpr, FixVec, FixVecID, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr,
+        StructExprID, UseID, UserList, ValueClass, ValueSSA,
         constant::{
             array::{ArrayExpr, KVArrayExpr},
             structure::StructExpr,
         },
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
-    typing::ValTypeID,
+    typing::{AggrType, IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use mtb_entity_slab::{IEntityAllocID, IPoliciedID, PtrID, entity_id};
 use std::cell::Cell;
@@ -241,5 +241,92 @@ impl ISubValueSSA for ExprID {
             panic!("Internal error: alocated ExprObj should have a valid UserList");
         };
         Some(users)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AggrZero(pub AggrType);
+
+impl ISubValueSSA for AggrZero {
+    fn get_class(self) -> ValueClass {
+        ValueClass::AggrZero
+    }
+    fn try_from_ir(ir: ValueSSA) -> Option<Self> {
+        match ir {
+            ValueSSA::AggrZero(a) => Some(AggrZero(a)),
+            _ => None,
+        }
+    }
+
+    fn into_ir(self) -> ValueSSA {
+        ValueSSA::AggrZero(self.0)
+    }
+    fn get_valtype(self, _: &IRAllocs) -> ValTypeID {
+        self.0.into_ir()
+    }
+
+    fn can_trace(self) -> bool {
+        false
+    }
+    fn try_get_users(self, _: &IRAllocs) -> Option<&UserList> {
+        None
+    }
+    fn is_zero_const(self, _: &IRAllocs) -> bool {
+        true
+    }
+}
+
+impl AggrZero {
+    pub fn expand(self, allocs: &IRAllocs, tctx: &TypeContext) -> ExprID {
+        use crate::ir::SplatArrayExprID;
+        match self.0 {
+            AggrType::Array(arrty) => {
+                let elemty = arrty.get_element_type(tctx);
+                let elem = ValueSSA::new_zero(elemty)
+                    .expect("Internal error: array element type cannot store");
+                SplatArrayExprID::new(allocs, tctx, arrty, elem).raw_into()
+            }
+            AggrType::Struct(structty) => Self::make_zero_struct(allocs, tctx, structty),
+            AggrType::Alias(sa) => Self::make_zero_struct(allocs, tctx, sa.get_aliasee(tctx)),
+            AggrType::FixVec(vecty) => {
+                let elemty = vecty.get_elem();
+                let fvec = FixVecID::new_uninit(allocs, vecty);
+                let zero = ValueSSA::new_zero(elemty.into_ir()).unwrap();
+                for index in 0..vecty.get_len() {
+                    fvec.set_elem(allocs, index, zero);
+                }
+                fvec.raw_into()
+            }
+        }
+    }
+
+    fn make_zero_struct(allocs: &IRAllocs, tctx: &TypeContext, structty: StructTypeID) -> ExprID {
+        let nelems = structty.get_nfields(tctx);
+        let struc_exp = StructExpr::new_uninit(allocs, tctx, structty);
+        for i in 0..nelems {
+            let ty = structty.get_fields(tctx)[i];
+            let elem =
+                ValueSSA::new_zero(ty).expect("Internal error: array element type cannot store");
+            struc_exp.fields[i].set_operand(allocs, elem);
+        }
+        StructExprID::allocate(allocs, struc_exp).raw_into()
+    }
+
+    pub fn try_from_expr(expr: impl ISubExprID, allocs: &IRAllocs) -> Option<Self> {
+        Self::do_try_from_expr(expr.raw_into(), allocs)
+    }
+    fn do_try_from_expr(expr: ExprID, allocs: &IRAllocs) -> Option<Self> {
+        let (is_zconst, ty) = match expr.deref_ir(allocs) {
+            ExprObj::Array(arr) => (arr.is_zero_const(allocs), AggrType::Array(arr.arrty)),
+            ExprObj::DataArray(arr) => (arr.is_zero_const(allocs), AggrType::Array(arr.arrty)),
+            ExprObj::SplatArray(arr) => (arr.is_zero_const(allocs), AggrType::Array(arr.arrty)),
+            ExprObj::KVArray(arr) => (arr.is_zero_const(allocs), AggrType::Array(arr.arrty)),
+            ExprObj::Struct(struc) => (
+                struc.is_zero_const(allocs),
+                AggrType::Struct(struc.structty),
+            ),
+            ExprObj::FixVec(fvec) => (fvec.is_zero_const(allocs), AggrType::FixVec(fvec.vecty)),
+        };
+        if is_zconst { Some(Self(ty)) } else { None }
     }
 }

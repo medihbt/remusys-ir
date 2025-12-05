@@ -46,7 +46,7 @@ pub use self::{
             KVArrayElemIter, KVArrayExpr, KVArrayExprID, SplatArrayExpr, SplatArrayExprID,
         },
         data::ConstData,
-        expr::{ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
+        expr::{AggrZero, ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
         structure::{StructExpr, StructExprID},
         vec::{FixVec, FixVecID},
     },
@@ -78,7 +78,11 @@ pub use self::{
         UserList,
     },
     utils::{
-        builder::*,
+        builder::{
+            FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
+            IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
+        },
+        llvm_adapt::{LLVMAdapt, dump_llvm_adapted},
         numbering::{IRNumberValueMap, NumberOption},
         writer::{IRWriteOption, IRWriter, IRWriterStat},
     },

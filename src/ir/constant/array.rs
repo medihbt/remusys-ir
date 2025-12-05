@@ -9,7 +9,10 @@ use crate::{
     typing::{ArrayTypeID, FPKind, IValType, ScalarType, TypeContext, TypingRes, ValTypeID},
 };
 use smallvec::SmallVec;
-use std::{collections::BTreeMap, ops::RangeFrom};
+use std::{
+    collections::BTreeMap,
+    ops::{Range, RangeFrom},
+};
 
 pub trait IArrayExpr: ISubExpr {
     fn get_array_type(&self) -> ArrayTypeID;
@@ -65,6 +68,10 @@ pub trait IArrayExprID: ISubExprID<ExprObjT: IArrayExpr> {
     }
     fn value_iter(self, allocs: &IRAllocs) -> impl Iterator<Item = ValueSSA> + '_ {
         self.deref_ir(allocs).value_iter(allocs)
+    }
+
+    fn expand_to_array_id(self, allocs: &IRAllocs) -> ArrayExprID {
+        self.deref_ir(allocs).expand_to_array_id(allocs)
     }
 }
 
@@ -186,6 +193,11 @@ impl ISubExprID for ArrayExprID {
     }
     fn into_raw_ptr(self) -> ExprRawPtr {
         self.0
+    }
+}
+impl IArrayExprID for ArrayExprID {
+    fn expand_to_array_id(self, _: &IRAllocs) -> ArrayExprID {
+        self
     }
 }
 impl ArrayExprID {
@@ -1033,6 +1045,17 @@ impl KVArrayExpr {
     pub fn elem_iter<'kv>(&'kv self, allocs: &'kv IRAllocs) -> KVArrayElemIter<'kv> {
         KVArrayElemIter { inner: self.elem_uses().iter(), allocs }
     }
+
+    pub fn nondefault_index_range(&self, allocs: &IRAllocs) -> Range<usize> {
+        let Some(last) = self.elem_uses().last() else {
+            return 0..0;
+        };
+        let back_idx = match last.get_kind(allocs) {
+            UseKind::KVArrayElem(index) => index,
+            kind => panic!("Internal error: expected UseKind::KVArrayElem but got {kind:?}"),
+        };
+        0..back_idx + 1
+    }
 }
 pub struct KVArrayElemIter<'kv> {
     inner: std::slice::Iter<'kv, UseID>,
@@ -1095,6 +1118,18 @@ impl KVArrayExprID {
     }
     pub fn elem_iter(self, allocs: &IRAllocs) -> KVArrayElemIter<'_> {
         self.deref_ir(allocs).elem_iter(allocs)
+    }
+
+    pub fn is_front_dense(self, allocs: &IRAllocs) -> bool {
+        self.deref_ir(allocs).is_front_dense
+    }
+
+    pub fn get_array_type(self, allocs: &IRAllocs) -> ArrayTypeID {
+        self.deref_ir(allocs).arrty
+    }
+
+    pub fn nondefault_index_range(self, allocs: &IRAllocs) -> Range<usize> {
+        self.deref_ir(allocs).nondefault_index_range(allocs)
     }
 }
 
@@ -1358,6 +1393,44 @@ impl<'ir> Iterator for ArrayExprIter<'ir> {
             iter::Impl::SplatArray(it) => it.next(),
             iter::Impl::FrontDenseKV(it) => it.next(),
             iter::Impl::KVArray(it) => it.next(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MixArrayExprID {
+    Array(ArrayExprID),
+    Data(DataArrayExprID),
+    Splat(SplatArrayExprID),
+    KV(KVArrayExprID),
+    Zero(ArrayTypeID),
+}
+impl From<MixArrayExprID> for ValueSSA {
+    fn from(val: MixArrayExprID) -> Self {
+        use crate::typing::AggrType;
+        let expr = match val {
+            MixArrayExprID::Array(expr) => expr.raw_into(),
+            MixArrayExprID::Data(expr) => expr.raw_into(),
+            MixArrayExprID::Splat(expr) => expr.raw_into(),
+            MixArrayExprID::KV(expr) => expr.raw_into(),
+            MixArrayExprID::Zero(zat) => return ValueSSA::AggrZero(AggrType::Array(zat)),
+        };
+        ValueSSA::ConstExpr(expr)
+    }
+}
+impl MixArrayExprID {
+    pub fn try_index_get(
+        self,
+        allocs: &IRAllocs,
+        tctx: &TypeContext,
+        index: usize,
+    ) -> Option<ValueSSA> {
+        match self {
+            MixArrayExprID::Array(arr) => arr.try_index_get(allocs, index),
+            MixArrayExprID::Data(arr) => arr.try_index_get(allocs, index),
+            MixArrayExprID::Splat(arr) => arr.try_index_get(allocs, index),
+            MixArrayExprID::KV(arr) => arr.try_index_get(allocs, index),
+            MixArrayExprID::Zero(aty) => ValueSSA::new_zero(aty.get_element_type(tctx)).ok(),
         }
     }
 }

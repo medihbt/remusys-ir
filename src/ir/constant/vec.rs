@@ -2,9 +2,9 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         ExprCommon, ExprObj, IRAllocs, ISubExpr, ISubExprID, ISubValueSSA, IUser, OperandSet,
-        UseID, UseKind, constant::expr::ExprRawPtr,
+        UseID, UseKind, ValueSSA, constant::expr::ExprRawPtr,
     },
-    typing::{FixVecType, IValType, ValTypeID},
+    typing::{FixVecType, IValType, ScalarType, ValTypeID},
 };
 use smallvec::SmallVec;
 
@@ -92,5 +92,31 @@ impl ISubExprID for FixVecID {
     }
     fn into_raw_ptr(self) -> ExprRawPtr {
         self.0
+    }
+}
+impl FixVecID {
+    pub fn new_uninit(allocs: &IRAllocs, vecty: FixVecType) -> Self {
+        let fixvec = FixVec::new_uninit(allocs, vecty);
+        Self::allocate(allocs, fixvec)
+    }
+
+    pub fn get_vecty(self, allocs: &IRAllocs) -> FixVecType {
+        self.deref_ir(allocs).vecty
+    }
+    pub fn get_elemty(self, allocs: &IRAllocs) -> ScalarType {
+        self.get_vecty(allocs).0
+    }
+    pub fn get_nelems(self, allocs: &IRAllocs) -> usize {
+        self.get_vecty(allocs).get_len()
+    }
+
+    pub fn elem_uses(self, allocs: &IRAllocs) -> &[UseID] {
+        &self.deref_ir(allocs).elems
+    }
+    pub fn get_elem(self, allocs: &IRAllocs, index: usize) -> ValueSSA {
+        self.elem_uses(allocs)[index].get_operand(allocs)
+    }
+    pub fn set_elem(self, allocs: &IRAllocs, index: usize, val: ValueSSA) -> bool {
+        self.elem_uses(allocs)[index].set_operand(allocs, val)
     }
 }
