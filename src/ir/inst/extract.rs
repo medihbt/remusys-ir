@@ -27,7 +27,7 @@ use smallvec::SmallVec;
 pub struct IndexExtractInst {
     pub common: InstCommon,
     operands: [UseID; 2],
-    pub aggr_ty: AggrType,
+    pub aggr_type: AggrType,
 }
 impl_traceable_from_common!(IndexExtractInst, true);
 impl IUser for IndexExtractInst {
@@ -72,7 +72,7 @@ impl ISubInst for IndexExtractInst {
 }
 impl IAggregateInst for IndexExtractInst {
     fn get_aggr_operand_type(&self) -> AggrType {
-        self.aggr_ty
+        self.aggr_type
     }
     fn get_elem_type(&self) -> ValTypeID {
         self.get_valtype()
@@ -98,7 +98,7 @@ impl IAggrIndexInst for IndexExtractInst {
                 UseID::new(allocs, UseKind::IndexExtractAggr),
                 UseID::new(allocs, UseKind::IndexExtractIndex),
             ],
-            aggr_ty,
+            aggr_type: aggr_ty,
         }
     }
 }
@@ -144,7 +144,7 @@ impl IndexExtractInstID {
     }
 
     pub fn aggr_type(self, allocs: &IRAllocs) -> AggrType {
-        self.deref_ir(allocs).aggr_ty
+        self.deref_ir(allocs).aggr_type
     }
     pub fn get_elem_type(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).get_elem_type()

@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
-        Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
+        OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -131,6 +131,11 @@ impl IndexInsertInst {
 
 _remusys_ir_subinst_id!(IndexInsertInstID, IndexInsertInst);
 impl IndexInsertInstID {
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self {
+        let inst = IndexInsertInst::new_uninit(allocs, tctx, aggr_type);
+        Self::allocate(allocs, inst)
+    }
+
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
     }
@@ -141,17 +146,31 @@ impl IndexInsertInstID {
         self.deref_ir(allocs).set_aggr(allocs, val);
     }
 
-    pub fn aggr_type(self, allocs: &IRAllocs) -> AggrType {
-        self.deref_ir(allocs).get_aggr_operand_type()
-    }
-    pub fn get_elem_type(self, allocs: &IRAllocs) -> ValTypeID {
-        self.deref_ir(allocs).get_elem_type()
+    pub fn index_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).index_use()
     }
     pub fn get_index(self, allocs: &IRAllocs) -> ValueSSA {
         self.deref_ir(allocs).get_index(allocs)
     }
     pub fn set_index(self, allocs: &IRAllocs, val: ValueSSA) {
         self.deref_ir(allocs).set_index(allocs, val);
+    }
+
+    pub fn elem_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).elem_use()
+    }
+    pub fn get_elem(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_elem(allocs)
+    }
+    pub fn set_elem(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_elem(allocs, val);
+    }
+
+    pub fn aggr_type(self, allocs: &IRAllocs) -> AggrType {
+        self.deref_ir(allocs).get_aggr_operand_type()
+    }
+    pub fn get_elem_type(self, allocs: &IRAllocs) -> ValTypeID {
+        self.deref_ir(allocs).get_elem_type()
     }
 }
 
@@ -278,6 +297,16 @@ impl FieldInsertInstID {
         self.deref_ir(allocs).set_aggr(allocs, val);
     }
 
+    pub fn elem_use(self, allocs: &IRAllocs) -> UseID {
+        self.deref_ir(allocs).elem_use()
+    }
+    pub fn get_elem(self, allocs: &IRAllocs) -> ValueSSA {
+        self.deref_ir(allocs).get_elem(allocs)
+    }
+    pub fn set_elem(self, allocs: &IRAllocs, val: ValueSSA) {
+        self.deref_ir(allocs).set_elem(allocs, val);
+    }
+
     pub fn aggr_type(self, allocs: &IRAllocs) -> AggrType {
         self.deref_ir(allocs).get_aggr_operand_type()
     }
@@ -310,6 +339,12 @@ impl IAggrFieldInstBuildable for FieldInsertBuilder {
     fn build_obj(&mut self, allocs: &IRAllocs) -> Self::InstT {
         let elem = self.elem;
         let AggrFieldInstBuilderCommon { aggr, aggr_type, steps } = &self.common;
+
+        let elem_type = match steps.last() {
+            Some((_, ty)) => *ty,
+            None => aggr_type.into_ir(),
+        };
+
         let inst = FieldInsertInst {
             common: InstCommon::new(Opcode::FieldInsert, aggr_type.into_ir()),
             operands: [
@@ -317,7 +352,7 @@ impl IAggrFieldInstBuildable for FieldInsertBuilder {
                 UseID::new(allocs, UseKind::FieldInsertElem),
             ],
             fields: steps.iter().map(|(idx, _)| *idx).collect(),
-            elem_type: elem.get_valtype(allocs),
+            elem_type,
         };
         if *aggr != ValueSSA::None {
             inst.set_aggr(allocs, *aggr);

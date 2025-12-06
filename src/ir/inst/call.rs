@@ -179,6 +179,7 @@ pub struct CallInstBuilder {
     fixed_nargs: u32,
     args: SmallVec<[ValueSSA; 4]>,
     is_tail_call: bool,
+    builder_uninit: bool,
 }
 impl CallInstBuilder {
     pub fn new(tctx: &TypeContext, callee_ty: FuncTypeID) -> Self {
@@ -194,6 +195,7 @@ impl CallInstBuilder {
             fixed_nargs: nargs,
             args: SmallVec::new(),
             is_tail_call: false,
+            builder_uninit: false,
         }
     }
     pub fn resize_nargs(&mut self, new_nargs: u32) -> Option<&mut Self> {
@@ -228,6 +230,11 @@ impl CallInstBuilder {
         self.is_tail_call = is_tail;
         self
     }
+    pub fn builder_uninit(&mut self, require: bool) -> &mut Self {
+        self.builder_uninit = require;
+        self
+    }
+
     pub fn build_obj(&mut self, allocs: &IRAllocs) -> CallInst {
         let nargs = if self.args.is_empty() { self.fixed_nargs as usize } else { self.args.len() };
         let operands = {
@@ -250,9 +257,11 @@ impl CallInstBuilder {
         if self.callee != ValueSSA::None {
             ret.set_callee(allocs, self.callee);
         }
-        for (i, &arg) in self.args.iter().enumerate() {
-            let use_id = ret.operands[CallInst::OP_ARGS_BEGIN + i];
-            use_id.set_operand(allocs, arg);
+        if !self.builder_uninit {
+            for (i, &arg) in self.args.iter().enumerate() {
+                let use_id = ret.operands[CallInst::OP_ARGS_BEGIN + i];
+                use_id.set_operand(allocs, arg);
+            }
         }
         ret
     }

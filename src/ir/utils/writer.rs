@@ -1015,7 +1015,7 @@ impl<'ir> IRWriter<'ir> {
             write!(self, "%{number} = ").unwrap();
         }
         self.write_str("extractelement ").unwrap();
-        self.write_type(inst.aggr_ty.into_ir()).unwrap();
+        self.write_type(inst.aggr_type.into_ir()).unwrap();
         self.write_str(" ").unwrap();
         self.write_operand(inst.get_aggr(allocs)).unwrap();
         self.write_str(", ").unwrap();

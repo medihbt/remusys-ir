@@ -26,6 +26,11 @@ pub trait IAggrFieldInstBuildable: Clone {
     fn common(&self) -> &AggrFieldInstBuilderCommon;
     fn common_mut(&mut self) -> &mut AggrFieldInstBuilderCommon;
 
+    fn reserve_steps(&mut self, n: usize) -> &mut Self {
+        let inner = self.common_mut();
+        inner.steps.reserve(n);
+        self
+    }
     fn try_add_step(&mut self, tctx: &TypeContext, index: u32) -> AggrFieldInstBuildRes<&mut Self> {
         let inner = self.common_mut();
         let currty = if inner.steps.is_empty() {
