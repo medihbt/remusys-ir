@@ -781,11 +781,14 @@ impl<'old> ModuleClone<'old> {
 
     fn map_all_uses(&self) {
         let new_allocs = &self.new_module.allocs;
-        while let Some(uproc) = self.process_queue.borrow_mut().uses.pop_front() {
+        while let Some(uproc) = self.pop_use_proc() {
             let UseProc { new_use, old_val } = uproc;
             let mapped_val = self.map_get_value(old_val);
             new_use.set_operand(new_allocs, mapped_val);
         }
+    }
+    fn pop_use_proc(&self) -> Option<UseProc> {
+        self.process_queue.borrow_mut().uses.pop_front()
     }
     fn map_get_value(&self, old_value: ValueSSA) -> ValueSSA {
         match old_value {
