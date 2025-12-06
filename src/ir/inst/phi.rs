@@ -178,6 +178,9 @@ impl PhiInst {
         }
         phi
     }
+    pub fn builder(allocs: &IRAllocs, ty: ValTypeID) -> PhiInstBuilder<'_> {
+        PhiInstBuilder::new(allocs, ty)
+    }
 
     pub fn incoming_uses(&self) -> Ref<'_, [UseSlotPair]> {
         Ref::map(self.operands.borrow(), |ops| ops.as_slice())
@@ -263,6 +266,9 @@ impl PhiInstID {
     ) -> Self {
         let inst = PhiInst::from_incomings(ty, allocs, incomings);
         Self::allocate(allocs, inst)
+    }
+    pub fn builder(allocs: &IRAllocs, ty: ValTypeID) -> PhiInstBuilder<'_> {
+        PhiInstBuilder::new(allocs, ty)
     }
 
     pub fn incoming_uses(self, allocs: &IRAllocs) -> Ref<'_, [UseSlotPair]> {
@@ -443,5 +449,79 @@ impl<'ir> PhiInstDedup<'ir> {
         }
         *operands = new_opreands;
         Ok(())
+    }
+}
+
+pub struct PhiInstBuilder<'ir> {
+    pub value_type: ValTypeID,
+    pub incomings: BTreeMap<BlockID, ValueSSA>,
+    pub allow_uninit: bool,
+    allocs: &'ir IRAllocs,
+}
+
+impl<'ir> PhiInstBuilder<'ir> {
+    pub fn new(allocs: &'ir IRAllocs, value_type: ValTypeID) -> Self {
+        Self {
+            value_type,
+            incomings: BTreeMap::new(),
+            allow_uninit: false,
+            allocs,
+        }
+    }
+
+    pub fn allow_uninit(&mut self, allow: bool) -> &mut Self {
+        self.allow_uninit = allow;
+        self
+    }
+    pub fn add_incoming(&mut self, block: BlockID, val: ValueSSA) -> &mut Self {
+        if !self.allow_uninit {
+            assert_eq!(
+                self.value_type,
+                val.get_valtype(self.allocs),
+                "Type mismatch in PhiInstBuilder incoming value"
+            );
+        }
+        self.incomings.insert(block, val);
+        self
+    }
+    pub fn add_uninit_incoming(&mut self, block: BlockID) -> &mut Self {
+        assert!(
+            self.allow_uninit,
+            "Cannot add uninitialized incoming value when allow_uninit is false"
+        );
+        self.incomings.insert(block, ValueSSA::None);
+        self
+    }
+    pub fn incomings(
+        &mut self,
+        incomings: impl IntoIterator<Item = (BlockID, ValueSSA)>,
+    ) -> &mut Self {
+        for (block, val) in incomings {
+            self.add_incoming(block, val);
+        }
+        self
+    }
+    pub fn uninit_incomings(&mut self, blocks: impl IntoIterator<Item = BlockID>) -> &mut Self {
+        for block in blocks {
+            self.add_uninit_incoming(block);
+        }
+        self
+    }
+
+    pub fn build_obj(&self) -> PhiInst {
+        let mut operands = SmallVec::with_capacity(self.incomings.len());
+        for (index, (&blk, &val)) in self.incomings.iter().enumerate() {
+            let slots = UseSlotPair::new(self.allocs, None, index as u32, val, blk);
+            operands.push(slots);
+        }
+        PhiInst {
+            common: InstCommon::new(Opcode::Phi, self.value_type),
+            operands: RefCell::new(operands),
+            self_id: Cell::new(None),
+        }
+    }
+    pub fn build_id(&self) -> PhiInstID {
+        let inst = self.build_obj();
+        PhiInstID::allocate(self.allocs, inst)
     }
 }

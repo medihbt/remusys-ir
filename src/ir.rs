@@ -51,7 +51,7 @@ pub use self::{
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
+        GlobalCommon, GlobalID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID, Linkage,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
             IFuncUniqueUser, IFuncValue,
@@ -83,6 +83,7 @@ pub use self::{
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
         llvm_adapt::LLVMAdaptMapping,
+        module_clone::ModuleClone,
         numbering::{IRNumberValueMap, NumberOption},
         writer::{IRWriteOption, IRWriter, IRWriterStat, write_ir_to_file},
     },

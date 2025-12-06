@@ -623,14 +623,14 @@ impl IArrayExpr for SplatArrayExpr {
     }
 }
 impl SplatArrayExpr {
-    pub fn pattern_use(&self) -> UseID {
+    pub fn elem_use(&self) -> UseID {
         self.element[0]
     }
-    pub fn get_pattern(&self, allocs: &IRAllocs) -> ValueSSA {
-        self.pattern_use().get_operand(allocs)
+    pub fn get_elem(&self, allocs: &IRAllocs) -> ValueSSA {
+        self.elem_use().get_operand(allocs)
     }
-    pub fn set_pattern(&self, allocs: &IRAllocs, val: ValueSSA) {
-        let use_id = self.pattern_use();
+    pub fn set_elem(&self, allocs: &IRAllocs, val: ValueSSA) {
+        let use_id = self.elem_use();
         use_id.set_operand(allocs, val);
     }
 
@@ -643,6 +643,11 @@ impl SplatArrayExpr {
         let elemty = arrty.get_element_type(tctx);
         let nelems = arrty.get_num_elements(tctx);
         Self::new_full(allocs, arrty, elemty, nelems, element)
+    }
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        let elemty = arrty.get_element_type(tctx);
+        let nelems = arrty.get_num_elements(tctx);
+        Self::new_full(allocs, arrty, elemty, nelems, ValueSSA::None)
     }
     fn new_full(
         allocs: &IRAllocs,
@@ -677,6 +682,10 @@ impl SplatArrayExprID {
     }
     pub fn new(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID, elem: ValueSSA) -> Self {
         let splat_array = SplatArrayExpr::new(allocs, tctx, arrty, elem);
+        Self::allocate(allocs, splat_array)
+    }
+    pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, arrty: ArrayTypeID) -> Self {
+        let splat_array = SplatArrayExpr::new_uninit(allocs, tctx, arrty);
         Self::allocate(allocs, splat_array)
     }
 }

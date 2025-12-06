@@ -1,5 +1,8 @@
 use crate::{
-    ir::{FuncID, GlobalID, GlobalObj, GlobalVarID, IRAllocs, IRMarker, ISubGlobal, ISubGlobalID},
+    ir::{
+        FuncID, GlobalID, GlobalObj, GlobalVarID, IRAllocs, IRMarker, ISubGlobal, ISubGlobalID,
+        utils::module_clone::ModuleClone,
+    },
     typing::{ArchInfo, TypeContext},
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -123,6 +126,11 @@ impl AsMut<IRAllocs> for Module {
 impl AsMut<Module> for Module {
     fn as_mut(&mut self) -> &mut Module {
         self
+    }
+}
+impl Clone for Module {
+    fn clone(&self) -> Self {
+        ModuleClone::new(self).clone_and_release()
     }
 }
 

@@ -69,7 +69,7 @@ pub use self::{
     ret::{RetInst, RetInstID},
     select::{SelectInst, SelectInstID},
     store::{StoreInst, StoreInstID},
-    switch::{SwitchInst, SwitchInstID},
+    switch::{SwitchInst, SwitchInstBuilder, SwitchInstID},
     unreachable::{UnreachableInst, UnreachableInstID},
 };
 

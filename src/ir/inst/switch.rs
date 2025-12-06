@@ -10,7 +10,7 @@ use crate::{
 use smallvec::{SmallVec, smallvec};
 use std::{
     cell::{Ref, RefCell, RefMut},
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ops::RangeFrom,
 };
 
@@ -128,6 +128,9 @@ impl SwitchInst {
             targets: RefCell::new(smallvec![default]),
         }
     }
+    pub fn builder(discrim_ty: IntType) -> SwitchInstBuilder {
+        SwitchInstBuilder::new(discrim_ty)
+    }
 
     pub fn discrim_use(&self) -> UseID {
         self.discrim[Self::OP_DISCRIM]
@@ -232,12 +235,19 @@ impl SwitchInst {
         // only need to reserve `case_count` more slots for cases.
         self.targets.borrow_mut().reserve(case_count);
     }
+
+    pub fn cases_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> SwitchCaseIter<'ir> {
+        SwitchCaseIter::new(self, allocs)
+    }
 }
 
 _remusys_ir_subinst_id!(SwitchInstID, SwitchInst, terminator);
 impl SwitchInstID {
     pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
         Self::allocate(allocs, SwitchInst::new_uninit(allocs, discrim_ty))
+    }
+    pub fn builder(discrim_ty: IntType) -> SwitchInstBuilder {
+        SwitchInstBuilder::new(discrim_ty)
     }
     pub fn from_cases(
         allocs: &IRAllocs,
@@ -248,39 +258,11 @@ impl SwitchInstID {
         let ValTypeID::Int(discrim_bits) = discrim.get_valtype(allocs) else {
             panic!("SwitchInstID::from_cases_iter: discrim must be of integer type");
         };
-        let switch = SwitchInst::new_uninit(allocs, IntType(discrim_bits));
-        switch.set_discrim(allocs, discrim);
-        switch.set_default_bb(allocs, default_bb);
-
-        let cases: HashMap<i64, BlockID> = cases.into_iter().collect();
-        switch.reserve_cases(cases.len());
-        for (case_val, bb) in cases {
-            let jt = switch.push_case_jt(allocs, case_val);
-            jt.set_block(allocs, bb);
-        }
-        Self::allocate(allocs, switch)
-    }
-    pub fn from_cases_sorted(
-        allocs: &IRAllocs,
-        discrim: ValueSSA,
-        cases: impl IntoIterator<Item = (i64, BlockID)>,
-        default_bb: BlockID,
-    ) -> Self {
-        let ValTypeID::Int(discrim_bits) = discrim.get_valtype(allocs) else {
-            panic!("SwitchInstID::from_cases_sorted: discrim must be of integer type");
-        };
-        let switch = SwitchInst::new_uninit(allocs, IntType(discrim_bits));
-        switch.set_discrim(allocs, discrim);
-        switch.set_default_bb(allocs, default_bb);
-
-        // 使用 BTreeMap 以按 case 值升序、且按 key 去重（最后一次出现覆盖之前）。
-        let cases: BTreeMap<i64, BlockID> = cases.into_iter().collect();
-        switch.reserve_cases(cases.len());
-        for (case_val, bb) in cases {
-            let jt = switch.push_case_jt(allocs, case_val);
-            jt.set_block(allocs, bb);
-        }
-        Self::allocate(allocs, switch)
+        SwitchInstBuilder::new(IntType(discrim_bits))
+            .cases(cases)
+            .discrim(discrim)
+            .default_bb(default_bb)
+            .build_id(allocs)
     }
 
     pub fn discrim_ty(self, allocs: &IRAllocs) -> IntType {
@@ -324,5 +306,110 @@ impl SwitchInstID {
     }
     pub fn find_remove_case(self, allocs: &IRAllocs, case_val: i64) -> bool {
         self.deref_ir(allocs).remove_case(allocs, case_val)
+    }
+
+    pub fn cases_iter(self, allocs: &IRAllocs) -> SwitchCaseIter<'_> {
+        SwitchCaseIter::new(self.deref_ir(allocs), allocs)
+    }
+}
+
+pub struct SwitchInstBuilder {
+    discrim_ty: IntType,
+    discrim: ValueSSA,
+    cases: HashMap<i64, BlockID>,
+    default_bb: Option<BlockID>,
+}
+
+impl SwitchInstBuilder {
+    pub fn new(discrim_ty: IntType) -> Self {
+        Self {
+            discrim_ty,
+            discrim: ValueSSA::None,
+            cases: HashMap::new(),
+            default_bb: None,
+        }
+    }
+
+    pub fn discrim(&mut self, val: ValueSSA) -> &mut Self {
+        self.discrim = val;
+        self
+    }
+    pub fn case(&mut self, case_val: i64, bb: BlockID) -> &mut Self {
+        self.cases.insert(case_val, bb);
+        self
+    }
+    pub fn default_bb(&mut self, bb: BlockID) -> &mut Self {
+        self.default_bb = Some(bb);
+        self
+    }
+    pub fn del_case(&mut self, case_val: i64) -> &mut Self {
+        self.cases.remove(&case_val);
+        self
+    }
+    pub fn cases(&mut self, cases: impl IntoIterator<Item = (i64, BlockID)>) -> &mut Self {
+        for (case_val, bb) in cases {
+            self.cases.insert(case_val, bb);
+        }
+        self
+    }
+
+    pub fn build_obj(&self, allocs: &IRAllocs) -> SwitchInst {
+        let default_bb = self
+            .default_bb
+            .expect("SwitchInstBuilder::build: default_bb must be set");
+        let switch = SwitchInst::new_uninit(allocs, self.discrim_ty);
+        switch.set_discrim(allocs, self.discrim);
+        switch.set_default_bb(allocs, default_bb);
+
+        switch.reserve_cases(self.cases.len());
+        for (&case_val, &bb) in &self.cases {
+            let jt = switch.push_case_jt(allocs, case_val);
+            jt.set_block(allocs, bb);
+        }
+        switch
+    }
+    pub fn build_id(&self, allocs: &IRAllocs) -> SwitchInstID {
+        let switch = self.build_obj(allocs);
+        SwitchInstID::allocate(allocs, switch)
+    }
+}
+
+pub struct SwitchCaseIter<'ir> {
+    cases: Ref<'ir, [JumpTargetID]>,
+    allocs: &'ir IRAllocs,
+    pos: usize,
+}
+
+impl<'ir> Iterator for SwitchCaseIter<'ir> {
+    type Item = (JumpTargetID, i64, Option<BlockID>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos >= self.cases.len() {
+            return None;
+        }
+        let jt = self.cases[self.pos];
+        self.pos += 1;
+        let kind = jt.get_kind(self.allocs);
+        let JumpTargetKind::SwitchCase(case_val) = kind else {
+            panic!("Found non-case jump target {kind:?} in SwitchCaseIter");
+        };
+        let bb = jt.get_block(self.allocs);
+        Some((jt, case_val, bb))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = self.cases.len() - self.pos;
+        (remaining, Some(remaining))
+    }
+}
+impl<'ir> ExactSizeIterator for SwitchCaseIter<'ir> {
+    fn len(&self) -> usize {
+        self.cases.len() - self.pos
+    }
+}
+
+impl<'ir> SwitchCaseIter<'ir> {
+    pub fn new(switch: &'ir SwitchInst, allocs: &'ir IRAllocs) -> Self {
+        Self { cases: switch.case_jts(), allocs, pos: 0 }
     }
 }
