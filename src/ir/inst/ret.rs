@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon, InstObj,
         JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 
@@ -92,7 +91,7 @@ impl RetInst {
     }
 }
 
-subinst_id!(RetInstID, RetInst, terminator);
+_remusys_ir_subinst_id!(RetInstID, RetInst, terminator);
 impl RetInstID {
     pub fn new_uninit(allocs: &IRAllocs, ret_ty: ValTypeID) -> Self {
         Self::allocate(allocs, RetInst::new_uninit(allocs, ret_ty))

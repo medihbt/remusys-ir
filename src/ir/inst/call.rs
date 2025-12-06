@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon,
         InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
 use smallvec::{SmallVec, smallvec};
@@ -125,7 +124,7 @@ impl CallInst {
     }
 }
 
-subinst_id!(CallInstID, CallInst);
+_remusys_ir_subinst_id!(CallInstID, CallInst);
 impl CallInstID {
     pub fn callee_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).callee_use()

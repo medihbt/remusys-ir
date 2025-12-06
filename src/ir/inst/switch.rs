@@ -1,11 +1,10 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
         InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
         ValueSSA,
     },
-    subinst_id,
     typing::{IntType, ValTypeID},
 };
 use smallvec::{SmallVec, smallvec};
@@ -235,7 +234,7 @@ impl SwitchInst {
     }
 }
 
-subinst_id!(SwitchInstID, SwitchInst, terminator);
+_remusys_ir_subinst_id!(SwitchInstID, SwitchInst, terminator);
 impl SwitchInstID {
     pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
         Self::allocate(allocs, SwitchInst::new_uninit(allocs, discrim_ty))

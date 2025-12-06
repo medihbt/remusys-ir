@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -8,7 +8,6 @@ use crate::{
             IAggregateInst,
         },
     },
-    subinst_id,
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
@@ -130,7 +129,7 @@ impl IndexInsertInst {
     }
 }
 
-subinst_id!(IndexInsertInstID, IndexInsertInst);
+_remusys_ir_subinst_id!(IndexInsertInstID, IndexInsertInst);
 impl IndexInsertInstID {
     pub fn aggr_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).aggr_use()
@@ -263,7 +262,7 @@ impl FieldInsertInst {
     }
 }
 
-subinst_id!(FieldInsertInstID, FieldInsertInst);
+_remusys_ir_subinst_id!(FieldInsertInstID, FieldInsertInst);
 impl FieldInsertInstID {
     pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
         FieldInsertBuilder::new(aggr_type)

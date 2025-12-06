@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 
@@ -189,7 +188,7 @@ impl AmoRmwInst {
     }
 }
 
-subinst_id!(AmoRmwInstID, AmoRmwInst);
+_remusys_ir_subinst_id!(AmoRmwInstID, AmoRmwInst);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)

@@ -2,8 +2,8 @@ use crate::{
     base::INullableValue,
     impl_traceable_from_common,
     ir::{
-        GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, Module, OperandSet, UseID, UseKind,
-        ValueSSA,
+        GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, IValueConvert, Module, OperandSet,
+        UseID, UseKind, ValueSSA,
         global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
     },
     typing::ValTypeID,
@@ -119,6 +119,17 @@ impl ISubGlobalID for GlobalVarID {
     }
     fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
         self.0
+    }
+}
+impl IValueConvert for GlobalVarID {
+    fn try_from_value(value: ValueSSA, module: &Module) -> Option<Self> {
+        let ValueSSA::Global(gid) = value else {
+            return None;
+        };
+        GlobalVarID::try_from_global(&module.allocs, gid)
+    }
+    fn into_value(self) -> ValueSSA {
+        ValueSSA::Global(self.raw_into())
     }
 }
 impl GlobalVarID {

@@ -1,4 +1,5 @@
 use crate::{
+    _remusys_ir_subexpr_id,
     base::APInt,
     impl_traceable_from_common,
     ir::{
@@ -184,17 +185,7 @@ impl ArrayExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ArrayExprID(pub ExprRawPtr);
-
-impl ISubExprID for ArrayExprID {
-    type ExprObjT = ArrayExpr;
-
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
-        ArrayExprID(id)
-    }
-    fn into_raw_ptr(self) -> ExprRawPtr {
-        self.0
-    }
-}
+_remusys_ir_subexpr_id!(ArrayExprID, ArrayExpr);
 impl IArrayExprID for ArrayExprID {
     fn expand_to_array_id(self, _: &IRAllocs) -> ArrayExprID {
         self
@@ -529,17 +520,7 @@ impl DataArrayExpr {
         Some(Self { common: ExprCommon::none(), arrty, elemty, data })
     }
 }
-impl ISubExprID for DataArrayExprID {
-    type ExprObjT = DataArrayExpr;
-
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
-        Self(id)
-    }
-    fn into_raw_ptr(self) -> ExprRawPtr {
-        self.0
-    }
-}
-impl IArrayExprID for DataArrayExprID {}
+_remusys_ir_subexpr_id!(DataArrayExprID, DataArrayExpr, ArrayExpr);
 impl DataArrayExprID {
     pub fn get_data(self, allocs: &IRAllocs) -> &ConstArrayData {
         &self.deref_ir(allocs).data
@@ -681,17 +662,7 @@ impl SplatArrayExpr {
         }
     }
 }
-impl ISubExprID for SplatArrayExprID {
-    type ExprObjT = SplatArrayExpr;
-
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
-        Self(id)
-    }
-    fn into_raw_ptr(self) -> ExprRawPtr {
-        self.0
-    }
-}
-impl IArrayExprID for SplatArrayExprID {}
+_remusys_ir_subexpr_id!(SplatArrayExprID, SplatArrayExpr, ArrayExpr);
 impl SplatArrayExprID {
     pub fn elem_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).element[0]
@@ -1081,16 +1052,7 @@ impl<'kv> Iterator for KVArrayElemIter<'kv> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct KVArrayExprID(pub ExprRawPtr);
 
-impl ISubExprID for KVArrayExprID {
-    type ExprObjT = KVArrayExpr;
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
-        Self(id)
-    }
-    fn into_raw_ptr(self) -> ExprRawPtr {
-        self.0
-    }
-}
-impl IArrayExprID for KVArrayExprID {}
+_remusys_ir_subexpr_id!(KVArrayExprID, KVArrayExpr, ArrayExpr);
 impl KVArrayExprID {
     pub fn builder<'ir>(
         tctx: &TypeContext,

@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         CmpCond, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::{FixVecType, ScalarType, ValTypeID},
 };
 
@@ -125,7 +124,7 @@ impl CmpInst {
     }
 }
 
-subinst_id!(CmpInstID, CmpInst);
+_remusys_ir_subinst_id!(CmpInstID, CmpInst);
 impl CmpInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

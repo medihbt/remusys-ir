@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 
@@ -129,7 +128,7 @@ impl SelectInst {
     }
 }
 
-subinst_id!(SelectInstID, SelectInst);
+_remusys_ir_subinst_id!(SelectInstID, SelectInst);
 impl SelectInstID {
     pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = SelectInst::new_uninit(allocs, ty);

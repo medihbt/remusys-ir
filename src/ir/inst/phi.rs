@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
         Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 use smallvec::SmallVec;
@@ -247,7 +246,7 @@ impl PhiInst {
     }
 }
 
-subinst_id!(PhiInstID, PhiInst);
+_remusys_ir_subinst_id!(PhiInstID, PhiInst);
 impl PhiInstID {
     pub fn new_empty(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = PhiInst::new_empty(ty);

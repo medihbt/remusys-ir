@@ -100,6 +100,20 @@ pub enum ValueClass {
     Global,
 }
 
+pub trait IValueConvert: Copy {
+    fn try_from_value(value: ValueSSA, module: &Module) -> Option<Self>;
+
+    fn from_value(value: ValueSSA, module: &Module) -> Self {
+        match Self::try_from_value(value, module) {
+            Some(v) => v,
+            None => panic!(
+                "Invalid ValueSSA type for {}",
+                std::any::type_name::<Self>()
+            ),
+        }
+    }
+    fn into_value(self) -> ValueSSA;
+}
 pub trait ISubValueSSA: Copy {
     fn get_class(self) -> ValueClass;
     fn try_from_ir(ir: ValueSSA) -> Option<Self>;
@@ -129,6 +143,14 @@ pub trait ISubValueSSA: Copy {
     }
 
     fn is_zero_const(self, allocs: &IRAllocs) -> bool;
+}
+impl<V: ISubValueSSA> IValueConvert for V {
+    fn try_from_value(value: ValueSSA, _: &Module) -> Option<Self> {
+        Self::try_from_ir(value)
+    }
+    fn into_value(self) -> ValueSSA {
+        self.into_ir()
+    }
 }
 pub trait IPtrValue {
     fn get_ptr_pointee_type(&self) -> ValTypeID;

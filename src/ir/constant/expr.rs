@@ -98,6 +98,40 @@ pub trait ISubExprID: Copy {
         ExprObj::dispose_id(self.raw_into(), allocs)
     }
 }
+#[macro_export]
+macro_rules! _remusys_ir_subexpr_id {
+    ($IDName:ident, $ObjType:ident) => {
+        impl $crate::ir::ISubExprID for $IDName {
+            type ExprObjT = $ObjType;
+
+            fn from_raw_ptr(id: $crate::ir::constant::expr::ExprRawPtr) -> Self {
+                Self(id)
+            }
+            fn into_raw_ptr(self) -> $crate::ir::constant::expr::ExprRawPtr {
+                self.0
+            }
+        }
+        impl $crate::ir::IValueConvert for $IDName {
+            fn try_from_value(
+                value: $crate::ir::ValueSSA,
+                module: &$crate::ir::Module,
+            ) -> Option<Self> {
+                let expr_id = match value {
+                    $crate::ir::ValueSSA::ConstExpr(id) => id,
+                    _ => return None,
+                };
+                Self::try_from_expr(expr_id, &module.allocs)
+            }
+            fn into_value(self) -> $crate::ir::ValueSSA {
+                self.raw_into().into_ir()
+            }
+        }
+    };
+    ($IDName:ident, $ObjType:ident, ArrayExpr) => {
+        $crate::_remusys_ir_subexpr_id!($IDName, $ObjType);
+        impl $crate::ir::IArrayExprID for $IDName {}
+    };
+}
 
 #[derive(Clone)]
 #[entity_id(ExprID, policy = 256, allocator_type = ExprAlloc)]

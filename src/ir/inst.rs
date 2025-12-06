@@ -274,7 +274,7 @@ pub trait ISubInstID: Copy {
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
 #[macro_export]
-macro_rules! subinst_id {
+macro_rules! _remusys_ir_subinst_id {
     ($IDType:ident, $ObjType:ident) => {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $IDType(pub $crate::ir::inst::InstBackID);
@@ -322,6 +322,21 @@ macro_rules! subinst_id {
             #[inline]
             fn is_terminator(self, _: &IRAllocs) -> bool {
                 true
+            }
+        }
+        impl $crate::ir::IValueConvert for $IDType {
+            fn try_from_value(
+                value: $crate::ir::ValueSSA,
+                allocs: &$crate::ir::Module,
+            ) -> Option<Self> {
+                let inst_id = match value {
+                    $crate::ir::ValueSSA::Inst(id) => id,
+                    _ => return None,
+                };
+                Self::try_from_instid(inst_id, &allocs.allocs)
+            }
+            fn into_value(self) -> $crate::ir::ValueSSA {
+                $crate::ir::ValueSSA::Inst(self.raw_into())
             }
         }
         impl $crate::ir::ITerminatorID for $IDType {}

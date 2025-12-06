@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj, JumpTargetID,
         JumpTargets, Opcode, OperandSet, UseID,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 
@@ -81,7 +80,7 @@ impl UnreachableInst {
     }
 }
 
-subinst_id!(UnreachableInstID, UnreachableInst, terminator);
+_remusys_ir_subinst_id!(UnreachableInstID, UnreachableInst, terminator);
 impl UnreachableInstID {
     pub fn new(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, UnreachableInst::new())

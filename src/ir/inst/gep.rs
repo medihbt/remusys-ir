@@ -1,11 +1,11 @@
 use crate::{
+    _remusys_ir_subinst_id,
     base::INullableValue,
     impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
         InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
@@ -185,7 +185,7 @@ impl GEPInst {
     }
 }
 
-subinst_id!(GEPInstID, GEPInst);
+_remusys_ir_subinst_id!(GEPInstID, GEPInst);
 impl GEPInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

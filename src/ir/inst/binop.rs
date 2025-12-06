@@ -1,10 +1,9 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
     },
-    subinst_id,
     typing::ValTypeID,
 };
 use bitflags::bitflags;
@@ -207,7 +206,7 @@ impl BinOPInst {
     }
 }
 
-subinst_id!(BinOPInstID, BinOPInst);
+_remusys_ir_subinst_id!(BinOPInstID, BinOPInst);
 impl BinOPInstID {
     pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, ty: ValTypeID) -> Self {
         let inst = BinOPInst::new_uninit(allocs, opcode, ty);

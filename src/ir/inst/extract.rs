@@ -1,5 +1,5 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subinst_id, impl_traceable_from_common,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
         Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -8,7 +8,6 @@ use crate::{
             IAggregateInst,
         },
     },
-    subinst_id,
     typing::{AggrType, IValType, TypeContext, ValTypeID},
 };
 use smallvec::SmallVec;
@@ -108,7 +107,7 @@ impl IndexExtractInst {
     pub const OP_INDEX: usize = 1;
 }
 
-subinst_id!(IndexExtractInstID, IndexExtractInst);
+_remusys_ir_subinst_id!(IndexExtractInstID, IndexExtractInst);
 impl IndexExtractInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_ty: AggrType) -> Self {
         let inst = IndexExtractInst::new_uninit(allocs, tctx, aggr_ty);
@@ -236,7 +235,7 @@ impl FieldExtractInst {
     }
 }
 
-subinst_id!(FieldExtractInstID, FieldExtractInst);
+_remusys_ir_subinst_id!(FieldExtractInstID, FieldExtractInst);
 impl FieldExtractInstID {
     pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
         FieldExtractInst::builder(aggr_type)

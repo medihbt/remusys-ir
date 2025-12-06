@@ -3,7 +3,7 @@ use crate::{
     ir::{
         AttrClass, AttrSet, Attribute, AttributePos, BlockID, GlobalID, GlobalObj, IPtrUniqueUser,
         IPtrValue, IRAllocs, ISubGlobal, ISubGlobalID, ISubValueSSA, ITraceableValue, IUser,
-        Module, OperandSet, TerminatorID, UseID, UserList, ValueClass, ValueSSA,
+        IValueConvert, Module, OperandSet, TerminatorID, UseID, UserList, ValueClass, ValueSSA,
         global::{GlobalCommon, Linkage},
         inst::{RetInstID, UnreachableInstID},
     },
@@ -221,6 +221,17 @@ impl ISubGlobalID for FuncID {
     }
     fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
         self.0
+    }
+}
+impl IValueConvert for FuncID {
+    fn try_from_value(value: ValueSSA, module: &Module) -> Option<Self> {
+        let ValueSSA::Global(gid) = value else {
+            return None;
+        };
+        FuncID::try_from_global(&module.allocs, gid)
+    }
+    fn into_value(self) -> ValueSSA {
+        ValueSSA::Global(self.raw_into())
     }
 }
 impl FuncID {
