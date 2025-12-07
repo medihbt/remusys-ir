@@ -128,12 +128,12 @@ impl BlockObj {
             .expect("Failed to add JumpTarget to BlockObj preds");
     }
 
-    pub fn try_get_terminator(&self, allocs: &IRAllocs) -> Option<InstID> {
+    pub fn try_get_terminator_inst(&self, allocs: &IRAllocs) -> Option<InstID> {
         let back = self.get_body().insts.get_back_id(&allocs.insts)?;
         if back.is_terminator(allocs) { Some(back) } else { None }
     }
     pub fn get_terminator_inst(&self, allocs: &IRAllocs) -> InstID {
-        self.try_get_terminator(allocs)
+        self.try_get_terminator_inst(allocs)
             .expect("Attempted to get terminator of BlockObj without terminator")
     }
     pub fn try_set_terminator_inst<'ir>(
@@ -190,7 +190,7 @@ impl BlockObj {
     }
 
     pub fn try_get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
-        let term_inst = self.try_get_terminator(allocs)?;
+        let term_inst = self.try_get_terminator_inst(allocs)?;
         term_inst.try_get_jts(allocs)
     }
     pub fn get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
@@ -269,12 +269,20 @@ impl BlockID {
     pub fn get_preds(self, allocs: &IRAllocs) -> &PredList {
         &self.get_body(allocs).preds
     }
-    pub fn try_get_terminator(self, allocs: &IRAllocs) -> Option<InstID> {
-        self.deref_ir(allocs).try_get_terminator(allocs)
+    pub fn try_get_terminator_inst(self, allocs: &IRAllocs) -> Option<InstID> {
+        self.deref_ir(allocs).try_get_terminator_inst(allocs)
     }
     pub fn get_terminator_inst(self, allocs: &IRAllocs) -> InstID {
         self.deref_ir(allocs).get_terminator_inst(allocs)
     }
+    pub fn try_get_terminator(self, allocs: &IRAllocs) -> Option<TerminatorID> {
+        let term_inst = self.try_get_terminator_inst(allocs)?;
+        TerminatorID::try_from_ir(allocs, term_inst)
+    }
+    pub fn get_terminator(self, allocs: &IRAllocs) -> TerminatorID {
+        self.deref_ir(allocs).get_terminator(allocs)
+    }
+
     pub fn try_set_terminator_inst(
         self,
         allocs: &IRAllocs,

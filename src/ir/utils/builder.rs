@@ -233,7 +233,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
             return Err(IRBuildError::NullFocus);
         };
         let block = focus.block.ok_or(IRBuildError::NullFocus)?;
-        let Some(termi) = block.try_get_terminator(self.allocs()) else {
+        let Some(termi) = block.try_get_terminator_inst(self.allocs()) else {
             return Err(IRBuildError::BlockHasNoTerminator(block));
         };
         focus.inst = Some(termi);
@@ -515,7 +515,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         let front_half_insts = front_half.get_insts(allocs);
         let back_half_insts = back_half.get_insts(allocs);
         let back_half_termi = back_half
-            .try_get_terminator(allocs)
+            .try_get_terminator_inst(allocs)
             .ok_or(IRBuildError::BlockHasNoTerminator(back_half))?;
         loop {
             let Some(to_unplug) = front_last.get_next_id(&allocs.insts) else {
