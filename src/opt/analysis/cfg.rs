@@ -1,4 +1,7 @@
-use crate::ir::{BlockID, FuncID, IRAllocs, ISubInstID};
+use crate::{
+    ir::{BlockID, FuncID, IRAllocs, ISubInstID},
+    opt::{CfgDfsSeq, DfsOrder},
+};
 use smallvec::SmallVec;
 use std::{
     collections::{BTreeSet, HashMap},
@@ -20,6 +23,39 @@ impl From<Option<BlockID>> for CfgBlockStat {
         match bid {
             Some(bid) => CfgBlockStat::Block(bid),
             None => CfgBlockStat::Virtual,
+        }
+    }
+}
+impl CfgBlockStat {
+    pub fn is_virtual(&self) -> bool {
+        matches!(self, CfgBlockStat::Virtual)
+    }
+
+    pub fn map<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(BlockID) -> R,
+    {
+        match self {
+            CfgBlockStat::Block(bid) => Some(f(*bid)),
+            CfgBlockStat::Virtual => None,
+        }
+    }
+    pub fn unwrap(&self) -> BlockID {
+        match self {
+            CfgBlockStat::Block(bid) => *bid,
+            CfgBlockStat::Virtual => panic!("called `CfgBlockStat::unwrap()` on a `Virtual` value"),
+        }
+    }
+    pub fn expect(&self, msg: &str) -> BlockID {
+        match self {
+            CfgBlockStat::Block(bid) => *bid,
+            CfgBlockStat::Virtual => panic!("{}", msg),
+        }
+    }
+    pub fn expect_string(&self, msg: String) -> BlockID {
+        match self {
+            CfgBlockStat::Block(bid) => *bid,
+            CfgBlockStat::Virtual => panic!("{}", msg),
         }
     }
 }
@@ -169,5 +205,49 @@ impl CfgSnapshot {
             CfgBlockStat::Block(bid) => self.nodes[&bid].has_pred(pred),
             CfgBlockStat::Virtual => CfgNode::contains(&self.exits, pred),
         }
+    }
+
+    pub fn write_to_dot(&self, allocs: &IRAllocs, writer: &mut dyn std::io::Write) {
+        let dfs = CfgDfsSeq::new(allocs, self.func, DfsOrder::RevPost).unwrap();
+        writeln!(writer, "digraph CFG {{").unwrap();
+        for dfs_node in &dfs.nodes {
+            let dfn = dfs_node.dfs_index;
+            let label = match dfs_node.block {
+                CfgBlockStat::Block(block_id) => format!("{:#x}", block_id.get_indexed(allocs)),
+                CfgBlockStat::Virtual => "%VIRTUAL".to_string(),
+            };
+            writeln!(writer, "    {dfn} [label=\"{label}\"];").unwrap();
+            let node = match dfs_node.block {
+                CfgBlockStat::Block(bid) => &self.nodes[&bid],
+                CfgBlockStat::Virtual => continue,
+            };
+            for &succ in node.succs.iter() {
+                let succ_dfn = dfs.block_dfn(succ);
+                writeln!(writer, "    {dfn} -> {succ_dfn};").unwrap();
+            }
+        }
+        writeln!(writer, "}}").unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{FuncID, ISubGlobalID};
+    use crate::testing::cases::test_case_cfg_deep_while_br;
+    use std::fs::File;
+
+    #[test]
+    fn test_cfg_snapshot() {
+        let module = test_case_cfg_deep_while_br().module;
+        let allocs = &module.allocs;
+        let func_id = module
+            .get_global_by_name("main")
+            .map(FuncID::raw_from)
+            .unwrap();
+        let cfg_snapshot = CfgSnapshot::new(allocs, func_id).unwrap();
+        let mut cfg_file =
+            File::create("target/test_cfg_snapshot.dot").expect("Failed to create dot file");
+        cfg_snapshot.write_to_dot(allocs, &mut cfg_file);
     }
 }

@@ -24,6 +24,18 @@ impl DfsOrder {
             DfsOrder::RevPre | DfsOrder::RevPost | DfsOrder::BackRevPre | DfsOrder::BackRevPost
         )
     }
+    pub fn is_back(self) -> bool {
+        matches!(
+            self,
+            DfsOrder::BackPre | DfsOrder::BackPost | DfsOrder::BackRevPre | DfsOrder::BackRevPost
+        )
+    }
+    pub fn is_post(self) -> bool {
+        matches!(
+            self,
+            DfsOrder::Post | DfsOrder::RevPost | DfsOrder::BackPost | DfsOrder::BackRevPost
+        )
+    }
 
     pub fn into_norev(self) -> Self {
         use DfsOrder::*;
@@ -51,7 +63,7 @@ impl DfsOrder {
 }
 
 #[derive(Debug, Clone)]
-pub struct DfsNode {
+pub struct CfgDfsNode {
     pub block: CfgBlockStat,
     pub dfs_index: usize,
     pub parent: usize,
@@ -59,14 +71,14 @@ pub struct DfsNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct DfsSeq {
+pub struct CfgDfsSeq {
     pub order: DfsOrder,
-    pub nodes: Box<[DfsNode]>,
+    pub nodes: Box<[CfgDfsNode]>,
     pub unseq: HashMap<BlockID, usize>,
     pub virt_index: Option<usize>,
 }
 
-impl DfsSeq {
+impl CfgDfsSeq {
     pub const NULL_PARENT: usize = usize::MAX;
 
     /// 构造并返回指定函数的 DFS 序列。
@@ -135,10 +147,31 @@ impl DfsSeq {
             None => Err(CfgErr::FuncIsExtern(func)),
         }
     }
+
+    pub fn try_block_dfn(&self, block: BlockID) -> Option<usize> {
+        self.unseq.get(&block).copied()
+    }
+    pub fn block_dfn(&self, block: BlockID) -> usize {
+        self.try_block_dfn(block)
+            .expect("BlockID not found in DfsSeq")
+    }
+
+    pub fn try_dfn_block(&self, dfn: usize) -> Option<CfgBlockStat> {
+        self.nodes.get(dfn).map(|n| n.block)
+    }
+    pub fn dfn_block(&self, dfn: usize) -> CfgBlockStat {
+        self.try_dfn_block(dfn)
+            .expect("DFN index out of bounds in DfsSeq")
+    }
+
+    pub fn backward_get_exit_dfns(&self) -> Option<&[usize]> {
+        let virt_idx = self.virt_index?;
+        Some(self.nodes[virt_idx].children.as_slice())
+    }
 }
 
 struct DfsBuildCommon<'ir> {
-    nodes: Vec<DfsNode>,
+    nodes: Vec<CfgDfsNode>,
     unseq: HashMap<BlockID, usize>,
     ir_allocs: &'ir IRAllocs,
     func_id: FuncID,
@@ -215,10 +248,10 @@ trait DfsBuild<'ir> {
         }
     }
 
-    fn build(&mut self, is_post: bool) -> CfgRes<DfsSeq> {
+    fn build(&mut self, is_post: bool) -> CfgRes<CfgDfsSeq> {
         self.build_fill(is_post)?;
         let common = self.common_mut().take();
-        Ok(DfsSeq {
+        Ok(CfgDfsSeq {
             order: self.order(is_post),
             nodes: common.nodes.into_boxed_slice(),
             unseq: common.unseq,
@@ -240,14 +273,14 @@ trait DfsBuild<'ir> {
             // temporarily collect children
             self.get_succs(bb, &mut frame);
 
-            let node = DfsNode {
+            let node = CfgDfsNode {
                 block: CfgBlockStat::from(bb),
                 dfs_index: curr_idx,
                 parent: parent_index,
                 children: SmallVec::with_capacity(frame.len()),
             };
             self.common_mut().nodes.push(node);
-            if parent_index != DfsSeq::NULL_PARENT {
+            if parent_index != CfgDfsSeq::NULL_PARENT {
                 self.common_mut().nodes[parent_index]
                     .children
                     .push(curr_idx);
@@ -272,10 +305,10 @@ trait DfsBuild<'ir> {
     fn insert_block(&mut self, block: BlockID, dfs_index: usize) {
         let common = self.common_mut();
         common.unseq.insert(block, dfs_index);
-        common.nodes.push(DfsNode {
+        common.nodes.push(CfgDfsNode {
             block: CfgBlockStat::from(block),
             dfs_index,
-            parent: DfsSeq::NULL_PARENT,
+            parent: CfgDfsSeq::NULL_PARENT,
             children: SmallVec::new(),
         });
     }
@@ -310,7 +343,7 @@ trait DfsBuild<'ir> {
                 for &child_idx in children_index.iter() {
                     assert_eq!(
                         common.nodes[child_idx].parent,
-                        DfsSeq::NULL_PARENT,
+                        CfgDfsSeq::NULL_PARENT,
                         "Internal error: child node already has a parent in post DFS"
                     );
                     common.nodes[child_idx].parent = dfs_index;
@@ -353,7 +386,7 @@ impl<'ir> DfsBuild<'ir> for DfsForwardBuilder<'ir> {
         if is_post {
             self.post_dfs_visit(entry_bb);
         } else {
-            self.pre_dfs_visit(entry_bb, DfsSeq::NULL_PARENT);
+            self.pre_dfs_visit(entry_bb, CfgDfsSeq::NULL_PARENT);
         }
         Ok(())
     }
@@ -398,35 +431,45 @@ impl<'ir> DfsBuild<'ir> for DfsBackwardBuilder<'ir> {
         }
         let root_index = if is_post {
             let mut exit_indices: SmallVec<[usize; 4]> = SmallVec::new();
-            for exit_bb in exits {
+            for &exit_bb in &exits {
                 exit_indices.push(self.post_dfs_visit(exit_bb));
             }
             let root_index = self.next_id();
             for &index in &exit_indices {
                 self.0.nodes[index].parent = root_index;
             }
-            self.0.nodes.push(DfsNode {
+            self.0.nodes.push(CfgDfsNode {
                 block: CfgBlockStat::Virtual,
                 dfs_index: root_index,
-                parent: DfsSeq::NULL_PARENT,
+                parent: CfgDfsSeq::NULL_PARENT,
                 children: exit_indices,
             });
             root_index
         } else {
             // create virtual root and attach exits as its children
             let root_index = self.next_id();
-            self.0.nodes.push(DfsNode {
+            self.0.nodes.push(CfgDfsNode {
                 block: CfgBlockStat::Virtual,
                 dfs_index: root_index,
-                parent: DfsSeq::NULL_PARENT,
+                parent: CfgDfsSeq::NULL_PARENT,
                 children: SmallVec::new(),
             });
-            for exit_bb in exits {
+            for &exit_bb in &exits {
                 self.pre_dfs_visit(exit_bb, root_index);
             }
             root_index
         };
         self.0.virt_index = Some(root_index);
+        let vexit_node = &mut self.0.nodes[root_index];
+        vexit_node.dfs_index = root_index;
+        vexit_node.children = {
+            let mut exits_index = SmallVec::with_capacity(exits.len());
+            for exit_bb in &exits {
+                let exit_id = self.0.unseq[exit_bb];
+                exits_index.push(exit_id);
+            }
+            exits_index
+        };
         Ok(())
     }
 
@@ -445,7 +488,7 @@ impl<'ir> DfsBuild<'ir> for DfsBackwardBuilder<'ir> {
 impl<'ir> DfsBackwardBuilder<'ir> {
     fn dump_exits(&self) -> SmallVec<[BlockID; 4]> {
         let allocs = self.0.ir_allocs;
-        let body = DfsSeq::func_body(allocs, self.0.func_id).unwrap();
+        let body = CfgDfsSeq::func_body(allocs, self.0.func_id).unwrap();
         let mut exits = SmallVec::new();
         for (id, bb) in body.blocks.iter(&allocs.blocks) {
             use crate::ir::TerminatorID::*;
@@ -473,8 +516,8 @@ mod tests {
             .map(FuncID::raw_from)
             .expect("func not found");
 
-        let pre = DfsSeq::new_pre(allocs, fid).expect("pre dfs failed");
-        let post = DfsSeq::new_post(allocs, fid).expect("post dfs failed");
+        let pre = CfgDfsSeq::new_pre(allocs, fid).expect("pre dfs failed");
+        let post = CfgDfsSeq::new_post(allocs, fid).expect("post dfs failed");
 
         // find a parent node (should be entry)
         let (parent_idx_pre, parent_node) = pre
@@ -515,8 +558,8 @@ mod tests {
             .map(FuncID::raw_from)
             .expect("func not found");
 
-        let back_pre = DfsSeq::new_back_pre(allocs, fid).expect("back pre failed");
-        let back_post = DfsSeq::new_back_post(allocs, fid).expect("back post failed");
+        let back_pre = CfgDfsSeq::new_back_pre(allocs, fid).expect("back pre failed");
+        let back_post = CfgDfsSeq::new_back_post(allocs, fid).expect("back post failed");
 
         assert!(back_pre.virt_index.is_some());
         assert!(back_post.virt_index.is_some());

@@ -1,3 +1,3 @@
 mod analysis;
 
-pub use self::analysis::{cfg::*, dfs::*};
+pub use self::analysis::{cfg::*, dfs::*, dominance::*};
