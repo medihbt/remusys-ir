@@ -160,6 +160,14 @@ impl<R: InstOrdering> DominatorTree<R> {
         self.block_dominates_block(a, b)
     }
 
+    pub fn inst_dominates_block(&self, allocs: &IRAllocs, inst: InstID, block: BlockID) -> bool {
+        let inst_block = match inst.get_parent(allocs) {
+            Some(bb) => bb,
+            None => return false,
+        };
+        self.block_dominates_block(inst_block, block)
+    }
+
     pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
         if a == b {
             return true;

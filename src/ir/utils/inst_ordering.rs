@@ -129,6 +129,10 @@ impl BCRInner {
     }
 
     fn truncate_block(&mut self, allocs: &IRAllocs, block: BlockID, new_last: InstID) {
+        if new_last.is_sentinel(&allocs.insts) {
+            self.block_valid_to.remove(&block);
+            return;
+        }
         let Some(pos) = self.inst_try_get_pos(block, new_last) else {
             return;
         };
