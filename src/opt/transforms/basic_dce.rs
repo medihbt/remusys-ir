@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        BlockID, ExprID, FuncID, IRAllocs, IRBuilder, ISubExprID, ISubInstID, IUser, InstID,
-        InstObj, InstOrdering, Module, PoolAllocatedDisposeRes, ValueSSA,
-        checking::FuncDominanceCheck,
+        BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubInstID, IUser, InstID, InstObj,
+        InstOrdering, PoolAllocatedDisposeRes, ValueSSA, checking::FuncDominanceCheck,
     },
     opt::{CfgBlockStat, CfgDfsSeq, transforms::IFuncTransformPass},
 };
@@ -12,7 +11,7 @@ use std::{
 };
 
 pub struct BasicFuncDCE<'ir> {
-    pub builder: IRBuilder<&'ir Module>,
+    allocs: &'ir IRAllocs,
     pub dead_inst: Vec<(BlockID, InstID)>,
     pub dead_block: Vec<BlockID>,
 }
@@ -34,17 +33,16 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
     fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
         // Implementation of Basic Dead Code Elimination algorithm goes here
         let dfs = if cfg!(debug_assertions) {
-            let allocs = self.builder.allocs();
-            let func_check = FuncDominanceCheck::new(allocs, func);
+            let func_check = FuncDominanceCheck::new(self.allocs, func);
             func_check.run().unwrap();
             func_check.dom_tree.dfs
         } else {
-            let allocs = self.builder.allocs();
+            let allocs = self.allocs;
             CfgDfsSeq::new_pre(allocs, func).unwrap()
         };
         self.kill_blocks_and_analyze(&dfs, order, func);
 
-        let allocs = self.builder.allocs();
+        let allocs = self.allocs;
         let mut live_marker = LiveInstMarker::new(allocs);
         for node in &dfs.nodes {
             let CfgBlockStat::Block(block) = node.block else {
@@ -77,28 +75,23 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
 }
 
 impl<'ir> BasicFuncDCE<'ir> {
-    pub fn new(module: &'ir Module) -> Self {
-        Self {
-            builder: IRBuilder::new(module),
-            dead_inst: Vec::new(),
-            dead_block: Vec::new(),
-        }
+    pub fn new(allocs: &'ir IRAllocs) -> Self {
+        Self { allocs, dead_inst: Vec::new(), dead_block: Vec::new() }
     }
 
     pub fn dispose(&mut self) -> PoolAllocatedDisposeRes {
-        let allocs = self.builder.allocs();
         for (_, inst) in self.dead_inst.drain(..) {
-            inst.dispose(allocs)?;
+            inst.dispose(self.allocs)?;
         }
         for block in self.dead_block.drain(..) {
-            block.dispose(allocs)?;
+            block.dispose(self.allocs)?;
         }
         Ok(())
     }
 
     fn kill_blocks_and_analyze(&mut self, dfs: &CfgDfsSeq, order: &dyn InstOrdering, func: FuncID) {
         // Implementation for removing dead blocks
-        let allocs = self.builder.allocs();
+        let allocs = self.allocs;
         let blocks = func.get_blocks(allocs).unwrap();
         let mut insts_cap = 0;
         for (block, _) in blocks.iter(&allocs.blocks) {
