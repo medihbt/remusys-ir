@@ -3,14 +3,22 @@ use mtb_entity_slab::IEntityListNodeID;
 use std::{borrow::Borrow, cell::RefCell, collections::HashMap};
 
 pub trait InstOrdering {
+    /// Returns true if `f` comes before `b` in the instruction order.
     fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool;
+
+    /// Called when `inst` is inserted into its parent block.
+    /// Since the inserted inst has a parent, we can get it from `inst`.
     fn on_inst_insert(&self, allocs: &IRAllocs, inst: InstID);
+
+    /// `inst` is removed from `block`. since removed inst has no parent,
+    /// we need to pass `block` explicitly
     fn on_inst_remove(&self, block: BlockID, inst: InstID);
+
     /// `old` is replaced with `new` at the same pos
     fn on_inst_replace(&self, allocs: &IRAllocs, old: InstID, new: InstID);
-    fn invalidate_block(&self, allocs: &IRAllocs, block: BlockID);
 
-    fn trim(&self, allocs: &IRAllocs);
+    fn invalidate_block(&self, allocs: &IRAllocs, block: BlockID);
+    fn invalidate_all(&self, allocs: &IRAllocs);
 }
 
 pub struct ListWalkOrder;
@@ -36,7 +44,7 @@ impl InstOrdering for ListWalkOrder {
     fn on_inst_remove(&self, _: BlockID, _: InstID) {}
     fn on_inst_replace(&self, _: &IRAllocs, _: InstID, _: InstID) {}
     fn invalidate_block(&self, _: &IRAllocs, _: BlockID) {}
-    fn trim(&self, _: &IRAllocs) {}
+    fn invalidate_all(&self, _: &IRAllocs) {}
 }
 #[derive(Default)]
 pub struct InstOrderCache {
@@ -81,7 +89,7 @@ impl<C: Borrow<InstOrderCache>> InstOrdering for C {
             .invalidate_block(allocs, block);
     }
 
-    fn trim(&self, _: &IRAllocs) {
+    fn invalidate_all(&self, _: &IRAllocs) {
         let mut inner = self.borrow().inner.borrow_mut();
         inner.block_valid_to.clear();
         inner.inst_pos.clear();
