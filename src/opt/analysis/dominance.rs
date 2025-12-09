@@ -4,8 +4,8 @@
 
 use crate::{
     base::DSU,
-    ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID},
-    opt::{InstPosRelations, CfgBlockStat, CfgCache, CfgDfsSeq, CfgSnapshot, ListWalkRelation},
+    ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID, InstOrdering, ListWalkOrder},
+    opt::{CfgBlockStat, CfgCache, CfgDfsSeq, CfgSnapshot},
 };
 use smallvec::SmallVec;
 use std::{
@@ -34,7 +34,7 @@ pub struct DominatorTreeNode {
     dominate_cache: RefCell<HashMap<BlockID, bool>>,
 }
 
-pub struct DominatorTree<R = ListWalkRelation> {
+pub struct DominatorTree<R = ListWalkOrder> {
     /// 所属函数 ID.
     pub func_id: FuncID,
     /// DFS 序列. 根据是支配树还是后支配树, 其遍历顺序会有所不同.
@@ -57,11 +57,11 @@ impl DominatorTree {
     }
 }
 
-impl<R: InstPosRelations> DominatorTree<R> {
+impl<R: InstOrdering> DominatorTree<R> {
     /// 根节点在 DFS 序列中的索引.
     pub const ROOT_INDEX: usize = 0;
 
-    pub fn map_relation<S: InstPosRelations>(self, relation: S) -> DominatorTree<S> {
+    pub fn map_relation<S: InstOrdering>(self, relation: S) -> DominatorTree<S> {
         let Self { func_id, dfs, nodes, .. } = self;
         DominatorTree { func_id, dfs, nodes, relation }
     }
@@ -320,11 +320,11 @@ impl DominatorTreeBuilder {
         }
 
         let Self { func_id, dfs, .. } = self;
-        DominatorTree { func_id, dfs, nodes, relation: ListWalkRelation }
+        DominatorTree { func_id, dfs, nodes, relation: ListWalkOrder }
     }
     pub fn build_with_relation<R>(self, allocs: &IRAllocs, relation: R) -> DominatorTree<R>
     where
-        R: InstPosRelations,
+        R: InstOrdering,
     {
         self.build(allocs).map_relation(relation)
     }

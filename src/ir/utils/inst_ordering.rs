@@ -1,8 +1,8 @@
-use crate::ir::{BlockID, IRAllocs, IRBuildRes, IRBuilder, ISubInstID, InstID, Module};
-use mtb_entity_slab::{EntityListError, EntityListRes, IEntityListNodeID};
+use crate::ir::{BlockID, IRAllocs, ISubInstID, InstID};
+use mtb_entity_slab::IEntityListNodeID;
 use std::{borrow::Borrow, cell::RefCell, collections::HashMap};
 
-pub trait InstPosRelations {
+pub trait InstOrdering {
     fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool;
     fn on_inst_insert(&self, allocs: &IRAllocs, inst: InstID);
     fn on_inst_remove(&self, block: BlockID, inst: InstID);
@@ -11,27 +11,11 @@ pub trait InstPosRelations {
     fn invalidate_block(&self, allocs: &IRAllocs, block: BlockID);
 
     fn trim(&self, allocs: &IRAllocs);
-
-    fn insert_inst<M: AsRef<Module>>(
-        &self,
-        builder: &mut IRBuilder<M>,
-        inst: InstID,
-    ) -> IRBuildRes {
-        builder.insert_inst(inst)?;
-        self.on_inst_insert(builder.allocs(), inst);
-        Ok(())
-    }
-    fn unplug_inst(&self, allocs: &IRAllocs, inst: InstID) -> EntityListRes<InstID> {
-        let parent = inst.get_parent(allocs).ok_or(EntityListError::ListBroken)?;
-        parent.get_insts(allocs).node_unplug(inst, &allocs.insts)?;
-        self.on_inst_remove(parent, inst);
-        Ok(())
-    }
 }
 
-pub struct ListWalkRelation;
+pub struct ListWalkOrder;
 
-impl InstPosRelations for ListWalkRelation {
+impl InstOrdering for ListWalkOrder {
     fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool {
         // traivial list walk
         let alloc = &allocs.insts;
@@ -55,11 +39,11 @@ impl InstPosRelations for ListWalkRelation {
     fn trim(&self, _: &IRAllocs) {}
 }
 #[derive(Default)]
-pub struct BlockCacheRelation {
+pub struct InstOrderCache {
     inner: RefCell<BCRInner>,
 }
 
-impl<C: Borrow<BlockCacheRelation>> InstPosRelations for C {
+impl<C: Borrow<InstOrderCache>> InstOrdering for C {
     fn comes_before(&self, allocs: &IRAllocs, front: InstID, back: InstID) -> bool {
         let front_parent = front.get_parent(allocs).expect("inst has no parent block");
         let back_parent = back.get_parent(allocs).expect("inst has no parent block");
@@ -104,7 +88,7 @@ impl<C: Borrow<BlockCacheRelation>> InstPosRelations for C {
     }
 }
 
-impl BlockCacheRelation {
+impl InstOrderCache {
     pub fn new() -> Self {
         Self::default()
     }

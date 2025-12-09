@@ -2,7 +2,8 @@ use crate::{
     ir::{
         BlockID, FuncBuilder, FuncID, GlobalID, GlobalVar, GlobalVarBuilder, GlobalVarID,
         IGlobalVarBuildable, IRAllocs, ISubInstID, ISubValueSSA, ITraceableValue, InstID, InstObj,
-        ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, UseID, UseKind, ValueSSA,
+        InstOrdering, ManagedInst, Module, PoolAllocatedDisposeErr, TerminatorID, UseID, UseKind,
+        ValueSSA,
         inst::{BrInstID, JumpInstID, PhiInstID, SwitchInstID, UnreachableInstID},
     },
     typing::{ArchInfo, FuncTypeID, TypeContext, ValTypeID},
@@ -540,6 +541,16 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
         }
         Ok(back_half)
     }
+    pub fn split_block_with_order(&mut self, order: &impl InstOrdering) -> IRBuildRes<BlockID> {
+        let back_half = self.split_block()?;
+        let Some(focus) = self.full_focus else {
+            return Err(IRBuildError::NullFocus);
+        };
+        let front_half = focus.block.ok_or(IRBuildError::NullFocus)?;
+        order.invalidate_block(self.allocs(), front_half);
+        order.invalidate_block(self.allocs(), back_half);
+        Ok(back_half)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -645,6 +656,32 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
                 Ok(())
             }
         }
+    }
+    pub fn insert_inst_with_order(
+        &mut self,
+        inst: impl ISubInstID,
+        order: &impl InstOrdering,
+    ) -> IRBuildRes {
+        self.insert_inst(inst)?;
+        order.on_inst_insert(self.allocs(), inst.raw_into());
+        Ok(())
+    }
+    pub fn remove_inst_with_order(
+        &mut self,
+        inst: impl ISubInstID,
+        order: &impl InstOrdering,
+    ) -> IRBuildRes {
+        let inst = inst.raw_into();
+        let Some(parent) = inst.get_parent(self.allocs()) else {
+            return Err(IRBuildError::InstListError(
+                EntityListError::SelfNotAttached(inst),
+            ));
+        };
+        parent
+            .get_insts(self.allocs())
+            .node_unplug(inst, &self.allocs().insts)?;
+        order.on_inst_remove(parent, inst);
+        Ok(())
     }
 
     pub fn build_inst<BuildFn, R: ISubInstID>(&mut self, build: BuildFn) -> IRBuildRes<R>
