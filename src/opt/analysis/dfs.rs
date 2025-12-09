@@ -1,3 +1,7 @@
+//! DFS over a Remusys IR function's control flow graph (CFG).
+//!
+//! 提供多种 DFS 遍历顺序（前序/后序/反向/基于出口的变体等），并记录遍历序列及节点间的父子关系。
+
 use crate::{
     ir::{BlockID, FuncBody, FuncID, IRAllocs, ISubGlobalID, ISubInstID, JumpTargetsBlockIter},
     opt::{CfgErr, CfgRes, analysis::cfg::CfgBlockStat},
@@ -155,6 +159,9 @@ impl CfgDfsSeq {
         self.try_block_dfn(block)
             .expect("BlockID not found in DfsSeq")
     }
+    pub fn block_reachable(&self, block: BlockID) -> bool {
+        self.unseq.contains_key(&block)
+    }
 
     pub fn try_dfn_block(&self, dfn: usize) -> Option<CfgBlockStat> {
         self.nodes.get(dfn).map(|n| n.block)
@@ -162,6 +169,9 @@ impl CfgDfsSeq {
     pub fn dfn_block(&self, dfn: usize) -> CfgBlockStat {
         self.try_dfn_block(dfn)
             .expect("DFN index out of bounds in DfsSeq")
+    }
+    pub fn dfn_valid(&self, dfn: usize) -> bool {
+        dfn < self.nodes.len()
     }
 
     pub fn backward_get_exit_dfns(&self) -> Option<&[usize]> {

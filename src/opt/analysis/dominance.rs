@@ -1,11 +1,17 @@
+//! Dominator tree analysis for Remusys IR functions.
+//!
+//! 提供支配树和后支配树的构建与查询功能。
+
 use crate::{
     base::DSU,
     ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID},
-    opt::{CfgBlockStat, CfgCache, CfgDfsSeq},
+    opt::{InstPosRelations, CfgBlockStat, CfgCache, CfgDfsSeq, CfgSnapshot, ListWalkRelation},
 };
+use smallvec::SmallVec;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    vec,
 };
 
 pub enum DomiTreeKind {
@@ -19,34 +25,54 @@ pub struct DominatorTreeNode {
     pub semidom: CfgBlockStat,
     /// 直接支配结点. 使用 CfgBlockStat 来考虑根节点是 Virtual Exit 的情况.
     pub idom: CfgBlockStat,
-    /// 所有的子结点. 与重构前不同的是, 这次不要懒加载，在构建时就要把所有子结点算出来.
-    pub children: HashSet<BlockID>,
+    /// 直接支配结点的 DFS 编号, 用于快速查询.
+    pub idom_dfn: usize,
+    /// 子结点的 DFS 编号集合, 用于快速查询某个节点是否是当前节点的子节点.
+    pub children_dfn: SmallVec<[usize; 4]>,
 
     /// 缓存支配关系查询结果的集合.
     dominate_cache: RefCell<HashMap<BlockID, bool>>,
 }
 
-pub struct DominatorTree {
+pub struct DominatorTree<R = ListWalkRelation> {
+    /// 所属函数 ID.
     pub func_id: FuncID,
+    /// DFS 序列. 根据是支配树还是后支配树, 其遍历顺序会有所不同.
+    /// 支配树使用的遍历顺序是 `Pre`, 后支配树使用的遍历顺序是 `BackPre`.
     pub dfs: CfgDfsSeq,
+    /// 支配树节点列表, 按 DFS 序列顺序排列.
     pub nodes: Vec<DominatorTreeNode>,
-    inst_orders: HashMap<InstID, usize>,
+    /// 存储 “一条指令是否为另一条指令” 的数据结构
+    pub relation: R,
 }
 
 impl DominatorTree {
+    /// 创建一个支配树构建器. 你需要调用 `build` 方法来实际构建支配树.
     pub fn builder(allocs: &IRAllocs, func_id: FuncID) -> DominatorTreeBuilder {
         DominatorTreeBuilder::new(allocs, func_id, false)
     }
+    /// 创建一个后支配树构建器. 你需要调用 `build` 方法来实际构建后支配树.
     pub fn postdom_builder(allocs: &IRAllocs, func_id: FuncID) -> DominatorTreeBuilder {
         DominatorTreeBuilder::new(allocs, func_id, true)
     }
+}
 
+impl<R: InstPosRelations> DominatorTree<R> {
+    /// 根节点在 DFS 序列中的索引.
+    pub const ROOT_INDEX: usize = 0;
+
+    pub fn map_relation<S: InstPosRelations>(self, relation: S) -> DominatorTree<S> {
+        let Self { func_id, dfs, nodes, .. } = self;
+        DominatorTree { func_id, dfs, nodes, relation }
+    }
     pub fn get_kind(&self) -> DomiTreeKind {
         if self.is_postdom() { DomiTreeKind::PostDom } else { DomiTreeKind::Dom }
     }
-
     pub fn is_postdom(&self) -> bool {
         self.dfs.order.is_back()
+    }
+    pub fn root_node(&self) -> &DominatorTreeNode {
+        &self.nodes[0]
     }
 
     pub fn write_to_dot(&self, allocs: &IRAllocs, writer: &mut dyn std::io::Write) {
@@ -71,21 +97,9 @@ impl DominatorTree {
 
         // Emit idom edges: idom -> node
         for (dfn, node) in self.nodes.iter().enumerate() {
-            let from_id = match node.idom {
-                CfgBlockStat::Virtual => {
-                    if self.is_postdom() {
-                        0
-                    } else {
-                        continue;
-                    } // virtual root/exit
-                }
-                CfgBlockStat::Block(bid) => match self.dfs.try_block_dfn(bid) {
-                    Some(dfn) => dfn,
-                    None => continue,
-                },
-            };
+            let from_id = node.idom_dfn;
             let to_id = dfn;
-            if from_id != to_id {
+            if from_id != CfgDfsSeq::NULL_PARENT {
                 writeln!(writer, "  {from_id} -> {to_id};").unwrap();
             }
         }
@@ -128,16 +142,22 @@ impl DominatorTree {
                 return true;
             }
             let current_node: &DominatorTreeNode = &self.nodes[current_dfn];
-            current_dfn = match current_node.idom {
-                CfgBlockStat::Block(bid) => match self.dfs.try_block_dfn(bid) {
-                    Some(dfn) => dfn,
-                    None => break,
-                },
-                CfgBlockStat::Virtual => CfgDfsSeq::NULL_PARENT,
-            };
+            current_dfn = current_node.idom_dfn;
         }
         a_node.dominate_cache.borrow_mut().insert(b, false);
         false
+    }
+    pub fn block_strictly_dominates_block(
+        &self,
+        a: impl Into<CfgBlockStat>,
+        b: impl Into<CfgBlockStat>,
+    ) -> bool {
+        let a = a.into();
+        let b = b.into();
+        if a == b {
+            return false;
+        }
+        self.block_dominates_block(a, b)
     }
 
     pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
@@ -154,18 +174,19 @@ impl DominatorTree {
         };
         if a_block != b_block {
             self.block_dominates_block(a_block, b_block)
-        } else {
+        } else if !self.is_postdom() {
             // Same block: use instruction order
-            let a_order = match self.inst_orders.get(&a) {
-                Some(&ord) => ord,
-                None => return false,
-            };
-            let b_order = match self.inst_orders.get(&b) {
-                Some(&ord) => ord,
-                None => return false,
-            };
-            a_order < b_order
+            self.relation.comes_before(allocs, a, b)
+        } else {
+            // Postdom: reverse instruction order
+            self.relation.comes_before(allocs, b, a)
         }
+    }
+    pub fn inst_strictly_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
+        if a == b {
+            return false;
+        }
+        self.inst_dominates_inst(allocs, a, b)
     }
 }
 
@@ -174,7 +195,6 @@ pub struct DominatorTreeBuilder {
     dfs: CfgDfsSeq,
     cache: CfgCache,
     is_postdom: bool,
-    inst_orders: HashMap<InstID, usize>,
 }
 
 impl DominatorTreeBuilder {
@@ -183,19 +203,7 @@ impl DominatorTreeBuilder {
         let order = if is_postdom { DfsOrder::BackPre } else { DfsOrder::Pre };
         let dfs = CfgDfsSeq::new(allocs, func_id, order).expect("Failed to build DFS for function");
         let cache = CfgCache::new();
-        let inst_orders = Self::build_orders(func_id, allocs);
-        Self { func_id, dfs, cache, is_postdom, inst_orders }
-    }
-
-    fn build_orders(func_id: FuncID, allocs: &IRAllocs) -> HashMap<InstID, usize> {
-        let mut orders = HashMap::new();
-        for (bb_id, _) in func_id.get_blocks(allocs).unwrap().iter(&allocs.blocks) {
-            let insts = bb_id.get_insts(allocs);
-            for (count, (inst, _)) in insts.iter(&allocs.insts).enumerate() {
-                orders.insert(inst, count);
-            }
-        }
-        orders
+        Self { func_id, dfs, cache, is_postdom }
     }
 
     pub fn build(mut self, allocs: &IRAllocs) -> DominatorTree {
@@ -278,8 +286,9 @@ impl DominatorTreeBuilder {
             nodes.push(DominatorTreeNode {
                 block,
                 semidom: sdom_blk,
-                idom: CfgBlockStat::Virtual, // placeholder
-                children: HashSet::new(),
+                idom: CfgBlockStat::Virtual,      // placeholder
+                idom_dfn: CfgDfsSeq::NULL_PARENT, // placeholder
+                children_dfn: SmallVec::new(),
                 dominate_cache: RefCell::new(HashMap::new()),
             });
         }
@@ -303,18 +312,113 @@ impl DominatorTreeBuilder {
             } else {
                 self.dfs.dfn_block(id)
             };
+            nodes[w].idom_dfn = id;
             nodes[w].idom = id_block;
             if id != CfgDfsSeq::NULL_PARENT {
-                let child_block = match nodes[w].block {
-                    CfgBlockStat::Block(b) => b,
-                    CfgBlockStat::Virtual => continue,
-                };
-                nodes[id].children.insert(child_block);
+                nodes[id].children_dfn.push(w);
             }
         }
 
-        let Self { func_id, dfs, inst_orders, .. } = self;
-        DominatorTree { func_id, dfs, nodes, inst_orders }
+        let Self { func_id, dfs, .. } = self;
+        DominatorTree { func_id, dfs, nodes, relation: ListWalkRelation }
+    }
+    pub fn build_with_relation<R>(self, allocs: &IRAllocs, relation: R) -> DominatorTree<R>
+    where
+        R: InstPosRelations,
+    {
+        self.build(allocs).map_relation(relation)
+    }
+}
+
+pub struct DiminanceFrontier<'ir> {
+    pub dom_tree: &'ir DominatorTree,
+    pub df: Box<[HashSet<usize>]>,
+    pub cfg: CfgSnapshot,
+}
+impl<'ir> DiminanceFrontier<'ir> {
+    pub fn new(dom_tree: &'ir DominatorTree, allocs: &'ir IRAllocs) -> Self {
+        let mut builder = DominanceFrontierBuilder::new(dom_tree, allocs);
+        builder.build();
+        Self {
+            dom_tree,
+            df: builder.df.into_boxed_slice(),
+            cfg: builder.cfg,
+        }
+    }
+
+    pub fn get_df_of_block(&self, block: impl Into<CfgBlockStat>) -> Option<&HashSet<usize>> {
+        let block = block.into();
+        let dfn = match block {
+            CfgBlockStat::Block(bid) => self.dom_tree.dfs.try_block_dfn(bid)?,
+            CfgBlockStat::Virtual => {
+                if self.dom_tree.is_postdom() {
+                    self.dom_tree.dfs.virt_index?
+                } else {
+                    return None;
+                }
+            }
+        };
+        self.df.get(dfn)
+    }
+}
+
+pub struct DominanceFrontierBuilder<'ir> {
+    dom_tree: &'ir DominatorTree,
+    pub df: Vec<HashSet<usize>>,
+    pub cfg: CfgSnapshot,
+}
+impl<'ir> DominanceFrontierBuilder<'ir> {
+    pub fn new(dom_tree: &'ir DominatorTree, allocs: &'ir IRAllocs) -> Self {
+        Self {
+            dom_tree,
+            df: Vec::new(),
+            cfg: CfgSnapshot::new(allocs, dom_tree.func_id).unwrap(),
+        }
+    }
+
+    pub fn build(&mut self) {
+        if !self.df.is_empty() {
+            return;
+        }
+        let nnodes = self.get_dfs_seq().nodes.len();
+        let mut df = vec![HashSet::new(); nnodes];
+        self.post_order_dfs(&mut df, 0);
+    }
+
+    fn get_dfs_seq(&self) -> &CfgDfsSeq {
+        &self.dom_tree.dfs
+    }
+
+    pub fn post_order_dfs(&mut self, df: &mut [HashSet<usize>], node: usize) {
+        let dom_node = &self.dom_tree.nodes[node];
+        for &child_dfn in &dom_node.children_dfn {
+            self.post_order_dfs(df, child_dfn);
+        }
+
+        let succs: &[BlockID] = match (dom_node.block, self.dom_tree.is_postdom()) {
+            (CfgBlockStat::Block(block), true) => self.cfg.succ_of(block).unwrap(),
+            (CfgBlockStat::Block(block), false) => self.cfg.pred_of(block).unwrap(),
+            (CfgBlockStat::Virtual, true) => self.cfg.exits.as_slice(),
+            (CfgBlockStat::Virtual, false) => &[],
+        };
+        for &succ in succs {
+            let succ_dfn = match self.get_dfs_seq().try_block_dfn(succ) {
+                Some(dfn) => dfn,
+                None => continue,
+            };
+            if self.dom_tree.nodes[succ_dfn].idom_dfn != node {
+                df[node].insert(succ_dfn);
+            }
+        }
+
+        for &child_dfn in &dom_node.children_dfn {
+            let [child_df, node_df] = df.get_disjoint_mut([child_dfn, node]).unwrap();
+            for &w in child_df.iter() {
+                if self.dom_tree.nodes[w].idom_dfn != node {
+                    node_df.insert(w);
+                }
+            }
+        }
     }
 }
 
