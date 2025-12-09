@@ -7,7 +7,7 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityList, EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID,
+    EntityList, EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IEntityAllocID,
     IEntityListNodeID, IPoliciedID, IndexedID, PtrID, entity_id,
 };
 use std::cell::Cell;
@@ -118,6 +118,13 @@ impl BlockObj {
             .as_ref()
             .expect("Error: Attempted to access body of sentinel BlockObj")
     }
+    pub fn get_insts(&self) -> &EntityList<InstID> {
+        &self.get_body().insts
+    }
+    pub fn insts_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> EntityListIter<'ir, InstID> {
+        self.get_body().insts.iter(&allocs.insts)
+    }
+
     pub fn get_preds(&self) -> &PredList {
         &self.get_body().preds
     }
@@ -259,6 +266,9 @@ impl BlockID {
     }
     pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstID> {
         &self.get_body(allocs).insts
+    }
+    pub fn insts_iter(self, allocs: &IRAllocs) -> EntityListIter<'_, InstID> {
+        self.get_body(allocs).insts.iter(&allocs.insts)
     }
     pub fn get_phi_end(self, allocs: &IRAllocs) -> InstID {
         self.get_body(allocs).phi_end
