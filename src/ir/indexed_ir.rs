@@ -1,12 +1,15 @@
 use crate::{
+    base::INullableValue,
     ir::{
         BlockIndex, ConstData, ExprIndex, FuncID, GlobalIndex, IRAllocs, ISubGlobalID, ISubInstID,
-        InstIndex, OperandSet, UseIndex, UseKind, ValueSSA,
+        ITraceableValue, IUser, InstID, InstIndex, InstObj, JumpTargetIndex, OperandSet, UseIndex,
+        UseKind, UserList, ValueSSA,
     },
     typing::AggrType,
 };
+use mtb_entity_slab::IEntityAllocID;
 
-#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C, u8)]
 pub enum IndexedValue {
     None,
@@ -18,7 +21,14 @@ pub enum IndexedValue {
     Inst(InstIndex),
     Global(GlobalIndex),
 }
-
+impl INullableValue for IndexedValue {
+    fn is_null(&self) -> bool {
+        matches!(self, IndexedValue::None)
+    }
+    fn new_null() -> Self {
+        IndexedValue::None
+    }
+}
 impl IndexedValue {
     pub fn try_from_value(value: ValueSSA, allocs: &IRAllocs) -> Option<Self> {
         match value {
@@ -65,18 +75,159 @@ impl IndexedValue {
     }
 }
 
-pub trait IndexedUserID: Copy {
-    fn get_operand_uses_primary(self, allocs: &IRAllocs) -> OperandSet<'_>;
+pub trait PoolAllocatedIndex: Copy + Eq {
+    type Object;
+    type PrimaryID;
 
-    fn get_operand_use_by_kind(self, allocs: &IRAllocs, kind: UseKind) -> Option<UseIndex> {
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID>;
+    fn to_primary(self, allocs: &IRAllocs) -> Self::PrimaryID {
+        self.as_primary(allocs).expect("UAF detected")
+    }
+
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self>;
+    fn from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Self {
+        Self::try_from_primary(primary, allocs).expect("UAF detected")
+    }
+
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object>;
+    fn deref_ir(self, allocs: &IRAllocs) -> &Self::Object {
+        self.try_deref_ir(allocs).expect("UAF detected")
+    }
+}
+pub trait TraceableIndex: PoolAllocatedIndex {
+    fn users_primary(self, allocs: &IRAllocs) -> &UserList;
+    fn user_uses<T>(self, allocs: &IRAllocs) -> T
+    where
+        T: FromIterator<UseIndex>,
+    {
+        let iter = self
+            .users_primary(allocs)
+            .iter(&allocs.uses)
+            .filter_map(|(user_use, _)| user_use.as_indexed(allocs));
+        iter.collect()
+    }
+}
+pub trait UserIndex: TraceableIndex {
+    fn get_primary_uses(self, allocs: &IRAllocs) -> OperandSet<'_>;
+
+    fn get_use_by_kind(self, allocs: &IRAllocs, kind: UseKind) -> Option<UseIndex> {
         let &primary_u = self
-            .get_operand_uses_primary(allocs)
+            .get_primary_uses(allocs)
             .iter()
             .find(|&uid| uid.get_kind(allocs) == kind)?;
         primary_u.as_indexed(allocs)
     }
     fn get_operand_use(self, allocs: &IRAllocs, index: usize) -> Option<UseIndex> {
-        let &primary_u = self.get_operand_uses_primary(allocs).get(index)?;
+        let &primary_u = self.get_primary_uses(allocs).get(index)?;
         primary_u.as_indexed(allocs)
+    }
+}
+impl PoolAllocatedIndex for InstIndex {
+    type Object = InstObj;
+    type PrimaryID = InstID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<InstID> {
+        let ptr = self.0.to_ptr(&allocs.insts)?;
+        Some(InstID(ptr))
+    }
+    fn try_from_primary(primary: InstID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.insts)
+    }
+}
+impl PoolAllocatedIndex for BlockIndex {
+    type Object = crate::ir::BlockObj;
+    type PrimaryID = crate::ir::BlockID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
+        let ptr = self.0.to_ptr(&allocs.blocks)?;
+        Some(crate::ir::BlockID(ptr))
+    }
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.blocks)
+    }
+}
+impl PoolAllocatedIndex for ExprIndex {
+    type Object = crate::ir::constant::expr::ExprObj;
+    type PrimaryID = crate::ir::constant::expr::ExprID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
+        let ptr = self.0.to_ptr(&allocs.exprs)?;
+        Some(crate::ir::constant::expr::ExprID(ptr))
+    }
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.exprs)
+    }
+}
+impl PoolAllocatedIndex for GlobalIndex {
+    type Object = crate::ir::GlobalObj;
+    type PrimaryID = crate::ir::GlobalID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
+        // GlobalIndex -> GlobalID (policed pointer)
+        let ptr = self.0.to_ptr(&allocs.globals)?;
+        Some(crate::ir::GlobalID(ptr))
+    }
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.globals)
+    }
+}
+impl PoolAllocatedIndex for UseIndex {
+    type Object = crate::ir::Use;
+    type PrimaryID = crate::ir::UseID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
+        let ptr = self.0.to_ptr(&allocs.uses)?;
+        Some(crate::ir::UseID(ptr))
+    }
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.uses)
+    }
+}
+impl PoolAllocatedIndex for JumpTargetIndex {
+    type Object = crate::ir::JumpTarget;
+    type PrimaryID = crate::ir::JumpTargetID;
+
+    fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
+        self.0.to_ptr(&allocs.jts).map(crate::ir::JumpTargetID)
+    }
+    fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
+        primary.as_indexed(allocs)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::Object> {
+        self.0.try_deref(&allocs.jts)
+    }
+}
+
+impl<T> TraceableIndex for T
+where
+    T: PoolAllocatedIndex,
+    T::Object: ITraceableValue + 'static,
+{
+    fn users_primary(self, allocs: &IRAllocs) -> &UserList {
+        self.deref_ir(allocs).users()
+    }
+}
+impl<T> UserIndex for T
+where
+    T: TraceableIndex,
+    T::Object: IUser + 'static,
+{
+    fn get_primary_uses(self, allocs: &IRAllocs) -> OperandSet<'_> {
+        self.deref_ir(allocs).get_operands()
     }
 }

@@ -363,15 +363,6 @@ impl ISubValueSSA for GlobalID {
     }
 }
 
-impl GlobalIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<GlobalID> {
-        self.0.to_ptr(&allocs.globals).map(GlobalID)
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> GlobalID {
-        self.as_primary(allocs).expect("UAF detected")
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlobalKind {
     ExternVar,

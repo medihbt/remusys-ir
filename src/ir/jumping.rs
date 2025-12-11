@@ -2,6 +2,7 @@ use crate::{
     base::{MixRef, MixRefIter},
     ir::{
         BlockID, BlockIndex, IRAllocs, ISubInst, ISubInstID, InstID, InstIndex, InstObj,
+        indexed_ir::PoolAllocatedIndex,
         inst::{
             BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
             UnreachableInst, UnreachableInstID,
@@ -185,20 +186,9 @@ impl JumpTargetID {
 }
 
 impl JumpTargetIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<JumpTargetID> {
-        self.0.to_ptr(&allocs.jts).map(JumpTargetID)
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> JumpTargetID {
-        self.as_primary(allocs).expect("UAF detected")
-    }
-
-    pub fn deref_ir(self, allocs: &IRAllocs) -> &JumpTarget {
-        self.0.deref(&allocs.jts)
-    }
     pub fn get_kind(self, allocs: &IRAllocs) -> JumpTargetKind {
         self.deref_ir(allocs).get_kind()
     }
-
     pub fn get_terminator(self, allocs: &IRAllocs) -> Option<InstIndex> {
         self.deref_ir(allocs)
             .terminator

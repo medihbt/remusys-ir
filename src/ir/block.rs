@@ -340,12 +340,3 @@ impl BlockID {
         BlockObj::dispose_id(self, allocs)
     }
 }
-
-impl BlockIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<BlockID> {
-        self.0.to_ptr(&allocs.blocks).map(BlockID)
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> BlockID {
-        self.as_primary(allocs).expect("UAF detected")
-    }
-}

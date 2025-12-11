@@ -2,7 +2,8 @@ use crate::{
     impl_traceable_from_common,
     ir::{
         BlockID, BlockIndex, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode,
-        OperandSet, UseID, UseIndex, UseKind, UserList, ValueClass, ValueSSA,
+        OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        indexed_ir::PoolAllocatedIndex,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::{AggrType, TypeContext, ValTypeID},
@@ -743,15 +744,6 @@ impl ISubValueSSA for InstID {
 }
 
 impl InstIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<InstID> {
-        let ptr = self.0.to_ptr(&allocs.insts)?;
-        Some(InstID(ptr))
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> InstID {
-        self.as_primary(allocs)
-            .expect("Error: Attempted to get primary ID of freed InstIndex")
-    }
-
     pub fn get_opcode(self, allocs: &IRAllocs) -> Opcode {
         self.to_primary(allocs).get_opcode(allocs)
     }
@@ -769,21 +761,5 @@ impl InstIndex {
             None => return self.to_primary(allocs).set_parent(allocs, None),
         };
         self.to_primary(allocs).set_parent(allocs, Some(parent_bb));
-    }
-
-    pub fn get_operands(self, allocs: &IRAllocs) -> OperandSet<'_> {
-        self.to_primary(allocs).get_operands(allocs)
-    }
-
-    pub fn get_use_by_kind(self, allocs: &IRAllocs, kind: UseKind) -> Option<UseIndex> {
-        let &primary_u = self
-            .get_operands(allocs)
-            .iter()
-            .find(|&uid| uid.get_kind(allocs) == kind)?;
-        primary_u.as_indexed(allocs)
-    }
-    pub fn get_operand_use(self, allocs: &IRAllocs, index: usize) -> Option<UseIndex> {
-        let &primary_u = self.get_operands(allocs).get(index)?;
-        primary_u.as_indexed(allocs)
     }
 }

@@ -305,17 +305,6 @@ impl ExprID {
     }
 }
 
-impl ExprIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<ExprID> {
-        let raw_ptr = self.0.to_ptr(&allocs.exprs)?;
-        Some(ExprID(raw_ptr))
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> ExprID {
-        self.as_primary(allocs)
-            .expect("Error: Attempted to get ExprID from freed ExprIndex")
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AggrZero(pub AggrType);
 

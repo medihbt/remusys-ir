@@ -2,7 +2,7 @@ use crate::{
     ir::{
         ExprID, GlobalID, IRAllocs, ISubExprID, ISubValueSSA, InstID, ValueClass, ValueSSA,
         global::ISubGlobalID,
-        indexed_ir::IndexedValue,
+        indexed_ir::{IndexedValue, PoolAllocatedIndex},
         inst::ISubInstID,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
@@ -463,20 +463,9 @@ impl UseID {
 }
 
 impl UseIndex {
-    pub fn as_primary(self, allocs: &IRAllocs) -> Option<UseID> {
-        self.0.to_ptr(&allocs.uses).map(UseID)
-    }
-    pub fn to_primary(self, allocs: &IRAllocs) -> UseID {
-        self.as_primary(allocs).expect("UAF detected")
-    }
-
-    pub fn deref_ir(self, allocs: &IRAllocs) -> &Use {
-        self.to_primary(allocs).deref_ir(allocs)
-    }
     pub fn get_kind(self, allocs: &IRAllocs) -> UseKind {
         self.deref_ir(allocs).kind.get()
     }
-
     pub fn get_operand(self, allocs: &IRAllocs) -> IndexedValue {
         let value = self.deref_ir(allocs).operand.get();
         IndexedValue::try_from_value(value, allocs).unwrap_or(IndexedValue::None)

@@ -25,8 +25,8 @@ mod usedef;
 mod utils;
 
 pub mod checking;
-pub mod inst;
 pub mod indexed_ir;
+pub mod inst;
 
 use crate::{
     base::{APInt, INullableValue},
