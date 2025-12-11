@@ -67,8 +67,7 @@ impl<'ir> FuncDominanceCheck<'ir> {
             let CfgBlockStat::Block(block) = dfs_node.block else {
                 continue;
             };
-            let inst_iter = block.get_insts(allocs).iter(&allocs.insts);
-            for (inst_id, iobj) in inst_iter {
+            for (inst_id, iobj) in block.insts_iter(allocs) {
                 match iobj {
                     InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => continue,
                     _ => CheckStat::new(self, inst_id).operand_dominates_all_uses()?,

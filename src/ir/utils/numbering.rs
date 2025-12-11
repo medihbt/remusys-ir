@@ -48,7 +48,7 @@ impl IRNumberValueMap {
         for (bid, bnum) in blocks.iter_mut() {
             *bnum = number_counter;
             number_counter += 1;
-            for (inst_id, inst) in bid.get_insts(allocs).iter(&allocs.insts) {
+            for (inst_id, inst) in bid.insts_iter(allocs) {
                 if option.ignore_void && inst.get_valtype() == ValTypeID::Void {
                     continue;
                 }
@@ -69,13 +69,13 @@ impl IRNumberValueMap {
     }
 
     fn collect_blocks(allocs: &IRAllocs, func: FuncID) -> Option<FuncObjCounts> {
-        let body = func.get_body(allocs)?;
-        let nblocks = body.blocks.len();
+        let func = func.deref_ir(allocs);
+        let nblocks = func.blocks_unwrap().len();
         let mut blocks = Vec::with_capacity(nblocks);
         let mut inst_num = 0;
-        for (i, (bid, bb)) in body.blocks.iter(&allocs.blocks).enumerate() {
+        for (i, (bid, bb)) in func.block_iter(allocs).enumerate() {
             blocks.push((bid, i));
-            inst_num += bb.get_body().insts.len() - 1; // exclude PhiEnd splitter
+            inst_num += bb.get_insts().len() - 1; // exclude PhiEnd splitter
         }
         // Some((blocks.into_boxed_slice(), inst_num))
         Some(FuncObjCounts { blocks: blocks.into_boxed_slice(), inst_num })

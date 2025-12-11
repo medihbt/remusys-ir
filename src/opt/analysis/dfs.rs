@@ -6,6 +6,7 @@ use crate::{
     ir::{BlockID, FuncBody, FuncID, IRAllocs, ISubGlobalID, ISubInstID, JumpTargetsBlockIter},
     opt::{CfgErr, CfgRes, analysis::cfg::CfgBlockStat},
 };
+use mtb_entity_slab::EntityListIter;
 use smallvec::SmallVec;
 use std::{collections::HashMap, fmt::Debug};
 
@@ -144,10 +145,10 @@ impl CfgDfsSeq {
     pub fn new_back_post(allocs: &IRAllocs, func: FuncID) -> CfgRes<Self> {
         DfsBackwardBuilder::new(allocs, func).build(true)
     }
-    fn func_body(allocs: &IRAllocs, func: FuncID) -> CfgRes<&FuncBody> {
+    fn func_blocks(allocs: &IRAllocs, func: FuncID) -> CfgRes<EntityListIter<'_, BlockID>> {
         let func_obj = func.deref_ir(allocs);
         match &func_obj.body {
-            Some(body) => Ok(body),
+            Some(body) => Ok(body.blocks.iter(&allocs.blocks)),
             None => Err(CfgErr::FuncIsExtern(func)),
         }
     }
@@ -435,7 +436,7 @@ impl<'ir> DfsBuild<'ir> for DfsBackwardBuilder<'ir> {
     }
 
     fn build_fill(&mut self, is_post: bool) -> CfgRes {
-        let exits = self.dump_exits();
+        let exits = self.dump_exits()?;
         if exits.is_empty() {
             return Err(CfgErr::FuncCannotExit(self.0.func_id));
         }
@@ -496,18 +497,18 @@ impl<'ir> DfsBuild<'ir> for DfsBackwardBuilder<'ir> {
 }
 
 impl<'ir> DfsBackwardBuilder<'ir> {
-    fn dump_exits(&self) -> SmallVec<[BlockID; 4]> {
+    fn dump_exits(&self) -> CfgRes<SmallVec<[BlockID; 4]>> {
         let allocs = self.0.ir_allocs;
-        let body = CfgDfsSeq::func_body(allocs, self.0.func_id).unwrap();
         let mut exits = SmallVec::new();
-        for (id, bb) in body.blocks.iter(&allocs.blocks) {
+        let blocks = CfgDfsSeq::func_blocks(allocs, self.0.func_id)?;
+        for (id, bb) in blocks {
             use crate::ir::TerminatorID::*;
             match bb.get_terminator(allocs) {
                 Unreachable(_) | Ret(_) => exits.push(id),
                 Jump(_) | Br(_) | Switch(_) => continue,
             }
         }
-        exits
+        Ok(exits)
     }
 }
 

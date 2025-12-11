@@ -396,7 +396,7 @@ impl<'old> ModuleClone<'old> {
         let new_allocs = &self.new_module.allocs;
         let mut builder = IRBuilder::new(self.new_module.as_ref());
         builder.set_focus(IRFocus::Block(new_bb));
-        for (old_inst, old_iobj) in old_bb.get_insts(old_allocs).iter(&old_allocs.insts) {
+        for (old_inst, old_iobj) in old_bb.insts_iter(old_allocs) {
             let new_inst: InstID = match old_iobj {
                 InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => continue,
                 InstObj::Unreachable(_) => UnreachableInstID::new(new_allocs).raw_into(),

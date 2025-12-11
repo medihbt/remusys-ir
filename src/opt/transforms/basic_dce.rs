@@ -49,8 +49,7 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
             let CfgBlockStat::Block(block) = node.block else {
                 continue;
             };
-            let insts = block.get_insts(allocs).iter(&allocs.insts);
-            for (inst_id, inst) in insts {
+            for (inst_id, inst) in block.insts_iter(allocs) {
                 if self.inst_may_have_side_effects(inst) {
                     live_marker.push_mark(inst_id);
                 }

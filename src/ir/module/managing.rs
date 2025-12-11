@@ -69,8 +69,7 @@ pub(super) fn inst_dispose<T: ISubInst>(
     if let Some(bb) = inst.get_parent()
         && !common.is_sentinel()
     {
-        let insts = &bb.get_body(allocs).insts;
-        insts
+        bb.get_insts(allocs)
             .node_unplug(id, &allocs.insts)
             .expect("Failed to unplug instruction from parent basic block");
     }

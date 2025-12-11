@@ -386,7 +386,7 @@ impl<'ir> SanityCheckCtx<'ir> {
         let mut entry_pos = None;
         let allocs = self.allocs();
         let func_guard = self.begin_func(fid);
-        for (idx, (bid, bb)) in body.blocks.iter(&allocs.blocks).enumerate() {
+        for (idx, (bid, bb)) in func.block_iter(allocs).enumerate() {
             if !BlockObj::id_is_live(bid, allocs) {
                 return Err(IRSanityErr::DeadBlock(bid));
             }

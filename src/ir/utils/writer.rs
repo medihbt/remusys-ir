@@ -674,7 +674,7 @@ impl<'ir> IRWriter<'ir> {
         self.set_numbers(func_id);
         self.format_block(body.entry, body.entry.deref_ir(self.allocs()));
         self.wrap_indent();
-        for (block_id, block) in body.blocks.iter(&self.allocs().blocks) {
+        for (block_id, block) in func.block_iter(self.allocs()) {
             if block_id == body.entry {
                 continue;
             }
@@ -706,8 +706,7 @@ impl<'ir> IRWriter<'ir> {
         }
 
         self.inc_indent();
-        let insts = block.get_body().insts.iter(&self.allocs().insts);
-        for (inst_id, inst) in insts {
+        for (inst_id, inst) in block.insts_iter(self.allocs()) {
             self.wrap_indent();
             let number = self.numbers().inst_get_number(inst_id);
             self.format_inst(inst_id, inst, number);
