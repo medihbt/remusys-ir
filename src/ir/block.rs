@@ -7,7 +7,7 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityList, EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID,
+    EntityList, EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IEntityAllocID,
     IEntityListNodeID, IPoliciedID, IndexedID, PtrID, entity_id,
 };
 use std::cell::Cell;
@@ -118,6 +118,13 @@ impl BlockObj {
             .as_ref()
             .expect("Error: Attempted to access body of sentinel BlockObj")
     }
+    pub fn get_insts(&self) -> &EntityList<InstID> {
+        &self.get_body().insts
+    }
+    pub fn insts_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> EntityListIter<'ir, InstID> {
+        self.get_body().insts.iter(&allocs.insts)
+    }
+
     pub fn get_preds(&self) -> &PredList {
         &self.get_body().preds
     }
@@ -128,12 +135,12 @@ impl BlockObj {
             .expect("Failed to add JumpTarget to BlockObj preds");
     }
 
-    pub fn try_get_terminator(&self, allocs: &IRAllocs) -> Option<InstID> {
+    pub fn try_get_terminator_inst(&self, allocs: &IRAllocs) -> Option<InstID> {
         let back = self.get_body().insts.get_back_id(&allocs.insts)?;
         if back.is_terminator(allocs) { Some(back) } else { None }
     }
     pub fn get_terminator_inst(&self, allocs: &IRAllocs) -> InstID {
-        self.try_get_terminator(allocs)
+        self.try_get_terminator_inst(allocs)
             .expect("Attempted to get terminator of BlockObj without terminator")
     }
     pub fn try_set_terminator_inst<'ir>(
@@ -190,7 +197,7 @@ impl BlockObj {
     }
 
     pub fn try_get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> Option<JumpTargets<'ir>> {
-        let term_inst = self.try_get_terminator(allocs)?;
+        let term_inst = self.try_get_terminator_inst(allocs)?;
         term_inst.try_get_jts(allocs)
     }
     pub fn get_succs<'ir>(&self, allocs: &'ir IRAllocs) -> JumpTargets<'ir> {
@@ -239,12 +246,20 @@ impl BlockID {
     pub fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut BlockObj {
         self.inner().deref_mut(&mut allocs.blocks)
     }
-    pub fn get_indexed(self, allocs: &IRAllocs) -> BlockIndex {
-        let index = self
-            .inner()
-            .get_index(&allocs.blocks)
-            .expect("Error: Attempted to get indexed ID of freed BlockID");
-        BlockIndex::from(index)
+    pub fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<BlockIndex> {
+        let index = self.inner().to_index(&allocs.blocks)?;
+        Some(BlockIndex::from(index))
+    }
+    pub fn get_indexed_id(self, allocs: &IRAllocs) -> BlockIndex {
+        self.try_get_indexed_id(allocs)
+            .expect("Error: Attempted to get indexed ID of freed BlockID")
+    }
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        self.try_get_indexed_id(allocs)
+            .map(|x| x.get_order())
+    }
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.get_indexed_id(allocs).get_order()
     }
 
     pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {
@@ -260,6 +275,9 @@ impl BlockID {
     pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstID> {
         &self.get_body(allocs).insts
     }
+    pub fn insts_iter(self, allocs: &IRAllocs) -> EntityListIter<'_, InstID> {
+        self.get_body(allocs).insts.iter(&allocs.insts)
+    }
     pub fn get_phi_end(self, allocs: &IRAllocs) -> InstID {
         self.get_body(allocs).phi_end
     }
@@ -269,12 +287,20 @@ impl BlockID {
     pub fn get_preds(self, allocs: &IRAllocs) -> &PredList {
         &self.get_body(allocs).preds
     }
-    pub fn try_get_terminator(self, allocs: &IRAllocs) -> Option<InstID> {
-        self.deref_ir(allocs).try_get_terminator(allocs)
+    pub fn try_get_terminator_inst(self, allocs: &IRAllocs) -> Option<InstID> {
+        self.deref_ir(allocs).try_get_terminator_inst(allocs)
     }
     pub fn get_terminator_inst(self, allocs: &IRAllocs) -> InstID {
         self.deref_ir(allocs).get_terminator_inst(allocs)
     }
+    pub fn try_get_terminator(self, allocs: &IRAllocs) -> Option<TerminatorID> {
+        let term_inst = self.try_get_terminator_inst(allocs)?;
+        TerminatorID::try_from_ir(allocs, term_inst)
+    }
+    pub fn get_terminator(self, allocs: &IRAllocs) -> TerminatorID {
+        self.deref_ir(allocs).get_terminator(allocs)
+    }
+
     pub fn try_set_terminator_inst(
         self,
         allocs: &IRAllocs,

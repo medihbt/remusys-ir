@@ -11,7 +11,7 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityListNodeHead, EntityListRes, EntityRingList, IEntityAllocID, IEntityRingListNodeID,
-    IPoliciedID, PtrID, entity_id,
+    IPoliciedID, entity_id,
 };
 use std::{
     cell::Cell,
@@ -112,8 +112,19 @@ impl JumpTarget {
     }
 }
 impl JumpTargetID {
-    pub fn inner(self) -> PtrID<JumpTarget, <Self as IPoliciedID>::PolicyT> {
+    pub fn inner(self) -> <Self as IPoliciedID>::BackID {
         self.0
+    }
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        let index = self.inner().to_index(&allocs.jts)?;
+        Some(index.get_order())
+    }
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        let index = self
+            .inner()
+            .to_index(&allocs.jts)
+            .expect("Error: Attempted to get indexed ID of freed JumpTargetID");
+        index.get_order()
     }
 
     pub fn deref_ir(self, allocs: &IRAllocs) -> &JumpTarget {

@@ -222,12 +222,20 @@ pub trait ISubInstID: Copy {
         self.try_deref_ir_mut(allocs)
             .expect("Error: Attempted to deref freed InstID")
     }
-    fn get_indexed(self, allocs: &IRAllocs) -> InstIndex {
-        let index = self
-            .into_raw_ptr()
-            .get_index(&allocs.insts)
-            .expect("Error: Attempted to get indexed ID of freed InstID");
-        InstIndex::from(index)
+    fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<InstIndex> {
+        let index = self.into_raw_ptr().to_index(&allocs.insts)?;
+        Some(InstIndex::from(index))
+    }
+    fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        self.try_get_indexed_id(allocs)
+            .map(|x| x.get_order())
+    }
+    fn get_indexed_id(self, allocs: &IRAllocs) -> InstIndex {
+        self.try_get_indexed_id(allocs)
+            .expect("Error: Attempted to get indexed ID of freed InstID")
+    }
+    fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.get_indexed_id(allocs).get_order()
     }
 
     fn get_common(self, allocs: &IRAllocs) -> &InstCommon {
@@ -295,6 +303,21 @@ macro_rules! _remusys_ir_subinst_id {
             #[inline]
             fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
                 self.0
+            }
+        }
+        impl $crate::ir::IValueConvert for $IDType {
+            fn try_from_value(
+                value: $crate::ir::ValueSSA,
+                allocs: &$crate::ir::Module,
+            ) -> Option<Self> {
+                let inst_id = match value {
+                    $crate::ir::ValueSSA::Inst(id) => id,
+                    _ => return None,
+                };
+                Self::try_from_instid(inst_id, &allocs.allocs)
+            }
+            fn into_value(self) -> $crate::ir::ValueSSA {
+                $crate::ir::ValueSSA::Inst(self.raw_into())
             }
         }
     };

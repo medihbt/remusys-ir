@@ -1,146 +1,207 @@
-# Remusys-IR 内存管理、引用关系与不变量（新版 allocate/dispose 设计）
 
-> 适用分支：with-mtb-entity（新版 IPoolAllocated 统一生命周期）
+# Remusys-IR：架构、内存管理与不变式
 
-本文在通读 `src/ir/` 全部代码后，完整描述 Remusys-IR 在 MTB::Entity 体系下的托管元素、ID 类型、引用组织、生命周期范式与完整性不变量，并指出潜在缺陷与改进建议。核心参考文件：
-- `module.rs` / `module/{allocs.rs, managing.rs, gc.rs}`
-- `global.rs` / `global/{func.rs, var.rs}`
-- `block.rs` / `inst.rs`（含各子指令文件）/ `jumping.rs` / `usedef.rs`
+本文为对 Remusys-IR 源码的调研报告，按主题分章说明项目总体架构、内存与资源管理范式、引用关系与释放规则、数据流与控制流的表示方式，以及关键不变式与实现注意事项。文末保留扩展框架与下一步可执行工作建议，便于后续补充逐文件注解或自动化检查输出。
 
-## 顶层与内存池
 
-- 顶层容器：`Module { allocs: IRAllocs, tctx: TypeContext, symbols: HashMap<Arc<str>, GlobalID> }`
-- 多池分配器：`IRAllocs` 持有六类实体池与一个延迟释放队列：
-  - 顶点池：`exprs / insts / globals / blocks`
-  - 边池：`uses / jts`
-  - 延迟释放：`disposed_queue: VecDeque<PoolAllocatedID>`，由 `push_disposed` 入队、`free_disposed` 统一出队释放
+## 设计注记（教学优先）
 
-### 统一生命周期接口：IPoolAllocated
+Remusys‑IR 的首要目标为教学与可读性：代码应便于学生、研究人员和贡献者理解 IR 的基本概念与实现细节，而不是追求并发性能或工程级别的高并发吞吐。基于这一设计立场：
 
-- 所有池对象实现 `IPoolAllocated`：
-  - 分配：`allocate(allocs, obj) -> ID`，内部先放入池，再回调 `init_self_id(id, allocs)` 完成“自引用回填/挂链”
-  - 释放：`dispose_id(id, pool)` → `dispose_obj(&self, id, pool)` 执行“摘链/标记/注销”等，再 `push_disposed(id)` 等待统一 `free`
-  - 幂等：重复处置返回 `AlreadyDisposed`
-  - 分类：`PoolAllocatedClass` 与一体化枚举 `PoolAllocatedID` 支持跨池统一处理（索引、标记、释放）
+- 项目在历史上曾做过有限的并发友好重构（例如移除若干 `Rc` 以允许在受控场景下通过短暂的 `Mutex` 借出访问），以便在极其有限的场合支持短时并发访问；但并不计划为多线程场景继续牺牲单线程可读性或性能。
+- 因此，不建议在核心 IR 实现中引入进一步的多线程优化或复杂并发原语；若需要并行化，请在上层工具链或独立服务中实现，而非修改 Remusys‑IR 的核心数据结构。
+- `base/weak_list.rs` 当前作为历史/参考代码保留：IR 的核心模块已不再依赖 `WeakList`，其保留目的是为教学、对比与研究而非作为推荐的运行时数据结构。
 
-契约（简）：
-- 分配成功后，`init_self_id` 必须将所有“反向边/持有者字段”与“环链哨兵”回填完整，保证对象立即处于一致状态；
-- `dispose_*` 必须先恢复外部结构不变量（detach 环链、unplug 序链、清 parent/back-link、注销符号），再入延迟释放队列；
-- 边节点（Use/JumpTarget）严禁直接 free，必须先 dispose 以维护环链完整性。
+我将在文档其余部分把 `WeakList` 视为“历史/备用工具”，并在必要处注记其非核心地位，避免误导读者以为它是当前推荐的实现路径。
 
-## SSA 值、用户与 Use-Def 边
+## 目录
 
-- SSA 值联合：`ValueSSA = None | ConstData | ConstExpr(ExprID) | AggrZero(AggrType) | FuncArg(FuncID,u32) | Block(BlockID) | Inst(InstID) | Global(GlobalID)`
-- 追踪接口：
-  - `ITraceableValue` 提供 `UserList = EntityRingList<Use>` 与遍历/统计；具引用唯一性的值（如 Inst/Block/FuncArg/Global/Expr）拥有有效的 users 哨兵
-  - `IUser` 提供操作数访问；用户的 `user_init_id(self_id)` 会：
-    1) 通过 `traceable_init_id` 令自身 users 环上的所有 Use 的 `operand = self_id.into_ir()`（包括哨兵）
-    2) 为每个操作数 Use 设置 `user = Some(self_id)`
-- Use 节点：
-  - 字段：`kind: UseKind, user: Option<UserID>, operand: ValueSSA`，为可入环的侵入式节点
-  - 赋值：`set_operand` 先从旧 `operand.users` 环 `detach`，再尝试加入新 `operand.users`（若可追踪）；`clean_operand` 清空并脱环
-  - 处置：`dispose` = `mark_disposed + detach + user=None + operand=None`
-  - 不变量：`operand == None ⇒ 不在任何 users 环；operand != None 且可追踪 ⇒ 必在对应 users 环`
+- **总体概览**
+- **内存管理与池化**
+- **引用关系与 Use/User 体系**
+- **数据流与控制流表达**
+- **弱引用与混合引用工具**
+- **核心不变式与检查点**
+- **GC/回收策略概览**
+- **常见风险点与建议**
+- **总结与后续工作**
 
-## 控制流边 JumpTarget 与前驱环
+## 总体概览
 
-- `JumpTarget { kind, terminator: Option<InstID>, block: Option<BlockID> }`，以“目标块”为锚挂接到 `BlockObjBody.preds: EntityRingList<JumpTarget>`
-- 变更：`set_block` 会从旧块环链脱离后再插入新块 `preds`；`clean_block` 清空并脱环
-- 处置：`dispose` = `mark_disposed + detach + terminator=None + block=None`
-- 不变量：
-  - `block.is_some() ⇒` 节点存在于该块 `preds` 环；`block.is_none() ⇒` 不在任何 `preds` 环
-  - 作为终结指令的出边，`init_self_id(inst)` 会为所有持有的 `JumpTarget` 回填 `terminator = inst`
+### 模块划分
 
-## 基本块 Block 与指令 Inst
+源码按逻辑子系统组织：`base`（通用基础设施）、`ir`（核心 IR 表示与工具）、`opt`（变换/优化）、`typing`（类型系统）、`testing`（测试工具）等。`ir` 下进一步包含 `inst`、`module`、`jumping`、`usedef`、`utils` 等子模块。
 
-### BlockObj
+### IR 对象模型
 
-- 结构：`parent_func: Option<FuncID>` 与 `body: Option<BlockObjBody>`（None 表示链表哨兵）
-- `BlockObjBody`：`insts: EntityList<InstID>`、`phi_end: InstID`、`users: UserList`、`preds: PredList`
-- 初始化：`init_self_id` 会为 `insts` 的所有节点（含哨兵/phi_end）设置 `parent_bb = Some(block)`，并回填自身 users 环的 Use.operands
-- 处置：从父函数块表中 `node_unplug`，`dispose_entity_list(insts)` 逐个处置指令并处置 head/tail 哨兵；`traceable_dispose(self)` 清 users 环；清空 `preds` 并处置其哨兵
+- 以 ID 为中心的对象模型：`InstID`, `BlockID`, `GlobalID`, `ExprID` 等。
+- `IRAllocs`（位于 `module::allocs`）封装池/实体分配器，负责对象的分配与回收。
+- `ValueSSA` 是统一的“值”表示：包含常量、表达式、指令、块、全局等变体，用于描述数据流边。
 
-构建期 parent_bb 可为空（已在实现中处理）：当前 `InstObj::on_push_{next,prev,unplug}` 均允许 `parent_bb == None`，因此 `BlockObjBody::new` 在 `parent_bb` 尚未建立时插入 `phi_end` 是安全的；初始化完成后，再由 `BlockObj::init_self_id` 为全部节点（含哨兵/phi_end）补齐 `parent_bb`。
+## 内存管理与池化
 
-### InstObj
+### 池化与 `mtb-entity-slab`
 
-- 结构：`InstCommon { parent_bb, users: Option<UserList>, opcode, ret_type, disposed }` + 具体指令体
-- 初始化：`init_self_id(inst)` 按下述顺序保证一致性：
-  1) `user_init_id(self, UserID::Inst(inst))` 将自身 users 环 Use 的 `operand` 与全部操作数 Use 的 `user` 回填
-  2) 若为终结指令，遍历 `try_get_jts()` 中的 `JumpTargetID`，为其设置 `terminator = inst`
-  3) 特例：`PhiInst` 记录 `self_id` 以便后续动态增删 incoming 时设置 `Use.user`
-- 处置：公共流程由 `inst_dispose` 执行：
-  1) 标记 `disposed = true`
-  2) 若有父块且非哨兵，则从 `Block.insts` 链表 `node_unplug`（同时清空自身 `parent_bb`）
-  3) `user_dispose(self)` 逐个处置操作数 Use，并清理自身 users 环与哨兵
-  4) 若为终结指令，遍历 `JumpTargetID` 并逐个 `dispose`
-  5) 指令专属清尾：例如 `PhiInst` 在处置后清空其 `self_id`
+- 依赖 `mtb-entity-slab`，通过 `IPoolAllocated` 接口将不同类对象放入对应 pool。此设计利于集中管理内存、提高分配/释放效率，并在逻辑上将生命周期与 pool 绑定。
 
-动态结构：
-- `PhiInst` 的 incoming 以二元组 `[UseID;2]` 存储（值、来源块），内部使用 `SmallVec`；增删时根据位置更新 `UseKind` 序号并维护 `Use.user`；删除使用 `swap_remove` 后仅在确有“末尾搬移”时更新被搬移元素索引（避免越界）
-- `SwitchInst` 的跳转目标使用 `SmallVec<JumpTargetID>` 动态扩展：
-  - 构造期先创建 `default` 目标；`push_case_jt` 如检测到默认目标已有 `terminator`，会为新 case 回填同一 `terminator`；
-  - 无论构造期是否已设置，最终在 `InstObj::init_self_id` 会统一遍历并回填 `terminator`，保证一致性
+### 显式 Dispose 流程
 
-## 全局 Global 与函数体
+- 释放以显式 `dispose_id` 为主。`ir::module::managing` 中包含一组辅助函数：
+	- `traceable_dispose`：清理 `UserList` 等可追踪对象的用户信息。
+	- `user_dispose`：释放 `User` 的 operands 并清理用户链表。
+	- `inst_dispose`：断开指令与其父 block 链表，释放 operands 与 jump targets。
+	- `global_common_dispose`：处理全局释放时的符号表和 pin-unpin。
 
-- `GlobalCommon { name, content_ty, content_align_log, users: Option<UserList>, back_linkage, dispose_mark }`
-- 变体：
-  - `GlobalVar { initval: [UseID;1], readonly }`
-  - `FuncObj { args: Box<[FuncArg]>, ret_type, is_vararg, body: Option<FuncBody> }`
-  - `FuncArg` 是可追踪值，持有 `users` 环与 `func: Cell<Option<FuncID>>`
-- 初始化：
-  - `GlobalObj::init_self_id` 首先 `user_init_id(UserID::Global(id))`
-  - 函数体：为每个 `FuncArg` 设置 `func=Some(FuncID(id))`，并将 `arg.users` 环上的 Use 的 `operand` 回填为 `ValueSSA::FuncArg(func, index)`；若存在 `body`，遍历 `blocks` 的所有节点（含哨兵）设置 `parent_func`
-- 处置：
-  - `global_common_dispose` 统一完成：幂等检测、`symbols` 注销（借用冲突返回 `SymtabBorrowError`）、`user_dispose(global)` 清理该全局本身的 users 与操作数
-  - `GlobalVar`：仅需公共处置
-  - `FuncObj`：在公共处置后，逐个参数清 `func=None` 并 `traceable_dispose(arg)`；如有 `body`，`dispose_entity_list(body.blocks)` 处置所有基本块与哨兵
+这些 helper 会检查对象状态并返回 `PoolAllocatedDisposeErr` 以反映错误情况（如重复释放或借用冲突）。
 
-## GC：标记与清扫（IRMarker / IRLiveSet）
+### 自动 Drop 封装（RAII）
 
-- 标记：
-  - 根：来自 `Module.symbols` 的 `GlobalID`；也可追加外部根
-  - 推进：
-    - `Global` → `operands(Use)` 与自身 `users.sentinel`；`Func` 额外标记各 `FuncArg.users.sentinel` 与 `blocks`
-    - `Block` → `insts`（含 `phi_end` 与哨兵安全入队）、`preds.sentinel`、`users.sentinel`
-    - `Inst/Expr` → `operands(Use)` 与 `users.sentinel`；`Inst` 若为 terminator 还会标记每个 `JumpTarget`
-    - `Use` → 其 `operand(ValueSSA)`；`JumpTarget` → 其 `block`
-  - 去重：用 `FixBitSet` 按池索引避免重复
-- 清扫：
-  1) 先遍历 `uses` 和 `jts` 两个边池，对“未标活”的逐个调用 `dispose_obj` 并 `push_disposed`
-  2) 调用 `free_disposed` 释放所有已处置边节点
-  3) 其余顶点（`insts/blocks/exprs/globals`）基于 bitset 直接 `free_if`（无需显式 dispose，因所有外连边已在步骤 1 保守清理）
+- `ir::managed` 提供 `Managed*` 类型（如 `ManagedInst`、`ManagedBlock`），它们在 `Drop` 中调用 `dispose_id`，便于在局部作用域自动释放资源。需要转移所有权时可用 `release()` 取消自动释放行为。
 
-该顺序确保：任何指向死对象的环链节点在目标对象 free 前已被安全摘除，不破坏容器不变量。
+### 标记与幂等释放
 
-## 关键不变量清单（运行期必须满足）
+- 对象通常带有布尔标志（如 `disposed`、`dispose_mark`），dispose helpers 会检查这些标志，避免重复 dispose。重复调用会返回 `AlreadyDisposed` 错误以保证幂等性和早期检测。
 
-- 序链/父子：
-  - Inst 入链前必须已设置 `parent_bb`；出链时会清空 `parent_bb`
-  - Block 入 `Func.blocks` 前必须已设置 `parent_func`；出链时清空
-- Use-Def：
-  - `Use.operand == None ⇒` 不在任何 `users` 环；否则若 `operand` 可追踪 ⇒ 必在对应值的 `users` 环
-  - `Use` 的 `user` 字段仅通过 `user_init_id` 或 `Phi`/构建期的专用逻辑设置/更新
-- CFG：
-  - `JumpTarget.block.is_some() ⇒` 节点出现在该块的 `preds` 环；`is_none() ⇒` 不在任何环
-  - 任意活体 terminator 的所有 `JumpTarget.terminator` 均等于该 terminator 自身
-- 符号表：任意已释放/处置的 `Global` 不应仍然存在于 `Module.symbols` 中
-- 幂等性：任何 `dispose_*` 二次调用不会破坏状态（返回 `AlreadyDisposed` 或等价语义）
+## 引用关系与 Use/User 体系
 
-## 已发现/已修复的问题与建议
+### Use / User / UserList 模型
 
-1) 构建期 `phi_end` 插入与 parent_bb 断言风险：已修复。
-  - 现状：`InstObj::on_push_{next,prev,unplug}` 放宽为允许 `parent_bb == None`，并在 push 时将相邻节点的 `parent_bb` 设置为当前的（可能为 None）。
-  - 结论：`BlockObjBody::new` 中提前插入 `phi_end` 不再有断言风险；`BlockObj::init_self_id` 会在初始化时为链上所有节点补齐 `parent_bb`。
+- 采用经典 use-def 风格：`User`（指令/表达式/全局等）持有多个 `Use`（操作数）。
+- `Use` 包含对某一 `ValueSSA` 的引用，并在目标的 `UserList` 中注册自己（链表结构，带哨兵）。
 
-2) 动态 JT 终结者回填的健壮性：`SwitchInst::push_case_jt` 试图从 `default_jt` 读取 `terminator` 以传播到新 case；若构建期尚未完成 `init_self_id`，该字段为 `None`，但稍后 `InstObj::init_self_id` 会统一回填，整体是安全的。建议在注释中明确这种“双路径保证”，避免未来修改引入遗漏。
+### 初始化与回填（ID 回填）
 
-3) Debug-only 自检建议：
-   - 对活体 Inst/Expr/Global/Block/FuncArg 迭代 `users`，断言无 `DisposedUse` 节点且所有 Use 的 `operand` 反向指向该值
-   - 对活体 Block 迭代 `preds`，断言无 `Disposed` 的 JT，且每个 JT 的 `block`/`terminator` 均一致
-   - 对任意活体 terminator，断言其 `JumpTarget.terminator == self`
+- 当创建某些可追踪实体时，需要把新生成的 ID 回填到已有的 `Use` 的 operand 字段，这里由 `traceable_init_id` 完成：遍历 `t.try_get_users()` 并将 `u.operand.set(self_id)`。
 
-## 小结
+### 清理语义
 
-新版的 allocate/dispose 通过 `IPoolAllocated` 统一生命周期，并在 GC 中“先处置边、后释放点”，配合 users/preds 哨兵标记，有效维护了容器不变量与引用一致性。除上文提到的 `phi_end` 插入时机可能触发断言的边角问题外，整体设计清晰、职责分离良好且具可扩展性。建议按“潜在缺陷与建议修复”落地一次小改，以进一步提升构建期鲁棒性，并考虑引入 Debug-only 自检以固化不变量。
+- `traceable_dispose` 会清理 `users`（调用 `clean`）并释放哨兵；`user_dispose` 释放 `User` 的所有 `Use` 并调用 `traceable_dispose`。这确保释放顺序正确并尽量避免悬挂引用。
+
+## 数据流与控制流表达
+
+### `ValueSSA` 统一值表示
+
+- 枚举变体包括 `ConstData`、`ConstExpr`、`AggrZero`、`FuncArg`、`Block`、`Inst`、`Global`。
+- 提供工具方法：`get_valtype`, `can_trace`, `try_get_users`, `as_dyn_traceable` / `as_dyn_user` / `as_dyn_ptrvalue` 等，便于多态处理与检查。
+
+### 指令、基本块与终结器
+
+- 指令实现 `ISubInst` 接口（分散在 `ir/inst/*` 文件中），基本块由 `BlockObj` 表示，内部维护指令链表。
+- 终结器（terminator）与跳转目标由 `ir/jumping` 模块建模，`JumpTargets`、`PredList` 等表示控制流边。
+
+### Phi 与数据流一致性
+
+- Phi 指令与类似需要在变换时维护 `Use` / `UserList` 的指令密切相关。所有变换必须保持 use-def 链表一致性，否则 `checking` 子模块（如 dominance / sanity）会检测到不正确状态。
+
+## 弱引用与混合引用工具
+
+### `MixRef` / `MixMutRef`
+
+- 用于统一处理两类访问：固定引用（`&T` / `&mut T`）与运行时借用（`Ref` / `RefMut`）。方便在 pool/RefCell 混合场景下编写通用访问代码。
+
+### `WeakList`
+
+- 基于 `Rc/Weak` 的双向弱链表（带哨兵）。用于不希望强持有节点但仍需枚举/管理的场景。
+- 支持 `push_front`/`push_back`、`move_all_to`、`move_to_if`、`clear` 等操作。析构时会遍历并调用节点的 `on_list_finalize`。
+
+## 核心不变式与检查点
+
+下面列出关键不变式、实现假设及对应的检查点：
+
+### ID 与 pool 一致性
+
+- 每个 `PtrID`/Slab ID 应在其对应 pool 中可解引用，或为约定的 null handle。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 都假定此不变式成立。
+
+### 链表与哨兵完整性
+
+- `UserList`, `EntityList`, `WeakList` 等依赖哨兵节点确保边界语义。实现假定不会出现已释放节点仍在链表中（`WeakList::drop` 会在异常情况下 panic）。
+
+### Dispose 幂等性
+
+- `disposed` / `dispose_mark` 标志保证释放幂等，重复 dispose 会返回错误以避免二次释放。
+
+### Use/User 一致性
+
+- 在更改某个 operand 或替换 value 时，必须同时维护目标的 `UserList`。例如 `traceable_init_id` 的回填机制正是为保证这类同步而设计的。
+
+### 父子关系一致性
+
+- 指令的父 block 与 block 中的指令链表位置必须一致；`inst_dispose` 在断开链表时依赖成功的 `node_unplug` 操作，失败会触发 `expect`。
+
+### 符号表 pin/unpin 约束
+
+- 释放全局对象前需检查并解除符号表 pin（`module.symbol_pinned(id)`），否则可能留下悬挂符号引用。
+
+## 项目中的 GC / 回收策略概览
+
+### 实现概述：完整的 Mark–Sweep
+
+Remusys-IR 实际上实现了一个完整的 mark–sweep 垃圾回收流程，用于清理 IR 层面的死对象（以 pool/slab 为后端）。关键要点：
+
+- **标记（Mark）**：由 `IRMarker` 驱动。回收周期由 `Module::begin_gc()` 发起（它会先调用 `allocs.free_disposed()` 清理已排队的 disposed），然后创建 `IRMarker` 并由各 root（例如符号表中的 pinned symbol）向 marker 推送初始标记。`IRMarker::mark_all()` 会通过 `mark_queue` 广度优先遍历活对象并把它们加入 `IRLiveSet`。
+
+- **扫描/遍历策略**：扫描过程中 `IRMarker` 会根据对象类型消费 block/inst/expr/global/use/jump-target 等，并将它们的子对象（例如 instruction 的 operands，block 的指令列表、function 的 blocks/args）推入标记队列，以确保可达对象全部被标记。
+
+- **清理（Sweep）**：`IRLiveSet::sweep` 对未标记的对象做两类操作：一是对部分对象（例如 `Use`、`JumpTarget`）调用 `dispose_obj` 并把它们放入 disposed 队列以触发 dispose helper 的清理逻辑；二是对其他对象（如 inst/blocks/exprs/globals）直接按位判断并调用实体池的 `fully_free_if` 来释放不在 live set 中的项。最终通过 `IRMarker::finish()` 合并完成并记录释放数量。
+
+### GC 中的“修复”与错误处理策略
+
+- **有限修复**：在 sweep 过程中，GC 会尽其所能通过调用 `dispose` 等 helper 去清理或断开被回收对象与其它对象的关联（例如把孤立的 `Use` 从 use-def 环上移除），这在一定程度上能修复轻微的不一致（例如残留的使用链条）。
+
+- **断言与放弃**：实现中包含若干 debug 断言（例如 `IRMarker::consume_block` 与 `consume_global` 中对 parent/attachment 的断言）和 `debug_assert!` 检查；若出现严重的不变式破坏（例如 block/inst 的父子关系异常），GC 不会尝试作复杂修复，而是触发断言/panic，从而直接中止运行以引导开发者定位并修复根本问题。换言之：GC 会做可控的局部修复，但遇到结构性破坏会选择放弃并暴露错误而非隐式掩盖。
+
+### 在实现中可观察到的要点
+
+- `IRLiveSet` 负责维护不同 pool（insts/blocks/exprs/globals/uses/jts）的活性位集合；它的构造基于 `IRAllocs` 的当前容量以确保 index 映射一致。
+- `IRMarker` 通过内部代理 `IRMarkerRef` 在标记遍历中避免重复可变借用问题，并在 `do_push_mark` 中保证对象只会被标记一次。
+- `IRLiveSet::sweep` 在处理 `Use` 与 `JumpTarget` 时会优先调用 `dispose_obj` 并把它们加入 `allocs` 的 disposed 队列（这些 dispose 会进一步断开链表和引用），随后调用 `free_disposed()` 以保证 disposed 对象的完整清理，再对其它池使用 `fully_free_if` 做最终释放。
+
+### 结论（关于 GC 的语义）
+
+Remusys-IR 的回收并非仅靠手工 dispose 或仅依赖 RAII：它提供了一个协同的回收机制——显式 dispose + 局部 RAII + 系统级的 mark–sweep。GC 既会主动回收不可达对象，也会在必要时调用现有的 dispose 逻辑来修复引用关系，但在遇到严重不变式破坏时会选择中止以暴露问题。
+
+## 常见风险点与建议
+
+- 变换（如 `mem2reg`、死代码消除、指令/块重写）必须严格维护 `Use`/`UserList` 的一致性；建议在变换后运行 `checking::sanity`、`dominance` 等检查器以尽早发现错误。
+- `WeakList::drop` 对已释放节点会 panic；在复杂移动或模块克隆场景中，应小心保证链表完整性或改进错误处理策略。
+- 对 `Managed*` 的使用要注意所有权转移：当 ID 被转移到其他持有者时必须调用 `release()`。
+- Dispose 过程中若出现借用冲突（例如 `symbols.try_borrow_mut()` 失败），会返回 `PoolAllocatedDisposeErr::SymtabBorrowError`；避免在同一作用域内多次可变借用同一 allocs。
+
+## 总结与后续工作
+
+Remusys-IR 采用 pool/slab 分配+显式 dispose 的混合资源管理模型，结合 Use/User 链表与哨兵数据结构保证变换时的一致性。核心挑战来自于在变换中稳定维护 use-def 链表、避免重复或错误释放、并保证链表/父子关系的一致性。
+
+后续可做项（可选）：
+
+- 为每个 `ir/inst/*.rs` 与 `ir/module/allocs.rs` 撰写逐文件注解，列出字段、关键不变式与典型使用示例（易于审阅与贡献者上手）。
+- 在 CI 或本地运行 `checking` 子模块（`sanity` / `dominance`）并把输出附到本报告以便回归验证。
+- 为常见变换添加单元测试模板与断言，自动在变换后运行不变式检查。
+
+
+**核心不变式与检查点**
+以下是不变式与实现层面需要关注的关键点（实现中有显式检查或依赖这些假设）：
+- **ID 与 Pool 一致性**: 一个 `PtrID`/`*ID` 在对应 pool 中必须可被 deref（或为特定 null handle）。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 期望 handle 与 slab/pool 保持一致。
+- **哨兵与链表完整性**: `UserList`、`EntityList`、`WeakList` 等采用哨兵节点。实现假定链表在正常运行时不会出现孤立的已释放节点；`WeakList::drop` 在遇到已释放节点会 panic（代码中有相应检测）。
+- **dispose 的幂等性**: `inst_dispose` 与 `global_common_dispose` 会检查 `disposed` / `dispose_mark`，并在重复 dispose 时返回错误以避免双重释放的未定义行为。
+- **Use/User 一致性**: 在初始化/改变某个 Value 的 ID 时，要保证 `Use.operand` 与目标 `UserList` 同步（见 `traceable_init_id`），否则可能出现 use 指向旧 ID 导致检查失败。变换中必须在更改 operand 前后正确维护 `UserList`。
+- **父子关系一致性**: 指令与块的父关系（`inst.get_parent()` 返回的 block ID）必须与 block 中的 instruction 链表位置一致；`inst_dispose` 在断开链表时有断言（`expect("Failed to unplug...")`），说明函数调用者应保证在非 sentinel 情况下父链表是可修改的。
+- **Symbol table pinning**: `global_common_dispose` 须知符号可能被 pin（`module.symbol_pinned(id)`），在释放全局前需要先从 symbol table 中解除 pin，以避免悬挂符号引用。
+
+**项目中可见的 GC/回收策略**
+- Remusys-IR 更像是“显式资源管理 + pool/dispose”的混合系统，而不是传统的 tracing GC。GC 行为体现在：
+	- 使用池（entity slab）以批量/集中管理内存并提供高效的分配/回收。
+	- 通过 `Managed*` 的 Drop 封装提供 RAII 式的自动释放（受作用域控制）。
+	- 通过若干 dispose helper 在释放时递归清理关联结构（uses 列表、操作数、jump targets、entity lists），以保证不留悬挂引用。
+
+**常见风险点与建议**
+- 变换（如 mem2reg、DCE、重写指令/块）必须非常小心地维护 `Use` / `UserList` 与 `User` 内部的状态。推荐在关键变换后运行 `checking::sanity` / `dominance` 等检查器以早发现不一致。
+- `WeakList::drop` 中遇到已释放节点会 panic；若存在并发或复杂移动场景（例如跨 module move/clone），请确保移动逻辑在所有路径上保持链表完好。
+- 对 `Managed*` 的自动释放要谨慎使用：当需要将 ID 交由其它所有者管理时，必须 `release`，否则会导致提前释放。
+- 在 dispose helpers 中，若 pool 的借用产生冲突（例如 `symbols.try_borrow_mut()` 失败），会返回 `PoolAllocatedDisposeErr::SymtabBorrowError`；在复杂场景中请避免在同一作用域中反复可变借用同一 allocs 结构。
+
+**总结**
+Remusys-IR 通过一套基于 slab/pool 的实体分配、显式 dispose 接口与少量 RAII 包装器来实现内存与资源管理。其引用体系基于 classic use-def（`Use`/`User`/`UserList`），并用哨兵链表、弱链表等数据结构在性能与语义上达成折衷。要保证变换正确性，最关键的是严格维护 Use/User 的一致性、在释放前解除所有引用并遵循已定义的 disposed 标志约束。建议在变换实现中广泛使用现有的检查器，并在需要的地方添加更严格的断言与测试用例。
+
+---
+
+如果你希望我把报告扩展为更详细的逐文件注解（例如逐个说明 `inst/*.rs`、`module/allocs.rs` 中的字段与不变式），或者自动运行现有检查器并收集输出以丰富报告，我可以继续执行这些步骤。

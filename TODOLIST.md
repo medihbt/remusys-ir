@@ -36,3 +36,5 @@
     - [ ] 设计
     - [ ] Phi 消除
     - [ ] 寄存器分配
+- [ ] 易用性提升
+    - [ ] 添加 FuncID::block_iter() 和 BlockID::inst_iter()

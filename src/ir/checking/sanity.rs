@@ -210,7 +210,7 @@ impl ExprSet {
     fn insert(&mut self, allocs: &IRAllocs, eid: ExprID) {
         match self {
             ExprSet::Dense(bs) => {
-                bs.enable(eid.into_raw_ptr().get_index(&allocs.exprs).unwrap());
+                bs.enable(eid.get_entity_index(allocs));
             }
             ExprSet::Sparse(set) => {
                 set.insert(eid);
@@ -220,9 +220,7 @@ impl ExprSet {
     fn contains(&self, allocs: &IRAllocs, eid: ExprID) -> bool {
         match self {
             ExprSet::Dense(bs) => {
-                let Some(idx) = eid.into_raw_ptr().get_index(&allocs.exprs) else {
-                    return false;
-                };
+                let idx = eid.get_entity_index(allocs);
                 bs.get(idx)
             }
             ExprSet::Sparse(set) => set.contains(&eid),

@@ -7,7 +7,6 @@ use crate::{
         module::allocs::IPoolAllocated,
     },
 };
-use mtb_entity_slab::IndexedID;
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone)]
@@ -36,7 +35,7 @@ impl IRLiveSet {
 
     pub fn add(&mut self, allocs: &IRAllocs, id: impl Into<PoolAllocatedID>) {
         let id = id.into();
-        let Some(index) = id.get_indexed(allocs) else {
+        let Some(index) = id.try_get_entity_index(allocs) else {
             return;
         };
         match id.get_class() {
@@ -50,7 +49,7 @@ impl IRLiveSet {
     }
     pub fn is_alive(&self, allocs: &IRAllocs, id: impl Into<PoolAllocatedID>) -> bool {
         let id = id.into();
-        let Some(index) = id.get_indexed(allocs) else {
+        let Some(index) = id.try_get_entity_index(allocs) else {
             return false;
         };
         match id.get_class() {
@@ -91,7 +90,7 @@ impl IRLiveSet {
         );
         // use 和 jt 在 dispose 时会维护环链表, 如果不 dispose 会破坏 use-def 关系
         for (id, up, u) in allocs.uses.iter() {
-            if self.uses.get(id) {
+            if self.uses.get(id.get_order()) {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
@@ -99,7 +98,7 @@ impl IRLiveSet {
             allocs.push_disposed(UseID(up));
         }
         for (id, jp, jt) in allocs.jts.iter() {
-            if self.jts.get(id) {
+            if self.jts.get(id.get_order()) {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
@@ -111,19 +110,19 @@ impl IRLiveSet {
         allocs.free_disposed();
         // 其他的对象就不需要 dispose 了. 直接 free 就行.
         allocs.insts.fully_free_if(
-            |_, _, IndexedID(idx, _)| !self.insts.get(idx),
+            |_, _, idx| !self.insts.get(idx.get_order()),
             |_| num_freed += 1,
         );
         allocs.blocks.fully_free_if(
-            |_, _, IndexedID(idx, _)| !self.blocks.get(idx),
+            |_, _, idx| !self.blocks.get(idx.get_order()),
             |_| num_freed += 1,
         );
         allocs.exprs.fully_free_if(
-            |_, _, IndexedID(idx, _)| !self.exprs.get(idx),
+            |_, _, idx| !self.exprs.get(idx.get_order()),
             |_| num_freed += 1,
         );
         allocs.globals.fully_free_if(
-            |_, _, IndexedID(idx, _)| !self.globals.get(idx),
+            |_, _, idx| !self.globals.get(idx.get_order()),
             |_| num_freed += 1,
         );
         num_freed

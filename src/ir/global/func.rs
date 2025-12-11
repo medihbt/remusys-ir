@@ -9,7 +9,7 @@ use crate::{
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{EntityList, IPoliciedID, PtrID};
+use mtb_entity_slab::{EntityList, EntityListIter, IPoliciedID, PtrID};
 use smallvec::SmallVec;
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
@@ -204,6 +204,28 @@ impl FuncObj {
         self.attrs.borrow_mut().clean_attr(class);
         self
     }
+
+    pub fn get_blocks(&self) -> Option<&EntityList<BlockID>> {
+        self.body.as_ref().map(|b| &b.blocks)
+    }
+    pub fn get_entry(&self) -> Option<BlockID> {
+        self.body.as_ref().map(|b| b.entry)
+    }
+    pub fn blocks_unwrap(&self) -> &EntityList<BlockID> {
+        match self.get_blocks() {
+            Some(blocks) => blocks,
+            None => panic!("Function {} does not have a body", self.get_name()),
+        }
+    }
+    pub fn entry_unwrap(&self) -> BlockID {
+        match self.get_entry() {
+            Some(entry) => entry,
+            None => panic!("Function {} does not have a body", self.get_name()),
+        }
+    }
+    pub fn block_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> EntityListIter<'ir, BlockID> {
+        self.blocks_unwrap().iter(&allocs.blocks)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -247,6 +269,25 @@ impl FuncID {
     }
     pub fn get_entry(self, allocs: &IRAllocs) -> Option<BlockID> {
         self.get_body(allocs).map(|b| b.entry)
+    }
+    pub fn body_unwrap(self, allocs: &IRAllocs) -> &FuncBody {
+        match self.get_body(allocs) {
+            Some(body) => body,
+            None => panic!("Function {} does not have a body", self.get_name(allocs)),
+        }
+    }
+    pub fn blocks_unwrap(self, allocs: &IRAllocs) -> &EntityList<BlockID> {
+        self.deref_ir(allocs).blocks_unwrap()
+    }
+    pub fn entry_unwrap(self, allocs: &IRAllocs) -> BlockID {
+        self.deref_ir(allocs).entry_unwrap()
+    }
+    pub fn try_blocks_iter(self, allocs: &IRAllocs) -> Option<EntityListIter<'_, BlockID>> {
+        self.get_blocks(allocs)
+            .map(|blocks| blocks.iter(&allocs.blocks))
+    }
+    pub fn blocks_iter(self, allocs: &IRAllocs) -> EntityListIter<'_, BlockID> {
+        self.deref_ir(allocs).block_iter(allocs)
     }
 
     pub fn get_arg(self, allocs: &IRAllocs, index: usize) -> Option<&FuncArg> {

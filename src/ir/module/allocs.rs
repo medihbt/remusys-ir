@@ -15,7 +15,7 @@ use crate::ir::{
 };
 use mtb_entity_slab::{
     EntityAlloc, IAllocPolicy, IEntityAllocID, IEntityListNodeID, IEntityRingListNodeID,
-    IPoliciedID,
+    IPoliciedID, PtrID,
 };
 use std::{cell::RefCell, collections::VecDeque};
 use thiserror::Error;
@@ -217,7 +217,7 @@ impl IPoolAllocated for BlockObj {
 
     fn allocate(allocs: &IRAllocs, obj: Self) -> BlockID {
         let alloc = &allocs.blocks;
-        let ptr = alloc.allocate_ptr(obj);
+        let ptr = PtrID::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(BlockID(ptr), allocs);
         BlockID(ptr)
     }
@@ -350,9 +350,9 @@ impl IPoolAllocated for ExprObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.exprs;
-        let id = alloc.allocate_ptr(obj);
-        id.deref(alloc).init_self_id(ExprID(id), allocs);
-        ExprID(id)
+        let ptr = PtrID::allocate_from(alloc, obj);
+        ptr.deref(alloc).init_self_id(ExprID(ptr), allocs);
+        ExprID(ptr)
     }
     fn obj_disposed(&self) -> bool {
         self.get_common().dispose_mark.get()
@@ -408,9 +408,9 @@ impl IPoolAllocated for GlobalObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.globals;
-        let id = alloc.allocate_ptr(obj);
-        id.deref(alloc).init_self_id(GlobalID(id), allocs);
-        GlobalID(id)
+        let ptr = PtrID::allocate_from(alloc, obj);
+        ptr.deref(alloc).init_self_id(GlobalID(ptr), allocs);
+        GlobalID(ptr)
     }
 
     fn obj_disposed(&self) -> bool {
@@ -454,7 +454,7 @@ impl IPoolAllocated for Use {
             UseKind::DisposedUse,
             "Cannot allocate a disposed Use"
         );
-        let ptr = allocs.uses.allocate_ptr(obj);
+        let ptr = PtrID::allocate_from(&allocs.uses, obj);
         ptr.deref(&allocs.uses).init_self_id(UseID(ptr), allocs);
         UseID(ptr)
     }
@@ -490,7 +490,7 @@ impl IPoolAllocated for JumpTarget {
 
     fn init_self_id(&self, _: JumpTargetID, _: &IRAllocs) {}
     fn allocate(allocs: &IRAllocs, obj: Self) -> JumpTargetID {
-        let ptr = allocs.jts.allocate_ptr(obj);
+        let ptr = PtrID::allocate_from(&allocs.jts, obj);
         ptr.deref(&allocs.jts)
             .init_self_id(JumpTargetID(ptr), allocs);
         JumpTargetID(ptr)
@@ -584,15 +584,26 @@ impl PoolAllocatedID {
             PoolAllocatedID::JumpTarget(j) => JumpTarget::dispose_id(j, &module.allocs),
         }
     }
-    pub fn get_indexed(self, ir_allocs: &IRAllocs) -> Option<usize> {
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
         use PoolAllocatedID::*;
         match self {
-            Block(b) => b.inner().get_index(&ir_allocs.blocks),
-            Inst(i) => i.into_raw_ptr().get_index(&ir_allocs.insts),
-            Expr(e) => e.into_raw_ptr().get_index(&ir_allocs.exprs),
-            Global(g) => g.into_raw_ptr().get_index(&ir_allocs.globals),
-            Use(u) => u.0.get_index(&ir_allocs.uses),
-            JumpTarget(j) => j.0.get_index(&ir_allocs.jts),
+            Block(b) => b.get_entity_index(allocs),
+            Inst(i) => i.get_entity_index(allocs),
+            Expr(e) => e.get_entity_index(allocs),
+            Global(g) => g.get_entity_index(allocs),
+            Use(u) => u.get_entity_index(allocs),
+            JumpTarget(j) => j.get_entity_index(allocs),
+        }
+    }
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        use PoolAllocatedID::*;
+        match self {
+            Block(b) => b.try_get_entity_index(allocs),
+            Inst(i) => i.try_get_entity_index(allocs),
+            Expr(e) => e.try_get_entity_index(allocs),
+            Global(g) => g.try_get_entity_index(allocs),
+            Use(u) => u.try_get_entity_index(allocs),
+            JumpTarget(j) => j.try_get_entity_index(allocs),
         }
     }
 }

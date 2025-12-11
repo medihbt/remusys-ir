@@ -379,6 +379,14 @@ impl UseID {
     pub fn inner(self) -> UseRawPtr {
         self.0
     }
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        let index = self.inner().to_index(&allocs.uses)?;
+        Some(index.get_order())
+    }
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.try_get_entity_index(allocs)
+            .expect("Error: Attempted to get indexed ID of freed UseID")
+    }
 
     pub fn deref_ir(self, allocs: &IRAllocs) -> &Use {
         self.inner().deref(&allocs.uses)
