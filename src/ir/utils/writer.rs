@@ -723,7 +723,7 @@ impl<'ir> IRWriter<'ir> {
         match inst {
             InstObj::GuideNode(_) => {}
             InstObj::PhiInstEnd(_) => {
-                let id = inst_id.get_indexed_id(self.allocs());
+                let id = inst_id.to_raw_index(self.allocs());
                 write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id).unwrap()
             }
             InstObj::Unreachable(_) => self.write_str("unreachable").unwrap(),

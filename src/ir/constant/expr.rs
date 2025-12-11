@@ -11,7 +11,7 @@ use crate::{
     },
     typing::{AggrType, IValType, StructTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{IEntityAllocID, IPoliciedID, PtrID, entity_id};
+use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
 use std::cell::Cell;
 
 pub struct ExprCommon {
@@ -135,6 +135,7 @@ macro_rules! _remusys_ir_subexpr_id {
 
 #[derive(Clone)]
 #[entity_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
+#[entity_id(ExprIndex, policy = 256, backend = index)]
 pub enum ExprObj {
     Array(ArrayExpr),
     DataArray(DataArrayExpr),
@@ -144,6 +145,7 @@ pub enum ExprObj {
     FixVec(FixVec),
 }
 pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
+pub type ExprRawIndex = IndexedID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
 
 impl_traceable_from_common!(ExprObj, false);
 impl IUser for ExprObj {
@@ -276,6 +278,23 @@ impl ISubValueSSA for ExprID {
     }
 }
 impl ExprID {
+    pub fn as_indexed(self, allocs: &IRAllocs) -> Option<ExprIndex> {
+        let indexed_id = self.0.to_index(&allocs.exprs)?;
+        Some(ExprIndex(indexed_id))
+    }
+    pub fn to_indexed(self, allocs: &IRAllocs) -> ExprIndex {
+        self.as_indexed(allocs)
+            .expect("Error: Attempted to get indexed ID of freed ExprID")
+    }
+    pub fn try_from_indexed(indexed: ExprIndex, allocs: &IRAllocs) -> Option<Self> {
+        let raw_ptr = indexed.0.to_ptr(&allocs.exprs)?;
+        Some(ExprID(raw_ptr))
+    }
+    pub fn from_indexed(indexed: ExprIndex, allocs: &IRAllocs) -> Self {
+        Self::try_from_indexed(indexed, allocs)
+            .expect("Error: Attempted to get ExprID from freed ExprIndex")
+    }
+
     pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
         let indexed_id = self.0.to_index(&allocs.exprs)?;
         Some(indexed_id.get_order())
@@ -283,6 +302,17 @@ impl ExprID {
     pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
         self.try_get_entity_index(allocs)
             .expect("Error: Attempted to get indexed ID of freed ExprID")
+    }
+}
+
+impl ExprIndex {
+    pub fn as_primary(self, allocs: &IRAllocs) -> Option<ExprID> {
+        let raw_ptr = self.0.to_ptr(&allocs.exprs)?;
+        Some(ExprID(raw_ptr))
+    }
+    pub fn to_primary(self, allocs: &IRAllocs) -> ExprID {
+        self.as_primary(allocs)
+            .expect("Error: Attempted to get ExprID from freed ExprIndex")
     }
 }
 

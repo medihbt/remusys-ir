@@ -9,7 +9,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IEntityAllocID, IPoliciedID, PtrID, entity_id};
+use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
 use std::{cell::Cell, sync::Arc};
 
 pub mod func;
@@ -134,20 +134,19 @@ pub trait ISubGlobalID: Copy + 'static {
         Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")
     }
 
-    fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<GlobalIndex> {
+    fn as_indexed(self, allocs: &IRAllocs) -> Option<GlobalIndex> {
         self.into_raw_ptr()
             .to_index(&allocs.globals)
             .map(GlobalIndex)
     }
-    fn get_indexed_id(self, allocs: &IRAllocs) -> GlobalIndex {
-        self.try_get_indexed_id(allocs).expect("UAF detected")
+    fn to_indexed(self, allocs: &IRAllocs) -> GlobalIndex {
+        self.as_indexed(allocs).expect("UAF detected")
     }
     fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
-        self.try_get_indexed_id(allocs)
-            .map(|x| x.0.get_order())
+        self.as_indexed(allocs).map(|x| x.0.get_order())
     }
     fn get_entity_index(self, allocs: &IRAllocs) -> usize {
-        self.get_indexed_id(allocs).0.get_order()
+        self.to_indexed(allocs).0.get_order()
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::GlobalT> {
@@ -250,6 +249,8 @@ pub enum GlobalObj {
     Var(GlobalVar),
     Func(FuncObj),
 }
+
+pub type GlobalRawIndex = IndexedID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>;
 
 impl_traceable_from_common!(GlobalObj, true);
 impl IUser for GlobalObj {
@@ -359,6 +360,15 @@ impl ISubValueSSA for GlobalID {
     }
     fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
         self.deref_ir(allocs).try_get_users()
+    }
+}
+
+impl GlobalIndex {
+    pub fn as_primary(self, allocs: &IRAllocs) -> Option<GlobalID> {
+        self.0.to_ptr(&allocs.globals).map(GlobalID)
+    }
+    pub fn to_primary(self, allocs: &IRAllocs) -> GlobalID {
+        self.as_primary(allocs).expect("UAF detected")
     }
 }
 
