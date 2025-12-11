@@ -34,7 +34,7 @@ pub struct DominatorTreeNode {
     dominate_cache: RefCell<HashMap<BlockID, bool>>,
 }
 
-pub struct DominatorTree<R = ListWalkOrder> {
+pub struct DominatorTree<Order = ListWalkOrder> {
     /// 所属函数 ID.
     pub func_id: FuncID,
     /// DFS 序列. 根据是支配树还是后支配树, 其遍历顺序会有所不同.
@@ -43,7 +43,7 @@ pub struct DominatorTree<R = ListWalkOrder> {
     /// 支配树节点列表, 按 DFS 序列顺序排列.
     pub nodes: Vec<DominatorTreeNode>,
     /// 存储 “一条指令是否为另一条指令” 的数据结构
-    pub relation: R,
+    pub inst_order: Order,
 }
 
 impl DominatorTree {
@@ -57,13 +57,13 @@ impl DominatorTree {
     }
 }
 
-impl<R: InstOrdering> DominatorTree<R> {
+impl<Order> DominatorTree<Order> {
     /// 根节点在 DFS 序列中的索引.
     pub const ROOT_INDEX: usize = 0;
 
     pub fn map_relation<S: InstOrdering>(self, relation: S) -> DominatorTree<S> {
         let Self { func_id, dfs, nodes, .. } = self;
-        DominatorTree { func_id, dfs, nodes, relation }
+        DominatorTree { func_id, dfs, nodes, inst_order: relation }
     }
     pub fn get_kind(&self) -> DomiTreeKind {
         if self.is_postdom() { DomiTreeKind::PostDom } else { DomiTreeKind::Dom }
@@ -168,7 +168,10 @@ impl<R: InstOrdering> DominatorTree<R> {
         self.block_dominates_block(inst_block, block)
     }
 
-    pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
+    pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool
+    where
+        Order: InstOrdering,
+    {
         if a == b {
             return true;
         }
@@ -184,13 +187,16 @@ impl<R: InstOrdering> DominatorTree<R> {
             self.block_dominates_block(a_block, b_block)
         } else if !self.is_postdom() {
             // Same block: use instruction order
-            self.relation.comes_before(allocs, a, b)
+            self.inst_order.comes_before(allocs, a, b)
         } else {
             // Postdom: reverse instruction order
-            self.relation.comes_before(allocs, b, a)
+            self.inst_order.comes_before(allocs, b, a)
         }
     }
-    pub fn inst_strictly_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
+    pub fn inst_strictly_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool
+    where
+        Order: InstOrdering,
+    {
         if a == b {
             return false;
         }
@@ -328,7 +334,7 @@ impl DominatorTreeBuilder {
         }
 
         let Self { func_id, dfs, .. } = self;
-        DominatorTree { func_id, dfs, nodes, relation: ListWalkOrder }
+        DominatorTree { func_id, dfs, nodes, inst_order: ListWalkOrder }
     }
     pub fn build_with_relation<R>(self, allocs: &IRAllocs, relation: R) -> DominatorTree<R>
     where
@@ -338,13 +344,13 @@ impl DominatorTreeBuilder {
     }
 }
 
-pub struct DiminanceFrontier<'ir> {
-    pub dom_tree: &'ir DominatorTree,
+pub struct DominanceFrontier<'ir, Order> {
+    pub dom_tree: &'ir DominatorTree<Order>,
     pub df: Box<[HashSet<usize>]>,
     pub cfg: CfgSnapshot,
 }
-impl<'ir> DiminanceFrontier<'ir> {
-    pub fn new(dom_tree: &'ir DominatorTree, allocs: &'ir IRAllocs) -> Self {
+impl<'ir, Order> DominanceFrontier<'ir, Order> {
+    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
         let mut builder = DominanceFrontierBuilder::new(dom_tree, allocs);
         builder.build();
         Self {
@@ -370,13 +376,13 @@ impl<'ir> DiminanceFrontier<'ir> {
     }
 }
 
-pub struct DominanceFrontierBuilder<'ir> {
-    dom_tree: &'ir DominatorTree,
+pub struct DominanceFrontierBuilder<'ir, Order = ListWalkOrder> {
+    dom_tree: &'ir DominatorTree<Order>,
     pub df: Vec<HashSet<usize>>,
     pub cfg: CfgSnapshot,
 }
-impl<'ir> DominanceFrontierBuilder<'ir> {
-    pub fn new(dom_tree: &'ir DominatorTree, allocs: &'ir IRAllocs) -> Self {
+impl<'ir, Order> DominanceFrontierBuilder<'ir, Order> {
+    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
         Self {
             dom_tree,
             df: Vec::new(),

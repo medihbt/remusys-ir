@@ -51,7 +51,7 @@ pub struct InstOrderCache {
     inner: RefCell<BCRInner>,
 }
 
-impl<C: Borrow<InstOrderCache>> InstOrdering for C {
+impl InstOrdering for InstOrderCache {
     fn comes_before(&self, allocs: &IRAllocs, front: InstID, back: InstID) -> bool {
         let front_parent = front.get_parent(allocs).expect("inst has no parent block");
         let back_parent = back.get_parent(allocs).expect("inst has no parent block");
@@ -200,5 +200,32 @@ impl BCRInner {
         {
             *last_inst = new;
         }
+    }
+}
+
+use std::ops::Deref;
+
+impl<U> InstOrdering for U
+where
+    U: std::ops::Deref,
+    U::Target: InstOrdering,
+{
+    fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool {
+        <U::Target as InstOrdering>::comes_before(Deref::deref(self), allocs, f, b)
+    }
+    fn on_inst_insert(&self, allocs: &IRAllocs, inst: InstID) {
+        <U::Target as InstOrdering>::on_inst_insert(Deref::deref(self), allocs, inst)
+    }
+    fn on_inst_remove(&self, block: BlockID, inst: InstID) {
+        <U::Target as InstOrdering>::on_inst_remove(Deref::deref(self), block, inst)
+    }
+    fn on_inst_replace(&self, allocs: &IRAllocs, old: InstID, new: InstID) {
+        <U::Target as InstOrdering>::on_inst_replace(Deref::deref(self), allocs, old, new)
+    }
+    fn invalidate_block(&self, allocs: &IRAllocs, block: BlockID) {
+        <U::Target as InstOrdering>::invalidate_block(Deref::deref(self), allocs, block)
+    }
+    fn invalidate_all(&self, allocs: &IRAllocs) {
+        <U::Target as InstOrdering>::invalidate_all(Deref::deref(self), allocs)
     }
 }

@@ -660,7 +660,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     pub fn insert_inst_with_order(
         &mut self,
         inst: impl ISubInstID,
-        order: &impl InstOrdering,
+        order: &(impl InstOrdering + ?Sized),
     ) -> IRBuildRes {
         self.insert_inst(inst)?;
         order.on_inst_insert(self.allocs(), inst.raw_into());
@@ -669,7 +669,7 @@ impl<ModuleT: AsRef<Module>> IRBuilder<ModuleT> {
     pub fn remove_inst_with_order(
         &mut self,
         inst: impl ISubInstID,
-        order: &impl InstOrdering,
+        order: &(impl InstOrdering + ?Sized),
     ) -> IRBuildRes {
         let inst = inst.raw_into();
         let Some(parent) = inst.get_parent(self.allocs()) else {

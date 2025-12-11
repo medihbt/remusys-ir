@@ -1,7 +1,8 @@
 use crate::{
     ir::{
-        BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubInstID, IUser, InstID, InstObj,
-        InstOrdering, PoolAllocatedDisposeRes, ValueSSA, checking::FuncDominanceCheck,
+        AttrClass, BlockID, ExprID, FuncID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID,
+        ISubInstID, IUser, InstID, InstObj, InstOrdering, PoolAllocatedDisposeRes, ValueSSA,
+        checking::FuncDominanceCheck,
     },
     opt::{CfgBlockStat, CfgDfsSeq, transforms::IFuncTransformPass},
 };
@@ -117,19 +118,22 @@ impl<'ir> BasicFuncDCE<'ir> {
     /// 非常保守的副作用分析, 只要有一点点可能存在副作用, 那这个指令就算有副作用
     fn inst_may_have_side_effects(&self, inst: &InstObj) -> bool {
         use crate::ir::inst::InstObj::*;
-        matches!(
-            inst,
-            GuideNode(_)
-                | PhiInstEnd(_)
-                | Unreachable(_)
-                | Ret(_)
-                | Jump(_)
-                | Br(_)
-                | Switch(_)
-                | Store(_)
-                | AmoRmw(_)
-                | Call(_)
-        )
+        match inst {
+            GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
+            | Switch(_) | Store(_) | AmoRmw(_) => true,
+            Call(call) => {
+                let func = call.get_callee(self.allocs);
+                // FuncObj 有个 Pure Attribute, 标记为 Pure 的函数调用没有副作用
+                if let ValueSSA::Global(global) = func
+                    && let GlobalObj::Func(funcobj) = global.deref_ir(self.allocs)
+                {
+                    !funcobj.has_attr_class(AttrClass::FuncPure)
+                } else {
+                    true
+                }
+            }
+            _ => false,
+        }
     }
 }
 

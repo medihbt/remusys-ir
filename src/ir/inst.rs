@@ -297,6 +297,21 @@ macro_rules! _remusys_ir_subinst_id {
                 self.0
             }
         }
+        impl $crate::ir::IValueConvert for $IDType {
+            fn try_from_value(
+                value: $crate::ir::ValueSSA,
+                allocs: &$crate::ir::Module,
+            ) -> Option<Self> {
+                let inst_id = match value {
+                    $crate::ir::ValueSSA::Inst(id) => id,
+                    _ => return None,
+                };
+                Self::try_from_instid(inst_id, &allocs.allocs)
+            }
+            fn into_value(self) -> $crate::ir::ValueSSA {
+                $crate::ir::ValueSSA::Inst(self.raw_into())
+            }
+        }
     };
     ($IDType:ident, $ObjType:ident, terminator) => {
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
