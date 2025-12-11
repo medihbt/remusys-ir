@@ -275,6 +275,16 @@ impl ISubValueSSA for ExprID {
         Some(users)
     }
 }
+impl ExprID {
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        let indexed_id = self.0.to_index(&allocs.exprs)?;
+        Some(indexed_id.get_order())
+    }
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.try_get_entity_index(allocs)
+            .expect("Error: Attempted to get indexed ID of freed ExprID")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AggrZero(pub AggrType);

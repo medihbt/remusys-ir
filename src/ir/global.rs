@@ -134,6 +134,22 @@ pub trait ISubGlobalID: Copy + 'static {
         Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")
     }
 
+    fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<GlobalIndex> {
+        self.into_raw_ptr()
+            .to_index(&allocs.globals)
+            .map(GlobalIndex)
+    }
+    fn get_indexed_id(self, allocs: &IRAllocs) -> GlobalIndex {
+        self.try_get_indexed_id(allocs).expect("UAF detected")
+    }
+    fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        self.try_get_indexed_id(allocs)
+            .map(|x| x.0.get_order())
+    }
+    fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.get_indexed_id(allocs).0.get_order()
+    }
+
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::GlobalT> {
         let g = self.into_raw_ptr().deref(&allocs.globals);
         Self::GlobalT::try_from_ir_ref(g)
@@ -229,6 +245,7 @@ pub trait ISubGlobalID: Copy + 'static {
 }
 
 #[entity_id(GlobalID, policy = 128, allocator_type = GlobalAlloc)]
+#[entity_id(GlobalIndex, policy = 128, backend = index)]
 pub enum GlobalObj {
     Var(GlobalVar),
     Func(FuncObj),

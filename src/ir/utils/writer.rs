@@ -252,12 +252,12 @@ impl<'ir> IRWriter<'ir> {
     fn write_inst_operand(&self, i: InstID) -> std::io::Result<()> {
         let inner = self.inner.borrow();
         let Some(numbers) = &inner.numbering else {
-            return write!(self, "%inst:{:#x}", i.get_indexed(self.allocs()).0);
+            return write!(self, "%inst:{:#x}", i.get_entity_index(self.allocs()));
         };
         if let Some(id) = numbers.inst_get_number(i) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%inst:{:#x}", i.get_indexed(self.allocs()).0)
+            write!(self, "%inst:{:#x}", i.get_entity_index(self.allocs()))
         }
     }
     fn write_block_operand(&self, b: Option<BlockID>) -> std::io::Result<()> {
@@ -267,12 +267,12 @@ impl<'ir> IRWriter<'ir> {
         let inner = self.inner.borrow();
         let Some(numbers) = &inner.numbering else {
             warn!("Block can only be used in its own function");
-            return write!(self, "%block:{:#x}", b.get_indexed(self.allocs()).0);
+            return write!(self, "%block:{:#x}", b.get_entity_index(self.allocs()));
         };
         if let Some(id) = numbers.block_get_number(b) {
             write!(self, "%{id}")
         } else {
-            write!(self, "%block:{:#x}", b.get_indexed(self.allocs()).0)
+            write!(self, "%block:{:#x}", b.get_entity_index(self.allocs()))
         }
     }
     fn format_const_data(&self, data: ConstData) -> std::io::Result<()> {
@@ -462,7 +462,7 @@ impl<'ir> IRWriter<'ir> {
             return Ok(());
         }
         let id = id.into();
-        let indexed = id.get_indexed(self.allocs());
+        let indexed = id.try_get_entity_index(self.allocs());
         let prefix = match id {
             PoolAllocatedID::Block(_) => "; .id = %block:",
             PoolAllocatedID::Inst(_) => "; .id = %inst:",
@@ -724,8 +724,8 @@ impl<'ir> IRWriter<'ir> {
         match inst {
             InstObj::GuideNode(_) => {}
             InstObj::PhiInstEnd(_) => {
-                let id = inst_id.get_indexed(self.allocs());
-                write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id.0).unwrap()
+                let id = inst_id.get_indexed_id(self.allocs());
+                write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id).unwrap()
             }
             InstObj::Unreachable(_) => self.write_str("unreachable").unwrap(),
             InstObj::Ret(ret_inst) => {

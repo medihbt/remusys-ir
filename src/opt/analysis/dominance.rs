@@ -83,7 +83,7 @@ impl<Order> DominatorTree<Order> {
         // Emit nodes: use DFS index as node id; label with block index or VROOT/VEXIT
         for (dfn, node) in self.dfs.nodes.iter().enumerate() {
             let label = match node.block {
-                CfgBlockStat::Block(bid) => format!("{:#x}", bid.get_indexed(allocs)),
+                CfgBlockStat::Block(bid) => format!("{:#x}", bid.get_indexed_id(allocs)),
                 CfgBlockStat::Virtual => {
                     if self.is_postdom() {
                         "%VEXIT".to_string()

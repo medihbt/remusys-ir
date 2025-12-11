@@ -246,12 +246,20 @@ impl BlockID {
     pub fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut BlockObj {
         self.inner().deref_mut(&mut allocs.blocks)
     }
-    pub fn get_indexed(self, allocs: &IRAllocs) -> BlockIndex {
-        let index = self
-            .inner()
-            .get_index(&allocs.blocks)
-            .expect("Error: Attempted to get indexed ID of freed BlockID");
-        BlockIndex::from(index)
+    pub fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<BlockIndex> {
+        let index = self.inner().to_index(&allocs.blocks)?;
+        Some(BlockIndex::from(index))
+    }
+    pub fn get_indexed_id(self, allocs: &IRAllocs) -> BlockIndex {
+        self.try_get_indexed_id(allocs)
+            .expect("Error: Attempted to get indexed ID of freed BlockID")
+    }
+    pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
+        self.try_get_indexed_id(allocs)
+            .map(|x| x.get_order())
+    }
+    pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
+        self.get_indexed_id(allocs).get_order()
     }
 
     pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {

@@ -1,5 +1,4 @@
-use mtb_entity_slab::{IAllocPolicy, IndexedID};
-use std::marker::PhantomData;
+use mtb_entity_slab::{GenIndex, IAllocPolicy, IndexedID};
 
 mod apint;
 mod bitset;
@@ -38,10 +37,10 @@ pub trait INullableValue: Copy + Eq {
 
 impl<E, P: IAllocPolicy> INullableValue for IndexedID<E, P> {
     fn new_null() -> Self {
-        IndexedID(usize::MAX, PhantomData)
+        IndexedID::from(GenIndex::new_basic_null())
     }
 
     fn is_null(&self) -> bool {
-        self.0 == usize::MAX
+        self.indexed.is_null()
     }
 }
