@@ -231,3 +231,58 @@ where
         self.deref_ir(allocs).get_operands()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        ir::ISubInst,
+        opt::{CfgBlockStat, CfgDfsSeq},
+        testing::cases::test_case_cfg_deep_while_br,
+    };
+
+    #[test]
+    fn test_indexed_value_conversion() {
+        let module = test_case_cfg_deep_while_br().module;
+        let allocs = &module.allocs;
+        for &func in module.symbols.borrow().func_pool() {
+            let gidx = func.to_indexed(allocs);
+            assert_eq!(gidx.to_primary(allocs), func.raw_into());
+
+            let Ok(dfs) = CfgDfsSeq::new_pre(allocs, func) else {
+                continue;
+            };
+            for node in &dfs.nodes {
+                let CfgBlockStat::Block(block) = node.block else {
+                    continue;
+                };
+                let bidx = block.to_indexed(allocs);
+                assert_eq!(bidx.to_primary(allocs), block);
+
+                for (inst_id, inst) in block.insts_iter(allocs) {
+                    let iidx = inst_id.to_indexed(allocs);
+                    assert_eq!(iidx.to_primary(allocs), inst_id);
+
+                    for opuse in inst.operands_iter() {
+                        let ouidx = opuse.to_indexed(allocs);
+                        assert_eq!(ouidx.to_primary(allocs), opuse);
+                        let validx = ouidx.get_operand(allocs);
+                        let val = opuse.get_operand(allocs);
+                        assert_eq!(validx.into_value(allocs), val);
+                    }
+
+                    let Some(jts) = inst.try_get_jts() else {
+                        continue;
+                    };
+                    for &jt in jts.iter() {
+                        let jidx = jt.to_indexed(allocs);
+                        assert_eq!(jidx.to_primary(allocs), jt);
+
+                        let jt_obj = jidx.deref_ir(allocs);
+                        assert_eq!(jt_obj as *const _, jt.deref_ir(allocs) as *const _);
+                    }
+                }
+            }
+        }
+    }
+}
