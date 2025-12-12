@@ -1,7 +1,8 @@
 use crate::{
     base::{MixRef, MixRefIter},
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, InstID, InstObj,
+        BlockID, BlockIndex, IRAllocs, ISubInst, ISubInstID, InstID, InstIndex, InstObj,
+        indexed_ir::PoolAllocatedIndex,
         inst::{
             BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
             UnreachableInst, UnreachableInstID,
@@ -49,6 +50,7 @@ pub enum JumpTargetKind {
 ///
 /// 跳转目标通过弱引用链表连接，避免循环引用问题。
 #[entity_id(JumpTargetID, policy = 256, allocator_type = JumpTargetAlloc)]
+#[entity_id(JumpTargetIndex, policy = 256, backend = index)]
 pub struct JumpTarget {
     node_head: Cell<EntityListNodeHead<JumpTargetID>>,
     /// 跳转目标的类型
@@ -115,6 +117,13 @@ impl JumpTargetID {
     pub fn inner(self) -> <Self as IPoliciedID>::BackID {
         self.0
     }
+
+    pub fn as_indexed(self, allocs: &IRAllocs) -> Option<JumpTargetIndex> {
+        self.0.to_index(&allocs.jts).map(JumpTargetIndex)
+    }
+    pub fn to_indexed(self, allocs: &IRAllocs) -> JumpTargetIndex {
+        self.as_indexed(allocs).expect("UAF detected")
+    }
     pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
         let index = self.inner().to_index(&allocs.jts)?;
         Some(index.get_order())
@@ -173,6 +182,32 @@ impl JumpTargetID {
     }
     pub fn dispose(self, allocs: &IRAllocs) -> PoolAllocatedDisposeRes {
         JumpTarget::dispose_id(self, allocs)
+    }
+}
+
+impl JumpTargetIndex {
+    pub fn get_kind(self, allocs: &IRAllocs) -> JumpTargetKind {
+        self.deref_ir(allocs).get_kind()
+    }
+    pub fn get_terminator(self, allocs: &IRAllocs) -> Option<InstIndex> {
+        self.deref_ir(allocs)
+            .terminator
+            .get()
+            .and_then(|inst_id| inst_id.as_indexed(allocs))
+    }
+    pub fn set_terminator(self, allocs: &IRAllocs, inst_index: InstIndex) {
+        let inst_id = inst_index.to_primary(allocs);
+        self.deref_ir(allocs).terminator.set(Some(inst_id));
+    }
+    pub fn get_block(self, allocs: &IRAllocs) -> Option<BlockIndex> {
+        self.deref_ir(allocs)
+            .block
+            .get()
+            .and_then(|block_id| block_id.as_indexed(allocs))
+    }
+    pub fn set_block(self, allocs: &IRAllocs, block_index: BlockIndex) {
+        let block_id = block_index.to_primary(allocs);
+        self.to_primary(allocs).set_block(allocs, block_id);
     }
 }
 

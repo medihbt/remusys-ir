@@ -15,6 +15,7 @@ use std::cell::Cell;
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstID>>;
 
 #[entity_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
+#[entity_id(BlockIndex, policy = 256, backend = index)]
 pub struct BlockObj {
     pub(crate) head: Cell<EntityListNodeHead<BlockID>>,
     pub(crate) parent_func: Cell<Option<FuncID>>,
@@ -22,7 +23,8 @@ pub struct BlockObj {
     pub(crate) dispose_mark: Cell<bool>,
 }
 pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
-pub(in crate::ir) type BlockIndex = IndexedID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
+pub type BlockRawIndex = IndexedID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
+
 pub struct BlockObjBody {
     pub insts: EntityList<InstID>,
     pub phi_end: InstID,
@@ -246,20 +248,27 @@ impl BlockID {
     pub fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut BlockObj {
         self.inner().deref_mut(&mut allocs.blocks)
     }
-    pub fn try_get_indexed_id(self, allocs: &IRAllocs) -> Option<BlockIndex> {
+    pub fn as_raw_index(self, allocs: &IRAllocs) -> Option<BlockRawIndex> {
         let index = self.inner().to_index(&allocs.blocks)?;
+        Some(BlockRawIndex::from(index))
+    }
+    pub fn to_raw_index(self, allocs: &IRAllocs) -> BlockRawIndex {
+        self.as_raw_index(allocs)
+            .expect("Error: Attempted to get indexed ID of freed BlockID")
+    }
+    pub fn as_indexed(self, allocs: &IRAllocs) -> Option<BlockIndex> {
+        let index = self.as_raw_index(allocs)?;
         Some(BlockIndex::from(index))
     }
-    pub fn get_indexed_id(self, allocs: &IRAllocs) -> BlockIndex {
-        self.try_get_indexed_id(allocs)
+    pub fn to_indexed(self, allocs: &IRAllocs) -> BlockIndex {
+        self.as_indexed(allocs)
             .expect("Error: Attempted to get indexed ID of freed BlockID")
     }
     pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
-        self.try_get_indexed_id(allocs)
-            .map(|x| x.get_order())
+        self.as_raw_index(allocs).map(|x| x.get_order())
     }
     pub fn get_entity_index(self, allocs: &IRAllocs) -> usize {
-        self.get_indexed_id(allocs).get_order()
+        self.to_raw_index(allocs).get_order()
     }
 
     pub fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {

@@ -1,4 +1,4 @@
-use mtb_entity_slab::{GenIndex, IAllocPolicy, IndexedID};
+use mtb_entity_slab::{GenIndex, IndexedID};
 
 mod apint;
 mod bitset;
@@ -35,7 +35,7 @@ pub trait INullableValue: Copy + Eq {
     }
 }
 
-impl<E, P: IAllocPolicy> INullableValue for IndexedID<E, P> {
+impl<E, P> INullableValue for IndexedID<E, P> {
     fn new_null() -> Self {
         IndexedID::from(GenIndex::new_basic_null())
     }
