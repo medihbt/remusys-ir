@@ -397,6 +397,7 @@ impl<'ir, Order> DominanceFrontierBuilder<'ir, Order> {
         let nnodes = self.get_dfs_seq().nodes.len();
         let mut df = vec![HashSet::new(); nnodes];
         self.post_order_dfs(&mut df, 0);
+        self.df = df;
     }
 
     fn get_dfs_seq(&self) -> &CfgDfsSeq {
