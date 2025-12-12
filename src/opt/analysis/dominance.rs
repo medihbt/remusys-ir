@@ -5,7 +5,7 @@
 use crate::{
     base::DSU,
     ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID, InstOrdering, ListWalkOrder},
-    opt::{CfgBlockStat, CfgCache, CfgDfsSeq, CfgSnapshot},
+    opt::{CfgBlockStat, CfgCache, CfgDfsSeq, CfgRes, CfgSnapshot},
 };
 use smallvec::SmallVec;
 use std::{
@@ -73,6 +73,10 @@ impl<Order> DominatorTree<Order> {
     }
     pub fn root_node(&self) -> &DominatorTreeNode {
         &self.nodes[0]
+    }
+
+    pub fn dfn_dom_children(&self, dfn: usize) -> &[usize] {
+        &self.nodes[dfn].children_dfn
     }
 
     pub fn write_to_dot(&self, allocs: &IRAllocs, writer: &mut dyn std::io::Write) {
@@ -350,16 +354,6 @@ pub struct DominanceFrontier<'ir, Order> {
     pub cfg: CfgSnapshot,
 }
 impl<'ir, Order> DominanceFrontier<'ir, Order> {
-    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
-        let mut builder = DominanceFrontierBuilder::new(dom_tree, allocs);
-        builder.build();
-        Self {
-            dom_tree,
-            df: builder.df.into_boxed_slice(),
-            cfg: builder.cfg,
-        }
-    }
-
     pub fn get_df_of_block(&self, block: impl Into<CfgBlockStat>) -> Option<&HashSet<usize>> {
         let block = block.into();
         let dfn = match block {
@@ -374,65 +368,64 @@ impl<'ir, Order> DominanceFrontier<'ir, Order> {
         };
         self.df.get(dfn)
     }
-}
 
-pub struct DominanceFrontierBuilder<'ir, Order = ListWalkOrder> {
-    dom_tree: &'ir DominatorTree<Order>,
-    pub df: Vec<HashSet<usize>>,
-    pub cfg: CfgSnapshot,
-}
-impl<'ir, Order> DominanceFrontierBuilder<'ir, Order> {
-    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
-        Self {
+    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> CfgRes<Self> {
+        let nnodes = dom_tree.nodes.len();
+        let mut frontiers = vec![HashSet::new(); nnodes];
+        let mut ret = Self {
             dom_tree,
-            df: Vec::new(),
-            cfg: CfgSnapshot::new(allocs, dom_tree.func_id).unwrap(),
-        }
-    }
-
-    pub fn build(&mut self) {
-        if !self.df.is_empty() {
-            return;
-        }
-        let nnodes = self.get_dfs_seq().nodes.len();
-        let mut df = vec![HashSet::new(); nnodes];
-        self.post_order_dfs(&mut df, 0);
-        self.df = df;
-    }
-
-    fn get_dfs_seq(&self) -> &CfgDfsSeq {
-        &self.dom_tree.dfs
-    }
-
-    pub fn post_order_dfs(&mut self, df: &mut [HashSet<usize>], node: usize) {
-        let dom_node = &self.dom_tree.nodes[node];
-        for &child_dfn in &dom_node.children_dfn {
-            self.post_order_dfs(df, child_dfn);
-        }
-
-        let succs: &[BlockID] = match (dom_node.block, self.dom_tree.is_postdom()) {
-            (CfgBlockStat::Block(block), true) => self.cfg.succ_of(block).unwrap(),
-            (CfgBlockStat::Block(block), false) => self.cfg.pred_of(block).unwrap(),
-            (CfgBlockStat::Virtual, true) => self.cfg.exits.as_slice(),
-            (CfgBlockStat::Virtual, false) => &[],
+            df: Box::new([]),
+            cfg: CfgSnapshot::new(allocs, dom_tree.func_id)?,
         };
-        for &succ in succs {
-            let succ_dfn = match self.get_dfs_seq().try_block_dfn(succ) {
-                Some(dfn) => dfn,
-                None => continue,
-            };
-            if self.dom_tree.nodes[succ_dfn].idom_dfn != node {
-                df[node].insert(succ_dfn);
+
+        // 递归计算每个节点的支配边界
+        // 使用后序遍历，确保子节点的 frontier 先被计算
+        for dfn in (0..nnodes).rev() {
+            ret.calc_df_recursive(dfn, frontiers.as_mut_slice());
+        }
+        ret.df = frontiers.into_boxed_slice();
+        Ok(ret)
+    }
+
+    fn calc_df_recursive(&self, curr_dfn: usize, frontiers: &mut [HashSet<usize>]) {
+        let dt = &self.dom_tree;
+        let dfs = &dt.dfs;
+        let CfgBlockStat::Block(curr_bb) = dfs.dfn_block(curr_dfn) else {
+            return; // 虚拟节点没有支配边界
+        };
+
+        // 第一步：计算 local frontier
+        // DF_local(X) = {Y | Y是X的后继, 且X不严格支配Y}
+        let succs = if dt.is_postdom() {
+            self.cfg.pred_of(curr_bb).unwrap_or(&[])
+        } else {
+            self.cfg.succ_of(curr_bb).unwrap_or(&[])
+        };
+        for &succ_bb in succs {
+            // X 不严格支配 Y 意味着：X != Y 且 X 不支配 Y
+            let dominates = dt.block_strictly_dominates_block(curr_bb, succ_bb);
+            if !dominates {
+                let succ_dfn = dt.dfs.block_dfn(succ_bb);
+                frontiers[curr_dfn].insert(succ_dfn);
             }
         }
 
-        for &child_dfn in &dom_node.children_dfn {
-            let [child_df, node_df] = df.get_disjoint_mut([child_dfn, node]).unwrap();
-            for &w in child_df.iter() {
-                if self.dom_tree.nodes[w].idom_dfn != node {
-                    node_df.insert(w);
-                }
+        // 第二步：计算 up frontier
+        // DF_up(X) = ∪{DF(Z) | Z是X在支配树中的子节点, 且X不严格支配DF(Z)中的节点}
+        // let children_dfns = &dt.nodes[dfn].children_dfn;
+        for &child_dfn in dt.dfn_dom_children(curr_dfn) {
+            let child_idom_dfn = dt.nodes[child_dfn].idom_dfn;
+            if child_idom_dfn == CfgDfsSeq::NULL_PARENT || child_idom_dfn != curr_dfn {
+                continue;
             }
+            let [frontier, child_frontier] =
+                frontiers.get_disjoint_mut([curr_dfn, child_dfn]).unwrap();
+            let child_frontier = child_frontier.iter().filter(|&&frontier_dfn| {
+                let curr_bb = dfs.dfn_block(curr_dfn);
+                let frontier_bb = dfs.dfn_block(frontier_dfn);
+                !dt.block_strictly_dominates_block(curr_bb, frontier_bb)
+            });
+            frontier.extend(child_frontier);
         }
     }
 }

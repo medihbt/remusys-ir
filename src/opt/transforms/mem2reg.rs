@@ -37,7 +37,7 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
         let dt: DominatorTree<&dyn InstOrdering> = DominatorTree::builder(allocs, func)
             .build(allocs)
             .map_relation(order);
-        let df = DominanceFrontier::new(&dt, allocs);
+        let df = DominanceFrontier::new(&dt, allocs).unwrap();
         for alloca in &allocas {
             self.promote_one_alloca(&df, alloca);
             self.deleted.push(alloca.alloca.raw_into());
