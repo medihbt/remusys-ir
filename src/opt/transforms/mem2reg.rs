@@ -19,7 +19,6 @@ type DF<'a> = DominanceFrontier<'a, &'a dyn InstOrdering>;
 
 pub struct Mem2Reg<'ir> {
     pub module: &'ir Module,
-    pub deleted: Vec<InstID>,
 }
 
 impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
@@ -28,10 +27,6 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
     }
 
     fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
-        fn extend(v: &mut Vec<InstID>, a: &[impl ISubInstID]) {
-            v.extend(a.iter().copied().map(ISubInstID::raw_into));
-        }
-
         let allocas = self.dump_promotable_allocas(func);
         let allocs = &self.module.allocs;
         let dt: DominatorTree<&dyn InstOrdering> = DominatorTree::builder(allocs, func)
@@ -40,9 +35,6 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
         let df = DominanceFrontier::new(&dt, allocs).unwrap();
         for alloca in &allocas {
             self.promote_one_alloca(&df, alloca);
-            self.deleted.push(alloca.alloca.raw_into());
-            extend(&mut self.deleted, &alloca.loads);
-            extend(&mut self.deleted, &alloca.stores);
         }
     }
 }
@@ -57,7 +49,7 @@ struct PromoteInfo {
 
 impl<'ir> Mem2Reg<'ir> {
     pub fn new(module: &'ir Module) -> Self {
-        Self { module, deleted: Vec::new() }
+        Self { module }
     }
 
     fn dump_promotable_allocas(&self, func: FuncID) -> Vec<PromoteInfo> {
