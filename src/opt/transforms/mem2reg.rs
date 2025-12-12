@@ -30,7 +30,8 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
         let allocas = self.dump_promotable_allocas(func);
         let allocs = &self.module.allocs;
         let dt: DominatorTree<&dyn InstOrdering> = DominatorTree::builder(allocs, func)
-            .build(allocs)
+            .expect("Dominance building error in Mem2Reg")
+            .build()
             .map_relation(order);
         let df = DominanceFrontier::new(&dt, allocs).unwrap();
         for alloca in &allocas {
@@ -356,7 +357,6 @@ impl<'t> Rename<'t> {
                 self.builder
                     .remove_inst_with_order(inst_id, self.order)
                     .expect("Internal error: failed to remove load/store instruction");
-                inst_id.dispose(allocs).unwrap();
             }
         }
 
@@ -422,5 +422,34 @@ impl<'t> Rename<'t> {
         for &load in &self.info.loads {
             load.dispose(allocs).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ir::*, testing::cases::*};
+
+    #[test]
+    fn test_mem2reg() {
+        let module = test_case_cfg_deep_while_br().module;
+        write_ir_to_file(
+            "target/test-mem2reg-before.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
+
+        let main_func = module
+            .get_global_by_name("main")
+            .map(FuncID::raw_from)
+            .expect("test case has no main function");
+
+        let orders = InstOrderCache::new();
+        Mem2Reg::new(&module).run_on_func(&orders, main_func);
+        write_ir_to_file(
+            "target/test-mem2reg-after.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
     }
 }

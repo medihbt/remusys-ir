@@ -34,8 +34,9 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
     fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
         // Implementation of Basic Dead Code Elimination algorithm goes here
         let dfs = if cfg!(debug_assertions) {
-            let func_check = FuncDominanceCheck::new(self.allocs, func);
-            func_check.run().unwrap();
+            const MSG: &str = "Failed to run dominance check";
+            let func_check = FuncDominanceCheck::new(self.allocs, func).expect(MSG);
+            func_check.run().expect(MSG);
             func_check.dom_tree.dfs
         } else {
             let allocs = self.allocs;
