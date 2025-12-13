@@ -308,3 +308,252 @@ pub fn test_case_cfg_deep_while_br() -> IRBuilder {
 
     builder
 }
+
+/// Simple test case "MinMax",
+///
+/// ## C Source Code
+///
+/// ```c
+/// extern int getint();
+/// extern void putint(int value);
+///
+/// int main() {
+///     int a = getint(), b = getint();
+///     if (a > b) {
+///         int tmp = a;
+///         a = b;
+///         b = tmp;
+///     }
+///     putint(a);
+///     putint(b);
+///     return 0;
+/// }
+/// ```
+///
+/// ## Corresponding remusys-ir
+///
+/// ```remusys-ir
+/// declare i32 @getint()
+/// declare void @putint(i32)
+///
+/// define dso_local i32 @main() #0 {
+///   %1 = alloca i32, align 4
+///   %2 = alloca i32, align 4
+///   %3 = alloca i32, align 4
+///   %4 = alloca i32, align 4
+///   store i32 0, ptr %1, align 4
+///   %5 = call i32 @getint()
+///   store i32 %5, ptr %2, align 4
+///   %6 = call i32 @getint()
+///   store i32 %6, ptr %3, align 4
+///   %7 = load i32, ptr %2, align 4
+///   %8 = load i32, ptr %3, align 4
+///   %9 = icmp sgt i32 %7, %8
+///   br i1 %9, label %10, label %14
+///
+/// 10:                                               ; preds = %0
+///   %11 = load i32, ptr %2, align 4
+///   store i32 %11, ptr %4, align 4
+///   %12 = load i32, ptr %3, align 4
+///   store i32 %12, ptr %2, align 4
+///   %13 = load i32, ptr %4, align 4
+///   store i32 %13, ptr %3, align 4
+///   br label %14
+///
+/// 14:                                               ; preds = %10, %0
+///   %15 = load i32, ptr %2, align 4
+///   call void @putint(i32 %15)
+///   %16 = load i32, ptr %3, align 4
+///   call void @putint(i32 %16)
+///   ret i32 0
+/// }
+/// ```
+pub fn test_case_minmax() -> IRBuilder {
+    let mut builder = IRBuilder::new_inlined(ArchInfo::new_host(), "minmax");
+
+    let tctx = builder.tctx();
+    let ri32fty = FuncTypeID::new(tctx, ValTypeID::Int(32), false, []);
+    let void_i32_fty = FuncTypeID::new(tctx, ValTypeID::Void, false, [ValTypeID::Int(32)]);
+
+    // extern i32 @getint()
+    let getint_func = FuncID::builder(tctx, "getint", ri32fty)
+        .make_extern()
+        .build_id(&builder.module)
+        .unwrap();
+    // extern void @putint(i32)
+    let putint_func = FuncID::builder(tctx, "putint", void_i32_fty)
+        .make_extern()
+        .build_id(&builder.module)
+        .unwrap();
+
+    // define dso_local i32 @main() #0
+    let main_func = FuncID::builder(tctx, "main", ri32fty)
+        .make_defined()
+        .terminate_mode(FuncTerminateMode::ReturnDefault)
+        .add_attr(Attribute::NoUndef)
+        .build_id(&builder.module)
+        .unwrap();
+
+    // entry block
+    let entry = main_func.get_entry(builder.allocs()).unwrap();
+    builder.set_focus(IRFocus::Block(entry));
+
+    // %1 = alloca i32, align 4
+    let a_alloca = AllocaInstID::new(builder.allocs(), ValTypeID::Int(32), 2);
+    builder.insert_inst(a_alloca).unwrap();
+    // %2 = alloca i32, align 4
+    let b_alloca = AllocaInstID::new(builder.allocs(), ValTypeID::Int(32), 2);
+    builder.insert_inst(b_alloca).unwrap();
+    // %3 = alloca i32, align 4 (tmp)
+    let tmp_alloca = AllocaInstID::new(builder.allocs(), ValTypeID::Int(32), 2);
+    builder.insert_inst(tmp_alloca).unwrap();
+
+    // %5 = call i32 @getint(); store -> a
+    let call_a = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, ri32fty);
+            cb.callee(ValueSSA::Global(getint_func.raw_into()));
+            let inst = cb.build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
+        })
+        .unwrap();
+    let store_a = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(call_a),
+        ValueSSA::Inst(a_alloca.raw_into()),
+        2,
+    );
+    builder.insert_inst(store_a).unwrap();
+
+    // %6 = call i32 @getint(); store -> b
+    let call_b = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, ri32fty);
+            cb.callee(ValueSSA::Global(getint_func.raw_into()));
+            let inst = cb.build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
+        })
+        .unwrap();
+    let store_b = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(call_b),
+        ValueSSA::Inst(b_alloca.raw_into()),
+        2,
+    );
+    builder.insert_inst(store_b).unwrap();
+
+    // %7 = load a; %8 = load b; %9 = icmp sgt i32 %7, %8
+    let load_a_7 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(a_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let load_b_8 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(b_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let icmp_9 = {
+        let cmp = CmpInstID::new_uninit(
+            builder.allocs(),
+            Opcode::Icmp,
+            CmpCond::SGT,
+            ValTypeID::Int(32),
+        );
+        cmp.set_lhs(builder.allocs(), ValueSSA::Inst(load_a_7.raw_into()));
+        cmp.set_rhs(builder.allocs(), ValueSSA::Inst(load_b_8.raw_into()));
+        builder.insert_inst(cmp).unwrap();
+        cmp
+    };
+
+    // Split entry: create blocks 10 and 14
+    let block14 = builder.split_block().unwrap();
+    let block10 = builder.split_block().unwrap();
+    // br i1 %9, label %10, label %14
+    builder
+        .focus_set_branch_to(ValueSSA::Inst(icmp_9.raw_into()), block10, block14)
+        .unwrap();
+
+    // Block 10: swap using tmp
+    builder.set_focus(IRFocus::Block(block10));
+    let load_a_11 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(a_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let store_tmp = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(load_a_11.raw_into()),
+        ValueSSA::Inst(tmp_alloca.raw_into()),
+        2,
+    );
+    builder.insert_inst(store_tmp).unwrap();
+    let load_b_12 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(b_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let store_a_12 = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(load_b_12.raw_into()),
+        ValueSSA::Inst(a_alloca.raw_into()),
+        2,
+    );
+    builder.insert_inst(store_a_12).unwrap();
+    let load_tmp_13 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(tmp_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let store_b_13 = StoreInstID::new(
+        builder.allocs(),
+        ValueSSA::Inst(load_tmp_13.raw_into()),
+        ValueSSA::Inst(b_alloca.raw_into()),
+        2,
+    );
+    builder.insert_inst(store_b_13).unwrap();
+    builder.focus_set_jump_to(block14).unwrap();
+
+    // Block 14: putint(a); putint(b); ret 0
+    builder.set_focus(IRFocus::Block(block14));
+    let load_a_15 = builder
+        .build_inst(|allocs, _| {
+            let l = LoadInstID::new_uninit(allocs, ValTypeID::Int(32), 2);
+            l.set_source(allocs, ValueSSA::Inst(a_alloca.raw_into()));
+            l
+        })
+        .unwrap();
+    let _call_put_a = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, void_i32_fty);
+            let inst = cb
+                .callee(ValueSSA::Global(putint_func.raw_into()))
+                .with_args(&[load_a_15.into_value()])
+                .build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
+        })
+        .unwrap();
+
+    let load_b_16 = {
+        let l = LoadInstID::new_uninit(builder.allocs(), ValTypeID::Int(32), 2);
+        l.set_source(builder.allocs(), ValueSSA::Inst(b_alloca.raw_into()));
+        builder.insert_inst(l).unwrap();
+        l
+    };
+    let _call_put_b = builder
+        .build_inst(|allocs, tctx| {
+            let mut cb = CallInst::builder(tctx, void_i32_fty);
+            let inst = cb
+                .callee(ValueSSA::Global(putint_func.raw_into()))
+                .with_args(&[load_b_16.into_value()])
+                .build_obj(allocs);
+            CallInstID::allocate(allocs, inst).raw_into()
+        })
+        .unwrap();
+    builder
+}

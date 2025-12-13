@@ -3,7 +3,7 @@ use crate::{
         BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubGlobalID, ISubInstID, ISubValueSSA,
         ITraceableValue, InstID, InstObj, InstOrderCache, Module, Use, UseKind, UserID, ValueSSA,
     },
-    opt::{CfgBlockStat, DominatorTree},
+    opt::{CfgBlockStat, CfgErr, CfgRes, DominatorTree},
 };
 use std::{collections::HashSet, fmt::Debug};
 
@@ -11,6 +11,9 @@ use std::{collections::HashSet, fmt::Debug};
 pub enum DominanceCheckErr {
     #[error("Operand {operand:?} does not dominate its user {user:?}")]
     NotDominated { operand: ValueSSA, user: UserID },
+
+    #[error("CFG error: {0}")]
+    Cfg(#[from] CfgErr),
 }
 pub type DominanceCheckRes<T = ()> = Result<T, DominanceCheckErr>;
 
@@ -31,7 +34,10 @@ pub fn assert_module_dominance(module: &Module) {
     }
 }
 pub fn assert_func_dominance(allocs: &IRAllocs, func: FuncID) {
-    FuncDominanceCheck::new(allocs, func).run().unwrap()
+    FuncDominanceCheck::new(allocs, func)
+        .expect("Failed to create function dominance check")
+        .run()
+        .expect("Failed to run function dominance check")
 }
 pub fn module_dominance_check(module: &Module) -> DominanceCheckRes {
     let allocs = &module.allocs;
@@ -40,7 +46,7 @@ pub fn module_dominance_check(module: &Module) -> DominanceCheckRes {
         if func_id.is_extern(allocs) {
             continue;
         }
-        FuncDominanceCheck::new(allocs, func_id).run()?;
+        FuncDominanceCheck::new(allocs, func_id)?.run()?;
     }
     Ok(())
 }
@@ -52,12 +58,12 @@ pub struct FuncDominanceCheck<'ir> {
 }
 
 impl<'ir> FuncDominanceCheck<'ir> {
-    pub fn new(allocs: &'ir IRAllocs, func_id: FuncID) -> Self {
+    pub fn new(allocs: &'ir IRAllocs, func_id: FuncID) -> CfgRes<Self> {
         let inst_ord = InstOrderCache::new();
-        let dom_tree = DominatorTree::builder(allocs, func_id)
-            .build(allocs)
+        let dom_tree = DominatorTree::builder(allocs, func_id)?
+            .build()
             .map_relation(inst_ord);
-        Self { func_id, dom_tree, allocs }
+        Ok(Self { func_id, dom_tree, allocs })
     }
 
     pub fn run(&self) -> DominanceCheckRes {

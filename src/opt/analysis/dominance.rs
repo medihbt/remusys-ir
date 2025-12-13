@@ -5,13 +5,12 @@
 use crate::{
     base::DSU,
     ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID, InstOrdering, ListWalkOrder},
-    opt::{CfgBlockStat, CfgCache, CfgDfsSeq, CfgSnapshot},
+    opt::{CfgBlockStat, CfgDfsSeq, CfgRes, CfgSnapshot},
 };
 use smallvec::SmallVec;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
-    vec,
 };
 
 pub enum DomiTreeKind {
@@ -26,12 +25,25 @@ pub struct DominatorTreeNode {
     /// 直接支配结点. 使用 CfgBlockStat 来考虑根节点是 Virtual Exit 的情况.
     pub idom: CfgBlockStat,
     /// 直接支配结点的 DFS 编号, 用于快速查询.
+    /// NULL value: CfgDfsSeq::NULL_PARENT
     pub idom_dfn: usize,
     /// 子结点的 DFS 编号集合, 用于快速查询某个节点是否是当前节点的子节点.
     pub children_dfn: SmallVec<[usize; 4]>,
 
     /// 缓存支配关系查询结果的集合.
     dominate_cache: RefCell<HashMap<BlockID, bool>>,
+}
+impl Default for DominatorTreeNode {
+    fn default() -> Self {
+        Self {
+            block: CfgBlockStat::Virtual,
+            semidom: CfgBlockStat::Virtual,
+            idom: CfgBlockStat::Virtual,
+            idom_dfn: CfgDfsSeq::NULL_PARENT,
+            children_dfn: SmallVec::default(),
+            dominate_cache: RefCell::default(),
+        }
+    }
 }
 
 pub struct DominatorTree<Order = ListWalkOrder> {
@@ -48,11 +60,11 @@ pub struct DominatorTree<Order = ListWalkOrder> {
 
 impl DominatorTree {
     /// 创建一个支配树构建器. 你需要调用 `build` 方法来实际构建支配树.
-    pub fn builder(allocs: &IRAllocs, func_id: FuncID) -> DominatorTreeBuilder {
+    pub fn builder(allocs: &IRAllocs, func_id: FuncID) -> CfgRes<DominatorTreeBuilder> {
         DominatorTreeBuilder::new(allocs, func_id, false)
     }
     /// 创建一个后支配树构建器. 你需要调用 `build` 方法来实际构建后支配树.
-    pub fn postdom_builder(allocs: &IRAllocs, func_id: FuncID) -> DominatorTreeBuilder {
+    pub fn postdom_builder(allocs: &IRAllocs, func_id: FuncID) -> CfgRes<DominatorTreeBuilder> {
         DominatorTreeBuilder::new(allocs, func_id, true)
     }
 }
@@ -73,6 +85,10 @@ impl<Order> DominatorTree<Order> {
     }
     pub fn root_node(&self) -> &DominatorTreeNode {
         &self.nodes[0]
+    }
+
+    pub fn dfn_dom_children(&self, dfn: usize) -> &[usize] {
+        &self.nodes[dfn].children_dfn
     }
 
     pub fn write_to_dot(&self, allocs: &IRAllocs, writer: &mut dyn std::io::Write) {
@@ -207,140 +223,122 @@ impl<Order> DominatorTree<Order> {
 pub struct DominatorTreeBuilder {
     func_id: FuncID,
     dfs: CfgDfsSeq,
-    cache: CfgCache,
+    cfg: CfgSnapshot,
     is_postdom: bool,
 }
 
 impl DominatorTreeBuilder {
-    pub fn new(allocs: &IRAllocs, func_id: FuncID, is_postdom: bool) -> Self {
+    pub fn new(allocs: &IRAllocs, func_id: FuncID, is_postdom: bool) -> CfgRes<Self> {
         use crate::opt::analysis::dfs::DfsOrder;
         let order = if is_postdom { DfsOrder::BackPre } else { DfsOrder::Pre };
-        let dfs = CfgDfsSeq::new(allocs, func_id, order).expect("Failed to build DFS for function");
-        let cache = CfgCache::new();
-        Self { func_id, dfs, cache, is_postdom }
+        let dfs = CfgDfsSeq::new(allocs, func_id, order)?;
+        let cfg = CfgSnapshot::new(allocs, func_id)?;
+        Ok(Self { func_id, dfs, cfg, is_postdom })
     }
 
-    pub fn build(mut self, allocs: &IRAllocs) -> DominatorTree {
-        // Prepare mappings
-        let n = self.dfs.nodes.len();
-        assert!(n > 0, "DFS must contain at least root node");
-
-        // preds_by_dfn[u] -> Vec<dfn of predecessors of u>
-        let mut preds_by_dfn: Vec<Vec<usize>> = vec![Vec::new(); n];
-
-        // Build predecessor index depending on dom/postdom
-        for (dfn, node) in self.dfs.nodes.iter().enumerate() {
-            let bb = match node.block {
-                CfgBlockStat::Block(b) => b,
-                CfgBlockStat::Virtual if !self.is_postdom => continue,
-                CfgBlockStat::Virtual => {
-                    // Virtual Exit: predecessors are all exit blocks
-                    let exit_dfns = self.dfs.backward_get_exit_dfns().expect(
-                        "Internal error: Postdom building should have a backward virtual root",
-                    );
-                    preds_by_dfn[dfn].extend_from_slice(exit_dfns);
-                    continue;
-                }
-            };
-            let build_towards = if self.is_postdom {
-                // Postdominator tree: on backward graph, "successors" are original predecessors
-                self.cache.get_preds(allocs, bb)
-            } else {
-                // Dominator tree: use successors to build reverse (preds of each node)
-                self.cache.get_succs(allocs, bb)
-            };
-            for &toward in build_towards {
-                if let Some(toward_dfn) = self.dfs.try_block_dfn(toward) {
-                    preds_by_dfn[dfn].push(toward_dfn);
-                }
-            }
-        }
-
-        // Semi-NCA arrays
-        let mut semidom: Vec<usize> = (0..n).collect();
-        let mut idom: Vec<usize> = vec![usize::MAX; n];
-        let mut best: Vec<usize> = (0..n).collect();
-
-        // DSU over DFNs
-        let mut dsu = DSU::new(n);
-
-        // Compute semidominators in reverse DFS order (skip root 0)
-        for u in (1..n).rev() {
-            let mut candidate = usize::MAX;
-            for &v in &preds_by_dfn[u] {
-                dsu.find_when(v, |x, parent_dfn, _| {
-                    let old = best[parent_dfn];
-                    let bx = best[x];
-                    if semidom[old] < semidom[bx] {
-                        best[x] = old;
-                    }
-                });
-                let y = best[v];
-                let m = if v < u { v } else { semidom[y] };
-                if m < candidate {
-                    candidate = m;
-                }
-            }
-            if candidate == usize::MAX {
-                // No reachable predecessors: default to parent
-                candidate = self.dfs.nodes[u].parent;
-            }
-            semidom[u] = candidate;
-            let parent = self.dfs.nodes[u].parent;
-            if parent != CfgDfsSeq::NULL_PARENT {
-                dsu.set_direct_parent(u, parent);
-            }
-        }
-
-        // Prepare nodes vector
-        let mut nodes: Vec<DominatorTreeNode> = Vec::with_capacity(n);
-        for (dfn, &semidom) in semidom.iter().enumerate() {
-            let block = self.dfs.dfn_block(dfn);
-            let sdom_blk = self.dfs.dfn_block(semidom);
-            nodes.push(DominatorTreeNode {
-                block,
-                semidom: sdom_blk,
-                idom: CfgBlockStat::Virtual,      // placeholder
-                idom_dfn: CfgDfsSeq::NULL_PARENT, // placeholder
-                children_dfn: SmallVec::new(),
-                dominate_cache: RefCell::new(HashMap::new()),
-            });
-        }
-
-        // Compute idom by Semi-NCA correction
-        for w in 1..n {
-            let w_sdom = semidom[w];
-            let mut id = self.dfs.nodes[w].parent;
-            while id != 0 && semidom[id] > w_sdom {
-                id = idom[id];
-            }
-            idom[w] = id;
-        }
-        idom[0] = CfgDfsSeq::NULL_PARENT; // root has no idom
-
-        // Write idom blocks and build children sets
-        for w in 0..n {
-            let id = idom[w];
-            let id_block = if id == CfgDfsSeq::NULL_PARENT {
-                CfgBlockStat::Virtual
-            } else {
-                self.dfs.dfn_block(id)
-            };
-            nodes[w].idom_dfn = id;
-            nodes[w].idom = id_block;
-            if id != CfgDfsSeq::NULL_PARENT {
-                nodes[id].children_dfn.push(w);
-            }
-        }
-
-        let Self { func_id, dfs, .. } = self;
-        DominatorTree { func_id, dfs, nodes, inst_order: ListWalkOrder }
-    }
-    pub fn build_with_relation<R>(self, allocs: &IRAllocs, relation: R) -> DominatorTree<R>
+    pub fn build_with_relation<R>(self, relation: R) -> DominatorTree<R>
     where
         R: InstOrdering,
     {
-        self.build(allocs).map_relation(relation)
+        self.build().map_relation(relation)
+    }
+    pub fn build(self) -> DominatorTree {
+        const ROOT_DFN: usize = 0;
+        const BRANCH_START: usize = 1;
+
+        let mut dfn_dsu = DSU::new(self.nnodes());
+        let mut best_candidate = Box::from_iter(0..self.nnodes());
+        let mut semidom = Box::from_iter(0..self.nnodes());
+        let mut dt_nodes = {
+            let mut dt_nodes = Vec::with_capacity(self.nnodes());
+            for _ in 0..self.nnodes() {
+                dt_nodes.push(DominatorTreeNode::default());
+            }
+            dt_nodes
+        };
+
+        for dfn in (BRANCH_START..self.nnodes()).rev() {
+            let mut res = usize::MAX;
+            let block_stat = self.dfs.dfn_block(dfn);
+            let is_postdom = self.is_postdom;
+            let preds = if is_postdom {
+                self.cfg.succ_of(block_stat)
+            } else {
+                self.cfg.pred_of(block_stat)
+            };
+
+            let mut delegate_update_semidom = |pred_dfn: usize, res: usize| {
+                dfn_dsu.find_when(pred_dfn, |pred_dfn, old_parent_dfn, _| {
+                    let old_parent_elect = best_candidate[old_parent_dfn];
+                    let pred_elect = best_candidate[pred_dfn];
+                    if semidom[old_parent_elect] < semidom[pred_elect] {
+                        best_candidate[pred_dfn] = old_parent_elect;
+                    }
+                });
+                if pred_dfn < dfn {
+                    res.min(pred_dfn)
+                } else {
+                    res.min(semidom[best_candidate[pred_dfn]])
+                }
+            };
+
+            for &pred_bb in preds.unwrap_or(&[]) {
+                let Some(pred_dfn) = self.dfs.try_block_dfn(pred_bb) else {
+                    // pred_bb is unreachable so that we just ignore it
+                    continue;
+                };
+                res = delegate_update_semidom(pred_dfn, res);
+            }
+            if self.block_ends_function(block_stat) && self.is_postdom {
+                res = delegate_update_semidom(ROOT_DFN, res);
+            }
+
+            debug_assert_ne!(
+                res,
+                usize::MAX,
+                "Internal error: it's confusing that a unreachable {block_stat:?} has a DFN"
+            );
+            semidom[dfn] = res;
+            let dfs_parent = self.dfs.nodes[dfn].parent;
+            dfn_dsu.set_direct_parent(dfn, dfs_parent);
+        }
+
+        for (dfn, &semi_dfn) in semidom.iter().enumerate() {
+            let dt_node = &mut dt_nodes[dfn];
+            dt_node.block = self.dfs.dfn_block(dfn);
+            dt_node.semidom = self.dfs.dfn_block(semi_dfn);
+        }
+
+        for dfn in BRANCH_START..self.nnodes() {
+            let semidom_dfn = semidom[dfn];
+            let dfs_parent = self.dfs.nodes[dfn].parent;
+
+            let mut idom_dfn = dfs_parent;
+            while idom_dfn != ROOT_DFN && idom_dfn > semidom_dfn {
+                idom_dfn = dt_nodes[idom_dfn].idom_dfn;
+            }
+
+            dt_nodes[dfn].idom = self.dfs.dfn_block(idom_dfn);
+            dt_nodes[dfn].idom_dfn = idom_dfn;
+            dt_nodes[idom_dfn].children_dfn.push(dfn);
+        }
+
+        DominatorTree {
+            func_id: self.func_id,
+            dfs: self.dfs,
+            nodes: dt_nodes,
+            inst_order: ListWalkOrder,
+        }
+    }
+
+    fn nnodes(&self) -> usize {
+        self.dfs.nodes.len()
+    }
+    fn block_ends_function(&self, block: CfgBlockStat) -> bool {
+        let CfgBlockStat::Block(block) = block else {
+            return false;
+        };
+        self.cfg.exits.contains(&block)
     }
 }
 
@@ -350,16 +348,6 @@ pub struct DominanceFrontier<'ir, Order> {
     pub cfg: CfgSnapshot,
 }
 impl<'ir, Order> DominanceFrontier<'ir, Order> {
-    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
-        let mut builder = DominanceFrontierBuilder::new(dom_tree, allocs);
-        builder.build();
-        Self {
-            dom_tree,
-            df: builder.df.into_boxed_slice(),
-            cfg: builder.cfg,
-        }
-    }
-
     pub fn get_df_of_block(&self, block: impl Into<CfgBlockStat>) -> Option<&HashSet<usize>> {
         let block = block.into();
         let dfn = match block {
@@ -374,86 +362,86 @@ impl<'ir, Order> DominanceFrontier<'ir, Order> {
         };
         self.df.get(dfn)
     }
-}
 
-pub struct DominanceFrontierBuilder<'ir, Order = ListWalkOrder> {
-    dom_tree: &'ir DominatorTree<Order>,
-    pub df: Vec<HashSet<usize>>,
-    pub cfg: CfgSnapshot,
-}
-impl<'ir, Order> DominanceFrontierBuilder<'ir, Order> {
-    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> Self {
-        Self {
+    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> CfgRes<Self> {
+        let nnodes = dom_tree.nodes.len();
+        let mut frontiers = vec![HashSet::new(); nnodes];
+        let mut ret = Self {
             dom_tree,
-            df: Vec::new(),
-            cfg: CfgSnapshot::new(allocs, dom_tree.func_id).unwrap(),
-        }
-    }
-
-    pub fn build(&mut self) {
-        if !self.df.is_empty() {
-            return;
-        }
-        let nnodes = self.get_dfs_seq().nodes.len();
-        let mut df = vec![HashSet::new(); nnodes];
-        self.post_order_dfs(&mut df, 0);
-    }
-
-    fn get_dfs_seq(&self) -> &CfgDfsSeq {
-        &self.dom_tree.dfs
-    }
-
-    pub fn post_order_dfs(&mut self, df: &mut [HashSet<usize>], node: usize) {
-        let dom_node = &self.dom_tree.nodes[node];
-        for &child_dfn in &dom_node.children_dfn {
-            self.post_order_dfs(df, child_dfn);
-        }
-
-        let succs: &[BlockID] = match (dom_node.block, self.dom_tree.is_postdom()) {
-            (CfgBlockStat::Block(block), true) => self.cfg.succ_of(block).unwrap(),
-            (CfgBlockStat::Block(block), false) => self.cfg.pred_of(block).unwrap(),
-            (CfgBlockStat::Virtual, true) => self.cfg.exits.as_slice(),
-            (CfgBlockStat::Virtual, false) => &[],
+            df: Box::new([]),
+            cfg: CfgSnapshot::new(allocs, dom_tree.func_id)?,
         };
-        for &succ in succs {
-            let succ_dfn = match self.get_dfs_seq().try_block_dfn(succ) {
-                Some(dfn) => dfn,
-                None => continue,
-            };
-            if self.dom_tree.nodes[succ_dfn].idom_dfn != node {
-                df[node].insert(succ_dfn);
+
+        // 递归计算每个节点的支配边界
+        // 使用后序遍历，确保子节点的 frontier 先被计算
+        for dfn in (0..nnodes).rev() {
+            ret.calc_df_recursive(dfn, frontiers.as_mut_slice());
+        }
+        ret.df = frontiers.into_boxed_slice();
+        Ok(ret)
+    }
+
+    fn calc_df_recursive(&self, curr_dfn: usize, frontiers: &mut [HashSet<usize>]) {
+        let dt = &self.dom_tree;
+        let dfs = &dt.dfs;
+        let CfgBlockStat::Block(curr_bb) = dfs.dfn_block(curr_dfn) else {
+            return; // 虚拟节点没有支配边界
+        };
+
+        // 第一步：计算 local frontier
+        // DF_local(X) = {Y | Y是X的后继, 且X不严格支配Y}
+        let succs = if dt.is_postdom() {
+            self.cfg.pred_of(curr_bb).unwrap_or(&[])
+        } else {
+            self.cfg.succ_of(curr_bb).unwrap_or(&[])
+        };
+        for &succ_bb in succs {
+            // X 不严格支配 Y 意味着：X != Y 且 X 不支配 Y
+            let dominates = dt.block_strictly_dominates_block(curr_bb, succ_bb);
+            if !dominates {
+                let succ_dfn = dt.dfs.block_dfn(succ_bb);
+                frontiers[curr_dfn].insert(succ_dfn);
             }
         }
 
-        for &child_dfn in &dom_node.children_dfn {
-            let [child_df, node_df] = df.get_disjoint_mut([child_dfn, node]).unwrap();
-            for &w in child_df.iter() {
-                if self.dom_tree.nodes[w].idom_dfn != node {
-                    node_df.insert(w);
-                }
+        // 第二步：计算 up frontier
+        // DF_up(X) = ∪{DF(Z) | Z是X在支配树中的子节点, 且X不严格支配DF(Z)中的节点}
+        // let children_dfns = &dt.nodes[dfn].children_dfn;
+        for &child_dfn in dt.dfn_dom_children(curr_dfn) {
+            let child_idom_dfn = dt.nodes[child_dfn].idom_dfn;
+            if child_idom_dfn == CfgDfsSeq::NULL_PARENT || child_idom_dfn != curr_dfn {
+                continue;
             }
+            let [frontier, child_frontier] =
+                frontiers.get_disjoint_mut([curr_dfn, child_dfn]).unwrap();
+            let child_frontier = child_frontier.iter().filter(|&&frontier_dfn| {
+                let curr_bb = dfs.dfn_block(curr_dfn);
+                let frontier_bb = dfs.dfn_block(frontier_dfn);
+                !dt.block_strictly_dominates_block(curr_bb, frontier_bb)
+            });
+            frontier.extend(child_frontier);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-
     use super::*;
-    use crate::ir::{FuncID, ISubGlobalID};
-    use crate::testing::cases::test_case_cfg_deep_while_br;
+    use crate::ir::{FuncID, IRWriteOption, ISubGlobalID, write_ir_to_file};
+    use crate::testing::cases::{test_case_cfg_deep_while_br, test_case_minmax};
+    use std::fs::File;
 
     #[test]
     fn dominance_basic_relations() {
-        let module = test_case_cfg_deep_while_br().module;
+        let module = test_case_minmax().module;
+        write_ir_to_file("target/predom-demo.ll", &module, IRWriteOption::loud());
         let fid = module
             .get_global_by_name("main")
             .map(FuncID::raw_from)
             .expect("func not found");
         let allocs = &module.allocs;
 
-        let dom = DominatorTree::builder(allocs, fid).build(allocs);
+        let dom = DominatorTree::builder(allocs, fid).unwrap().build();
         let mut file = File::create("target/test_dom.dot").expect("Failed to create dot file");
         dom.write_to_dot(allocs, &mut file);
     }
@@ -462,13 +450,14 @@ mod tests {
     fn postdom_basic_relations() {
         let builder = test_case_cfg_deep_while_br();
         let module = builder.module;
+        write_ir_to_file("target/postdom-demo.ll", &module, IRWriteOption::loud());
         let allocs = &module.allocs;
         let fid = module
             .get_global_by_name("main")
             .map(FuncID::raw_from)
             .expect("func not found");
 
-        let post = DominatorTree::postdom_builder(allocs, fid).build(allocs);
+        let post = DominatorTree::postdom_builder(allocs, fid).unwrap().build();
         let mut dot_file =
             File::create("target/test_postdom.dot").expect("Failed to create dot file");
         post.write_to_dot(allocs, &mut dot_file);

@@ -5,18 +5,20 @@ use crate::{
         InstID, InstObj, InstOrdering, Module, UserID, ValueSSA,
         inst::{AllocaInst, AllocaInstID, LoadInstID, PhiInstID, StoreInstID},
     },
-    opt::{CfgBlockStat, CfgDfsSeq, DominanceFrontier, DominatorTree, IFuncTransformPass},
+    opt::{CfgBlockStat, DominanceFrontier, DominatorTree, IFuncTransformPass},
     typing::{IValType, ScalarType, ValTypeID},
 };
 use smallvec::SmallVec;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 type DT<'a> = DominatorTree<&'a dyn InstOrdering>;
 type DF<'a> = DominanceFrontier<'a, &'a dyn InstOrdering>;
 
 pub struct Mem2Reg<'ir> {
     pub module: &'ir Module,
-    pub deleted: Vec<InstID>,
 }
 
 impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
@@ -25,21 +27,15 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
     }
 
     fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
-        fn extend(v: &mut Vec<InstID>, a: &[impl ISubInstID]) {
-            v.extend(a.iter().copied().map(ISubInstID::raw_into));
-        }
-
         let allocas = self.dump_promotable_allocas(func);
         let allocs = &self.module.allocs;
         let dt: DominatorTree<&dyn InstOrdering> = DominatorTree::builder(allocs, func)
-            .build(allocs)
+            .expect("Dominance building error in Mem2Reg")
+            .build()
             .map_relation(order);
-        let df = DominanceFrontier::new(&dt, allocs);
+        let df = DominanceFrontier::new(&dt, allocs).unwrap();
         for alloca in &allocas {
             self.promote_one_alloca(&df, alloca);
-            self.deleted.push(alloca.alloca.raw_into());
-            extend(&mut self.deleted, &alloca.loads);
-            extend(&mut self.deleted, &alloca.stores);
         }
     }
 }
@@ -54,7 +50,7 @@ struct PromoteInfo {
 
 impl<'ir> Mem2Reg<'ir> {
     pub fn new(module: &'ir Module) -> Self {
-        Self { module, deleted: Vec::new() }
+        Self { module }
     }
 
     fn dump_promotable_allocas(&self, func: FuncID) -> Vec<PromoteInfo> {
@@ -231,105 +227,60 @@ impl<'ir> Mem2Reg<'ir> {
     }
 
     #[inline(never)]
-    fn insert_phis(&self, df: &DF, info: &PromoteInfo) -> Box<[Option<PhiInstID>]> {
-        let mut actor = InsertPhi::new(df, self);
-        for &store in &info.stores {
-            actor.run(store);
+    fn insert_phis(&self, df: &DF, info: &PromoteInfo) -> HashMap<usize, PhiInstID> {
+        let def_dfns: FixBitSet = self.dump_def_cfgdfns(df, info);
+        let mut phi_blocks = HashSet::new();
+        let mut dfn_worklist: SmallVec<[usize; 16]> = def_dfns.iter().collect();
+
+        while let Some(cfg_dfn) = dfn_worklist.pop() {
+            for &df_dfn in &df.df[cfg_dfn] {
+                if phi_blocks.insert(df_dfn) {
+                    dfn_worklist.push(df_dfn);
+                }
+            }
         }
-        actor.dfn_phi
+        let mut builder = IRBuilder::new(self.module);
+        let mut ret = HashMap::new();
+        let allocs = &self.module.allocs;
+        for &dfn in &phi_blocks {
+            let CfgBlockStat::Block(block) = df.dom_tree.dfs.nodes[dfn].block else {
+                continue;
+            };
+            builder.set_focus(IRFocus::Block(block));
+            let phi = PhiInstID::new_empty(allocs, info.valty);
+            builder
+                .insert_inst_with_order(phi, df.dom_tree.inst_order)
+                .expect("Failed to insert phi");
+            ret.insert(dfn, phi);
+        }
+        ret
+    }
+    fn dump_def_cfgdfns(&self, df: &DF<'_>, info: &PromoteInfo) -> FixBitSet {
+        let allocs = &self.module.allocs;
+        let dfs = &df.dom_tree.dfs;
+        let mut set = FixBitSet::with_len(dfs.nodes.len());
+        for &store in &info.stores {
+            let parent = store
+                .get_parent(allocs)
+                .expect("IR invariant violated: store has no parent block");
+            if let Some(&dfn) = dfs.unseq.get(&parent) {
+                set.enable(dfn);
+            }
+        }
+        set
     }
 
     #[inline(never)]
-    fn rename(&self, df: &DF<'_>, info: &PromoteInfo, phis: Box<[Option<PhiInstID>]>) {
+    fn rename(&self, df: &DF<'_>, info: &PromoteInfo, phis: HashMap<usize, PhiInstID>) {
         let mut renamer = Rename::new(self, phis, df, info);
         renamer.run();
         renamer.cleanup();
     }
 }
 
-struct InsertPhi<'ir> {
-    visited: FixBitSet,
-    dfn_phi: Box<[Option<PhiInstID>]>,
-    builder: IRBuilder<&'ir Module>,
-    df: &'ir DF<'ir>,
-    dfs: &'ir CfgDfsSeq,
-    inst_order: &'ir dyn InstOrdering,
-    stack: SmallVec<[usize; 16]>,
-}
-
-impl<'ir> InsertPhi<'ir> {
-    fn pop(&mut self) -> Option<usize> {
-        self.stack.pop()
-    }
-    fn push_dfn(&mut self, dfn: usize) {
-        if self.visited.get(dfn) {
-            return;
-        }
-        self.visited.enable(dfn);
-        self.stack.push(dfn);
-    }
-    fn push_bb(&mut self, bb: BlockID) {
-        if let Some(&dfn) = self.dfs.unseq.get(&bb) {
-            self.push_dfn(dfn);
-        }
-    }
-    fn dfn_has_phi(&self, dfn: usize) -> bool {
-        self.dfn_phi[dfn].is_some()
-    }
-
-    fn parent(&self, inst: impl ISubInstID) -> BlockID {
-        inst.get_parent(self.builder.allocs())
-            .expect("IR invariant violated: inst has no parent block")
-    }
-    fn run(&mut self, store: StoreInstID) {
-        self.push_bb(self.parent(store));
-        while let Some(dfn) = self.pop() {
-            let df_dfns = &self.df.df[dfn];
-            for &df_dfn in df_dfns {
-                let CfgBlockStat::Block(df_block) = self.dfs.nodes[df_dfn].block else {
-                    continue;
-                };
-                if self.dfn_has_phi(df_dfn) {
-                    continue;
-                }
-                let capacity = match self.df.cfg.pred_of(df_block) {
-                    Some(preds) => preds.len(),
-                    None => 0,
-                };
-                // 在 df_block 开头插入一个 phi 节点
-                let phi = PhiInstID::with_capacity(
-                    self.builder.allocs(),
-                    store.source_ty(self.builder.allocs()),
-                    capacity,
-                );
-                self.builder.set_focus(IRFocus::Block(df_block));
-                // 这里 builder 会自动识别 phi 节点并插入到合适的位置
-                self.builder
-                    .insert_inst_with_order(phi, self.inst_order)
-                    .expect("Failed to insert phi");
-                self.dfn_phi[df_dfn] = Some(phi);
-                self.push_bb(df_block);
-            }
-        }
-    }
-
-    fn new(df: &'ir DF<'ir>, mem2reg: &Mem2Reg<'ir>) -> Self {
-        let nnodes = df.dom_tree.dfs.nodes.len();
-        Self {
-            visited: FixBitSet::with_len(nnodes),
-            dfn_phi: vec![None; nnodes].into_boxed_slice(),
-            builder: IRBuilder::new(mem2reg.module),
-            df,
-            dfs: &df.dom_tree.dfs,
-            inst_order: df.dom_tree.inst_order,
-            stack: SmallVec::new(),
-        }
-    }
-}
-
 struct Rename<'t> {
     builder: IRBuilder<&'t Module>,
-    dfn_phi: Box<[Option<PhiInstID>]>,
+    dfn_phi: HashMap<usize, PhiInstID>,
     defuse: HashSet<InstID>,
     stack: SmallVec<[ValueSSA; 16]>,
     df: &'t DF<'t>,
@@ -341,7 +292,7 @@ struct Rename<'t> {
 impl<'t> Rename<'t> {
     fn new(
         mem2reg: &Mem2Reg<'t>,
-        dfn_phi: Box<[Option<PhiInstID>]>,
+        dfn_phi: HashMap<usize, PhiInstID>,
         df: &'t DF<'t>,
         info: &'t PromoteInfo,
     ) -> Self {
@@ -378,7 +329,7 @@ impl<'t> Rename<'t> {
             return;
         };
         let stack_len = self.stack.len();
-        if let Some(phi) = self.dfn_phi[cfg_dfn] {
+        if let Some(&phi) = self.dfn_phi.get(&cfg_dfn) {
             self.push_value(phi);
         }
         let allocs = {
@@ -388,18 +339,16 @@ impl<'t> Rename<'t> {
 
         for (inst_id, inst) in block.insts_iter(allocs) {
             let removed = match inst {
+                InstObj::Store(store) if self.has_store(inst_id) => {
+                    self.push_value(store.get_source(allocs));
+                    true
+                }
                 InstObj::Load(load) if self.has_load(inst_id) => {
-                    let val = match self.stack.last() {
-                        Some(v) => *v,
-                        None => panic!("Internal error: stack underflow when renaming load"),
+                    let Some(&val) = self.stack.last() else {
+                        panic!("Internal error: stack underflow when renaming load");
                     };
                     load.replace_self_with(allocs, val)
                         .expect("Internal error: failed to replace load with renamed value");
-                    true
-                }
-                InstObj::Store(store) if self.has_store(inst_id) => {
-                    let val = store.get_source(allocs);
-                    self.push_value(val);
                     true
                 }
                 _ => false,
@@ -414,9 +363,8 @@ impl<'t> Rename<'t> {
         let succs = self.df.cfg.succ_of(block).unwrap_or(&[]);
         for &succ in succs {
             if let Some(phi) = self.block_get_phi(succ) {
-                let val = match self.stack.last() {
-                    Some(v) => *v,
-                    None => panic!("Internal error: stack underflow when renaming phi operand"),
+                let Some(&val) = self.stack.last() else {
+                    panic!("Internal error: stack underflow when renaming phi operand");
                 };
                 phi.set_incoming(allocs, block, val);
             }
@@ -445,23 +393,21 @@ impl<'t> Rename<'t> {
         }
     }
     fn block_get_phi(&self, block: BlockID) -> Option<PhiInstID> {
-        let &dfn = self.dt.dfs.unseq.get(&block)?;
-        self.dfn_phi[dfn]
+        let dfn = self.dt.dfs.unseq.get(&block)?;
+        self.dfn_phi.get(dfn).copied()
     }
 
     fn cleanup(&mut self) {
-        let allocs = self.builder.allocs();
+        let allocs = &self.builder.module.allocs;
         // dedup phi operands where possible
-        for &phi in &*self.dfn_phi {
-            if let Some(phi) = phi {
-                let mut dedup = phi.begin_dedup(allocs);
-                if !dedup.initial_nodup() {
-                    let ok = dedup.dedup_same_operand();
-                    if !ok {
-                        dedup.keep_first();
-                    }
-                    dedup.apply().expect("Phi dedup failed");
+        for phi in self.dfn_phi.values() {
+            let mut dedup = phi.begin_dedup(allocs);
+            if !dedup.initial_nodup() {
+                let ok = dedup.dedup_same_operand();
+                if !ok {
+                    dedup.keep_first();
                 }
+                dedup.apply().expect("Phi dedup failed");
             }
         }
 
@@ -469,5 +415,41 @@ impl<'t> Rename<'t> {
         self.builder
             .remove_inst_with_order(self.info.alloca, self.order)
             .expect("Internal error: failed to remove alloca instruction");
+        self.info.alloca.dispose(allocs).unwrap();
+        for &def in &self.info.stores {
+            def.dispose(allocs).unwrap();
+        }
+        for &load in &self.info.loads {
+            load.dispose(allocs).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ir::*, testing::cases::*};
+
+    #[test]
+    fn test_mem2reg() {
+        let module = test_case_cfg_deep_while_br().module;
+        write_ir_to_file(
+            "target/test-mem2reg-before.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
+
+        let main_func = module
+            .get_global_by_name("main")
+            .map(FuncID::raw_from)
+            .expect("test case has no main function");
+
+        let orders = InstOrderCache::new();
+        Mem2Reg::new(&module).run_on_func(&orders, main_func);
+        write_ir_to_file(
+            "target/test-mem2reg-after.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
     }
 }
