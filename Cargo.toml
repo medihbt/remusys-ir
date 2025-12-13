@@ -10,6 +10,10 @@ readme = "README.md"
 keywords = ["compiler", "ir", "llvm", "intermediate-representation"]
 categories = ["compilers"]
 
+[features]
+default = []
+random-generation = ["mtb-entity-slab/random-generation"]
+
 [dependencies]
 bitflags = "2.9.0"
 lazy_static = "1.5.0"
@@ -17,4 +21,4 @@ log = "0.4.27"
 slab = "0.4.9"
 thiserror = "2"
 smallvec = { version = "1", features = ["union"] }
-mtb-entity-slab = { git = "https://codeberg.org/medihbt/mtb-entity-slab", branch = "master", features = ["random-generation"] }
+mtb-entity-slab = { git = "https://codeberg.org/medihbt/mtb-entity-slab", branch = "master" }
