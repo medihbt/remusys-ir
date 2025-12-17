@@ -1452,8 +1452,8 @@ mod tests {
             .expect("Failed to build global variable `arr`");
         let module = builder.module;
         let mut out = std::io::stdout();
-        let writer = IRWriter::from_module(&mut out, &module);
-        writer.write_module();
+        let mut writer = IRWriter::from_module(&mut out, &module);
+        writer.fmt_module().unwrap();
 
         for (cnt, (val, u)) in kv_array_id.iter(&module.allocs).enumerate() {
             println!("[{cnt}]: Value: {val:?}, UseID: {u:?}");

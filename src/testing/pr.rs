@@ -36,8 +36,7 @@ fn test_builder_smoke_and_writer() {
     // write to memory
     let mut buf = Vec::<u8>::new();
     let mut writer = IRWriter::from_module(&mut buf, &builder.module);
-    writer.option = IRWriteOption::quiet();
-    writer.write_module();
+    writer.fmt_module().unwrap();
     let s = String::from_utf8(buf).unwrap();
     assert!(s.contains("define dso_local i32 @main"));
 }
@@ -122,11 +121,10 @@ fn test_jump_target_invariants_via_sanity_check() {
         ))
         .unwrap();
 
-    let filepath = "target/ir_builder_test_jump_target_invariants.ll";
+    let filepath = "../target/ir_builder_test_jump_target_invariants.ll";
     let mut file = std::fs::File::create(filepath).unwrap();
     let mut writer = IRWriter::from_module(&mut file, &builder.module);
-    writer.option = IRWriteOption::loud();
-    writer.write_module();
+    writer.fmt_module().unwrap();
 
     // 自检验证 JT/Preds/Users 等基本不变量
     crate::ir::checking::assert_module_sane(&builder.module);

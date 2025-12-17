@@ -239,6 +239,11 @@ impl Module {
         if missing.is_empty() { Ok(()) } else { Err(missing) }
     }
 
+    /// Check whether the given GlobalID is exported.
+    pub fn symbol_is_exported(&self, id: GlobalID) -> bool {
+        self.symbols.borrow().is_id_exported(id)
+    }
+
     /// Begin a garbage collection cycle.
     /// This will free disposed allocations and return an IRMarker to mark live allocations.
     pub fn begin_gc(&mut self) -> IRMarker<'_> {
@@ -274,14 +279,14 @@ mod tests {
     fn test_gc() {
         let mut module = test_case_cfg_deep_while_br().module;
         module.begin_gc().finish();
-        write_module(&module, "target/test_output_gc.ll");
+        write_module(&module, "../target/test_output_gc.ll");
     }
 
     fn write_module(module: &Module, path: &str) {
         let file = std::fs::File::create(path).expect("Failed to create output file");
         let mut file_writer = std::io::BufWriter::new(file);
         let mut writer = IRWriter::from_module(&mut file_writer, module);
-        writer.option = IRWriteOption::loud();
-        writer.write_module();
+        writer.set_option(IRWriteOption::loud());
+        writer.fmt_module().unwrap();
     }
 }

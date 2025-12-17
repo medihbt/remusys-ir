@@ -1,6 +1,6 @@
 use crate::ir::{
     BlockID, FuncID, GlobalVarID, IRAllocs, IRWriteOption, IRWriter, ISubGlobal, ISubGlobalID,
-    ISubInstID, InstID, JumpTargetID, Module, UseID, UserID, ValueSSA,
+    ISubInstID, InstID, JumpTargetID, Module, UseID, UserID, ValueSSA, WriteIR,
 };
 use std::io::Write;
 
@@ -56,7 +56,7 @@ impl IRLocation {
         let allocs = &module.allocs;
         match self {
             IRLocation::Module => write!(writer, "Module {}", module.name).unwrap(),
-            IRLocation::GlobalVar(gvar) => writer.format_global_var(gvar.deref_ir(allocs)),
+            IRLocation::GlobalVar(gvar) => writer.fmt_global_var(*gvar).unwrap(),
             IRLocation::Func(func_id) => {
                 let func = func_id.deref_ir(allocs);
                 write!(writer, "Function @{}", func.get_name()).unwrap();
@@ -66,8 +66,11 @@ impl IRLocation {
                     write!(writer, "{:?} (orphan)", block_id).unwrap();
                     return;
                 };
-                writer.focus_to_func(parent_func);
-                writer.format_block(*block_id, block_id.deref_ir(allocs));
+                writer
+                    .switch_to_func(parent_func)
+                    .unwrap()
+                    .fmt_block_target(Some(*block_id))
+                    .unwrap();
             }
             IRLocation::Inst(inst_id) => {
                 Self::describe_inst(&mut writer, allocs, *inst_id);
@@ -104,7 +107,7 @@ impl IRLocation {
                     writeln!(writer).unwrap();
                 }
             }
-            IRLocation::Operand(op) => writer.write_operand(*op).unwrap(),
+            IRLocation::Operand(op) => writer.fmt_operand(*op).unwrap(),
         }
     }
 
@@ -118,11 +121,8 @@ impl IRLocation {
             write!(writer, "{inst_id:?} opcode {opcode:?} (orphan block)").unwrap();
             return;
         };
-        writer.focus_to_func(parent_func);
-        writer.option = IRWriteOption::loud();
-        writer.inc_indent();
-        writer.wrap_indent();
-        let inst_number = writer.numbers().inst_get_number(inst_id);
-        writer.format_inst(inst_id, inst_id.deref_ir(allocs), inst_number);
+        writer.set_option(IRWriteOption::loud());
+        let inst_writer = writer.switch_to_func(parent_func).unwrap();
+        inst_writer.fmt_instid(inst_id).unwrap();
     }
 }
