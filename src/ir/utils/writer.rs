@@ -592,7 +592,7 @@ impl<'a> IRFuncWriter<'a> {
                 self.fmtln_users(inst)?;
             }
             if let Some(num) = self.func_stat.numbers.inst_get_number(inst_id)
-                && inst.has_number()
+                && inst.format_has_number()
             {
                 write!(self, "%{num} = ")?;
             }
@@ -603,14 +603,14 @@ impl<'a> IRFuncWriter<'a> {
     }
 }
 
-pub trait FormattedInst: ISubInst {
-    fn has_number(&self) -> bool;
+pub trait IRFormatInst: ISubInst {
+    fn format_has_number(&self) -> bool;
 
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes;
 }
 
-impl FormattedInst for InstObj {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for InstObj {
+    fn format_has_number(&self) -> bool {
         !self.is_terminator() && self.get_valtype() != ValTypeID::Void
     }
 
@@ -644,8 +644,8 @@ impl FormattedInst for InstObj {
     }
 }
 
-impl FormattedInst for UnreachableInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for UnreachableInst {
+    fn format_has_number(&self) -> bool {
         false
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -653,8 +653,8 @@ impl FormattedInst for UnreachableInst {
     }
 }
 
-impl FormattedInst for RetInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for RetInst {
+    fn format_has_number(&self) -> bool {
         false
     }
 
@@ -673,23 +673,20 @@ impl FormattedInst for RetInst {
     }
 }
 
-impl FormattedInst for JumpInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for JumpInst {
+    fn format_has_number(&self) -> bool {
         false
     }
 
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
         write.write_str("br label ")?;
-        let target = self
-            .get_target(write.get_allocs())
-            .ok_or(IRWriteErr::JumpToNoTarget)?;
-        write.fmt_operand(target.into_ir())?;
+        write.fmt_block_target(self.get_target(write.get_allocs()))?;
         Ok(())
     }
 }
 
-impl FormattedInst for BrInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for BrInst {
+    fn format_has_number(&self) -> bool {
         false
     }
 
@@ -705,8 +702,8 @@ impl FormattedInst for BrInst {
     }
 }
 
-impl FormattedInst for SwitchInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for SwitchInst {
+    fn format_has_number(&self) -> bool {
         false
     }
 
@@ -739,8 +736,8 @@ impl FormattedInst for SwitchInst {
     }
 }
 
-impl FormattedInst for AllocaInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for AllocaInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -752,8 +749,8 @@ impl FormattedInst for AllocaInst {
     }
 }
 
-impl FormattedInst for GEPInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for GEPInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -776,8 +773,8 @@ impl FormattedInst for GEPInst {
     }
 }
 
-impl FormattedInst for LoadInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for LoadInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -791,8 +788,8 @@ impl FormattedInst for LoadInst {
     }
 }
 
-impl FormattedInst for StoreInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for StoreInst {
+    fn format_has_number(&self) -> bool {
         false
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -805,8 +802,8 @@ impl FormattedInst for StoreInst {
     }
 }
 
-impl FormattedInst for AmoRmwInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for AmoRmwInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -831,8 +828,8 @@ impl FormattedInst for AmoRmwInst {
     }
 }
 
-impl FormattedInst for BinOPInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for BinOPInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -852,8 +849,8 @@ impl FormattedInst for BinOPInst {
     }
 }
 
-impl FormattedInst for CallInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for CallInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -883,8 +880,8 @@ impl FormattedInst for CallInst {
     }
 }
 
-impl FormattedInst for CastInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for CastInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -898,8 +895,8 @@ impl FormattedInst for CastInst {
     }
 }
 
-impl FormattedInst for CmpInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for CmpInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -915,8 +912,8 @@ impl FormattedInst for CmpInst {
     }
 }
 
-impl FormattedInst for IndexExtractInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for IndexExtractInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -934,8 +931,8 @@ impl FormattedInst for IndexExtractInst {
     }
 }
 
-impl FormattedInst for FieldExtractInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for FieldExtractInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -950,8 +947,8 @@ impl FormattedInst for FieldExtractInst {
     }
 }
 
-impl FormattedInst for IndexInsertInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for IndexInsertInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -973,8 +970,8 @@ impl FormattedInst for IndexInsertInst {
     }
 }
 
-impl FormattedInst for FieldInsertInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for FieldInsertInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -993,8 +990,8 @@ impl FormattedInst for FieldInsertInst {
     }
 }
 
-impl FormattedInst for PhiInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for PhiInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
@@ -1020,8 +1017,8 @@ impl FormattedInst for PhiInst {
     }
 }
 
-impl FormattedInst for SelectInst {
-    fn has_number(&self) -> bool {
+impl IRFormatInst for SelectInst {
+    fn format_has_number(&self) -> bool {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
