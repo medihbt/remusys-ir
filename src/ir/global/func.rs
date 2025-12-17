@@ -1,5 +1,4 @@
 use crate::{
-    impl_traceable_from_common,
     ir::{
         AttrClass, AttrSet, Attribute, AttributePos, BlockID, GlobalID, GlobalObj, IPtrUniqueUser,
         IPtrValue, IRAllocs, ISubGlobal, ISubGlobalID, ISubValueSSA, ITraceableValue, IUser,
@@ -66,6 +65,9 @@ impl ITraceableValue for FuncArg {
     fn users(&self) -> &UserList {
         &self.users
     }
+    fn get_valtype(&self) -> ValTypeID {
+        self.ty
+    }
     fn has_unique_ref_semantics(&self) -> bool {
         true
     }
@@ -120,7 +122,20 @@ pub struct FuncBody {
     pub entry: BlockID,
 }
 
-impl_traceable_from_common!(FuncObj, true);
+impl ITraceableValue for FuncObj {
+    fn try_get_users(&self) -> Option<&crate::ir::UserList> {
+        self.get_common().users.as_ref()
+    }
+    fn users(&self) -> &crate::ir::UserList {
+        self.get_common().users.as_ref().unwrap()
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        ValTypeID::Ptr
+    }
+    fn has_unique_ref_semantics(&self) -> bool {
+        true
+    }
+}
 impl IUser for FuncObj {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])

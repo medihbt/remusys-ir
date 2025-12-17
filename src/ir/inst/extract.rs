@@ -1,8 +1,8 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, JumpTargets,
-        Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstCommon, InstObj,
+        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -29,7 +29,7 @@ pub struct IndexExtractInst {
     operands: [UseID; 2],
     pub aggr_type: AggrType,
 }
-impl_traceable_from_common!(IndexExtractInst, true);
+
 impl IUser for IndexExtractInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -107,7 +107,7 @@ impl IndexExtractInst {
     pub const OP_INDEX: usize = 1;
 }
 
-_remusys_ir_subinst_id!(IndexExtractInstID, IndexExtractInst);
+_remusys_ir_subinst!(IndexExtractInstID, IndexExtractInst);
 impl IndexExtractInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_ty: AggrType) -> Self {
         let inst = IndexExtractInst::new_uninit(allocs, tctx, aggr_ty);
@@ -168,7 +168,7 @@ pub struct FieldExtractInst {
     pub fields: SmallVec<[u32; 4]>,
     pub aggr_type: AggrType,
 }
-impl_traceable_from_common!(FieldExtractInst, true);
+
 impl IUser for FieldExtractInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -235,7 +235,7 @@ impl FieldExtractInst {
     }
 }
 
-_remusys_ir_subinst_id!(FieldExtractInstID, FieldExtractInst);
+_remusys_ir_subinst!(FieldExtractInstID, FieldExtractInst);
 impl FieldExtractInstID {
     pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
         FieldExtractInst::builder(aggr_type)

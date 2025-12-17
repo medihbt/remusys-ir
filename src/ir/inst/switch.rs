@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
         InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
@@ -55,7 +55,6 @@ pub struct SwitchInst {
     targets: RefCell<SmallVec<[JumpTargetID; 4]>>,
 }
 
-impl_traceable_from_common!(SwitchInst, true);
 impl IUser for SwitchInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.discrim)
@@ -241,7 +240,7 @@ impl SwitchInst {
     }
 }
 
-_remusys_ir_subinst_id!(SwitchInstID, SwitchInst, terminator);
+_remusys_ir_subinst!(SwitchInstID, SwitchInst, terminator);
 impl SwitchInstID {
     pub fn new_uninit(allocs: &IRAllocs, discrim_ty: IntType) -> Self {
         Self::allocate(allocs, SwitchInst::new_uninit(allocs, discrim_ty))

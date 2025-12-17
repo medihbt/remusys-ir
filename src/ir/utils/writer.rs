@@ -837,9 +837,9 @@ impl FormattedInst for BinOPInst {
         let opcode = self.get_opcode().get_name();
         let flags = self.get_flags();
         if flags.is_empty() {
-            write.write_str(opcode)?;
+            write!(write, "{opcode} ")?;
         } else {
-            write!(write, "{opcode} {flags}")?;
+            write!(write, "{opcode} {flags} ")?;
         }
         write.fmt_type(self.get_valtype())?;
         write.write_str(" ")?;

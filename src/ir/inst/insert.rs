@@ -1,8 +1,8 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        IRAllocs, ISubInst, ISubInstID, ITraceableValue, IUser, InstCommon, InstObj, JumpTargets,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -34,7 +34,7 @@ pub struct IndexInsertInst {
     operands: [UseID; 3],
     pub elem_type: ValTypeID,
 }
-impl_traceable_from_common!(IndexInsertInst, true);
+
 impl IUser for IndexInsertInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -129,7 +129,7 @@ impl IndexInsertInst {
     }
 }
 
-_remusys_ir_subinst_id!(IndexInsertInstID, IndexInsertInst);
+_remusys_ir_subinst!(IndexInsertInstID, IndexInsertInst);
 impl IndexInsertInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self {
         let inst = IndexInsertInst::new_uninit(allocs, tctx, aggr_type);
@@ -197,7 +197,7 @@ pub struct FieldInsertInst {
     pub fields: SmallVec<[u32; 4]>,
     pub elem_type: ValTypeID,
 }
-impl_traceable_from_common!(FieldInsertInst, true);
+
 impl IUser for FieldInsertInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -281,7 +281,7 @@ impl FieldInsertInst {
     }
 }
 
-_remusys_ir_subinst_id!(FieldInsertInstID, FieldInsertInst);
+_remusys_ir_subinst!(FieldInsertInstID, FieldInsertInst);
 impl FieldInsertInstID {
     pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
         FieldInsertBuilder::new(aggr_type)

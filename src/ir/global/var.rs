@@ -1,9 +1,8 @@
 use crate::{
     base::INullableValue,
-    impl_traceable_from_common,
     ir::{
-        GlobalID, GlobalKind, IRAllocs, ISubGlobalID, IUser, IValueConvert, Module, OperandSet,
-        UseID, UseKind, ValueSSA,
+        GlobalID, GlobalKind, IRAllocs, ISubGlobalID, ITraceableValue, IUser, IValueConvert,
+        Module, OperandSet, UseID, UseKind, ValueSSA,
         global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
     },
     typing::ValTypeID,
@@ -17,7 +16,21 @@ pub struct GlobalVar {
     pub initval: [UseID; 1],
     pub readonly: Cell<bool>,
 }
-impl_traceable_from_common!(GlobalVar, true);
+
+impl ITraceableValue for GlobalVar {
+    fn try_get_users(&self) -> Option<&crate::ir::UserList> {
+        self.get_common().users.as_ref()
+    }
+    fn users(&self) -> &crate::ir::UserList {
+        self.get_common().users.as_ref().unwrap()
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        ValTypeID::Ptr
+    }
+    fn has_unique_ref_semantics(&self) -> bool {
+        true
+    }
+}
 impl IUser for GlobalVar {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.initval)

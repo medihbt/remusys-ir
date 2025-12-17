@@ -1,8 +1,8 @@
 use crate::{
-    impl_traceable_from_common,
+    _remusys_ir_subexpr,
     ir::{
         ExprCommon, ExprObj, IRAllocs, ISubExpr, ISubExprID, ISubValueSSA, IUser, OperandSet,
-        UseID, UseKind, ValueSSA, constant::expr::ExprRawPtr,
+        UseID, UseKind, ValueSSA,
     },
     typing::{FixVecType, IValType, ScalarType, ValTypeID},
 };
@@ -15,7 +15,6 @@ pub struct FixVec {
     pub vecty: FixVecType,
 }
 
-impl_traceable_from_common!(FixVec, false);
 impl IUser for FixVec {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
@@ -32,7 +31,7 @@ impl ISubExpr for FixVec {
         &mut self.common
     }
 
-    fn get_valtype(&self) -> ValTypeID {
+    fn get_expr_type(&self) -> ValTypeID {
         self.vecty.into_ir()
     }
 
@@ -81,19 +80,7 @@ impl FixVec {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FixVecID(pub ExprRawPtr);
-
-impl ISubExprID for FixVecID {
-    type ExprObjT = FixVec;
-
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
-        FixVecID(id)
-    }
-    fn into_raw_ptr(self) -> ExprRawPtr {
-        self.0
-    }
-}
+_remusys_ir_subexpr!(FixVecID, FixVec);
 impl FixVecID {
     pub fn new_uninit(allocs: &IRAllocs, vecty: FixVecType) -> Self {
         let fixvec = FixVec::new_uninit(allocs, vecty);

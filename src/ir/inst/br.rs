@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
         InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
@@ -13,7 +13,7 @@ pub struct BrInst {
     cond: [UseID; 1],
     target: [JumpTargetID; 2],
 }
-impl_traceable_from_common!(BrInst, true);
+
 impl IUser for BrInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.cond)
@@ -121,7 +121,7 @@ impl BrInst {
     }
 }
 
-_remusys_ir_subinst_id!(BrInstID, BrInst, terminator);
+_remusys_ir_subinst!(BrInstID, BrInst, terminator);
 impl BrInstID {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, BrInst::new_uninit(allocs))

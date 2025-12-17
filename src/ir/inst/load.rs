@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -38,7 +38,7 @@ pub struct LoadInst {
     operands: [UseID; 1],
     pub align_log2: u8,
 }
-impl_traceable_from_common!(LoadInst, true);
+
 impl IUser for LoadInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -109,7 +109,7 @@ impl LoadInst {
     }
 }
 
-_remusys_ir_subinst_id!(LoadInstID, LoadInst);
+_remusys_ir_subinst!(LoadInstID, LoadInst);
 impl LoadInstID {
     pub fn new_uninit(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, LoadInst::new_uninit(allocs, pointee_ty, align_log2))

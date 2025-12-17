@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj, JumpTargetID,
         JumpTargets, Opcode, OperandSet, UseID,
@@ -18,7 +18,6 @@ pub struct UnreachableInst {
     pub common: InstCommon,
 }
 
-impl_traceable_from_common!(UnreachableInst, true);
 impl IUser for UnreachableInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
@@ -80,7 +79,7 @@ impl UnreachableInst {
     }
 }
 
-_remusys_ir_subinst_id!(UnreachableInstID, UnreachableInst, terminator);
+_remusys_ir_subinst!(UnreachableInstID, UnreachableInst, terminator);
 impl UnreachableInstID {
     pub fn new(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, UnreachableInst::new())

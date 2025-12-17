@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj,
         JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID,
@@ -11,7 +11,7 @@ pub struct JumpInst {
     pub common: InstCommon,
     target: [JumpTargetID; 1],
 }
-impl_traceable_from_common!(JumpInst, true);
+
 impl IUser for JumpInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
@@ -93,7 +93,7 @@ impl JumpInst {
     }
 }
 
-_remusys_ir_subinst_id!(JumpInstID, JumpInst, terminator);
+_remusys_ir_subinst!(JumpInstID, JumpInst, terminator);
 impl JumpInstID {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {
         Self::allocate(allocs, JumpInst::new_uninit(allocs))

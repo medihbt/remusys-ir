@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -97,7 +97,7 @@ pub struct BinOPInst {
     operands: [UseID; 2],
     flags: Cell<BinOPFlags>,
 }
-impl_traceable_from_common!(BinOPInst, true);
+
 impl IUser for BinOPInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -206,7 +206,7 @@ impl BinOPInst {
     }
 }
 
-_remusys_ir_subinst_id!(BinOPInstID, BinOPInst);
+_remusys_ir_subinst!(BinOPInstID, BinOPInst);
 impl BinOPInstID {
     pub fn new_uninit(allocs: &IRAllocs, opcode: Opcode, ty: ValTypeID) -> Self {
         let inst = BinOPInst::new_uninit(allocs, opcode, ty);
