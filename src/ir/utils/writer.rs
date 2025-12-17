@@ -568,8 +568,10 @@ impl<'a> IRFuncWriter<'a> {
         if option.show_users {
             self.fmtln_users(obj)?;
         }
-        self.fmt_block_target(Some(id))?;
-        self.write_str(":")?;
+        let Some(number) = self.func_stat.numbers.block_get_number(id) else {
+            return Err(IRWriteErr::JumpToNoTarget);
+        };
+        write!(self, "{number}:")?;
 
         self.inc_indent();
         for (inst_id, inst) in obj.insts_iter(allocs) {
@@ -856,6 +858,7 @@ impl FormattedInst for CallInst {
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
         let allocs = write.get_allocs();
+        write.write_str("call ")?;
         write.fmt_type(self.get_valtype())?;
         write.write_str(if self.is_vararg { " (...) " } else { " " })?;
         write.fmt_operand(self.get_callee(allocs))?;
