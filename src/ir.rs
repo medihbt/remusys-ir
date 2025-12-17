@@ -94,8 +94,8 @@ pub use self::{
         module_clone::ModuleClone,
         numbering::{IRNumberValueMap, NumberOption},
         writer::{
-            IRFuncWriter, IRWriteErr, IRWriteModuleStat, IRWriteOption, IRWriteRes, IRWriter,
-            WriteIR, write_ir_to_file,
+            IRFuncWriter, IRWriteErr, IRWriteFuncStat, IRWriteModuleStat, IRWriteOption,
+            IRWriteRes, IRWriter, WriteIR, write_ir_to_file,
         },
     },
 };
