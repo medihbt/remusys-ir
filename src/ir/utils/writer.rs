@@ -69,7 +69,7 @@ impl IRWriteOption {
 
 /// Status that is kept during writing an IR module.
 #[derive(Default)]
-pub struct IRModuleStat {
+pub struct IRWriteModuleStat {
     pub indent: Cell<usize>,
     pub option: IRWriteOption,
     inner: RefCell<IRStatInner>,
@@ -82,7 +82,7 @@ struct IRStatInner {
     llvm_mapping: LLVMAdaptMapping,
 }
 
-impl IRModuleStat {
+impl IRWriteModuleStat {
     pub fn insert_option(&mut self, option: IRWriteOption) -> &mut Self {
         self.option = option;
         self
@@ -185,12 +185,12 @@ impl IRModuleStat {
     }
 }
 
-pub struct IRFuncStat {
+pub struct IRWriteFuncStat {
     pub func_id: FuncID,
     pub numbers: IRNumberValueMap,
 }
 
-impl IRFuncStat {
+impl IRWriteFuncStat {
     pub fn new(allocs: &IRAllocs, func_id: FuncID) -> Result<Self, IRWriteErr> {
         let option = NumberOption::ignore_all();
         let Some(numbers) = IRNumberValueMap::new(allocs, func_id, option) else {
@@ -203,7 +203,7 @@ impl IRFuncStat {
 
 pub trait WriteIR<'a>: 'a {
     fn get_module(&self) -> &'a Module;
-    fn module_stat(&self) -> &IRModuleStat;
+    fn module_stat(&self) -> &IRWriteModuleStat;
     fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a>;
     fn get_numbers(&self) -> Option<&IRNumberValueMap>;
 
@@ -504,15 +504,15 @@ mod write_impl {
 
 pub struct IRFuncWriter<'a> {
     pub writer: RefCell<&'a mut (dyn std::io::Write + 'a)>,
-    pub module_stat: &'a IRModuleStat,
-    pub func_stat: IRFuncStat,
+    pub module_stat: &'a IRWriteModuleStat,
+    pub func_stat: Rc<IRWriteFuncStat>,
     pub module: &'a Module,
 }
 impl<'a> WriteIR<'a> for IRFuncWriter<'a> {
     fn get_module(&self) -> &'a Module {
         self.module
     }
-    fn module_stat(&self) -> &IRModuleStat {
+    fn module_stat(&self) -> &IRWriteModuleStat {
         self.module_stat
     }
     fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a> {
@@ -525,7 +525,7 @@ impl<'a> WriteIR<'a> for IRFuncWriter<'a> {
 impl<'a> IRFuncWriter<'a> {
     pub fn new_full(
         writer: &'a mut (dyn std::io::Write + 'a),
-        module_stat: &'a mut IRModuleStat,
+        module_stat: &'a mut IRWriteModuleStat,
         module: &'a Module,
         func_id: FuncID,
     ) -> IRWriteRes<Self> {
@@ -533,9 +533,17 @@ impl<'a> IRFuncWriter<'a> {
             writer: RefCell::new(writer),
             module_stat,
             module,
-            func_stat: IRFuncStat::new(&module.allocs, func_id)?,
+            func_stat: Rc::new(IRWriteFuncStat::new(&module.allocs, func_id)?),
         };
         Ok(ret)
+    }
+    pub fn from_stat(
+        writer: &'a mut (dyn std::io::Write + 'a),
+        module_stat: &'a mut IRWriteModuleStat,
+        func_stat: Rc<IRWriteFuncStat>,
+        module: &'a Module,
+    ) -> Self {
+        Self { writer: RefCell::new(writer), module_stat, func_stat, module }
     }
 
     pub fn func_id(&self) -> FuncID {
@@ -1037,14 +1045,14 @@ impl IRFormatInst for SelectInst {
 pub struct IRWriter<'a> {
     pub writer: RefCell<&'a mut (dyn std::io::Write + 'a)>,
     pub module: &'a Module,
-    pub module_stat: IRModuleStat,
+    pub module_stat: IRWriteModuleStat,
 }
 
 impl<'a> WriteIR<'a> for IRWriter<'a> {
     fn get_module(&self) -> &'a Module {
         self.module
     }
-    fn module_stat(&self) -> &IRModuleStat {
+    fn module_stat(&self) -> &IRWriteModuleStat {
         &self.module_stat
     }
     fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a> {
@@ -1060,7 +1068,7 @@ impl<'a> IRWriter<'a> {
         Self {
             writer: RefCell::new(output),
             module,
-            module_stat: IRModuleStat::default(),
+            module_stat: IRWriteModuleStat::default(),
         }
     }
 
@@ -1071,7 +1079,7 @@ impl<'a> IRWriter<'a> {
         let ret = IRFuncWriter {
             writer: RefCell::new(self.writer.get_mut()),
             module_stat: &self.module_stat,
-            func_stat: IRFuncStat::new(&self.module.allocs, func)?,
+            func_stat: Rc::new(IRWriteFuncStat::new(&self.module.allocs, func)?),
             module: self.module,
         };
         Ok(ret)
