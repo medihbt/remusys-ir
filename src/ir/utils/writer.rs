@@ -1,34 +1,37 @@
 use crate::{
-    ir::{
-        ArrayExpr, ArrayExprID, AttrSet, Attribute, BlockID, BlockObj, ConstArrayData, ConstData,
-        DataArrayExpr, ExprID, ExprObj, FuncID, FuncObj, GlobalID, GlobalKind, GlobalObj,
-        GlobalVar, IArrayExpr, IPtrUniqueUser, IPtrValue, IRAllocs, IRNumberValueMap, ISubExpr,
-        ISubExprID, ISubGlobal, ISubGlobalID, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue,
-        IUser, InstID, InstObj, JumpTargetKind, KVArrayExpr, Module, NumberOption, PoolAllocatedID,
-        PredList, PtrArgTargetAttr, SplatArrayExpr, UseID, UserList, ValueSSA, inst::*,
-        module::allocs::IPoolAllocated, utils::llvm_adapt::LLVMAdaptMapping,
-    },
-    typing::{FPKind, IValType, ScalarType, TypeContext, ValTypeID},
+    ir::{inst::*, module::allocs::IPoolAllocated, *},
+    typing::*,
 };
-use log::warn;
 use mtb_entity_slab::IEntityAllocID;
 use std::{
-    cell::{Cell, Ref, RefCell, RefMut},
-    collections::{BTreeMap, HashMap},
-    io::Write,
+    cell::{Cell, RefCell, RefMut},
+    collections::HashMap,
     path::Path,
+    rc::Rc,
+    sync::Arc,
 };
 
 pub fn write_ir_to_file(path: impl AsRef<Path>, module: &Module, option: IRWriteOption) {
     let mut file = std::fs::File::create(path).unwrap();
     let mut writer = IRWriter::from_module(&mut file, module);
-    writer.option = option;
-    writer.write_module()
+    writer.set_option(option);
+    writer.fmt_module().unwrap();
 }
+#[derive(Debug, thiserror::Error)]
+pub enum IRWriteErr {
+    #[error("IO Error: {0}")]
+    IO(#[from] std::io::Error),
 
-pub struct IRWriterStat {
-    curr_func: Cell<Option<FuncID>>,
+    #[error("Function '{0}' is external and cannot be written.")]
+    FuncIsExtern(Arc<str>),
+
+    #[error("JumpTarget CFG edge has no target block.")]
+    JumpToNoTarget,
+
+    #[error("Phi instruction has incoming value that is not a block. (real: {0:?})")]
+    PhiIncomeNotBlock(ValueSSA),
 }
+pub type IRWriteRes<T = ()> = Result<T, IRWriteErr>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IRWriteOption {
@@ -47,12 +50,7 @@ impl IRWriteOption {
         }
     }
     pub fn quiet() -> Self {
-        Self {
-            show_ptrid: false,
-            show_users: false,
-            show_preds: false,
-            llvm_compatible: false,
-        }
+        Self::default()
     }
 
     pub fn show_ptrid(self, val: bool) -> Self {
@@ -69,520 +67,187 @@ impl IRWriteOption {
     }
 }
 
-impl Default for IRWriterStat {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl IRWriterStat {
-    pub fn new() -> Self {
-        Self { curr_func: Cell::new(None) }
-    }
-
-    pub fn hold_curr_func<'stat>(&'stat self, funcid: FuncID) -> impl Drop + 'stat {
-        let prev_func = self.curr_func.replace(Some(funcid));
-        struct Guard<'stat> {
-            stat: &'stat IRWriterStat,
-            prev_func: Option<FuncID>,
-        }
-        impl<'stat> Drop for Guard<'stat> {
-            fn drop(&mut self) {
-                self.stat.curr_func.set(self.prev_func);
-            }
-        }
-        Guard { stat: self, prev_func }
-    }
-}
-
-pub struct IRWriter<'ir> {
-    pub output: RefCell<&'ir mut dyn Write>,
-    pub stat: IRWriterStat,
-    pub option: IRWriteOption,
-    pub module: &'ir Module,
+/// Status that is kept during writing an IR module.
+#[derive(Default)]
+pub struct IRWriteModuleStat {
     pub indent: Cell<usize>,
-    inner: RefCell<Inner>,
+    pub option: IRWriteOption,
+    inner: RefCell<IRStatInner>,
 }
 
 #[derive(Default)]
-struct Inner {
-    numbering: Option<IRNumberValueMap>,
-    type_names: HashMap<ValTypeID, String>,
-    str_literals: BTreeMap<ExprID, String>,
+struct IRStatInner {
+    type_names: HashMap<ValTypeID, Rc<str>>,
+    str_literals: HashMap<ExprID, Option<Rc<str>>>,
     llvm_mapping: LLVMAdaptMapping,
 }
 
-impl<'ir> IRWriter<'ir> {
-    pub fn from_module(output: &'ir mut dyn Write, module: &'ir Module) -> Self {
-        Self {
-            output: RefCell::new(output),
-            stat: IRWriterStat::new(),
-            option: IRWriteOption::default(),
-            indent: Cell::new(0),
-            module,
-            inner: RefCell::new(Inner::default()),
-        }
+impl IRWriteModuleStat {
+    pub fn insert_option(&mut self, option: IRWriteOption) -> &mut Self {
+        self.option = option;
+        self
     }
 
-    fn make_symbols(module: &'ir Module) -> Vec<(GlobalID, GlobalKind)> {
-        let symbols = module.symbols.borrow();
-        // We only print exported symbols.
-        let exported = &symbols.exported;
-        let allocs = &module.allocs;
-        let mut globals = Vec::with_capacity(exported.len());
-        for (_, gid) in exported.iter() {
-            globals.push((*gid, gid.get_kind(allocs)));
-        }
-        globals.sort_unstable_by(|&(lp, lk), &(rp, rk)| {
-            lk.cmp(&rk)
-                .then_with(|| lp.get_name(allocs).cmp(rp.get_name(allocs)))
-        });
-        globals
-    }
-
-    pub fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
-        self.output.borrow_mut().write(buf)
-    }
-    pub fn flush(&self) -> std::io::Result<()> {
-        self.output.borrow_mut().flush()
-    }
-    pub fn write_str(&self, s: &str) -> std::io::Result<()> {
-        self.output.borrow_mut().write_all(s.as_bytes())
-    }
-    pub fn write_all(&self, buf: &[u8]) -> std::io::Result<()> {
-        self.output.borrow_mut().write_all(buf)
-    }
-    pub fn write_fmt(&self, args: std::fmt::Arguments) -> std::io::Result<()> {
-        let mut output = self.output.borrow_mut();
-        output.write_fmt(args)
-    }
-    pub fn numbers(&self) -> Ref<'_, IRNumberValueMap> {
-        Ref::map(self.inner.borrow(), |inner| {
-            inner
-                .numbering
-                .as_ref()
-                .expect("IRWriter numbering is not set")
-        })
-    }
-    pub fn try_numbers(&self) -> Ref<'_, Option<IRNumberValueMap>> {
-        Ref::map(self.inner.borrow(), |inner| &inner.numbering)
-    }
-    pub fn set_numbers(&self, func: FuncID) {
-        let option = NumberOption::ignore_all();
+    pub fn map_value(&self, value: ValueSSA, module: &Module) -> ValueSSA {
         let mut inner = self.inner.borrow_mut();
-        inner.numbering = IRNumberValueMap::new(self.allocs(), func, option);
-    }
-    fn type_names(&self) -> RefMut<'_, HashMap<ValTypeID, String>> {
-        RefMut::map(self.inner.borrow_mut(), |inner| &mut inner.type_names)
-    }
-    fn allocs(&self) -> &IRAllocs {
-        &self.module.allocs
-    }
-    fn tctx(&self) -> &TypeContext {
-        &self.module.tctx
-    }
-
-    pub fn inc_indent(&self) {
-        self.indent.set(self.indent.get() + 1);
-    }
-    pub fn dec_indent(&self) {
-        let curr = self.indent.get();
-        assert!(curr > 0, "Indent level cannot be negative");
-        self.indent.set(curr - 1);
-    }
-    pub fn wrap_indent(&self) {
-        self.write_str("\n").unwrap();
-        for _ in 0..self.indent.get() {
-            self.write_str("    ").unwrap();
-        }
-    }
-    pub fn write_type(&self, ty: ValTypeID) -> std::io::Result<()> {
-        let mut type_names = self.type_names();
-        if let Some(name) = type_names.get(&ty) {
-            return self.write_str(name);
-        }
-        match ty {
-            ValTypeID::Void => self.write_str("void"),
-            ValTypeID::Ptr => self.write_str("ptr"),
-            ValTypeID::Int(bits) => write!(self, "i{bits}"),
-            ValTypeID::Float(FPKind::Ieee32) => self.write_str("float"),
-            ValTypeID::Float(FPKind::Ieee64) => self.write_str("double"),
-            ValTypeID::StructAlias(sa) => write!(self, "%{}", sa.get_name(self.tctx())),
-            _ => {
-                let name = ty.get_display_name(self.tctx());
-                self.write_str(&name)?;
-                type_names.insert(ty, name);
-                Ok(())
-            }
-        }
-    }
-
-    pub fn map_operand_and_write(&self, operand: impl ISubValueSSA) -> std::io::Result<()> {
-        let mut operand = operand.into_ir();
         if self.option.llvm_compatible {
-            let mut inner = self.inner.borrow_mut();
-            operand = inner.llvm_mapping.map_value(self.module, operand);
-        }
-        let ty = operand.get_valtype(self.allocs());
-        self.write_type(ty)?;
-        self.write_str(" ")?;
-        self.write_operand(operand)
-    }
-    pub fn write_operand(&self, operand: impl ISubValueSSA) -> std::io::Result<()> {
-        match operand.into_ir() {
-            ValueSSA::None => self.write_str("poison"),
-            ValueSSA::ConstData(c) => self.format_const_data(c),
-            ValueSSA::ConstExpr(e) => self.format_expr(e),
-            ValueSSA::AggrZero(_) => self.write_str("zeroinitializer"),
-            ValueSSA::FuncArg(funcid, argid) => {
-                assert_eq!(
-                    Some(funcid),
-                    self.stat.curr_func.get(),
-                    "FuncArg can only be used in its own function"
-                );
-                write!(self, "%{argid}")
-            }
-            ValueSSA::Block(b) => self.write_block_operand(Some(b)),
-            ValueSSA::Inst(i) => self.write_inst_operand(i),
-            ValueSSA::Global(g) => {
-                write!(self, "@{}", g.get_name(self.allocs()))
-            }
-        }
-    }
-    fn write_inst_operand(&self, i: InstID) -> std::io::Result<()> {
-        let inner = self.inner.borrow();
-        let Some(numbers) = &inner.numbering else {
-            return write!(self, "%inst:{:#x}", i.get_entity_index(self.allocs()));
-        };
-        if let Some(id) = numbers.inst_get_number(i) {
-            write!(self, "%{id}")
+            inner.llvm_mapping.map_value(module, value)
         } else {
-            write!(self, "%inst:{:#x}", i.get_entity_index(self.allocs()))
+            value
         }
     }
-    fn write_block_operand(&self, b: Option<BlockID>) -> std::io::Result<()> {
-        let Some(b) = b else {
-            return self.write_str("%NULL_BLOCK");
-        };
-        let inner = self.inner.borrow();
-        let Some(numbers) = &inner.numbering else {
-            warn!("Block can only be used in its own function");
-            return write!(self, "%block:{:#x}", b.get_entity_index(self.allocs()));
-        };
-        if let Some(id) = numbers.block_get_number(b) {
-            write!(self, "%{id}")
+
+    pub fn get_typename(&self, type_id: ValTypeID, module: &Module) -> Rc<str> {
+        let mut inner = self.inner.borrow_mut();
+        let type_names = &mut inner.type_names;
+        if let Some(name) = type_names.get(&type_id) {
+            name.clone()
         } else {
-            write!(self, "%block:{:#x}", b.get_entity_index(self.allocs()))
+            let tyname = type_id.get_display_name(&module.tctx);
+            let tyname: Rc<str> = Rc::from(tyname);
+            type_names.insert(type_id, tyname.clone());
+            tyname
         }
     }
-    fn format_const_data(&self, data: ConstData) -> std::io::Result<()> {
-        match data {
-            ConstData::Undef(_) => self.write_str("undef"),
-            ConstData::Zero(ty) => match ty {
-                ScalarType::Ptr => self.write_str("null"),
-                ScalarType::Int(_) => self.write_str("0"),
-                ScalarType::Float(_) => self.write_str("0.0"),
-            },
-            ConstData::PtrNull(_) => self.write_str("null"),
-            ConstData::Int(apint) => {
-                if apint.bits() == 1 {
-                    write!(self, "{}", !apint.is_zero())
-                } else {
-                    write!(self, "{}", apint.as_signed())
-                }
-            }
-            ConstData::Float(FPKind::Ieee32, fp) => {
-                write!(self.output.borrow_mut(), "{:.20e}", fp as f32)
-            }
-            ConstData::Float(FPKind::Ieee64, fp) => {
-                write!(self.output.borrow_mut(), "{:.20e}", fp)
-            }
+
+    pub fn get_str_literal(&self, expr_id: ExprID, module: &Module) -> Option<Rc<str>> {
+        let mut inner = self.inner.borrow_mut();
+        let str_literals = &mut inner.str_literals;
+        if let Some(lit) = str_literals.get(&expr_id) {
+            return lit.clone();
         }
-    }
-    fn format_expr(&self, expr: ExprID) -> std::io::Result<()> {
-        if expr.is_zero_const(self.allocs()) {
-            return self.write_str("zeroinitializer");
-        }
-        let (elems, begin_s, end_s) = match expr.deref_ir(self.allocs()) {
-            ExprObj::Array(a) => {
-                if self.try_write_string(ArrayExprID::raw_from(expr), a)? {
-                    return Ok(());
-                } else {
-                    (a.elems.as_slice(), "[", "]")
-                }
-            }
-            ExprObj::Struct(s) if s.structty.is_packed(self.tctx()) => {
-                (s.fields.as_slice(), "<{", "}>")
-            }
-            ExprObj::Struct(s) => (s.fields.as_slice(), "{", "}"),
-            ExprObj::FixVec(v) => (v.elems.as_slice(), "<", ">"),
-            ExprObj::DataArray(da) => return self.format_data_array(expr, da),
-            ExprObj::SplatArray(sa) => return self.format_splat_array(expr, sa),
-            ExprObj::KVArray(kv) => return self.format_kvarray(kv),
+        let maybe_str = match expr_id.deref_ir(&module.allocs) {
+            ExprObj::Array(arr) => Self::write_arrexp_as_string(arr, &module.allocs),
+            ExprObj::DataArray(darr) => Self::write_darray_as_string(darr),
+            ExprObj::SplatArray(splat) => Self::write_splat_as_string(splat, &module.allocs),
+            _ => None,
         };
-        self.format_aggregate(elems, begin_s, end_s)
+        let lit: Option<Rc<str>> = maybe_str.map(Rc::from);
+        str_literals.insert(expr_id, lit.clone());
+        lit
     }
-    fn bytes_as_string(&self, bytes: impl IntoIterator<Item = Option<u8>>) -> Option<String> {
-        use std::fmt::Write;
-        let bytes_iter = bytes.into_iter();
-        let mut ret = String::with_capacity(bytes_iter.size_hint().0 + 4);
-        ret.push_str("c\"");
-        for ch in bytes_iter {
-            let ch = ch?;
-            match ch {
-                b'"' => ret.push_str("\\22"),
-                b'\\' => ret.push_str("\\5c"),
-                0x20..=0x7e if ch.is_ascii_graphic() => ret.push(ch as char),
-                b' ' => ret.push(' '),
-                _ => write!(ret, "\\{ch:02x}").unwrap(),
-            }
+
+    fn write_arrexp_as_string(arrexp: &ArrayExpr, allocs: &IRAllocs) -> Option<String> {
+        if arrexp.elemty != ValTypeID::Int(8) {
+            return None;
         }
-        ret.push('"');
-        Some(ret)
-    }
-    fn try_write_cached_str(&self, expr: ExprID) -> std::io::Result<bool> {
-        if let Some(cached) = self.inner.borrow().str_literals.get(&expr) {
-            self.write_str(cached)?;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-    fn write_and_insert_cached_str(&self, expr: ExprID, s: String) -> std::io::Result<()> {
-        self.write_str(&s)?;
-        self.inner.borrow_mut().str_literals.insert(expr, s);
-        Ok(())
-    }
-    fn try_write_string(&self, aid: ArrayExprID, a: &ArrayExpr) -> std::io::Result<bool> {
-        let ValTypeID::Int(8) = a.elemty else {
-            return Ok(false);
-        };
-        if self.try_write_cached_str(aid.raw_into())? {
-            return Ok(true);
-        }
+        let mut res = String::with_capacity(arrexp.elems.len() + 4);
         let bytes = {
-            let bytes = a.operands_iter().map(|useid| {
+            arrexp.operands_iter().map(|useid| {
                 useid
-                    .get_operand(self.allocs())
+                    .get_operand(allocs)
                     .as_apint()
                     .map(|x| x.as_unsigned() as u8)
-            });
-            match self.bytes_as_string(bytes) {
-                Some(s) => s,
-                None => return Ok(false),
-            }
+            })
         };
-        self.write_and_insert_cached_str(aid.raw_into(), bytes)?;
-        Ok(true)
+        Self::bytes_as_string(bytes, &mut res)?;
+        Some(res)
     }
-    fn format_data_array(&self, id: ExprID, da: &DataArrayExpr) -> std::io::Result<()> {
-        if let ConstArrayData::I8(i8arr) = &da.data {
-            if self.try_write_cached_str(id)? {
-                return Ok(());
-            }
-            let bytes = i8arr.iter().map(|b| Some(*b as u8));
-            let bytes_str = self.bytes_as_string(bytes).unwrap();
-            return self.write_and_insert_cached_str(id, bytes_str);
-        }
-        if da.is_zero_const(self.allocs()) {
-            return self.write_str("zeroinitializer");
-        }
-        self.write_str("[")?;
-        let elemty = da.get_elem_type();
-        for i in 0..da.get_nelems() {
-            let value = da.index_get(self.allocs(), i);
-            if i > 0 {
-                self.write_str(", ")?;
-            }
-            self.write_type(elemty)?;
-            self.write_str(" ")?;
-            self.write_operand(value)?;
-        }
-        self.write_str("]")
-    }
-    fn format_splat_array(&self, id: ExprID, sa: &SplatArrayExpr) -> std::io::Result<()> {
-        let nelems = sa.get_nelems();
-        let elemty = sa.get_elem_type();
-        let elem = sa.element[0].get_operand(self.allocs());
-        if let Some(apint) = elem.as_apint()
-            && apint.bits() == 8
-        {
-            if self.try_write_cached_str(id)? {
-                return Ok(());
-            }
-            let byte = apint.as_unsigned() as u8;
-            let bytes = std::iter::repeat_n(Some(byte), nelems);
-            let s = self.bytes_as_string(bytes).unwrap();
-            return self.write_and_insert_cached_str(id, s);
-        }
-        if sa.is_zero_const(self.allocs()) {
-            return self.write_str("zeroinitializer");
-        }
-        self.write_str("[")?;
-        for i in 0..nelems {
-            if i > 0 {
-                self.write_str(", ")?;
-            }
-            self.write_type(elemty)?;
-            self.write_str(" ")?;
-            self.write_operand(elem)?;
-        }
-        self.write_str("]")
-    }
-    fn format_kvarray(&self, kv: &KVArrayExpr) -> std::io::Result<()> {
-        self.write_str("sparse [")?;
-        for (index, val, _) in kv.elem_iter(self.allocs()) {
-            write!(self, "[{index}] = ")?;
-            self.write_type(val.get_valtype(self.allocs()))?;
-            self.write_str(" ")?;
-            self.write_operand(val)?;
-            self.write_str(", ")?;
-        }
-        self.write_str("..=")?;
-        self.write_operand(kv.get_default(self.allocs()))?;
-        self.write_str("]")
-    }
-    fn format_aggregate(&self, elems: &[UseID], begin_s: &str, end_s: &str) -> std::io::Result<()> {
-        self.write_str(begin_s)?;
-        self.write_str(" ")?;
-        let allocs = self.allocs();
-        for (i, useid) in elems.iter().enumerate() {
-            if i > 0 {
-                self.write_str(", ")?;
-            }
-            let operand = useid.get_operand(allocs);
-            self.write_type(operand.get_valtype(allocs))?;
-            self.write_str(" ")?;
-            self.write_operand(operand)?;
-        }
-        self.write_str(" ")?;
-        self.write_str(end_s)
-    }
-    fn writeln_entity_id(&self, id: impl Into<PoolAllocatedID>) -> std::io::Result<()> {
-        if !self.option.show_ptrid {
-            return Ok(());
-        }
-        let id = id.into();
-        let indexed = id.try_get_entity_index(self.allocs());
-        let prefix = match id {
-            PoolAllocatedID::Block(_) => "; .id = %block:",
-            PoolAllocatedID::Inst(_) => "; .id = %inst:",
-            PoolAllocatedID::Expr(_) => "; .id = %expr:",
-            PoolAllocatedID::Global(_) => "; .id = %global:",
-            PoolAllocatedID::Use(_) => "; .id = %use:",
-            PoolAllocatedID::JumpTarget(_) => "; .id = %jt:",
+    fn write_darray_as_string(darray: &DataArrayExpr) -> Option<String> {
+        let ConstArrayData::I8(i8arr) = &darray.data else {
+            return None;
         };
-        if let Some(index) = indexed {
-            write!(self, "{prefix}{:#x}, addr = ", index)?;
-        } else {
-            write!(self, "{prefix}<INVALID>, addr = ")?;
-        }
-        match id {
-            PoolAllocatedID::Block(b) => write!(self, "{:p}", b.inner()),
-            PoolAllocatedID::Inst(i) => write!(self, "{i:p}"),
-            PoolAllocatedID::Expr(e) => write!(self, "{e:p}"),
-            PoolAllocatedID::Global(g) => write!(self, "{g:p}"),
-            PoolAllocatedID::Use(u) => write!(self, "{:p}", u.inner()),
-            PoolAllocatedID::JumpTarget(jt) => write!(self, "{:p}", jt.inner()),
-        }?;
-        self.wrap_indent();
-        Ok(())
+        let bytes = i8arr.iter().map(|&b| Some(b as u8));
+        let mut res = String::with_capacity(i8arr.len() + 4);
+        Self::bytes_as_string(bytes, &mut res)?;
+        Some(res)
     }
-    fn writeln_users(&self, users: &UserList) -> std::io::Result<()> {
-        let alloc_use = &self.allocs().uses;
-        if !self.option.show_users || users.is_empty(alloc_use) {
-            return Ok(());
+    fn write_splat_as_string(splat: &SplatArrayExpr, allocs: &IRAllocs) -> Option<String> {
+        if splat.elemty != ValTypeID::Int(8) {
+            return None;
         }
-        self.write_str("; users = [")?;
-        let mut first = true;
-        for (_, u) in users.iter(alloc_use) {
-            if !first {
-                self.write_str(", ")?;
-            }
-            first = false;
-            let Some(user) = u.user.get() else {
-                self.write_str("%NULL_USER")?;
-                continue;
-            };
-            write!(self, "({:?}, ", u.get_kind())?;
-            self.write_operand(user)?;
-            self.write_str(")")?;
-        }
-        self.write_str("]")?;
-        self.wrap_indent();
-        Ok(())
+        let apint = splat.get_elem(allocs).as_apint()?;
+        let byte = apint.as_unsigned() as u8;
+        let nelems = splat.get_nelems();
+        let bytes = std::iter::repeat_n(Some(byte), nelems);
+        let mut res = String::with_capacity(nelems + 4);
+        Self::bytes_as_string(bytes, &mut res)?;
+        Some(res)
     }
-    fn writeln_preds(&self, preds: &PredList) -> std::io::Result<()> {
-        let alloc_jt = &self.allocs().jts;
-        if !self.option.show_preds || preds.is_empty(alloc_jt) {
-            return Ok(());
-        }
-        self.write_str("; preds = [")?;
-        let mut first = true;
-        for (_, p) in preds.iter(alloc_jt) {
-            if !first {
-                self.write_str(", ")?;
+    fn bytes_as_string(
+        bytes: impl IntoIterator<Item = Option<u8>>,
+        buff: &mut String,
+    ) -> Option<()> {
+        use std::fmt::Write;
+        buff.push_str("c\"");
+        for ch in bytes {
+            let ch = ch?;
+            match ch {
+                b'"' => buff.push_str("\\22"),
+                b'\\' => buff.push_str("\\5c"),
+                0x20..=0x7e if ch.is_ascii_graphic() => buff.push(ch as char),
+                b' ' => buff.push(' '),
+                _ => write!(buff, "\\{ch:02x}").unwrap(),
             }
-            first = false;
-            let Some(pred) = p.terminator.get() else {
-                self.write_str("%NULL_TERMINATOR")?;
-                continue;
-            };
-            write!(self, "({:?}, ", p.get_kind())?;
-            self.write_operand(pred)?;
-            self.write_str(")")?;
         }
-        self.write_str("]")?;
-        self.wrap_indent();
+        buff.push('"');
+        Some(())
+    }
+}
+
+pub struct IRWriteFuncStat {
+    pub func_id: FuncID,
+    pub numbers: IRNumberValueMap,
+}
+
+impl IRWriteFuncStat {
+    pub fn new(allocs: &IRAllocs, func_id: FuncID) -> Result<Self, IRWriteErr> {
+        let option = NumberOption::ignore_all();
+        let Some(numbers) = IRNumberValueMap::new(allocs, func_id, option) else {
+            let name = func_id.deref_ir(allocs).name_arc();
+            return Err(IRWriteErr::FuncIsExtern(name));
+        };
+        Ok(Self { func_id, numbers })
+    }
+}
+
+pub trait WriteIR<'a>: 'a {
+    fn get_module(&self) -> &'a Module;
+    fn module_stat(&self) -> &IRWriteModuleStat;
+    fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a>;
+    fn get_numbers(&self) -> Option<&IRNumberValueMap>;
+
+    fn get_allocs(&self) -> &'a IRAllocs {
+        &self.get_module().allocs
+    }
+    fn get_tctx(&self) -> &'a TypeContext {
+        &self.get_module().tctx
+    }
+
+    fn inc_indent(&self) {
+        let stat = self.module_stat();
+        stat.indent.set(stat.indent.get() + 1);
+    }
+    fn dec_indent(&self) {
+        let stat = self.module_stat();
+        stat.indent.set(stat.indent.get() - 1);
+    }
+    fn wrap_indent(&self) -> IRWriteRes {
+        let indent = self.module_stat().indent.get();
+        self.write_str("\n")?;
+        for _ in 0..indent {
+            self.write_str("    ")?;
+        }
         Ok(())
     }
 
-    pub fn write_module(&self) {
-        // %{name} = type {struct}
-        self.tctx().foreach_aliases(|name, _, aliasee| {
-            write!(self, "%{name} = type ").unwrap();
-            self.write_type(aliasee.into_ir()).unwrap();
-            self.wrap_indent();
-        });
-
-        let globals = Self::make_symbols(self.module);
-        let Some((_, mut curr_kind)) = globals.first().copied() else {
-            return;
-        };
-        for &(gid, gkind) in &globals {
-            if gkind != curr_kind {
-                self.wrap_indent();
-                curr_kind = gkind;
-            }
-            let gobj = gid.deref_ir(self.allocs());
-            self.writeln_entity_id(gid).unwrap();
-            self.writeln_users(gobj.users()).unwrap();
-            match gobj {
-                GlobalObj::Func(f) => self.format_func(FuncID::raw_from(gid), f).unwrap(),
-                GlobalObj::Var(g) => self.format_global_var(g),
-            }
-            self.wrap_indent();
-        }
-
-        // 清理 LLVM 兼容模式下的临时表达式对象.
-        self.flush().unwrap();
-        let mut inner = self.inner.borrow_mut();
-        let allocs = &self.module.allocs;
-        // 这些临时分配在内存池中的表达式对象是垃圾对象, 需要手动释放掉.
-        // 但 KVArrayExpr 不是, 因为它们还实际挂在 User 上当操作数.
-        for (_, value) in inner.llvm_mapping.kvarr.drain() {
-            let ValueSSA::ConstExpr(expr) = value else {
-                continue;
-            };
-            let Some(expr_obj) = expr.0.try_deref(&allocs.exprs) else {
-                continue;
-            };
-            if expr_obj.obj_disposed() || expr_obj.has_users(allocs) {
-                continue;
-            }
-            let _ = expr.dispose(allocs);
-        }
+    fn write_str(&self, s: &str) -> IRWriteRes {
+        write!(self.writer(), "{}", s).map_err(IRWriteErr::IO)
     }
-    pub fn format_attr(&self, attr: &Attribute) -> std::io::Result<()> {
+    fn write_all(&self, buf: &[u8]) -> IRWriteRes {
+        self.writer().write_all(buf).map_err(IRWriteErr::IO)
+    }
+    fn write_fmt(&self, args: std::fmt::Arguments<'_>) -> IRWriteRes {
+        self.writer().write_fmt(args).map_err(IRWriteErr::IO)
+    }
+
+    fn fmt_type(&self, ty: ValTypeID) -> IRWriteRes {
+        let module = self.get_module();
+        let module_stat = self.module_stat();
+        let tyname = module_stat.get_typename(ty, module);
+        self.write_str(&tyname)
+    }
+    fn fmt_attr(&self, attr: &Attribute) -> IRWriteRes {
         match attr {
             Attribute::NoUndef => self.write_str("noundef"),
             Attribute::IntExt(iext) => self.write_str(iext.as_str()),
@@ -599,30 +264,835 @@ impl<'ir> IRWriter<'ir> {
                     PtrArgTargetAttr::DynArray(ty) => ("elementtype", ty),
                 };
                 write!(self, "{}(", name)?;
-                self.write_type(ty)?;
+                self.fmt_type(ty)?;
                 write!(self, ")")
             }
             Attribute::ArgPtrDerefBytes(nbytes) => write!(self, "dereferenceable({})", nbytes),
         }
     }
-    pub fn format_attr_set(&self, attrs: &AttrSet) -> std::io::Result<()> {
-        for attr in attrs.iter() {
-            self.write_str(" ")?;
-            self.format_attr(&attr)?;
+    fn fmt_operand(&self, operand: ValueSSA) -> IRWriteRes {
+        let operand = self.module_stat().map_value(operand, self.get_module());
+        match operand {
+            ValueSSA::None => self.write_str("none"),
+            ValueSSA::ConstData(cdata) => write_impl::fmt_cdata(self, &cdata),
+            ValueSSA::ConstExpr(expr_id) => self.fmt_expr(expr_id),
+            ValueSSA::AggrZero(_) => self.write_str("zeroinitializer"),
+            ValueSSA::FuncArg(func, arg) => {
+                if self.get_numbers().is_some() {
+                    write!(self, "%{arg}")
+                } else {
+                    let func_name = func.get_name(self.get_allocs());
+                    write!(self, "%arg[{}]:{}", arg, func_name)
+                }
+            }
+            ValueSSA::Global(global) => {
+                let name = global.get_name(self.get_allocs());
+                let registered = self.get_module().get_global_by_name(name);
+                if registered != Some(global) {
+                    write!(self, "@{}:unpinned", name)
+                } else {
+                    write!(self, "@{}", name)
+                }
+            }
+            ValueSSA::Block(block_id) => {
+                if let Some(numbering) = self.get_numbers()
+                    && let Some(n) = numbering.block_get_number(block_id)
+                {
+                    write!(self, "%{n}")
+                } else {
+                    let indexed = block_id.get_entity_index(self.get_allocs());
+                    write!(self, "%block:{indexed:x}")
+                }
+            }
+            ValueSSA::Inst(inst_id) => {
+                if let Some(numbering) = self.get_numbers()
+                    && let Some(n) = numbering.inst_get_number(inst_id)
+                {
+                    write!(self, "%{n}")
+                } else {
+                    let indexed = inst_id.get_entity_index(self.get_allocs());
+                    write!(self, "%inst:{indexed:x}")
+                }
+            }
+        }
+    }
+    fn fmt_block_target(&self, block: Option<BlockID>) -> IRWriteRes {
+        match block {
+            Some(bb) => self.fmt_operand(ValueSSA::Block(bb)),
+            None => self.write_str("%block:(nil)"),
+        }
+    }
+    fn fmt_mapped_type_and_operand(&self, original: ValueSSA) -> IRWriteRes {
+        let mapped = self.module_stat().map_value(original, self.get_module());
+        let ty = mapped.get_valtype(self.get_allocs());
+        self.fmt_type(ty)?;
+        self.write_str(" ")?;
+        self.fmt_operand(mapped)
+    }
+
+    fn fmt_expr(&self, expr_id: ExprID) -> IRWriteRes {
+        let allocs = self.get_allocs();
+        let tctx = self.get_tctx();
+        if expr_id.is_zero_const(allocs) {
+            return self.write_str("zeroinitializer");
+        }
+        if let Some(lit) = self
+            .module_stat()
+            .get_str_literal(expr_id, self.get_module())
+        {
+            return self.write_str(&lit);
+        }
+
+        let expr = expr_id.deref_ir(allocs);
+        match expr {
+            ExprObj::Array(arr) => write_impl::fmt_aggr_uses(self, &arr.elems, "[", "]"),
+            ExprObj::DataArray(da) => write_impl::fmt_darr_aggr(self, &da.data),
+            ExprObj::SplatArray(splat) => {
+                write_impl::fmt_splat(self, splat.get_elem(allocs), splat.get_nelems())
+            }
+            ExprObj::KVArray(kv) => write_impl::fmt_kvarr_aggr(self, kv),
+            ExprObj::Struct(struc) => {
+                let structy = struc.structty;
+                let (begin_s, end_s) =
+                    if structy.is_packed(tctx) { ("<{", "}>") } else { ("{", "}") };
+                write_impl::fmt_aggr_uses(self, &struc.fields, begin_s, end_s)
+            }
+            ExprObj::FixVec(fixvec) => write_impl::fmt_aggr_uses(self, &fixvec.elems, "<", ">"),
+        }
+    }
+
+    fn fmtln_users(&self, traceable: &dyn ITraceableValue) -> IRWriteRes {
+        self.write_str("; users = [")?;
+        for (_, uobj) in traceable.user_iter(self.get_allocs()) {
+            let kind = uobj.get_kind();
+            let user = match uobj.user.get() {
+                Some(u) => u.into_ir(),
+                None => ValueSSA::None,
+            };
+            write!(self, "({kind:?}, user=")?;
+            self.fmt_operand(user)?;
+            self.write_str("), ")?;
+        }
+        self.write_str("]")?;
+        self.wrap_indent()
+    }
+    fn fmtln_preds(&self, block: &BlockObj) -> IRWriteRes {
+        self.write_str("; preds = [")?;
+        for (_, pred) in block.get_preds().iter(&self.get_allocs().jts) {
+            let kind = pred.get_kind();
+            let Some(termi) = pred.terminator.get() else {
+                write!(self, "(kind={kind:?} with no terminator), ")?;
+                continue;
+            };
+            let block = termi.get_parent(self.get_allocs());
+            write!(self, "(kind={kind:?}, from=")?;
+            self.fmt_block_target(block)?;
+            self.write_str("), ")?;
+        }
+        self.write_str("]")?;
+        self.wrap_indent()
+    }
+}
+
+mod write_impl {
+    use super::*;
+    use crate::typing::{FPKind, ScalarType};
+
+    pub(super) fn fmt_cdata<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        data: &ConstData,
+    ) -> IRWriteRes {
+        match data {
+            ConstData::Undef(_) => write.write_str("undef")?,
+            ConstData::Zero(ty) => match ty {
+                ScalarType::Ptr => write.write_str("null")?,
+                ScalarType::Int(_) => write.write_str("0")?,
+                ScalarType::Float(_) => write.write_str("0.0")?,
+            },
+            ConstData::PtrNull(_) => write.write_str("null")?,
+            ConstData::Int(apint) => {
+                if apint.bits() == 1 {
+                    write!(write, "{}", !apint.is_zero())?
+                } else {
+                    write!(write, "{}", apint.as_signed())?
+                }
+            }
+            ConstData::Float(FPKind::Ieee32, fp) => write!(write, "{:.20e}", (*fp) as f32)?,
+            ConstData::Float(FPKind::Ieee64, fp) => write!(write, "{:.20e}", fp)?,
+        };
+        Ok(())
+    }
+    fn fmt_aggr<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        elems: impl IntoIterator<Item = ValueSSA>,
+        begin_s: &str,
+        end_s: &str,
+    ) -> IRWriteRes {
+        write!(write, "{begin_s} ")?;
+        let allocs = &write.get_module().allocs;
+        for (i, elem) in elems.into_iter().enumerate() {
+            if i > 0 {
+                write.write_str(", ")?;
+            }
+            write.fmt_type(elem.get_valtype(allocs))?;
+            write.write_str(" ")?;
+            write.fmt_operand(elem)?;
+        }
+        write!(write, " {end_s}")?;
+        Ok(())
+    }
+    pub(super) fn fmt_aggr_uses<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        uses: &[UseID],
+        begin_s: &str,
+        end_s: &str,
+    ) -> IRWriteRes {
+        let allocs = &write.get_module().allocs;
+        fmt_aggr(
+            write,
+            uses.iter().map(|u| u.get_operand(allocs)),
+            begin_s,
+            end_s,
+        )
+    }
+    pub(super) fn fmt_darr_aggr<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        data: &ConstArrayData,
+    ) -> IRWriteRes {
+        let data_iter = (0..data.len()).map(|n| data.index_get(n));
+        fmt_aggr(write, data_iter, "[", "]")
+    }
+    pub(super) fn fmt_splat<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        elem: ValueSSA,
+        nelems: usize,
+    ) -> IRWriteRes {
+        let data_iter = std::iter::repeat_n(elem, nelems);
+        fmt_aggr(write, data_iter, "[", "]")
+    }
+    pub(super) fn fmt_kvarr_aggr<'a>(
+        write: &(impl WriteIR<'a> + ?Sized),
+        kv: &KVArrayExpr,
+    ) -> IRWriteRes {
+        let allocs = &write.get_module().allocs;
+        let default_val = kv.get_default(allocs);
+        write!(write, "sparse [ ")?;
+        let mut first = true;
+        for (idx, val, _) in kv.elem_iter(allocs) {
+            if first {
+                first = false;
+            } else {
+                write.write_str(", ")?;
+            }
+            write!(write, "[{}] = ", idx)?;
+            write.fmt_type(kv.elemty)?;
+            write.write_str(" ")?;
+            write.fmt_operand(val)?;
+        }
+
+        if !first {
+            write.write_str(", ")?;
+        }
+        write.write_str("..= ")?;
+        write.fmt_type(kv.elemty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(default_val)?;
+        write!(write, " ]")?;
+        Ok(())
+    }
+}
+
+pub struct IRFuncWriter<'a> {
+    pub writer: RefCell<&'a mut (dyn std::io::Write + 'a)>,
+    pub module_stat: &'a IRWriteModuleStat,
+    pub func_stat: Rc<IRWriteFuncStat>,
+    pub module: &'a Module,
+}
+impl<'a> WriteIR<'a> for IRFuncWriter<'a> {
+    fn get_module(&self) -> &'a Module {
+        self.module
+    }
+    fn module_stat(&self) -> &IRWriteModuleStat {
+        self.module_stat
+    }
+    fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a> {
+        RefMut::map(self.writer.borrow_mut(), |x| *x)
+    }
+    fn get_numbers(&self) -> Option<&IRNumberValueMap> {
+        Some(&self.func_stat.numbers)
+    }
+}
+impl<'a> IRFuncWriter<'a> {
+    pub fn new_full(
+        writer: &'a mut (dyn std::io::Write + 'a),
+        module_stat: &'a mut IRWriteModuleStat,
+        module: &'a Module,
+        func_id: FuncID,
+    ) -> IRWriteRes<Self> {
+        let ret = Self {
+            writer: RefCell::new(writer),
+            module_stat,
+            module,
+            func_stat: Rc::new(IRWriteFuncStat::new(&module.allocs, func_id)?),
+        };
+        Ok(ret)
+    }
+    pub fn from_stat(
+        writer: &'a mut (dyn std::io::Write + 'a),
+        module_stat: &'a mut IRWriteModuleStat,
+        func_stat: Rc<IRWriteFuncStat>,
+        module: &'a Module,
+    ) -> Self {
+        Self { writer: RefCell::new(writer), module_stat, func_stat, module }
+    }
+
+    pub fn func_id(&self) -> FuncID {
+        self.func_stat.func_id
+    }
+
+    pub fn fmt_instid(&self, id: impl ISubInstID) -> IRWriteRes {
+        id.raw_into().deref_ir(self.get_allocs()).format_ir(self)
+    }
+    pub fn fmt_block_body(&self, id: BlockID, obj: &BlockObj) -> IRWriteRes {
+        let allocs = self.get_allocs();
+        let option = self.module_stat().option;
+
+        self.wrap_indent()?;
+        if option.show_ptrid {
+            let (index, gene) = {
+                let indexed = id.to_indexed(allocs);
+                (indexed.0.get_order(), indexed.0.get_generation())
+            };
+            let addr = id.0;
+            write!(
+                self,
+                "; block addr={addr:p}, id=%block:{index:x}, gen={gene:x}"
+            )?;
+            self.wrap_indent()?;
+        }
+        if option.show_preds {
+            self.fmtln_preds(obj)?;
+        }
+        if option.show_users {
+            self.fmtln_users(obj)?;
+        }
+        let Some(number) = self.func_stat.numbers.block_get_number(id) else {
+            return Err(IRWriteErr::JumpToNoTarget);
+        };
+        write!(self, "{number}:")?;
+
+        self.inc_indent();
+        for (inst_id, inst) in obj.insts_iter(allocs) {
+            self.wrap_indent()?;
+            if option.show_ptrid {
+                let (index, gene) = {
+                    let indexed = inst_id.to_indexed(allocs);
+                    (indexed.0.get_order(), indexed.0.get_generation())
+                };
+                let addr = inst_id.0;
+                write!(
+                    self,
+                    "; inst addr={addr:p}, id=%inst:{index:x}, gen={gene:x}"
+                )?;
+                self.wrap_indent()?;
+            }
+            if option.show_users {
+                self.fmtln_users(inst)?;
+            }
+            if let Some(num) = self.func_stat.numbers.inst_get_number(inst_id)
+                && inst.format_has_number()
+            {
+                write!(self, "%{num} = ")?;
+            }
+            inst.format_ir(self)?;
+        }
+        self.dec_indent();
+        Ok(())
+    }
+}
+
+pub trait IRFormatInst: ISubInst {
+    fn format_has_number(&self) -> bool;
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes;
+}
+
+impl IRFormatInst for InstObj {
+    fn format_has_number(&self) -> bool {
+        !self.is_terminator() && self.get_valtype() != ValTypeID::Void
+    }
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        match self {
+            InstObj::Unreachable(inst) => inst.format_ir(write),
+            InstObj::GuideNode(_) => Ok(()),
+            InstObj::PhiInstEnd(_) => {
+                write!(write, "; ==== Phi Section End ====")
+            }
+            InstObj::Ret(ret_inst) => ret_inst.format_ir(write),
+            InstObj::Jump(jump_inst) => jump_inst.format_ir(write),
+            InstObj::Br(br_inst) => br_inst.format_ir(write),
+            InstObj::Switch(switch_inst) => switch_inst.format_ir(write),
+            InstObj::Alloca(alloca_inst) => alloca_inst.format_ir(write),
+            InstObj::GEP(gepinst) => gepinst.format_ir(write),
+            InstObj::Load(load_inst) => load_inst.format_ir(write),
+            InstObj::Store(store_inst) => store_inst.format_ir(write),
+            InstObj::AmoRmw(amo_rmw_inst) => amo_rmw_inst.format_ir(write),
+            InstObj::BinOP(bin_opinst) => bin_opinst.format_ir(write),
+            InstObj::Call(call_inst) => call_inst.format_ir(write),
+            InstObj::Cast(cast_inst) => cast_inst.format_ir(write),
+            InstObj::Cmp(cmp_inst) => cmp_inst.format_ir(write),
+            InstObj::IndexExtract(index_extract_inst) => index_extract_inst.format_ir(write),
+            InstObj::FieldExtract(field_extract_inst) => field_extract_inst.format_ir(write),
+            InstObj::IndexInsert(index_insert_inst) => index_insert_inst.format_ir(write),
+            InstObj::FieldInsert(field_insert_inst) => field_insert_inst.format_ir(write),
+            InstObj::Phi(phi_inst) => phi_inst.format_ir(write),
+            InstObj::Select(select_inst) => select_inst.format_ir(write),
+        }
+    }
+}
+
+impl IRFormatInst for UnreachableInst {
+    fn format_has_number(&self) -> bool {
+        false
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("unreachable")
+    }
+}
+
+impl IRFormatInst for RetInst {
+    fn format_has_number(&self) -> bool {
+        false
+    }
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("ret ")?;
+        let ret_type = self.get_valtype();
+        if ret_type == ValTypeID::Void {
+            write.write_str("void")?;
+        } else {
+            write.fmt_type(ret_type)?;
+            write.write_str(" ")?;
+            let allocs = write.get_allocs();
+            write.fmt_operand(self.get_retval(allocs))?;
         }
         Ok(())
     }
-    pub fn format_global_var(&self, gvar: &GlobalVar) {
-        let name = gvar.get_name();
-        let prefix = gvar.get_linkage_prefix(self.allocs());
-        write!(self, "@{name} = {prefix} ").unwrap();
+}
 
-        match gvar.get_init(self.allocs()) {
-            ValueSSA::None => self.write_type(gvar.common.content_ty).unwrap(),
-            initval => self.map_operand_and_write(initval).unwrap(),
-        }
-        write!(self, ", align {}", gvar.get_ptr_pointee_align()).unwrap();
+impl IRFormatInst for JumpInst {
+    fn format_has_number(&self) -> bool {
+        false
     }
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("br label ")?;
+        write.fmt_block_target(self.get_target(write.get_allocs()))?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for BrInst {
+    fn format_has_number(&self) -> bool {
+        false
+    }
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("br i1 ")?;
+        let allocs = write.get_allocs();
+        write.fmt_operand(self.get_cond(allocs))?;
+        write.write_str(", label ")?;
+        write.fmt_block_target(self.get_then(allocs))?;
+        write.write_str(", label ")?;
+        write.fmt_block_target(self.get_else(allocs))?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for SwitchInst {
+    fn format_has_number(&self) -> bool {
+        false
+    }
+
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        let allocs = write.get_allocs();
+        write.write_str("switch ")?;
+        let cond = self.get_discrim(allocs);
+        let cond_type = cond.get_valtype(allocs);
+        write.fmt_type(cond_type)?;
+        write.write_str(" ")?;
+        write.fmt_operand(cond)?;
+        write.write_str(", label ")?;
+        write.fmt_block_target(self.get_default_bb(allocs))?;
+        write.write_str(" [")?;
+        write.inc_indent();
+        for case in &*self.case_jts() {
+            write.wrap_indent()?;
+            let JumpTargetKind::SwitchCase(case_val) = case.get_kind(allocs) else {
+                panic!("Invalid JumpTargetKind in Switch instruction");
+            };
+            write.fmt_type(cond_type)?;
+            write.write_str(" ")?;
+            write!(write, "{case_val}")?;
+            write.write_str(", label ")?;
+            write.fmt_block_target(case.get_block(allocs))?;
+        }
+        write.dec_indent();
+        write.write_str(" ]")?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for AllocaInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("alloca ")?;
+        write.fmt_type(self.pointee_ty)?;
+        write.write_str(" ")?;
+        write!(write, ", align {}", self.get_ptr_pointee_align())?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for GEPInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        if self.get_inbounds() {
+            write.write_str("inbounds ")?;
+        }
+        write.write_str("getelementptr ")?;
+        write.fmt_type(self.initial_ty)?;
+        write.write_str(", ptr ")?;
+        write.fmt_operand(self.get_base(write.get_allocs()))?;
+        for &index_use in self.index_uses() {
+            let index = index_use.get_operand(write.get_allocs());
+            let index_ty = index.get_valtype(write.get_allocs());
+            write.write_str(", ")?;
+            write.fmt_type(index_ty)?;
+            write.write_str(" ")?;
+            write.fmt_operand(index)?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFormatInst for LoadInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("load ")?;
+        let pointee_ty = self.get_valtype();
+        write.fmt_type(pointee_ty)?;
+        write.write_str(", ptr ")?;
+        write.fmt_operand(self.get_source(write.get_allocs()))?;
+        write!(write, ", align {}", self.get_operand_pointee_align())?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for StoreInst {
+    fn format_has_number(&self) -> bool {
+        false
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("store ")?;
+        write.fmt_mapped_type_and_operand(self.get_source(write.get_allocs()))?;
+        write.write_str(", ptr ")?;
+        write.fmt_operand(self.get_target(write.get_allocs()))?;
+        write!(write, ", align {}", self.get_operand_pointee_align())?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for AmoRmwInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("atomicrmw ")?;
+        if self.is_volatile {
+            write.write_str("volatile ")?;
+        }
+        write!(write, "{} ptr ", self.subop_name())?;
+        write.fmt_operand(self.get_pointer(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_type(self.value_ty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_value(write.get_allocs()))?;
+        if self.scope != SyncScope::System {
+            write!(write, " syncscope(\"{}\")", self.scope.as_str())?;
+        }
+        write!(write, " {}", self.ordering.as_str())?;
+        if self.align_log2 > 0 {
+            write!(write, ", align {}", 1 << self.align_log2)?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFormatInst for BinOPInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        let opcode = self.get_opcode().get_name();
+        let flags = self.get_flags();
+        if flags.is_empty() {
+            write!(write, "{opcode} ")?;
+        } else {
+            write!(write, "{opcode} {flags} ")?;
+        }
+        write.fmt_type(self.get_valtype())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_lhs(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_operand(self.get_rhs(write.get_allocs()))?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for CallInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        let allocs = write.get_allocs();
+        write.write_str("call ")?;
+        write.fmt_type(self.get_valtype())?;
+        write.write_str(if self.is_vararg { " (...) " } else { " " })?;
+        write.fmt_operand(self.get_callee(allocs))?;
+        write.write_str("(")?;
+        for (i, arg_use) in self.arg_uses().iter().enumerate() {
+            if i > 0 {
+                write.write_str(", ")?;
+            }
+            let arg = arg_use.get_operand(allocs);
+            let arg_ty = self
+                .callee_ty
+                .get_args(write.get_tctx())
+                .get(i)
+                .copied()
+                .unwrap_or(arg.get_valtype(allocs));
+            write.fmt_type(arg_ty)?;
+            write.write_str(" ")?;
+            write.fmt_operand(arg)?;
+        }
+        write.write_str(")")?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for CastInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write!(write, "{} ", self.get_opcode().get_name())?;
+        write.fmt_type(self.from_ty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_from(write.get_allocs()))?;
+        write.write_str(" to ")?;
+        write.fmt_type(self.get_valtype())?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for CmpInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        let opcode = self.get_opcode().get_name();
+        let cond = self.cond;
+        write!(write, "{} {} ", opcode, cond)?;
+        write.fmt_type(self.operand_ty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_lhs(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_operand(self.get_rhs(write.get_allocs()))?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for IndexExtractInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("extractelement ")?;
+        write.fmt_type(self.aggr_type.into_ir())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_aggr(write.get_allocs()))?;
+        write.write_str(", ")?;
+        let index = self.get_index(write.get_allocs());
+        let index_ty = index.get_valtype(write.get_allocs());
+        write.fmt_type(index_ty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(index)?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for FieldExtractInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("extractvalue ")?;
+        write.fmt_type(self.aggr_type.into_ir())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_aggr(write.get_allocs()))?;
+        for &idx in self.get_field_indices() {
+            write!(write, ", {idx}")?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFormatInst for IndexInsertInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("insertelement ")?;
+        write.fmt_type(self.get_valtype())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_aggr(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_type(self.get_elem_type())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_elem(write.get_allocs()))?;
+        write.write_str(", ")?;
+        let index = self.get_index(write.get_allocs());
+        let index_ty = index.get_valtype(write.get_allocs());
+        write.fmt_type(index_ty)?;
+        write.write_str(" ")?;
+        write.fmt_operand(index)?;
+        Ok(())
+    }
+}
+
+impl IRFormatInst for FieldInsertInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("insertvalue ")?;
+        write.fmt_type(self.get_valtype())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_aggr(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_type(self.get_elem_type())?;
+        write.write_str(" ")?;
+        write.fmt_operand(self.get_elem(write.get_allocs()))?;
+        for &idx in self.get_field_indices() {
+            write!(write, ", {}", idx)?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFormatInst for PhiInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("phi ")?;
+        write.fmt_type(self.get_valtype())?;
+        let mut first = true;
+        let allocs = write.get_allocs();
+        for &[uval, ublk] in self.incoming_uses().iter() {
+            write.write_str(if first { " " } else { ", " })?;
+            first = false;
+
+            write.write_str("[")?;
+            write.fmt_operand(uval.get_operand(allocs))?;
+            write.write_str(", ")?;
+
+            let ValueSSA::Block(bb) = ublk.get_operand(allocs) else {
+                return Err(IRWriteErr::PhiIncomeNotBlock(ublk.get_operand(allocs)));
+            };
+            write.fmt_operand(ValueSSA::Block(bb))?;
+            write.write_str("]")?;
+        }
+        Ok(())
+    }
+}
+
+impl IRFormatInst for SelectInst {
+    fn format_has_number(&self) -> bool {
+        true
+    }
+    fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("select ")?;
+        write.fmt_type(self.get_valtype())?;
+        write.write_str(", i1 ")?;
+        write.fmt_operand(self.get_cond(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_operand(self.get_then(write.get_allocs()))?;
+        write.write_str(", ")?;
+        write.fmt_operand(self.get_else(write.get_allocs()))?;
+        Ok(())
+    }
+}
+
+pub struct IRWriter<'a> {
+    pub writer: RefCell<&'a mut (dyn std::io::Write + 'a)>,
+    pub module: &'a Module,
+    pub module_stat: IRWriteModuleStat,
+}
+
+impl<'a> WriteIR<'a> for IRWriter<'a> {
+    fn get_module(&self) -> &'a Module {
+        self.module
+    }
+    fn module_stat(&self) -> &IRWriteModuleStat {
+        &self.module_stat
+    }
+    fn writer(&self) -> RefMut<'_, dyn std::io::Write + 'a> {
+        RefMut::map(self.writer.borrow_mut(), |x| *x)
+    }
+    fn get_numbers(&self) -> Option<&IRNumberValueMap> {
+        None
+    }
+}
+
+impl<'a> IRWriter<'a> {
+    pub fn from_module(output: &'a mut dyn std::io::Write, module: &'a Module) -> Self {
+        Self {
+            writer: RefCell::new(output),
+            module,
+            module_stat: IRWriteModuleStat::default(),
+        }
+    }
+
+    pub fn set_option(&mut self, option: IRWriteOption) {
+        self.module_stat.option = option;
+    }
+    pub fn switch_to_func(&mut self, func: FuncID) -> IRWriteRes<IRFuncWriter<'_>> {
+        let ret = IRFuncWriter {
+            writer: RefCell::new(self.writer.get_mut()),
+            module_stat: &self.module_stat,
+            func_stat: Rc::new(IRWriteFuncStat::new(&self.module.allocs, func)?),
+            module: self.module,
+        };
+        Ok(ret)
+    }
+
+    pub fn fmt_attr_set(&self, attrs: &AttrSet) -> IRWriteRes {
+        for attr in attrs.iter() {
+            self.write_str(" ")?;
+            self.fmt_attr(&attr)?;
+        }
+        Ok(())
+    }
+
     /// Syntax:
     ///
     /// ```llvm
@@ -634,24 +1104,82 @@ impl<'ir> IRWriter<'ir> {
     ///     ; function body
     /// }
     /// ```
-    pub fn format_func(&self, func_id: FuncID, func: &FuncObj) -> std::io::Result<()> {
-        let _stat = self.stat.hold_curr_func(func_id);
-        let name = func.get_name();
-        self.write_str(func.get_linkage_prefix(self.allocs()))?;
-        self.format_attr_set(&func.attrs())?;
+    pub fn fmt_func(&mut self, func_id: FuncID) -> IRWriteRes {
+        let allocs = self.get_allocs();
+        let func = func_id.deref_ir(allocs);
+        self.fmt_func_header(func_id, func)?;
+        if func.is_extern(allocs) {
+            self.write_str(" ; extern")?;
+            self.wrap_indent()?;
+            return Ok(());
+        }
+        let entry = func.entry_unwrap();
+
+        self.write_str(" {")?;
+        let func_writer = self.switch_to_func(func_id)?;
+        func_writer.fmt_block_body(entry, entry.deref_ir(allocs))?;
+        for (bb_id, bb_obj) in func.block_iter(allocs) {
+            if bb_id == entry {
+                continue;
+            }
+            func_writer.fmt_block_body(bb_id, bb_obj)?;
+        }
+        drop(func_writer);
+
+        self.wrap_indent()?;
+        self.write_str("}")?;
+        Ok(())
+    }
+
+    /// Syntax:
+    ///
+    /// ```llvm
+    /// @global_name = [linkage] [type init_value | type], align <alignment>
+    /// ```
+    pub fn fmt_global_var(&mut self, gvar_id: GlobalVarID) -> IRWriteRes {
+        let allocs = self.get_allocs();
+
+        let gvar = gvar_id.deref_ir(allocs);
+        let gid = gvar_id.raw_into();
+
+        self.fmt_global_header_prefix(gid, "gvar")?;
+        let name = if self.module.symbol_is_exported(gid) {
+            gvar.name_arc()
+        } else {
+            Arc::from(format!("{}:unpinned", gvar.get_name()))
+        };
+        let prefix = gvar.get_linkage_prefix(allocs);
+        write!(self, "@{name} = {prefix} ")?;
+        match gvar.get_init(allocs) {
+            ValueSSA::None => self.fmt_type(gvar.common.content_ty)?,
+            initval => self.fmt_mapped_type_and_operand(initval)?,
+        };
+        write!(self, ", align {}", gvar.get_ptr_pointee_align())
+    }
+    fn fmt_func_header(&self, func_id: FuncID, func: &FuncObj) -> IRWriteRes {
+        let allocs = self.get_allocs();
+        let gid = func_id.raw_into();
+
+        self.fmt_global_header_prefix(gid, "func")?;
+        self.write_str(func.get_linkage_prefix(allocs))?;
+        self.fmt_attr_set(&func.attrs())?;
         self.write_str(" ")?;
-        self.write_type(func.ret_type)?;
+        self.fmt_type(func.ret_type)?;
         self.write_str(" @")?;
-        self.write_str(name)?;
+        if self.module.symbol_is_exported(gid) {
+            self.write_str(func.get_name())?;
+        } else {
+            write!(self, "{}:unpinned", func.get_name())?;
+        }
         self.write_str("(")?;
-        let is_extern = func.is_extern(self.allocs());
         for arg in &func.args {
             if arg.index > 0 {
                 self.write_str(", ")?;
             }
-            self.write_type(arg.ty)?;
-            self.format_attr_set(&arg.attrs())?;
-            if !is_extern {
+            let arg_ty = arg.ty;
+            self.fmt_type(arg_ty)?;
+            self.fmt_attr_set(&arg.attrs())?;
+            if !func.is_extern(allocs) {
                 write!(self, " %{}", arg.index)?;
             }
         }
@@ -659,486 +1187,81 @@ impl<'ir> IRWriter<'ir> {
             let prompt = if func.args.is_empty() { "..." } else { ", ..." };
             self.write_str(prompt)?;
         }
-        self.write_str(")")?;
-
-        if is_extern {
-            self.write_str(" ; extern")?;
-            self.wrap_indent();
-            return Ok(());
+        self.write_str(")")
+    }
+    fn fmt_global_header_prefix(&self, gid: GlobalID, kind: &str) -> IRWriteRes {
+        let allocs = self.get_allocs();
+        let options = self.module_stat().option;
+        if options.show_ptrid {
+            let addr = gid.0;
+            let (index, gene) = {
+                let indexed = gid.to_indexed(allocs);
+                (indexed.0.get_order(), indexed.0.get_generation())
+            };
+            write!(
+                self,
+                "; {kind} addr={addr:p}, index={index:x}, gen={gene:x}"
+            )?;
+            self.wrap_indent()?;
         }
-        let Some(body) = &func.body else {
-            panic!("Internal Error: Function body must be present for defined function {name}");
-        };
+        if options.show_users {
+            self.fmtln_users(gid.deref_ir(allocs))?;
+        }
+        Ok(())
+    }
 
-        self.write_str(" {")?;
-        self.set_numbers(func_id);
-        self.format_block(body.entry, body.entry.deref_ir(self.allocs()));
-        self.wrap_indent();
-        for (block_id, block) in func.block_iter(self.allocs()) {
-            if block_id == body.entry {
+    pub fn fmt_module(&mut self) -> IRWriteRes {
+        let mut aliases = Vec::new();
+        self.get_tctx().foreach_aliases(|name, _, sid| {
+            aliases.push((name.clone(), sid.into_ir()));
+        });
+        for (name, sid) in aliases {
+            write!(self, "%{name} = type ").unwrap();
+            self.fmt_type(sid)?;
+            self.wrap_indent()?;
+        }
+
+        let allocs = self.get_allocs();
+        let symbols = self.module.symbols.borrow();
+        let globals = {
+            let mut globs = Vec::from_iter(symbols.var_pool().iter().copied());
+            globs.sort_by_key(|g| (g.get_kind(allocs), g.get_name(allocs)));
+            globs
+        };
+        let funcs = {
+            let mut funcs = Vec::from_iter(symbols.func_pool().iter().copied());
+            funcs.sort_by_key(|f| (f.get_kind(allocs), f.get_name(allocs)));
+            funcs
+        };
+        drop(symbols);
+
+        for gid in globals {
+            self.fmt_global_var(gid)?;
+            self.wrap_indent()?;
+        }
+        for fid in funcs {
+            self.fmt_func(fid)?;
+            self.wrap_indent()?;
+        }
+
+        self.writer().flush()?;
+
+        // 清理 LLVM 兼容模式下的临时表达式对象.
+        // 这些临时分配在内存池中的表达式对象是垃圾对象, 需要手动释放掉.
+        // 但 KVArrayExpr 不是, 因为它们还实际挂在 User 上当操作数.
+        let mut inner = self.module_stat.inner.borrow_mut();
+        for (_, value) in inner.llvm_mapping.kvarr.drain() {
+            let ValueSSA::ConstExpr(expr) = value else {
+                continue;
+            };
+            let Some(expr_obj) = expr.0.try_deref(&allocs.exprs) else {
+                continue;
+            };
+            if expr_obj.obj_disposed() || expr_obj.has_users(allocs) {
                 continue;
             }
-            self.format_block(block_id, block);
-            self.wrap_indent();
+            let _ = expr.dispose(allocs);
         }
-        self.write_str("}")
-    }
-
-    pub fn focus_to_func(&self, func: FuncID) {
-        self.stat.curr_func.set(Some(func));
-        self.set_numbers(func);
-    }
-    pub fn clean_focus(&self) {
-        self.stat.curr_func.set(None);
-        self.inner.borrow_mut().numbering = None;
-    }
-
-    pub fn format_block(&self, block_id: BlockID, block: &BlockObj) {
-        let number = self.numbers().block_get_number(block_id);
-        if number.is_some() {
-            self.wrap_indent();
-        }
-        self.writeln_entity_id(block_id).unwrap();
-        self.writeln_users(block.users()).unwrap();
-        self.writeln_preds(block.get_preds()).unwrap();
-        if let Some(number) = number {
-            write!(self, "{number}:").unwrap();
-        }
-
-        self.inc_indent();
-        for (inst_id, inst) in block.insts_iter(self.allocs()) {
-            self.wrap_indent();
-            let number = self.numbers().inst_get_number(inst_id);
-            self.format_inst(inst_id, inst, number);
-        }
-        self.dec_indent();
-    }
-    pub fn format_inst(&self, inst_id: InstID, inst: &InstObj, number: Option<usize>) {
-        if let InstObj::PhiInstEnd(_) = inst {
-            // PhiInstEnd 不占用编号
-        } else {
-            self.writeln_entity_id(inst_id).unwrap();
-            self.writeln_users(inst.users()).unwrap();
-        }
-        match inst {
-            InstObj::GuideNode(_) => {}
-            InstObj::PhiInstEnd(_) => {
-                let id = inst_id.to_raw_index(self.allocs());
-                write!(self, ";=====:: Phi Inst End Node (id:{:#x}) ::=====", id).unwrap()
-            }
-            InstObj::Unreachable(_) => self.write_str("unreachable").unwrap(),
-            InstObj::Ret(ret_inst) => {
-                self.write_str("ret ").unwrap();
-                let ret_type = ret_inst.get_valtype();
-                if ret_type == ValTypeID::Void {
-                    self.write_str("void").unwrap();
-                } else {
-                    self.write_type(ret_type).unwrap();
-                    self.write_str(" ").unwrap();
-                    self.write_operand(ret_inst.get_retval(self.allocs()))
-                        .unwrap();
-                }
-            }
-            InstObj::Jump(jump) => {
-                self.write_str("br label ").unwrap();
-                self.write_block_operand(jump.get_target(self.allocs()))
-                    .unwrap();
-            }
-            InstObj::Br(br_inst) => {
-                self.write_str("br i1 ").unwrap();
-                self.write_operand(br_inst.get_cond(self.allocs())).unwrap();
-                self.write_str(", label ").unwrap();
-                self.write_block_operand(br_inst.get_then(self.allocs()))
-                    .unwrap();
-                self.write_str(", label ").unwrap();
-                self.write_block_operand(br_inst.get_else(self.allocs()))
-                    .unwrap();
-            }
-            InstObj::Switch(switch) => self.format_switch_inst(switch),
-            InstObj::Alloca(alloca) => {
-                if let Some(number) = number {
-                    write!(self, "%{number} = ").unwrap();
-                }
-                self.write_str("alloca ").unwrap();
-                self.write_type(alloca.pointee_ty).unwrap();
-                write!(self, ", align {}", alloca.get_ptr_pointee_align()).unwrap();
-            }
-            InstObj::GEP(gep) => self.format_gep_inst(number, gep),
-            InstObj::Load(load) => self.format_load_inst(number, load),
-            InstObj::Store(store) => self.format_store_inst(store),
-            InstObj::AmoRmw(amo_rmw) => self.format_amormw_inst(number, amo_rmw),
-            InstObj::BinOP(binop) => self.format_binop_inst(number, binop),
-            InstObj::Call(call) => self.format_call_inst(number, call),
-            InstObj::Cast(cast) => self.format_cast_inst(number, cast),
-            InstObj::Cmp(cmp) => self.format_cmp_inst(number, cmp),
-            InstObj::IndexExtract(index_extract) => {
-                self.format_index_extract_inst(number, index_extract)
-            }
-            InstObj::FieldExtract(field_extract) => {
-                self.format_field_extract_inst(number, field_extract)
-            }
-            InstObj::IndexInsert(index_insert) => {
-                self.format_index_insert_inst(number, index_insert)
-            }
-            InstObj::FieldInsert(field_insert) => {
-                self.format_field_insert_inst(number, field_insert)
-            }
-            InstObj::Phi(phi) => self.format_phi_inst(number, phi),
-            InstObj::Select(select) => self.format_select_inst(number, select),
-        }
-    }
-
-    /// ```llvm
-    /// switch <intty> <value>, label <defaultdest> [
-    ///     <intty> <val0>, label <dest0>
-    ///     <intty> <val1>, label <dest1>
-    ///     <intty> <val2>, label <dest2>
-    ///     ...
-    /// ]
-    /// ```
-    fn format_switch_inst(&self, switch: &SwitchInst) {
-        let allocs = self.allocs();
-        self.write_str("switch ").unwrap();
-        // 写入条件操作数的类型和值
-        let cond = switch.get_discrim(self.allocs());
-        let cond_type = cond.get_valtype(self.allocs());
-        self.write_type(cond_type).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(cond).unwrap();
-        // 写入默认目标块
-        self.write_str(", label ").unwrap();
-        self.write_block_operand(switch.get_default_bb(self.allocs()))
-            .unwrap();
-        // 写入各个分支目标块
-        self.write_str(" [").unwrap();
-        self.inc_indent();
-        for &case in &*switch.case_jts() {
-            self.wrap_indent();
-            let JumpTargetKind::SwitchCase(case_val) = case.get_kind(allocs) else {
-                panic!("Invalid JumpTargetKind in Switch instruction");
-            };
-            self.write_type(cond_type).unwrap();
-            write!(self, " {case_val}, label ").unwrap();
-            self.write_block_operand(case.get_block(self.allocs()))
-                .unwrap();
-        }
-        self.dec_indent();
-        self.wrap_indent();
-        self.write_str("]").unwrap();
-    }
-
-    /// ```llvm
-    /// getelementptr inbounds <1st unpacked ty>, ptr %<ptr>, <intty0> <sindex0>, <intty1> <sindex1>, ...
-    /// ```
-    fn format_gep_inst(&self, number: Option<usize>, gep: &GEPInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("getelementptr ").unwrap();
-        if gep.get_inbounds() {
-            self.write_str("inbounds ").unwrap();
-        }
-        self.write_type(gep.initial_ty).unwrap();
-        self.write_str(", ptr ").unwrap();
-        self.write_operand(gep.get_base(self.allocs())).unwrap();
-        for &index_use in gep.index_uses() {
-            let index = index_use.get_operand(allocs);
-            let index_ty = index.get_valtype(allocs);
-            let ValTypeID::Int(_) = index_ty else {
-                panic!("GEP index must be integer type but got {index_ty:?}");
-            };
-            self.write_str(", ").unwrap();
-            self.write_type(index_ty).unwrap();
-            self.write_str(" ").unwrap();
-            self.write_operand(index).unwrap();
-        }
-    }
-
-    /// ```llvm
-    /// %<result> = load <ty>, ptr <pointer>, align <alignment>
-    /// ```
-    fn format_load_inst(&self, number: Option<usize>, load: &LoadInst) {
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("load ").unwrap();
-        let pointee_ty = load.get_valtype();
-        self.write_type(pointee_ty).unwrap();
-        self.write_str(", ptr ").unwrap();
-        self.write_operand(load.get_source(self.allocs())).unwrap();
-        write!(self, ", align {}", load.get_operand_pointee_align()).unwrap();
-    }
-
-    /// ```llvm
-    /// store <ty> <value>, ptr <pointer>, align <alignment>
-    /// ```
-    fn format_store_inst(&self, store: &StoreInst) {
-        let allocs = self.allocs();
-        self.write_str("store ").unwrap();
-        self.map_operand_and_write(store.get_source(allocs))
-            .unwrap();
-        self.write_str(", ptr ").unwrap();
-        self.write_operand(store.get_target(allocs)).unwrap();
-        write!(self, ", align {}", store.get_operand_pointee_align()).unwrap();
-    }
-
-    /// ```llvm
-    /// %id = atomicrmw [volatile] <operation> ptr <pointer>, <ty> <value> [syncscope("<target-scope>")] <ordering>[, align <alignment>]  ; yields ty
-    /// ```
-    fn format_amormw_inst(&self, number: Option<usize>, amo_rmw: &AmoRmwInst) {
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("atomicrmw ").unwrap();
-        if amo_rmw.is_volatile {
-            self.write_str("volatile ").unwrap();
-        }
-        write!(self, "{} ptr ", amo_rmw.subop_name()).unwrap();
-        self.write_operand(amo_rmw.get_pointer(self.allocs()))
-            .unwrap();
-        self.write_str(", ").unwrap();
-        self.write_type(amo_rmw.value_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(amo_rmw.get_value(self.allocs()))
-            .unwrap();
-        if amo_rmw.scope != SyncScope::System {
-            write!(self, " syncscope(\"{}\")", amo_rmw.scope.as_str()).unwrap();
-        }
-        write!(self, " {}", amo_rmw.ordering.as_str()).unwrap();
-        if amo_rmw.align_log2 > 0 {
-            write!(self, ", align {}", 1 << amo_rmw.align_log2).unwrap();
-        }
-    }
-
-    /// ```llvm
-    /// %<result> = <opcode> <ty> <op1>, <op2>
-    /// ```
-    fn format_binop_inst(&self, number: Option<usize>, binop: &BinOPInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        let opcode = binop.get_opcode().get_name();
-        let flags = binop.get_flags();
-        write!(self, "{opcode} {flags} ").unwrap();
-        self.write_type(binop.get_valtype()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(binop.get_lhs(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        self.write_operand(binop.get_rhs(allocs)).unwrap();
-    }
-
-    /// ```llvm
-    /// ; has retval:
-    /// %result = call <ret_type> @function_name(<arg_types>, ...)
-    /// ; has retval and is vararg:
-    /// %result = call <ret_type> (...) @function_name(<arg_types>, ...)
-    /// ; returns void:
-    /// call void @function_name(<arg_types>, ...)
-    /// ; is vararg:
-    /// call (...) @function_name(<arg_types>, ...)
-    /// ```
-    fn format_call_inst(&self, number: Option<usize>, call: &CallInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("call ").unwrap();
-        self.write_type(call.get_valtype()).unwrap();
-        if call.is_vararg {
-            self.write_str(" (...)").unwrap();
-        }
-
-        self.write_str(" ").unwrap();
-        self.write_operand(call.get_callee(allocs)).unwrap();
-        self.write_str("(").unwrap();
-        for (i, arg_use) in call.arg_uses().iter().enumerate() {
-            if i > 0 {
-                self.write_str(", ").unwrap();
-            }
-            let arg = arg_use.get_operand(allocs);
-            let arg_ty = call
-                .callee_ty
-                .get_args(self.tctx())
-                .get(i)
-                .copied()
-                .unwrap_or(arg.get_valtype(allocs));
-            self.write_type(arg_ty).unwrap();
-            self.write_str(" ").unwrap();
-            self.write_operand(arg).unwrap();
-        }
-        self.write_str(")").unwrap();
-    }
-
-    /// ```llvm
-    /// %<result> = <op> <type> <value> to <type>
-    /// ```
-    fn format_cast_inst(&self, number: Option<usize>, cast: &CastInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        write!(self, "{} ", cast.get_opcode().get_name()).unwrap();
-        self.write_type(cast.from_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(cast.get_from(allocs)).unwrap();
-        self.write_str(" to ").unwrap();
-        self.write_type(cast.get_valtype()).unwrap();
-    }
-
-    /// ```llvm
-    /// %<result> = <op> <cond> <type> <lhs>, <rhs>
-    /// ```
-    fn format_cmp_inst(&self, number: Option<usize>, cmp: &CmpInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        let opcode = cmp.get_opcode().get_name();
-        let cond = cmp.cond;
-        write!(self, "{opcode} {cond} ").unwrap();
-        self.write_type(cmp.operand_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(cmp.get_lhs(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        self.write_operand(cmp.get_rhs(allocs)).unwrap();
-    }
-
-    /// ```llvm
-    /// %<id> = extractelement <aggr_type> %<aggr>, <index_ty> %<index>
-    /// ```
-    fn format_index_extract_inst(&self, number: Option<usize>, inst: &IndexExtractInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("extractelement ").unwrap();
-        self.write_type(inst.aggr_type.into_ir()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_aggr(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        let index = inst.get_index(allocs);
-        let index_ty = index.get_valtype(allocs);
-        self.write_type(index_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(index).unwrap();
-    }
-
-    /// ```llvm
-    /// %<id> = extractvalue <aggr_type> %a, <field_idx0>, <field_idx1>, ...
-    /// ```
-    fn format_field_extract_inst(&self, number: Option<usize>, inst: &FieldExtractInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("extractvalue ").unwrap();
-        self.write_type(inst.aggr_type.into_ir()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_aggr(allocs)).unwrap();
-        for &idx in inst.get_field_indices() {
-            write!(self, ", {idx}").unwrap();
-        }
-    }
-
-    /// ```llvm
-    /// %<result> = insertelement <aggr_type> %<aggr>, <elem_type> %<elem>, <index_type> %<index>
-    /// ```
-    fn format_index_insert_inst(&self, number: Option<usize>, inst: &IndexInsertInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("insertelement ").unwrap();
-        // aggregate
-        self.write_type(inst.get_valtype()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_aggr(allocs)).unwrap();
-        // element
-        self.write_str(", ").unwrap();
-        self.write_type(inst.get_elem_type()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_elem(allocs)).unwrap();
-        // index
-        self.write_str(", ").unwrap();
-        let index = inst.get_index(allocs);
-        let index_ty = index.get_valtype(allocs);
-        self.write_type(index_ty).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(index).unwrap();
-    }
-
-    /// ```llvm
-    /// %<result> = insertvalue <aggr_type> %<aggr>, <elem_type> %<elem>, <idx0>, <idx1>, ...
-    /// ```
-    fn format_field_insert_inst(&self, number: Option<usize>, inst: &FieldInsertInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("insertvalue ").unwrap();
-        self.write_type(inst.get_valtype()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_aggr(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        self.write_type(inst.get_elem_type()).unwrap();
-        self.write_str(" ").unwrap();
-        self.write_operand(inst.get_elem(allocs)).unwrap();
-        for &idx in inst.get_field_indices() {
-            write!(self, ", {idx}").unwrap();
-        }
-    }
-
-    /// ```llvm
-    /// %<id> = phi <type> [ <value0>, %<label0> ], [ <value1>, %<label1> ], ...
-    /// ```
-    fn format_phi_inst(&self, number: Option<usize>, phi: &PhiInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("phi ").unwrap();
-        self.write_type(phi.get_valtype()).unwrap();
-        let mut first = true;
-        for slot_pair in phi.incoming_uses().iter() {
-            if first {
-                self.write_str(" ").unwrap();
-            } else {
-                self.write_str(", ").unwrap();
-            }
-            first = false;
-            self.write_str("[").unwrap();
-            // value
-            let val = slot_pair[0].get_operand(allocs);
-            self.write_operand(val).unwrap();
-            self.write_str(", ").unwrap();
-            // block label (without the 'label' keyword in phi)
-            let bb_val = slot_pair[1].get_operand(allocs);
-            let bb = match bb_val {
-                ValueSSA::Block(b) => b,
-                _ => panic!("Expected BlockID in Phi operand slot, found {bb_val:?}"),
-            };
-            self.write_block_operand(Some(bb)).unwrap();
-            self.write_str("]").unwrap();
-        }
-    }
-
-    /// ```llvm
-    /// %<name> = select <type>, i1 <cond>, <true value>, <false value>
-    /// ```
-    fn format_select_inst(&self, number: Option<usize>, select: &SelectInst) {
-        let allocs = self.allocs();
-        if let Some(number) = number {
-            write!(self, "%{number} = ").unwrap();
-        }
-        self.write_str("select ").unwrap();
-        self.write_type(select.get_valtype()).unwrap();
-        self.write_str(", i1 ").unwrap();
-        self.write_operand(select.get_cond(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        self.write_operand(select.get_then(allocs)).unwrap();
-        self.write_str(", ").unwrap();
-        self.write_operand(select.get_else(allocs)).unwrap();
+        Ok(())
     }
 }

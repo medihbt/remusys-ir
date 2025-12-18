@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
         OperandSet, UseID,
@@ -27,7 +27,7 @@ pub struct AllocaInst {
     pub pointee_ty: ValTypeID,
     pub align_log2: u8,
 }
-impl_traceable_from_common!(AllocaInst, true);
+
 impl IUser for AllocaInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
@@ -89,7 +89,7 @@ impl AllocaInst {
     }
 }
 
-_remusys_ir_subinst_id!(AllocaInstID, AllocaInst);
+_remusys_ir_subinst!(AllocaInstID, AllocaInst);
 impl AllocaInstID {
     pub fn new(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, AllocaInst::new(pointee_ty, align_log2))

@@ -1,6 +1,5 @@
 use crate::{
     base::INullableValue,
-    impl_traceable_from_common,
     ir::{
         FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet,
         UseID, UserList, ValueClass, ValueSSA,
@@ -252,7 +251,20 @@ pub enum GlobalObj {
 
 pub type GlobalRawIndex = IndexedID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>;
 
-impl_traceable_from_common!(GlobalObj, true);
+impl ITraceableValue for GlobalObj {
+    fn users(&self) -> &UserList {
+        self.try_get_users().expect("Users list missing")
+    }
+    fn try_get_users(&self) -> Option<&UserList> {
+        self.get_common().users.as_ref()
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        ValTypeID::Ptr
+    }
+    fn has_unique_ref_semantics(&self) -> bool {
+        true
+    }
+}
 impl IUser for GlobalObj {
     fn get_operands(&self) -> OperandSet<'_> {
         match self {

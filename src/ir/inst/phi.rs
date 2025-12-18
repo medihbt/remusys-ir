@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
         Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
@@ -104,7 +104,7 @@ pub struct PhiInst {
     operands: RefCell<SmallVec<[UseSlotPair; 2]>>,
     pub(in crate::ir) self_id: Cell<Option<InstID>>,
 }
-impl_traceable_from_common!(PhiInst, true);
+
 impl IUser for PhiInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Phi(self.incoming_uses())
@@ -249,7 +249,7 @@ impl PhiInst {
     }
 }
 
-_remusys_ir_subinst_id!(PhiInstID, PhiInst);
+_remusys_ir_subinst!(PhiInstID, PhiInst);
 impl PhiInstID {
     pub fn new_empty(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = PhiInst::new_empty(ty);

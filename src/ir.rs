@@ -93,7 +93,10 @@ pub use self::{
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
         numbering::{IRNumberValueMap, NumberOption},
-        writer::{IRWriteOption, IRWriter, IRWriterStat, write_ir_to_file},
+        writer::{
+            IRFuncWriter, IRWriteErr, IRWriteFuncStat, IRWriteModuleStat, IRWriteOption,
+            IRWriteRes, IRWriter, WriteIR, write_ir_to_file,
+        },
     },
 };
 

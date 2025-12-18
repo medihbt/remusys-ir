@@ -1,11 +1,10 @@
 use crate::{
-    _remusys_ir_subexpr_id,
+    _remusys_ir_subexpr,
     base::APInt,
-    impl_traceable_from_common,
     ir::{
         ConstData, ExprID, ExprObj, IRAllocs, ISubExprID, ISubValueSSA, IUser, OperandSet, UseID,
         UseKind, ValueSSA,
-        constant::expr::{ExprCommon, ExprRawPtr, ISubExpr},
+        constant::expr::{ExprCommon, ISubExpr},
     },
     typing::{ArrayTypeID, FPKind, IValType, ScalarType, TypeContext, TypingRes, ValTypeID},
 };
@@ -83,7 +82,7 @@ pub struct ArrayExpr {
     pub elemty: ValTypeID,
     pub elems: SmallVec<[UseID; 4]>,
 }
-impl_traceable_from_common!(ArrayExpr, false);
+
 impl IUser for ArrayExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.elems)
@@ -99,7 +98,7 @@ impl ISubExpr for ArrayExpr {
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
     }
-    fn get_valtype(&self) -> ValTypeID {
+    fn get_expr_type(&self) -> ValTypeID {
         self.arrty.into_ir()
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -183,9 +182,7 @@ impl ArrayExpr {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ArrayExprID(pub ExprRawPtr);
-_remusys_ir_subexpr_id!(ArrayExprID, ArrayExpr);
+_remusys_ir_subexpr!(ArrayExprID, ArrayExpr);
 impl IArrayExprID for ArrayExprID {
     fn expand_to_array_id(self, _: &IRAllocs) -> ArrayExprID {
         self
@@ -414,9 +411,7 @@ pub struct DataArrayExpr {
     pub elemty: ScalarType,
     pub data: ConstArrayData,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DataArrayExprID(pub ExprRawPtr);
-impl_traceable_from_common!(DataArrayExpr, false);
+
 impl IUser for DataArrayExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&[])
@@ -432,7 +427,7 @@ impl ISubExpr for DataArrayExpr {
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
     }
-    fn get_valtype(&self) -> ValTypeID {
+    fn get_expr_type(&self) -> ValTypeID {
         self.arrty.into_ir()
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -520,7 +515,8 @@ impl DataArrayExpr {
         Some(Self { common: ExprCommon::none(), arrty, elemty, data })
     }
 }
-_remusys_ir_subexpr_id!(DataArrayExprID, DataArrayExpr, ArrayExpr);
+
+_remusys_ir_subexpr!(DataArrayExprID, DataArrayExpr, ArrayExpr);
 impl DataArrayExprID {
     pub fn get_data(self, allocs: &IRAllocs) -> &ConstArrayData {
         &self.deref_ir(allocs).data
@@ -539,11 +535,6 @@ pub struct SplatArrayExpr {
     pub nelems: usize,
     pub element: [UseID; 1],
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SplatArrayExprID(pub ExprRawPtr);
-
-impl_traceable_from_common!(SplatArrayExpr, false);
 impl IUser for SplatArrayExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.element)
@@ -559,7 +550,7 @@ impl ISubExpr for SplatArrayExpr {
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
     }
-    fn get_valtype(&self) -> ValTypeID {
+    fn get_expr_type(&self) -> ValTypeID {
         self.arrty.into_ir()
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -667,7 +658,7 @@ impl SplatArrayExpr {
         }
     }
 }
-_remusys_ir_subexpr_id!(SplatArrayExprID, SplatArrayExpr, ArrayExpr);
+_remusys_ir_subexpr!(SplatArrayExprID, SplatArrayExpr, ArrayExpr);
 impl SplatArrayExprID {
     pub fn elem_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).element[0]
@@ -869,7 +860,7 @@ pub struct KVArrayExpr {
     operands: SmallVec<[UseID; 4]>,
     pub is_front_dense: bool,
 }
-impl_traceable_from_common!(KVArrayExpr, false);
+
 impl IUser for KVArrayExpr {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -885,7 +876,7 @@ impl ISubExpr for KVArrayExpr {
     fn common_mut(&mut self) -> &mut ExprCommon {
         &mut self.common
     }
-    fn get_valtype(&self) -> ValTypeID {
+    fn get_expr_type(&self) -> ValTypeID {
         self.arrty.into_ir()
     }
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self> {
@@ -1058,10 +1049,7 @@ impl<'kv> Iterator for KVArrayElemIter<'kv> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct KVArrayExprID(pub ExprRawPtr);
-
-_remusys_ir_subexpr_id!(KVArrayExprID, KVArrayExpr, ArrayExpr);
+_remusys_ir_subexpr!(KVArrayExprID, KVArrayExpr, ArrayExpr);
 impl KVArrayExprID {
     pub fn builder<'ir>(
         tctx: &TypeContext,
@@ -1452,8 +1440,8 @@ mod tests {
             .expect("Failed to build global variable `arr`");
         let module = builder.module;
         let mut out = std::io::stdout();
-        let writer = IRWriter::from_module(&mut out, &module);
-        writer.write_module();
+        let mut writer = IRWriter::from_module(&mut out, &module);
+        writer.fmt_module().unwrap();
 
         for (cnt, (val, u)) in kv_array_id.iter(&module.allocs).enumerate() {
             println!("[{cnt}]: Value: {val:?}, UseID: {u:?}");

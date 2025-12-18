@@ -95,6 +95,9 @@ impl ITraceableValue for BlockObj {
     fn has_unique_ref_semantics(&self) -> bool {
         true
     }
+    fn get_valtype(&self) -> ValTypeID {
+        ValTypeID::Void
+    }
 }
 impl BlockObj {
     pub fn new_uninit(allocs: &IRAllocs) -> Self {

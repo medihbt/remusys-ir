@@ -1,6 +1,7 @@
 use crate::{
     ir::{
-        BlockID, FuncID, IRAllocs, ISubGlobalID, ISubInst, ISubValueSSA, InstID, InstObj, ValueSSA,
+        BlockID, FuncID, IRAllocs, ISubGlobalID, ISubInst, ISubValueSSA, ITraceableValue, InstID,
+        InstObj, ValueSSA,
     },
     typing::ValTypeID,
 };

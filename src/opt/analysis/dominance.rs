@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn dominance_basic_relations() {
         let module = test_case_minmax().module;
-        write_ir_to_file("target/predom-demo.ll", &module, IRWriteOption::loud());
+        write_ir_to_file("../target/predom-demo.ll", &module, IRWriteOption::loud());
         let fid = module
             .get_global_by_name("main")
             .map(FuncID::raw_from)
@@ -442,7 +442,7 @@ mod tests {
         let allocs = &module.allocs;
 
         let dom = DominatorTree::builder(allocs, fid).unwrap().build();
-        let mut file = File::create("target/test_dom.dot").expect("Failed to create dot file");
+        let mut file = File::create("../target/test_dom.dot").expect("Failed to create dot file");
         dom.write_to_dot(allocs, &mut file);
     }
 
@@ -450,7 +450,7 @@ mod tests {
     fn postdom_basic_relations() {
         let builder = test_case_cfg_deep_while_br();
         let module = builder.module;
-        write_ir_to_file("target/postdom-demo.ll", &module, IRWriteOption::loud());
+        write_ir_to_file("../target/postdom-demo.ll", &module, IRWriteOption::loud());
         let allocs = &module.allocs;
         let fid = module
             .get_global_by_name("main")
@@ -459,7 +459,7 @@ mod tests {
 
         let post = DominatorTree::postdom_builder(allocs, fid).unwrap().build();
         let mut dot_file =
-            File::create("target/test_postdom.dot").expect("Failed to create dot file");
+            File::create("../target/test_postdom.dot").expect("Failed to create dot file");
         post.write_to_dot(allocs, &mut dot_file);
     }
 }

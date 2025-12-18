@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon,
         InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -40,7 +40,7 @@ pub struct CallInst {
     pub is_vararg: bool,
     pub is_tail_call: Cell<bool>,
 }
-impl_traceable_from_common!(CallInst, true);
+
 impl IUser for CallInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -124,7 +124,7 @@ impl CallInst {
     }
 }
 
-_remusys_ir_subinst_id!(CallInstID, CallInst);
+_remusys_ir_subinst!(CallInstID, CallInst);
 impl CallInstID {
     pub fn callee_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).callee_use()

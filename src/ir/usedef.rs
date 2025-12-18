@@ -215,7 +215,7 @@ impl UserID {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum UseKind {
     Sentinel,
     BinOpLhs,
@@ -490,6 +490,9 @@ pub trait ITraceableValue {
     /// 对于 `ConstExpr` 等不可变值, 使用者将分散在多个实例的不同 `UserList` 中.
     fn users(&self) -> &UserList;
 
+    /// 获取该 Value 的类型.
+    fn get_valtype(&self) -> ValTypeID;
+
     /// 获取该 Value 的所有使用者迭代器.
     fn user_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> UseIter<'ir> {
         self.users().iter(&allocs.uses)
@@ -564,31 +567,6 @@ pub trait ITraceableValue {
             }
         }
     }
-}
-
-#[macro_export]
-macro_rules! impl_traceable_from_common {
-    ($TyName:ident, $has_unique_ref_semantics:expr) => {
-        impl $crate::ir::ITraceableValue for $TyName {
-            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
-                self.get_common().users.as_ref()
-            }
-
-            fn users(&self) -> &$crate::ir::UserList {
-                let Some(users) = &self.get_common().users else {
-                    panic!(concat!(
-                        stringify!($TyName),
-                        " users list is not initialized"
-                    ));
-                };
-                users
-            }
-
-            fn has_unique_ref_semantics(&self) -> bool {
-                $has_unique_ref_semantics
-            }
-        }
-    };
 }
 
 #[cfg(test)]

@@ -434,7 +434,7 @@ mod tests {
     fn test_mem2reg() {
         let module = test_case_cfg_deep_while_br().module;
         write_ir_to_file(
-            "target/test-mem2reg-before.ll",
+            "../target/test-mem2reg-before.ll",
             &module,
             IRWriteOption::quiet(),
         );
@@ -447,7 +447,7 @@ mod tests {
         let orders = InstOrderCache::new();
         Mem2Reg::new(&module).run_on_func(&orders, main_func);
         write_ir_to_file(
-            "target/test-mem2reg-after.ll",
+            "../target/test-mem2reg-after.ll",
             &module,
             IRWriteOption::quiet(),
         );

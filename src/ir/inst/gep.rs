@@ -1,7 +1,6 @@
 use crate::{
-    _remusys_ir_subinst_id,
+    _remusys_ir_subinst,
     base::INullableValue,
-    impl_traceable_from_common,
     ir::{
         IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
         InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
@@ -55,7 +54,7 @@ pub struct GEPInst {
     /// 指针所指向的类型的对齐对数.
     pub pointee_align_log2: u8,
 }
-impl_traceable_from_common!(GEPInst, true);
+
 impl IUser for GEPInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -185,7 +184,7 @@ impl GEPInst {
     }
 }
 
-_remusys_ir_subinst_id!(GEPInstID, GEPInst);
+_remusys_ir_subinst!(GEPInstID, GEPInst);
 impl GEPInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

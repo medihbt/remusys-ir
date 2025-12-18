@@ -1,8 +1,7 @@
 use crate::{
-    impl_traceable_from_common,
     ir::{
-        DataArrayExpr, FixVec, FixVecID, IRAllocs, ISubValueSSA, IUser, OperandSet, SplatArrayExpr,
-        StructExprID, UseID, UserList, ValueClass, ValueSSA,
+        DataArrayExpr, FixVec, FixVecID, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
+        OperandSet, SplatArrayExpr, StructExprID, UseID, UserList, ValueClass, ValueSSA,
         constant::{
             array::{ArrayExpr, KVArrayExpr},
             structure::StructExpr,
@@ -42,7 +41,7 @@ pub trait ISubExpr: IUser + Sized {
     fn get_common(&self) -> &ExprCommon;
     fn common_mut(&mut self) -> &mut ExprCommon;
 
-    fn get_valtype(&self) -> ValTypeID;
+    fn get_expr_type(&self) -> ValTypeID;
 
     fn try_from_ir_ref(expr: &ExprObj) -> Option<&Self>;
     fn try_from_ir_mut(expr: &mut ExprObj) -> Option<&mut Self>;
@@ -99,8 +98,26 @@ pub trait ISubExprID: Copy {
     }
 }
 #[macro_export]
-macro_rules! _remusys_ir_subexpr_id {
+macro_rules! _remusys_ir_subexpr {
     ($IDName:ident, $ObjType:ident) => {
+        impl $crate::ir::ITraceableValue for $ObjType {
+            fn users(&self) -> &$crate::ir::UserList {
+                self.try_get_users()
+                    .expect("Internal error: alocated Expression should have a valid UserList")
+            }
+            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
+                self.get_common().users.as_ref()
+            }
+            fn get_valtype(&self) -> $crate::typing::ValTypeID {
+                self.get_expr_type()
+            }
+            fn has_unique_ref_semantics(&self) -> bool {
+                false
+            }
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $IDName(pub $crate::ir::constant::expr::ExprRawPtr);
         impl $crate::ir::ISubExprID for $IDName {
             type ExprObjT = $ObjType;
 
@@ -128,7 +145,7 @@ macro_rules! _remusys_ir_subexpr_id {
         }
     };
     ($IDName:ident, $ObjType:ident, ArrayExpr) => {
-        $crate::_remusys_ir_subexpr_id!($IDName, $ObjType);
+        $crate::_remusys_ir_subexpr!($IDName, $ObjType);
         impl $crate::ir::IArrayExprID for $IDName {}
     };
 }
@@ -147,7 +164,21 @@ pub enum ExprObj {
 pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
 pub type ExprRawIndex = IndexedID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
 
-impl_traceable_from_common!(ExprObj, false);
+impl ITraceableValue for ExprObj {
+    fn users(&self) -> &UserList {
+        self.try_get_users()
+            .expect("Internal error: alocated ExprObj should have a valid UserList")
+    }
+    fn try_get_users(&self) -> Option<&UserList> {
+        self.get_common().users.as_ref()
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        self.get_expr_type()
+    }
+    fn has_unique_ref_semantics(&self) -> bool {
+        todo!()
+    }
+}
 impl IUser for ExprObj {
     fn get_operands(&self) -> OperandSet<'_> {
         use ExprObj::*;
@@ -195,15 +226,16 @@ impl ISubExpr for ExprObj {
             FixVec(vec) => &mut vec.common,
         }
     }
-    fn get_valtype(&self) -> ValTypeID {
+    #[doc(hidden)]
+    fn get_expr_type(&self) -> ValTypeID {
         use ExprObj::*;
         match self {
-            Array(arr) => arr.get_valtype(),
-            DataArray(arr) => arr.get_valtype(),
-            SplatArray(arr) => arr.get_valtype(),
-            KVArray(arr) => arr.get_valtype(),
-            Struct(struc) => struc.get_valtype(),
-            FixVec(vec) => vec.get_valtype(),
+            Array(arr) => arr.get_expr_type(),
+            DataArray(arr) => arr.get_expr_type(),
+            SplatArray(arr) => arr.get_expr_type(),
+            KVArray(arr) => arr.get_expr_type(),
+            Struct(struc) => struc.get_expr_type(),
+            FixVec(vec) => vec.get_expr_type(),
         }
     }
     fn is_zero_const(&self, allocs: &IRAllocs) -> bool {
@@ -263,7 +295,7 @@ impl ISubValueSSA for ExprID {
     }
 
     fn get_valtype(self, allocs: &IRAllocs) -> ValTypeID {
-        self.deref_ir(allocs).get_valtype()
+        self.deref_ir(allocs).get_expr_type()
     }
 
     fn can_trace(self) -> bool {

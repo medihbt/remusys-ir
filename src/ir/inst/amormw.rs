@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -74,7 +74,7 @@ pub struct AmoRmwInst {
     pub is_volatile: bool,
     pub align_log2: u8,
 }
-impl_traceable_from_common!(AmoRmwInst, true);
+
 impl IUser for AmoRmwInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -188,7 +188,7 @@ impl AmoRmwInst {
     }
 }
 
-_remusys_ir_subinst_id!(AmoRmwInstID, AmoRmwInst);
+_remusys_ir_subinst!(AmoRmwInstID, AmoRmwInst);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)

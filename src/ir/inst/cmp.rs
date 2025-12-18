@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         CmpCond, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -30,7 +30,7 @@ pub struct CmpInst {
     pub cond: CmpCond,
     pub operand_ty: ValTypeID,
 }
-impl_traceable_from_common!(CmpInst, true);
+
 impl IUser for CmpInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -124,7 +124,7 @@ impl CmpInst {
     }
 }
 
-_remusys_ir_subinst_id!(CmpInstID, CmpInst);
+_remusys_ir_subinst!(CmpInstID, CmpInst);
 impl CmpInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,

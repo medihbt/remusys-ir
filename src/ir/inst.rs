@@ -1,5 +1,4 @@
 use crate::{
-    impl_traceable_from_common,
     ir::{
         BlockID, BlockIndex, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode,
         OperandSet, UseID, UserList, ValueClass, ValueSSA,
@@ -146,9 +145,6 @@ pub trait ISubInst: IUser + Sized {
     fn get_opcode(&self) -> Opcode {
         self.get_common().opcode
     }
-    fn get_valtype(&self) -> ValTypeID {
-        self.get_common().ret_type
-    }
     fn get_parent(&self) -> Option<BlockID> {
         self.get_common().parent_bb.get()
     }
@@ -291,8 +287,26 @@ pub trait ISubInstID: Copy {
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
 #[macro_export]
-macro_rules! _remusys_ir_subinst_id {
+macro_rules! _remusys_ir_subinst {
     ($IDType:ident, $ObjType:ident) => {
+        impl $crate::ir::ITraceableValue for $ObjType {
+            fn users(&self) -> &$crate::ir::UserList {
+                let Some(users) = &self.get_common().users else {
+                    panic!("Error: Attempted to get users of an instruction without user list");
+                };
+                users
+            }
+            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
+                self.get_common().users.as_ref()
+            }
+            fn get_valtype(&self) -> ValTypeID {
+                self.get_common().ret_type
+            }
+            fn has_unique_ref_semantics(&self) -> bool {
+                true
+            }
+        }
+
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $IDType(pub $crate::ir::inst::InstBackID);
         impl std::fmt::Debug for $IDType {
@@ -331,6 +345,24 @@ macro_rules! _remusys_ir_subinst_id {
         }
     };
     ($IDType:ident, $ObjType:ident, terminator) => {
+        impl $crate::ir::ITraceableValue for $ObjType {
+            fn users(&self) -> &$crate::ir::UserList {
+                let Some(users) = &self.get_common().users else {
+                    panic!("Error: Attempted to get users of an instruction without user list");
+                };
+                users
+            }
+            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
+                self.get_common().users.as_ref()
+            }
+            fn get_valtype(&self) -> ValTypeID {
+                self.get_common().ret_type
+            }
+            fn has_unique_ref_semantics(&self) -> bool {
+                true
+            }
+        }
+
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $IDType(pub $crate::ir::inst::InstBackID);
         impl std::fmt::Debug for $IDType {
@@ -550,7 +582,23 @@ impl IUser for InstObj {
         }
     }
 }
-impl_traceable_from_common!(InstObj, true);
+impl ITraceableValue for InstObj {
+    fn users(&self) -> &UserList {
+        let Some(users) = &self.get_common().users else {
+            panic!("Error: Attempted to get users of an instruction without user list");
+        };
+        users
+    }
+    fn try_get_users(&self) -> Option<&UserList> {
+        self.get_common().users.as_ref()
+    }
+    fn get_valtype(&self) -> ValTypeID {
+        self.get_common().ret_type
+    }
+    fn has_unique_ref_semantics(&self) -> bool {
+        true
+    }
+}
 impl ISubInst for InstObj {
     fn get_common(&self) -> &InstCommon {
         use InstObj::*;

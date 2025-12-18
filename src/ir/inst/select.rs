@@ -1,5 +1,5 @@
 use crate::{
-    _remusys_ir_subinst_id, impl_traceable_from_common,
+    _remusys_ir_subinst,
     ir::{
         IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
         OperandSet, UseID, UseKind, ValueSSA,
@@ -24,7 +24,7 @@ pub struct SelectInst {
     pub common: InstCommon,
     operands: [UseID; 3],
 }
-impl_traceable_from_common!(SelectInst, true);
+
 impl IUser for SelectInst {
     fn get_operands(&self) -> OperandSet<'_> {
         OperandSet::Fixed(&self.operands)
@@ -128,7 +128,7 @@ impl SelectInst {
     }
 }
 
-_remusys_ir_subinst_id!(SelectInstID, SelectInst);
+_remusys_ir_subinst!(SelectInstID, SelectInst);
 impl SelectInstID {
     pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = SelectInst::new_uninit(allocs, ty);
