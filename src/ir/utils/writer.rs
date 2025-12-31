@@ -762,10 +762,10 @@ impl IRFormatInst for GEPInst {
         true
     }
     fn format_ir(&self, write: &IRFuncWriter<'_>) -> IRWriteRes {
+        write.write_str("getelementptr ")?;
         if self.get_inbounds() {
             write.write_str("inbounds ")?;
         }
-        write.write_str("getelementptr ")?;
         write.fmt_type(self.initial_ty)?;
         write.write_str(", ptr ")?;
         write.fmt_operand(self.get_base(write.get_allocs()))?;
