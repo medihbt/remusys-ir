@@ -98,6 +98,7 @@ pub trait ISubExprID: Copy {
     }
 }
 #[macro_export]
+#[doc(hidden)]
 macro_rules! _remusys_ir_subexpr {
     ($IDName:ident, $ObjType:ident) => {
         impl $crate::ir::ITraceableValue for $ObjType {

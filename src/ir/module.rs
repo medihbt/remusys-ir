@@ -233,7 +233,7 @@ impl Module {
     }
 
     /// Check whether all pinned globals are exported.
-    /// Returns Ok(()) if satisfied, or Err(Vec<GlobalID>) with the list of missing ones.
+    /// Returns `Ok(())` if satisfied, or `Err(Vec<GlobalID>)` with the list of missing ones.
     pub fn check_all_pinned_exported(&self) -> Result<(), Vec<GlobalID>> {
         let missing = self.list_unexported_pinned();
         if missing.is_empty() { Ok(()) } else { Err(missing) }

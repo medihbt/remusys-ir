@@ -841,12 +841,12 @@ impl ArrayBuildStat {
     }
 }
 
-/// 稀疏存储、按键值对初始化的数组表达式。规定未指定的元素均为默认值 (operands[0])，放在操作数列表的最开头；
+/// 稀疏存储、按键值对初始化的数组表达式。规定未指定的元素均为默认值 (`operands[0]`)，放在操作数列表的最开头；
 /// 后续为按键值对形式存储的非默认值元素。Key 以 `UseKind::KVArrayElem(i)` 形式存储在 `UseID` 中，
 /// 按照升序排列。若最后一个键等于元素个数减一且无间隙，则判定前缀致密（`is_front_dense = true`）。
 ///
 /// Sparsely-stored array expression initialized by key-value pairs. The unspecified elements are all
-/// set to the default value (operands[0]), which is placed at the very beginning of the operand list; the
+/// set to the default value (`operands[0]`), which is placed at the very beginning of the operand list; the
 /// subsequent elements are non-default elements stored in key-value pair form.
 /// The keys are stored in `UseID` in the form of `UseKind::KVArrayElem(i)`, arranged in ascending order.
 /// If the last key equals the number of elements minus one and there are no gaps, the prefix is considered dense

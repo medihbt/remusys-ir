@@ -287,6 +287,7 @@ pub trait ISubInstID: Copy {
 }
 /// Implements `Debug` for a sub-instruction ID type -- showing target memory address.
 #[macro_export]
+#[doc(hidden)]
 macro_rules! _remusys_ir_subinst {
     ($IDType:ident, $ObjType:ident) => {
         impl $crate::ir::ITraceableValue for $ObjType {

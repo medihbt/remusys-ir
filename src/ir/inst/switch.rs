@@ -33,8 +33,8 @@ use std::{
 ///
 /// ### 跳转目标布局
 ///
-/// - **targets[0]**: 默认跳转目标 (`JumpTargetKind::SwitchDefault`)
-/// - **targets[1..]**: 各个 case 跳转目标 (`JumpTargetKind::SwitchCase(value)`)
+/// - `targets[0]`: 默认跳转目标 (`JumpTargetKind::SwitchDefault`)
+/// - `targets[1..]`: 各个 case 跳转目标 (`JumpTargetKind::SwitchCase(value)`)
 ///
 /// ### 语义
 ///
