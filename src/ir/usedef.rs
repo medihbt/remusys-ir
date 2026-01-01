@@ -308,16 +308,18 @@ impl UseKind {
                 | UseKind::GlobalInit
                 | UseKind::ArrayElem(_)
                 | UseKind::SplatArrayElem
+                | UseKind::KVArrayElem(_)
+                | UseKind::KVArrayDefaultElem
                 | UseKind::StructField(_)
                 | UseKind::VecElem(_)
         )
     }
     pub fn get_user_kind(&self) -> ValueClass {
+        use UseKind::*;
         match self {
             Self::GlobalInit => ValueClass::Global,
-            Self::ArrayElem(_) | Self::SplatArrayElem | Self::StructField(_) | Self::VecElem(_) => {
-                ValueClass::ConstExpr
-            }
+            ArrayElem(_) | SplatArrayElem | KVArrayElem(_) | KVArrayDefaultElem
+            | StructField(_) | VecElem(_) => ValueClass::ConstExpr,
             _ => ValueClass::Inst,
         }
     }
