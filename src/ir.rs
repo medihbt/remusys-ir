@@ -189,6 +189,13 @@ impl From<APInt> for ValueSSA {
         ValueSSA::ConstData(ConstData::Int(value))
     }
 }
+impl TryFrom<ValueSSA> for APInt {
+    type Error = &'static str;
+
+    fn try_from(value: ValueSSA) -> Result<Self, Self::Error> {
+        value.as_apint().ok_or("ValueSSA is not an APInt constant")
+    }
+}
 impl From<UserID> for ValueSSA {
     fn from(val: UserID) -> Self {
         match val {
