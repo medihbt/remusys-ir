@@ -1150,7 +1150,12 @@ impl<'a> IRWriter<'a> {
             format_smolstr!("{}:unpinned", gvar.get_name())
         };
         let prefix = gvar.get_linkage_prefix(allocs);
+
         write!(self, "@{name} = {prefix} ")?;
+        if let Some(tls) = gvar.tls_model.get() {
+            write!(self, "thread_local({}) ", tls.get_ir_text())?;
+        }
+
         match gvar.get_init(allocs) {
             ValueSSA::None => self.fmt_type(gvar.common.content_ty)?,
             initval => self.fmt_mapped_type_and_operand(initval)?,

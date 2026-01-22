@@ -22,6 +22,60 @@ pub enum Linkage {
     Private,
 }
 
+/// Thread-Local Storage (TLS) models for global variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TLSModel {
+    /// The general dynamic model, which supports dynamic allocation of thread-local
+    /// variables at runtime. Accesses to thread-local variables using this model
+    /// require function calls to the thread-local storage (TLS) runtime library.
+    GeneralDynamic,
+
+    /// The local dynamic model, which assumes that the thread-local variables
+    /// are defined in the same shared object as the code accessing them. This model
+    /// allows for more efficient access to thread-local variables compared to the
+    /// general dynamic model.
+    LocalDynamic,
+
+    /// The initial exec model, which assumes that the thread-local variables
+    /// are defined in the main executable or in shared objects that are loaded
+    /// at program startup. This model allows for even more efficient access to
+    /// thread-local variables compared to the local dynamic model.
+    InitialExec,
+
+    /// The local exec model, which assumes that the thread-local variables
+    /// are defined in the same shared object as the code accessing them, and
+    /// that they are not subject to dynamic loading. This model provides the
+    /// most efficient access to thread-local variables.
+    LocalExec,
+}
+impl TLSModel {
+    pub fn is_dynamic(self) -> bool {
+        matches!(self, TLSModel::GeneralDynamic | TLSModel::LocalDynamic)
+    }
+
+    pub fn is_static(self) -> bool {
+        matches!(self, TLSModel::InitialExec | TLSModel::LocalExec)
+    }
+
+    pub fn get_ir_text(self) -> &'static str {
+        match self {
+            TLSModel::GeneralDynamic => "general_dynamic",
+            TLSModel::LocalDynamic => "local_dynamic",
+            TLSModel::InitialExec => "initial_exec",
+            TLSModel::LocalExec => "local_exec",
+        }
+    }
+    pub fn from_ir_text(text: &str) -> Option<Self> {
+        match text {
+            "general_dynamic" => Some(TLSModel::GeneralDynamic),
+            "local_dynamic" => Some(TLSModel::LocalDynamic),
+            "initial_exec" => Some(TLSModel::InitialExec),
+            "local_exec" => Some(TLSModel::LocalExec),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GlobalExportErr {
     #[error("Global symbol name {0:?} was already taken by {1:?}")]

@@ -55,7 +55,7 @@ pub use self::{
     },
     global::{
         GlobalCommon, GlobalID, GlobalIndex, GlobalKind, GlobalObj, GlobalRawIndex, ISubGlobal,
-        ISubGlobalID, Linkage,
+        ISubGlobalID, Linkage, TLSModel,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
             IFuncUniqueUser, IFuncValue,
