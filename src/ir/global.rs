@@ -59,18 +59,18 @@ impl TLSModel {
 
     pub fn get_ir_text(self) -> &'static str {
         match self {
-            TLSModel::GeneralDynamic => "general_dynamic",
-            TLSModel::LocalDynamic => "local_dynamic",
-            TLSModel::InitialExec => "initial_exec",
-            TLSModel::LocalExec => "local_exec",
+            TLSModel::GeneralDynamic => "generaldynamic",
+            TLSModel::LocalDynamic => "localdynamic",
+            TLSModel::InitialExec => "initialexec",
+            TLSModel::LocalExec => "localexec",
         }
     }
     pub fn from_ir_text(text: &str) -> Option<Self> {
         match text {
-            "general_dynamic" => Some(TLSModel::GeneralDynamic),
-            "local_dynamic" => Some(TLSModel::LocalDynamic),
-            "initial_exec" => Some(TLSModel::InitialExec),
-            "local_exec" => Some(TLSModel::LocalExec),
+            "generaldynamic" => Some(TLSModel::GeneralDynamic),
+            "localdynamic" => Some(TLSModel::LocalDynamic),
+            "initialexec" => Some(TLSModel::InitialExec),
+            "localexec" => Some(TLSModel::LocalExec),
             _ => None,
         }
     }
