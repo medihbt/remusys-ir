@@ -164,7 +164,7 @@ impl<'ir> TypeMappingHelper<'ir> {
         let alias = old_sa.deref_ir(self.old_tctx);
         let StructAliasObj { name, aliasee } = &*alias;
         let aliasee = self.map_struct_type(*aliasee);
-        let new_aliases = self.new_tctx.set_alias(name, aliasee);
+        let new_aliases = self.new_tctx.set_alias(name.clone(), aliasee);
         self.mapping.aliases[idx] = new_aliases.0;
         new_aliases
     }

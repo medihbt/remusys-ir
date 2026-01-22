@@ -191,6 +191,22 @@ impl StructTypeID {
         let handle = allocs.structs.insert(new_struct);
         Self(handle as u32)
     }
+    /// # Safety
+    /// this method breaks the invariant that "a type can only be created once".
+    pub unsafe fn new_nodedup(
+        tctx: &TypeContext,
+        packed: bool,
+        fields: SmallVec<[ValTypeID; 8]>,
+    ) -> Self {
+        let (hash, _) = StructTypeObj::make_hash_and_len(packed, fields.iter().copied());
+        let mut new_struct = StructTypeObj::new_raw(fields, packed);
+        new_struct.hash = hash;
+
+        let mut allocs = tctx.allocs.borrow_mut();
+        new_struct.init_offsets(&allocs, tctx);
+        let handle = allocs.structs.insert(new_struct);
+        Self(handle as u32)
+    }
     pub fn from_slice(tctx: &TypeContext, packed: bool, fields: &[ValTypeID]) -> Self {
         Self::new(tctx, packed, fields.iter().copied())
     }

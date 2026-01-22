@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::ISlabID,
     typing::{
         IValType, StructTypeID, TypeAllocs, TypeContext, TypeFormatter, TypeMismatchErr, TypingRes,
@@ -9,7 +10,7 @@ use std::{cell::Ref, io::Write};
 
 #[derive(Debug, Clone)]
 pub struct StructAliasObj {
-    pub name: String,
+    pub name: SymbolStr,
     pub aliasee: StructTypeID,
 }
 
@@ -78,7 +79,7 @@ impl StructAliasID {
         self.deref_ir(tctx).aliasee
     }
 
-    pub fn new(tctx: &TypeContext, name: impl Into<String>, aliasee: StructTypeID) -> Self {
+    pub fn new(tctx: &TypeContext, name: impl Into<SymbolStr>, aliasee: StructTypeID) -> Self {
         tctx.set_alias(name, aliasee)
     }
 }

@@ -178,4 +178,19 @@ impl FuncTypeID {
     ) -> Self {
         Self::new(tctx, ret, is_vararg, args.iter().copied())
     }
+
+    /// # Safety
+    ///
+    /// this function may create duplicate function types
+    pub unsafe fn new_nodedup(
+        tctx: &TypeContext,
+        ret: ValTypeID,
+        is_vararg: bool,
+        args: &[ValTypeID],
+    ) -> Self {
+        let mut allocs = tctx.allocs.borrow_mut();
+        let new_func = FuncTypeObj::new(is_vararg, ret, Box::from(args));
+        let handle = allocs.funcs.insert(new_func);
+        Self(handle as u32)
+    }
 }

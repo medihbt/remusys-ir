@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::INullableValue,
     ir::{
         GlobalID, GlobalKind, IRAllocs, ISubGlobalID, ITraceableValue, IUser, IValueConvert,
@@ -8,7 +9,7 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{IPoliciedID, PtrID};
-use std::{cell::Cell, sync::Arc};
+use std::cell::Cell;
 
 #[derive(Clone)]
 pub struct GlobalVar {
@@ -230,7 +231,7 @@ pub trait IGlobalVarBuildable: Clone {
         let inner = self.inner();
         let gvar = GlobalVar {
             common: GlobalCommon::new(
-                Arc::from(inner.name.as_str()),
+                SymbolStr::new(inner.name.as_str()),
                 inner.content_ty,
                 inner.align_log,
                 allocs,

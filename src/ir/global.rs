@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::INullableValue,
     ir::{
         FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet,
@@ -9,7 +10,7 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
-use std::{cell::Cell, sync::Arc};
+use std::cell::Cell;
 
 pub mod func;
 pub mod var;
@@ -24,7 +25,7 @@ pub enum Linkage {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GlobalExportErr {
     #[error("Global symbol name {0:?} was already taken by {1:?}")]
-    NameTaken(Arc<str>, GlobalID),
+    NameTaken(SymbolStr, GlobalID),
 
     #[error("Global symbol {0:?} was already exported with a different name")]
     AlreadyExported(GlobalID),
@@ -34,7 +35,7 @@ pub enum GlobalExportErr {
 }
 
 pub struct GlobalCommon {
-    pub name: Arc<str>,
+    pub name: SymbolStr,
     pub content_ty: ValTypeID,
     pub content_align_log: u8,
     pub users: Option<UserList>,
@@ -54,7 +55,7 @@ impl Clone for GlobalCommon {
     }
 }
 impl GlobalCommon {
-    pub fn new(name: Arc<str>, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
+    pub fn new(name: SymbolStr, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
         Self {
             name,
             content_ty,
@@ -73,8 +74,8 @@ pub trait ISubGlobal: IUser + Sized {
     fn get_name(&self) -> &str {
         &self.get_common().name
     }
-    fn name_arc(&self) -> Arc<str> {
-        Arc::clone(&self.get_common().name)
+    fn clone_name(&self) -> SymbolStr {
+        self.get_common().name.clone()
     }
     fn get_back_linkage(&self) -> Linkage {
         self.get_common().back_linkage.get()
@@ -224,13 +225,13 @@ pub trait ISubGlobalID: Copy + 'static {
             return if id == self.raw_into() {
                 Ok(self)
             } else {
-                Err(GlobalExportErr::NameTaken(Arc::from(name), id))
+                Err(GlobalExportErr::NameTaken(SymbolStr::new(name), id))
             };
         }
         if symbols.get_symbol_by_name(self.get_name(allocs)).is_some() {
             return Err(GlobalExportErr::AlreadyExported(self.raw_into()));
         }
-        self.deref_ir_mut(allocs).common_mut().name = Arc::from(name);
+        self.deref_ir_mut(allocs).common_mut().name = SymbolStr::new(name);
         symbols
             .try_export_symbol(self.raw_into(), allocs)
             .expect("Internal Error: should not fail exporting after name check");

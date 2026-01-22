@@ -166,4 +166,14 @@ impl ArrayTypeID {
         let handle = alloc_arr.insert(new_arr);
         ArrayTypeID(handle as u32)
     }
+    /// # Safety
+    ///
+    /// this function does not check for duplicate types.
+    pub unsafe fn new_nodedup(tctx: &TypeContext, elemty: ValTypeID, nelems: usize) -> Self {
+        let mut allocs = tctx.allocs.borrow_mut();
+        let alloc_arr = &mut allocs.arrays;
+        let new_arr = ArrayTypeObj::new(elemty, nelems);
+        let handle = alloc_arr.insert(new_arr);
+        ArrayTypeID(handle as u32)
+    }
 }

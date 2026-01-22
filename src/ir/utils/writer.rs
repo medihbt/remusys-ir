@@ -1,14 +1,15 @@
 use crate::{
+    SymbolStr,
     ir::{inst::*, module::allocs::IPoolAllocated, *},
     typing::*,
 };
 use mtb_entity_slab::IEntityAllocID;
+use smol_str::format_smolstr;
 use std::{
     cell::{Cell, RefCell, RefMut},
     collections::HashMap,
     path::Path,
     rc::Rc,
-    sync::Arc,
 };
 
 pub fn write_ir_to_file(path: impl AsRef<Path>, module: &Module, option: IRWriteOption) {
@@ -23,7 +24,7 @@ pub enum IRWriteErr {
     IO(#[from] std::io::Error),
 
     #[error("Function '{0}' is external and cannot be written.")]
-    FuncIsExtern(Arc<str>),
+    FuncIsExtern(SymbolStr),
 
     #[error("JumpTarget CFG edge has no target block.")]
     JumpToNoTarget,
@@ -194,7 +195,7 @@ impl IRWriteFuncStat {
     pub fn new(allocs: &IRAllocs, func_id: FuncID) -> Result<Self, IRWriteErr> {
         let option = NumberOption::ignore_all();
         let Some(numbers) = IRNumberValueMap::new(allocs, func_id, option) else {
-            let name = func_id.deref_ir(allocs).name_arc();
+            let name = func_id.deref_ir(allocs).clone_name();
             return Err(IRWriteErr::FuncIsExtern(name));
         };
         Ok(Self { func_id, numbers })
@@ -1144,9 +1145,9 @@ impl<'a> IRWriter<'a> {
 
         self.fmt_global_header_prefix(gid, "gvar")?;
         let name = if self.module.symbol_is_exported(gid) {
-            gvar.name_arc()
+            gvar.clone_name()
         } else {
-            Arc::from(format!("{}:unpinned", gvar.get_name()))
+            format_smolstr!("{}:unpinned", gvar.get_name())
         };
         let prefix = gvar.get_linkage_prefix(allocs);
         write!(self, "@{name} = {prefix} ")?;
