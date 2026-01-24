@@ -276,7 +276,7 @@ impl ValueSSA {
     pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchErr> {
         let val = match ty {
             ValTypeID::Void => ValueSSA::None,
-            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull(ValTypeID::Void)),
+            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull),
             ValTypeID::Int(bits) => ValueSSA::ConstData(ConstData::Int(APInt::new(0, bits))),
             ValTypeID::Float(fpkind) => ValueSSA::ConstData(ConstData::Float(fpkind, 0.0)),
             ValTypeID::FixVec(v) => ValueSSA::AggrZero(AggrType::FixVec(v)),

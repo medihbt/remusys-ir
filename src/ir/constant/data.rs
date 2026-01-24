@@ -12,7 +12,7 @@ use std::{
 pub enum ConstData {
     Undef(ValTypeID),
     Zero(ScalarType),
-    PtrNull(ValTypeID),
+    PtrNull,
     Int(APInt),
     Float(FPKind, f64),
 }
@@ -24,7 +24,7 @@ impl PartialEq for ConstData {
         match (self, other) {
             (Undef(l0), Undef(r0)) => l0 == r0,
             (Zero(l0), Zero(r0)) => l0 == r0,
-            (PtrNull(l0), PtrNull(r0)) => l0 == r0,
+            (PtrNull, PtrNull) => true,
             (Int(l), Int(r)) => l == r,
             (Float(Ieee32, l1), Float(Ieee32, r1)) => {
                 (*l1 as f32).to_bits() == (*r1 as f32).to_bits()
@@ -43,7 +43,7 @@ impl Hash for ConstData {
         match self {
             Undef(ty) => ty.hash(state),
             Zero(ty) => ty.hash(state),
-            PtrNull(ty) => ty.hash(state),
+            PtrNull => 0usize.hash(state),
             Int(apint) => apint.hash(state),
             Float(Ieee32, value) => {
                 (*value as f32).to_bits().hash(state);
@@ -77,14 +77,14 @@ impl ISubValueSSA for ConstData {
         match self {
             ConstData::Undef(ty) => ty,
             ConstData::Zero(ty) => ty.into_ir(),
-            ConstData::PtrNull(_) => ValTypeID::Ptr,
+            ConstData::PtrNull => ValTypeID::Ptr,
             ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(kind),
         }
     }
     fn is_zero_const(self, _: &IRAllocs) -> bool {
         match self {
-            ConstData::Zero(_) | ConstData::PtrNull(_) => true,
+            ConstData::Zero(_) | ConstData::PtrNull => true,
             ConstData::Int(apint) => apint.is_zero(),
             ConstData::Float(FPKind::Ieee32, f) => (f as f32).to_bits() == 0,
             ConstData::Float(FPKind::Ieee64, f) => f.to_bits() == 0,
@@ -123,7 +123,7 @@ impl ConstData {
         match self {
             ConstData::Undef(ty) => *ty,
             ConstData::Zero(ty) => ty.into_ir(),
-            ConstData::PtrNull(_) => ValTypeID::Ptr,
+            ConstData::PtrNull => ValTypeID::Ptr,
             ConstData::Int(apint) => ValTypeID::Int(apint.bits()),
             ConstData::Float(kind, _) => ValTypeID::Float(*kind),
         }
@@ -133,7 +133,7 @@ impl ConstData {
         use ConstData::*;
         use FPKind::*;
         match self {
-            Zero(_) | PtrNull(_) => true,
+            Zero(_) | PtrNull => true,
             Int(x) => *x == 0,
             Float(Ieee32, f) => (*f as f32).to_bits() == 0,
             Float(Ieee64, f) => f.to_bits() == 0,
@@ -150,7 +150,7 @@ impl ConstData {
 
     pub fn new_zeroed(sty: ScalarType) -> Self {
         match sty {
-            ScalarType::Ptr => ConstData::PtrNull(ValTypeID::Void),
+            ScalarType::Ptr => ConstData::PtrNull,
             ScalarType::Int(bits) => ConstData::Int(APInt::new(0, bits)),
             ScalarType::Float(fk) => ConstData::Float(fk, 0.0),
         }
@@ -175,8 +175,8 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
-            (_, Self::Undef(_)) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*other),
+            (Self::Undef(_), _) | (_, Self::Zero(_)) | (_, Self::PtrNull) => Ok(*self),
+            (_, Self::Undef(_)) | (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*other),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 Ok(ConstData::Int(*lv + *rv))
             }
@@ -191,7 +191,7 @@ impl ConstData {
         match self {
             Self::Undef(ty) => Self::Undef(*ty),
             Self::Zero(ty) => Self::Zero(*ty),
-            Self::PtrNull(ty) => Self::PtrNull(*ty),
+            Self::PtrNull => Self::PtrNull,
             Self::Int(v) => Self::Int(v.neg()),
             Self::Float(kind, v) => Self::Float(*kind, -*v),
         }
@@ -206,8 +206,8 @@ impl ConstData {
             return Err(ConstCalcErr::TypeMismatch);
         }
         match (self, other) {
-            (Self::Undef(_), _) | (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
-            (_, Self::Undef(_)) | (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*other),
+            (Self::Undef(_), _) | (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
+            (_, Self::Undef(_)) | (_, Self::Zero(_)) | (_, Self::PtrNull) => Ok(*other),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 Ok(ConstData::Int(*lv * *rv))
             }
@@ -225,8 +225,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Err(ConstCalcErr::DivByZero),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.sdiv(*rv)))
@@ -252,8 +252,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Err(ConstCalcErr::DivByZero),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.udiv(*rv)))
@@ -279,8 +279,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Err(ConstCalcErr::DivByZero),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.srem(*rv)))
@@ -306,8 +306,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Err(ConstCalcErr::DivByZero),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Err(ConstCalcErr::DivByZero),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.urem(*rv)))
@@ -333,8 +333,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.shl(*rv)))
@@ -353,8 +353,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.lshr_with(*rv)))
@@ -372,8 +372,8 @@ impl ConstData {
         match (self, other) {
             (Self::Undef(_), _) => Ok(*self),
             (_, Self::Undef(_)) => Ok(*other),
-            (_, Self::Zero(_)) | (_, Self::PtrNull(_)) => Ok(*self),
-            (Self::Zero(_), _) | (Self::PtrNull(_), _) => Ok(*self),
+            (_, Self::Zero(_)) | (_, Self::PtrNull) => Ok(*self),
+            (Self::Zero(_), _) | (Self::PtrNull, _) => Ok(*self),
             (Self::Int(lv), Self::Int(rv)) if lv.bits() == rv.bits() => {
                 if rv.is_nonzero() {
                     Ok(ConstData::Int(lv.ashr_with(*rv)))

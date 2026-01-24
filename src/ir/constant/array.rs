@@ -199,7 +199,7 @@ impl ArrayExprID {
     pub fn get_elemty(self, allocs: &IRAllocs) -> ValTypeID {
         self.deref_ir(allocs).elemty
     }
-    pub fn get_elems(self, allocs: &IRAllocs) -> &[UseID] {
+    pub fn elem_uses(self, allocs: &IRAllocs) -> &[UseID] {
         &self.deref_ir(allocs).elems
     }
 }

@@ -410,7 +410,7 @@ mod write_impl {
                 ScalarType::Int(_) => write.write_str("0")?,
                 ScalarType::Float(_) => write.write_str("0.0")?,
             },
-            ConstData::PtrNull(_) => write.write_str("null")?,
+            ConstData::PtrNull => write.write_str("null")?,
             ConstData::Int(apint) => {
                 if apint.bits() == 1 {
                     write!(write, "{}", !apint.is_zero())?

@@ -49,7 +49,7 @@ fn test_gc_unreachable_expr_is_freed() {
     let elem_ty = ValTypeID::Int(32);
     let arr_ty = ArrayTypeID::new(builder.tctx(), elem_ty, 2);
     let arr = ArrayExprID::new_uninit(builder.allocs(), builder.tctx(), arr_ty);
-    let elems = arr.get_elems(builder.allocs());
+    let elems = arr.elem_uses(builder.allocs());
     elems[0].set_operand(builder.allocs(), APInt::new(0u32, 32).into());
     elems[1].set_operand(builder.allocs(), APInt::new(1u32, 32).into());
     // 记录 GC 前的 expr 分配数
