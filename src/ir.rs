@@ -286,6 +286,13 @@ impl ValueSSA {
         };
         Ok(val)
     }
+    pub fn new_undef(ty: impl IValType) -> Self {
+        let ty = ty.into_ir();
+        if !ty.makes_instance() {
+            panic!("Cannot create undefined value for type {ty:?}");
+        }
+        ValueSSA::ConstData(ConstData::Undef(ty))
+    }
 
     pub fn as_dyn_traceable<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn ITraceableValue> {
         match self {
