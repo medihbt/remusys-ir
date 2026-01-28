@@ -13,7 +13,7 @@ categories = ["compilers"]
 [features]
 default = []
 random-generation = ["mtb-entity-slab/random-generation"]
-serde = ["smol_str/serde"]
+serde = ["smol_str/serde", "smallvec/serde", "mtb-entity-slab/serde"]
 
 [dependencies]
 bitflags = "2.9.0"
@@ -23,4 +23,4 @@ thiserror = "2"
 smallvec = { version = "1", features = ["union"] }
 mtb-entity-slab = { git = "https://codeberg.org/medihbt/mtb-entity-slab", branch = "master" }
 smol_str = "0.3.5"
-serde_core = "1.0.228"
+serde_core = { version = "1.0.228", optional = true }
