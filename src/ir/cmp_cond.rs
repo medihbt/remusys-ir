@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use std::str::FromStr;
 
 bitflags! {
     /// IR 比较条件.
@@ -50,6 +51,47 @@ bitflags! {
         const FOGE = 0b11_110;
         const FOALWAYS = 0b11_111;
         const FONEVER  = 0b11_000;
+    }
+}
+
+impl FromStr for CmpCond {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lt" => Ok(Self::LT),
+            "eq" => Ok(Self::EQ),
+            "gt" => Ok(Self::GT),
+            "le" => Ok(Self::LE),
+            "ne" => Ok(Self::NE),
+            "ge" => Ok(Self::GE),
+
+            "slt" => Ok(Self::SLT),
+            "seq" => Ok(Self::SEQ),
+            "sgt" => Ok(Self::SGT),
+            "sle" => Ok(Self::SLE),
+            "sne" => Ok(Self::SNE),
+            "sge" => Ok(Self::SGE),
+
+            "ult" => Ok(Self::FULT),
+            "ueq" => Ok(Self::FUEQ),
+            "ugt" => Ok(Self::FUGT),
+            "ule" => Ok(Self::FULE),
+            "une" => Ok(Self::FUNE),
+            "uge" => Ok(Self::FUGE),
+
+            "olt" => Ok(Self::FOLT),
+            "oeq" => Ok(Self::FOEQ),
+            "ogt" => Ok(Self::FOGT),
+            "ole" => Ok(Self::FOLE),
+            "one" => Ok(Self::FONE),
+            "oge" => Ok(Self::FOGE),
+
+            "true" => Ok(Self::ALWAYS),
+            "false" => Ok(Self::NEVER),
+
+            _ => Err("Invalid CmpCond string"),
+        }
     }
 }
 
@@ -115,5 +157,25 @@ impl CmpCond {
 impl std::fmt::Display for CmpCond {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for CmpCond {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for CmpCond {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        CmpCond::from_str(&s).map_err(serde_core::de::Error::custom)
     }
 }

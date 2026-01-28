@@ -6,6 +6,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AmoOrdering {
@@ -19,7 +20,41 @@ pub enum AmoOrdering {
     /// Sequentially consistent
     SeqCst,
 }
+impl FromStr for AmoOrdering {
+    type Err = &'static str;
 
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "not_atomic" => Ok(Self::NonAtomic),
+            "relaxed" => Ok(Self::Relaxed),
+            "monotonic" => Ok(Self::Monotonic),
+            "release" => Ok(Self::Release),
+            "acquire" => Ok(Self::Acquire),
+            "acq_rel" => Ok(Self::AcqRel),
+            "seq_cst" => Ok(Self::SeqCst),
+            _ => Err("Invalid AmoOrdering string"),
+        }
+    }
+}
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for AmoOrdering {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for AmoOrdering {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        AmoOrdering::from_str(&s).map_err(serde_core::de::Error::custom)
+    }
+}
 impl AmoOrdering {
     pub fn as_str(self) -> &'static str {
         match self {

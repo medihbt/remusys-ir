@@ -21,6 +21,35 @@ pub enum Linkage {
     DSOLocal,
     Private,
 }
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for Linkage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        let s = match self {
+            Linkage::External => "external",
+            Linkage::DSOLocal => "dso_local",
+            Linkage::Private => "private",
+        };
+        serializer.serialize_str(s)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for Linkage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = smol_str::SmolStr::deserialize(deserializer)?;
+        match s.as_str() {
+            "external" => Ok(Linkage::External),
+            "dso_local" => Ok(Linkage::DSOLocal),
+            "private" => Ok(Linkage::Private),
+            _ => Err(serde_core::de::Error::custom("Invalid Linkage string")),
+        }
+    }
+}
 
 /// Thread-Local Storage (TLS) models for global variables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,6 +76,37 @@ pub enum TLSModel {
     /// that they are not subject to dynamic loading. This model provides the
     /// most efficient access to thread-local variables.
     LocalExec,
+}
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for TLSModel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        let s = match self {
+            TLSModel::GeneralDynamic => "generaldynamic",
+            TLSModel::LocalDynamic => "localdynamic",
+            TLSModel::InitialExec => "initialexec",
+            TLSModel::LocalExec => "localexec",
+        };
+        serializer.serialize_str(s)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for TLSModel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = smol_str::SmolStr::deserialize(deserializer)?;
+        match s.as_str() {
+            "generaldynamic" => Ok(TLSModel::GeneralDynamic),
+            "localdynamic" => Ok(TLSModel::LocalDynamic),
+            "initialexec" => Ok(TLSModel::InitialExec),
+            "localexec" => Ok(TLSModel::LocalExec),
+            _ => Err(serde_core::de::Error::custom("Invalid TLSModel string")),
+        }
+    }
 }
 impl TLSModel {
     pub fn is_dynamic(self) -> bool {

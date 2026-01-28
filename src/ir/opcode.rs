@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::OnceLock};
 
 #[rustfmt::skip]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,7 +164,11 @@ impl Display for Opcode {
 impl FromStr for Opcode {
     type Err = ();
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        OPCODE_NAME_MAP.get(s).copied().ok_or(())
+        OPCODE_NAME_MAP
+            .get_or_init(Opcode::init_name_map)
+            .get(s)
+            .copied()
+            .ok_or(())
     }
 }
 impl From<u8> for Opcode {
@@ -201,8 +205,30 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
     "intrin", "guide-node", "phi-end",
 ];
 
-lazy_static::lazy_static! {
-    static ref OPCODE_NAME_MAP: HashMap<&'static str, Opcode> = Opcode::init_name_map();
+static OPCODE_NAME_MAP: OnceLock<HashMap<&'static str, Opcode>> = OnceLock::new();
+
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for Opcode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        serializer.serialize_str(self.get_name())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for Opcode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        use serde_core::de::Error;
+        let s = <&str>::deserialize(deserializer)?;
+        match Opcode::from_str(s) {
+            Ok(op) => Ok(op),
+            Err(_) => Err(Error::custom(format!("Invalid opcode name: {s}"))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
