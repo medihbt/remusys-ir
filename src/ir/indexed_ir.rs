@@ -232,6 +232,35 @@ where
     }
 }
 
+macro_rules! _remusys_ir_indexed_serde {
+    ($name:ident) => {
+        #[cfg(feature = "serde")]
+        impl serde_core::Serialize for $name {
+            fn serialize<S: serde_core::Serializer>(
+                &self,
+                serializer: S,
+            ) -> Result<S::Ok, S::Error> {
+                self.0.serialize(serializer)
+            }
+        }
+        #[cfg(feature = "serde")]
+        impl<'de> serde_core::Deserialize<'de> for $name {
+            fn deserialize<D: serde_core::Deserializer<'de>>(
+                deserializer: D,
+            ) -> Result<Self, D::Error> {
+                let inner = <mtb_entity_slab::IndexedID<_, _> as serde_core::Deserialize>::deserialize(deserializer)?;
+                Ok(Self(inner))
+            }
+        }
+    };
+}
+_remusys_ir_indexed_serde!(InstIndex);
+_remusys_ir_indexed_serde!(BlockIndex);
+_remusys_ir_indexed_serde!(ExprIndex);
+_remusys_ir_indexed_serde!(GlobalIndex);
+_remusys_ir_indexed_serde!(UseIndex);
+_remusys_ir_indexed_serde!(JumpTargetIndex);
+
 #[cfg(test)]
 mod tests {
     use super::*;
