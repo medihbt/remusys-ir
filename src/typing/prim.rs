@@ -11,11 +11,23 @@ pub enum FPKind {
 
 impl std::fmt::Debug for FPKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self {
-            FPKind::Ieee32 => "float",
-            FPKind::Ieee64 => "double",
-        };
-        write!(f, "{}", name)
+        write!(f, "{}", self.get_name())
+    }
+}
+impl std::fmt::Display for FPKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_name())
+    }
+}
+impl core::str::FromStr for FPKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "float" => Ok(FPKind::Ieee32),
+            "double" => Ok(FPKind::Ieee64),
+            _ => Err(()),
+        }
     }
 }
 
@@ -56,12 +68,20 @@ impl IValType for FPKind {
         Some(align)
     }
 
-    fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
-        let name = match self {
+    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+        match self {
+            FPKind::Ieee32 => f.write_str("float"),
+            FPKind::Ieee64 => f.write_str("double"),
+        }
+    }
+}
+
+impl FPKind {
+    pub fn get_name(self) -> &'static str {
+        match self {
             FPKind::Ieee32 => "float",
             FPKind::Ieee64 => "double",
-        };
-        f.write_str(name)
+        }
     }
 }
 
@@ -73,6 +93,25 @@ impl std::fmt::Debug for IntType {
         write!(f, "i{}", self.0)
     }
 }
+impl std::fmt::Display for IntType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "i{}", self.0)
+    }
+}
+impl core::str::FromStr for IntType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(bits_str) = s.strip_prefix('i')
+            && let Ok(bits) = bits_str.parse::<u8>()
+        {
+            Ok(IntType(bits))
+        } else {
+            Err(())
+        }
+    }
+}
+
 impl IValType for IntType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
         if let ValTypeID::Int(bits) = ty {
@@ -103,13 +142,21 @@ impl IValType for IntType {
         Some(closing.div_ceil(8) as usize)
     }
 
-    fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         write!(f, "i{}", self.0)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PtrType;
+
+impl core::str::FromStr for PtrType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "ptr" { Ok(PtrType) } else { Err(()) }
+    }
+}
 
 impl IValType for PtrType {
     fn try_from_ir(ty: ValTypeID) -> TypingRes<Self> {
@@ -140,7 +187,7 @@ impl IValType for PtrType {
         Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
-    fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         f.write_str("ptr")
     }
 }

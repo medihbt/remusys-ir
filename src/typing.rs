@@ -7,6 +7,7 @@ mod context;
 mod fmt;
 mod func;
 mod prim;
+mod serde;
 mod structty;
 mod vec;
 
@@ -61,11 +62,11 @@ pub trait IValType: Copy {
     fn class_id(self) -> ValTypeClass;
 
     /// 序列化
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()>;
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()>;
     fn get_display_name(self, tctx: &TypeContext) -> String {
         let mut buffer = Vec::new();
         let formatter = TypeFormatter::new(&mut buffer, tctx);
-        self.serialize(&formatter)
+        self.format_ir(&formatter)
             .expect("Serialization to Vec<u8> should not fail");
         drop(formatter);
         String::from_utf8(buffer).expect("Type names should be valid UTF-8")
@@ -207,17 +208,17 @@ impl IValType for ValTypeID {
         }
     }
 
-    fn serialize<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         match self {
             ValTypeID::Void => f.write_str("void"),
             ValTypeID::Ptr => f.write_str("ptr"),
             ValTypeID::Int(bits) => write!(f, "i{}", bits),
-            ValTypeID::Float(fpkind) => fpkind.serialize(f),
-            ValTypeID::FixVec(fixvec) => fixvec.serialize(f),
-            ValTypeID::Array(a) => a.serialize(f),
-            ValTypeID::Struct(s) => s.serialize(f),
-            ValTypeID::StructAlias(sa) => sa.serialize(f),
-            ValTypeID::Func(func) => func.serialize(f),
+            ValTypeID::Float(fpkind) => fpkind.format_ir(f),
+            ValTypeID::FixVec(fixvec) => fixvec.format_ir(f),
+            ValTypeID::Array(a) => a.format_ir(f),
+            ValTypeID::Struct(s) => s.format_ir(f),
+            ValTypeID::StructAlias(sa) => sa.format_ir(f),
+            ValTypeID::Func(func) => func.format_ir(f),
         }
     }
 }

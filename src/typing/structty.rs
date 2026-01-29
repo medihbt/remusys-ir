@@ -108,7 +108,7 @@ impl IValType for StructTypeID {
         ValTypeClass::Struct
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let (begin_str, end_str) =
             if self.is_packed(f.tctx) { ("<{ ", " }>") } else { ("{ ", " }") };
         f.write_str(begin_str)?;
@@ -117,7 +117,7 @@ impl IValType for StructTypeID {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            field.serialize(f)?;
+            field.format_ir(f)?;
         }
         f.write_str(end_str)
     }

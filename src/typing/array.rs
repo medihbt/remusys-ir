@@ -96,13 +96,13 @@ impl IValType for ArrayTypeID {
         ValTypeClass::Array
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let (nelems, elemty) = {
             let obj = self.deref(&f.allocs.arrays);
             (obj.nelems, obj.elemty)
         };
         write!(f, "[ {nelems} x ")?;
-        elemty.serialize(f)?;
+        elemty.format_ir(f)?;
         write!(f, " ]")
     }
 

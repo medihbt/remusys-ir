@@ -47,7 +47,7 @@ impl IValType for StructAliasID {
         ValTypeClass::StructAlias
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let name = &self.deref(&f.allocs.aliases).name;
         write!(f, "%{name}")
     }

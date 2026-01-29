@@ -93,14 +93,14 @@ impl IValType for FuncTypeID {
         ValTypeClass::Func
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let func_obj = self.deref(&f.allocs.funcs);
         f.write_str("func(")?;
         for (i, arg) in func_obj.args.iter().enumerate() {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            arg.serialize(f)?;
+            arg.format_ir(f)?;
         }
         if func_obj.is_vararg {
             if !func_obj.args.is_empty() {
@@ -109,7 +109,7 @@ impl IValType for FuncTypeID {
             f.write_str("...")?;
         }
         f.write_str(") -> ")?;
-        func_obj.ret_type.serialize(f)
+        func_obj.ret_type.format_ir(f)
     }
 
     fn try_get_size_full(self, _: &TypeAllocs, _: &TypeContext) -> Option<usize> {

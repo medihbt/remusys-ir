@@ -10,7 +10,6 @@ use crate::{
 use mtb_entity_slab::IEntityAllocID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(C, u8)]
 pub enum IndexedValue {
     None,
     ConstData(ConstData),
@@ -248,7 +247,11 @@ macro_rules! _remusys_ir_indexed_serde {
             fn deserialize<D: serde_core::Deserializer<'de>>(
                 deserializer: D,
             ) -> Result<Self, D::Error> {
-                let inner = <mtb_entity_slab::IndexedID<_, _> as serde_core::Deserialize>::deserialize(deserializer)?;
+                use mtb_entity_slab::IPoliciedID;
+                let inner = <mtb_entity_slab::IndexedID<
+                    <Self as IPoliciedID>::ObjectT,
+                    <Self as IPoliciedID>::PolicyT,
+                > as serde_core::Deserialize>::deserialize(deserializer)?;
                 Ok(Self(inner))
             }
         }

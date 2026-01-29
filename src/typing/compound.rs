@@ -57,7 +57,7 @@ impl IValType for ScalarType {
         }
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         match self {
             ScalarType::Ptr => f.write_str("ptr"),
             ScalarType::Int(bits) => write!(f, "i{}", bits),
@@ -169,12 +169,12 @@ impl IValType for AggrType {
         }
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         match self {
-            AggrType::Array(id) => id.serialize(f),
-            AggrType::Struct(id) => id.serialize(f),
-            AggrType::Alias(id) => id.serialize(f),
-            AggrType::FixVec(fv) => fv.serialize(f),
+            AggrType::Array(id) => id.format_ir(f),
+            AggrType::Struct(id) => id.format_ir(f),
+            AggrType::Alias(id) => id.format_ir(f),
+            AggrType::FixVec(fv) => fv.format_ir(f),
         }
     }
 

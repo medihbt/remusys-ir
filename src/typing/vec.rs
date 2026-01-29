@@ -23,9 +23,9 @@ impl IValType for FixVecType {
         ValTypeClass::FixVec
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         f.write_str("<")?;
-        self.0.serialize(f)?;
+        self.0.format_ir(f)?;
         write!(f, "x {}>", 1 << self.1)
     }
 
