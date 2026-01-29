@@ -41,6 +41,65 @@ pub enum JumpTargetKind {
     Disposed,
 }
 
+impl std::fmt::Display for JumpTargetKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use JumpTargetKind::*;
+        match self {
+            None => write!(f, "None"),
+            Jump => write!(f, "Jump"),
+            BrThen => write!(f, "BrThen"),
+            BrElse => write!(f, "BrElse"),
+            SwitchDefault => write!(f, "SwitchDefault"),
+            SwitchCase(val) => write!(f, "SwitchCase:{val}"),
+            Disposed => write!(f, "Disposed"),
+        }
+    }
+}
+impl std::str::FromStr for JumpTargetKind {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use JumpTargetKind::*;
+        match s {
+            "None" => Ok(None),
+            "Jump" => Ok(Jump),
+            "BrThen" => Ok(BrThen),
+            "BrElse" => Ok(BrElse),
+            "SwitchDefault" => Ok(SwitchDefault),
+            _ if s.starts_with("SwitchCase:") => {
+                let val_str = &s["SwitchCase:".len()..];
+                let val = val_str
+                    .parse::<i64>()
+                    .map_err(|_| "Failed to parse SwitchCase value")?;
+                Ok(SwitchCase(val))
+            }
+            _ => Err("Invalid JumpTargetKind string"),
+        }
+    }
+}
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for JumpTargetKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        use smol_str::ToSmolStr;
+        serializer.serialize_str(&self.to_smolstr())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for JumpTargetKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        use serde_core::{Deserialize, de::Error};
+        use std::str::FromStr;
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        JumpTargetKind::from_str(s).map_err(Error::custom)
+    }
+}
+
 /// 跳转目标对象，连接终结指令和目标基本块
 ///
 /// 每个跳转目标表示控制流图中的一条边，包含：

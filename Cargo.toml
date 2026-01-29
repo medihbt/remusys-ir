@@ -13,7 +13,12 @@ categories = ["compilers"]
 [features]
 default = []
 random-generation = ["mtb-entity-slab/random-generation"]
-serde = ["smol_str/serde", "smallvec/serde", "mtb-entity-slab/serde", "serde_core"]
+serde = [
+    "smol_str/serde",
+    "smallvec/serde",
+    "mtb-entity-slab/serde",
+    "dep:serde_core"
+]
 
 [dependencies]
 bitflags = "2.9.0"
