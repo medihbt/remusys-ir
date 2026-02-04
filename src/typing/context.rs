@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::ISlabID,
     typing::{
         ArrayTypeObj, FuncTypeObj, IntType, StructAliasID, StructAliasObj, StructTypeID,
@@ -53,7 +54,7 @@ impl TypeAllocs {
 pub struct TypeContext {
     pub arch: ArchInfo,
     pub allocs: RefCell<TypeAllocs>,
-    alias_map: RefCell<HashMap<String, StructAliasID>>,
+    alias_map: RefCell<HashMap<SymbolStr, StructAliasID>>,
 }
 
 impl TypeContext {
@@ -77,7 +78,7 @@ impl TypeContext {
         panic!("Alias %{name} not found");
     }
 
-    pub fn set_alias(&self, name: impl Into<String>, aliasee: StructTypeID) -> StructAliasID {
+    pub fn set_alias(&self, name: impl Into<SymbolStr>, aliasee: StructTypeID) -> StructAliasID {
         let name = name.into();
         if let Some(existing) = self.alias_map.borrow().get(&name) {
             return *existing;
@@ -89,7 +90,7 @@ impl TypeContext {
         alias_id
     }
 
-    pub fn foreach_aliases(&self, mut f: impl FnMut(&String, StructAliasID, StructTypeID)) {
+    pub fn foreach_aliases(&self, mut f: impl FnMut(&SymbolStr, StructAliasID, StructTypeID)) {
         for (name, &alias_id) in self.alias_map.borrow().iter() {
             let aliasee = alias_id.deref(&self.allocs.borrow().aliases).aliasee;
             f(name, alias_id, aliasee);

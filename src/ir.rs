@@ -55,7 +55,7 @@ pub use self::{
     },
     global::{
         GlobalCommon, GlobalID, GlobalIndex, GlobalKind, GlobalObj, GlobalRawIndex, ISubGlobal,
-        ISubGlobalID, Linkage,
+        ISubGlobalID, Linkage, TLSModel,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
             IFuncUniqueUser, IFuncValue,
@@ -276,7 +276,7 @@ impl ValueSSA {
     pub fn new_zero(ty: ValTypeID) -> Result<Self, TypeMismatchErr> {
         let val = match ty {
             ValTypeID::Void => ValueSSA::None,
-            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull(ValTypeID::Void)),
+            ValTypeID::Ptr => ValueSSA::ConstData(ConstData::PtrNull),
             ValTypeID::Int(bits) => ValueSSA::ConstData(ConstData::Int(APInt::new(0, bits))),
             ValTypeID::Float(fpkind) => ValueSSA::ConstData(ConstData::Float(fpkind, 0.0)),
             ValTypeID::FixVec(v) => ValueSSA::AggrZero(AggrType::FixVec(v)),
@@ -285,6 +285,13 @@ impl ValueSSA {
             _ => return Err(TypeMismatchErr::NotClass(ty, ValTypeClass::Compound)),
         };
         Ok(val)
+    }
+    pub fn new_undef(ty: impl IValType) -> Self {
+        let ty = ty.into_ir();
+        if !ty.makes_instance() {
+            panic!("Cannot create undefined value for type {ty:?}");
+        }
+        ValueSSA::ConstData(ConstData::Undef(ty))
     }
 
     pub fn as_dyn_traceable<'ir>(&self, allocs: &'ir IRAllocs) -> Option<&'ir dyn ITraceableValue> {

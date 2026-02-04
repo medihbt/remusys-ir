@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::INullableValue,
     ir::{
         FuncObj, IPtrValue, IRAllocs, ISubValueSSA, ITraceableValue, IUser, Module, OperandSet,
@@ -9,7 +10,7 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
-use std::{cell::Cell, sync::Arc};
+use std::cell::Cell;
 
 pub mod func;
 pub mod var;
@@ -20,11 +21,125 @@ pub enum Linkage {
     DSOLocal,
     Private,
 }
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for Linkage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        let s = match self {
+            Linkage::External => "external",
+            Linkage::DSOLocal => "dso_local",
+            Linkage::Private => "private",
+        };
+        serializer.serialize_str(s)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for Linkage {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = smol_str::SmolStr::deserialize(deserializer)?;
+        match s.as_str() {
+            "external" => Ok(Linkage::External),
+            "dso_local" => Ok(Linkage::DSOLocal),
+            "private" => Ok(Linkage::Private),
+            _ => Err(serde_core::de::Error::custom("Invalid Linkage string")),
+        }
+    }
+}
+
+/// Thread-Local Storage (TLS) models for global variables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TLSModel {
+    /// The general dynamic model, which supports dynamic allocation of thread-local
+    /// variables at runtime. Accesses to thread-local variables using this model
+    /// require function calls to the thread-local storage (TLS) runtime library.
+    GeneralDynamic,
+
+    /// The local dynamic model, which assumes that the thread-local variables
+    /// are defined in the same shared object as the code accessing them. This model
+    /// allows for more efficient access to thread-local variables compared to the
+    /// general dynamic model.
+    LocalDynamic,
+
+    /// The initial exec model, which assumes that the thread-local variables
+    /// are defined in the main executable or in shared objects that are loaded
+    /// at program startup. This model allows for even more efficient access to
+    /// thread-local variables compared to the local dynamic model.
+    InitialExec,
+
+    /// The local exec model, which assumes that the thread-local variables
+    /// are defined in the same shared object as the code accessing them, and
+    /// that they are not subject to dynamic loading. This model provides the
+    /// most efficient access to thread-local variables.
+    LocalExec,
+}
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for TLSModel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        let s = match self {
+            TLSModel::GeneralDynamic => "generaldynamic",
+            TLSModel::LocalDynamic => "localdynamic",
+            TLSModel::InitialExec => "initialexec",
+            TLSModel::LocalExec => "localexec",
+        };
+        serializer.serialize_str(s)
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for TLSModel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        let s = smol_str::SmolStr::deserialize(deserializer)?;
+        match s.as_str() {
+            "generaldynamic" => Ok(TLSModel::GeneralDynamic),
+            "localdynamic" => Ok(TLSModel::LocalDynamic),
+            "initialexec" => Ok(TLSModel::InitialExec),
+            "localexec" => Ok(TLSModel::LocalExec),
+            _ => Err(serde_core::de::Error::custom("Invalid TLSModel string")),
+        }
+    }
+}
+impl TLSModel {
+    pub fn is_dynamic(self) -> bool {
+        matches!(self, TLSModel::GeneralDynamic | TLSModel::LocalDynamic)
+    }
+
+    pub fn is_static(self) -> bool {
+        matches!(self, TLSModel::InitialExec | TLSModel::LocalExec)
+    }
+
+    pub fn get_ir_text(self) -> &'static str {
+        match self {
+            TLSModel::GeneralDynamic => "generaldynamic",
+            TLSModel::LocalDynamic => "localdynamic",
+            TLSModel::InitialExec => "initialexec",
+            TLSModel::LocalExec => "localexec",
+        }
+    }
+    pub fn from_ir_text(text: &str) -> Option<Self> {
+        match text {
+            "generaldynamic" => Some(TLSModel::GeneralDynamic),
+            "localdynamic" => Some(TLSModel::LocalDynamic),
+            "initialexec" => Some(TLSModel::InitialExec),
+            "localexec" => Some(TLSModel::LocalExec),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GlobalExportErr {
     #[error("Global symbol name {0:?} was already taken by {1:?}")]
-    NameTaken(Arc<str>, GlobalID),
+    NameTaken(SymbolStr, GlobalID),
 
     #[error("Global symbol {0:?} was already exported with a different name")]
     AlreadyExported(GlobalID),
@@ -34,7 +149,7 @@ pub enum GlobalExportErr {
 }
 
 pub struct GlobalCommon {
-    pub name: Arc<str>,
+    pub name: SymbolStr,
     pub content_ty: ValTypeID,
     pub content_align_log: u8,
     pub users: Option<UserList>,
@@ -54,7 +169,7 @@ impl Clone for GlobalCommon {
     }
 }
 impl GlobalCommon {
-    pub fn new(name: Arc<str>, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
+    pub fn new(name: SymbolStr, content_ty: ValTypeID, align_log: u8, allocs: &IRAllocs) -> Self {
         Self {
             name,
             content_ty,
@@ -73,8 +188,8 @@ pub trait ISubGlobal: IUser + Sized {
     fn get_name(&self) -> &str {
         &self.get_common().name
     }
-    fn name_arc(&self) -> Arc<str> {
-        Arc::clone(&self.get_common().name)
+    fn clone_name(&self) -> SymbolStr {
+        self.get_common().name.clone()
     }
     fn get_back_linkage(&self) -> Linkage {
         self.get_common().back_linkage.get()
@@ -224,13 +339,13 @@ pub trait ISubGlobalID: Copy + 'static {
             return if id == self.raw_into() {
                 Ok(self)
             } else {
-                Err(GlobalExportErr::NameTaken(Arc::from(name), id))
+                Err(GlobalExportErr::NameTaken(SymbolStr::new(name), id))
             };
         }
         if symbols.get_symbol_by_name(self.get_name(allocs)).is_some() {
             return Err(GlobalExportErr::AlreadyExported(self.raw_into()));
         }
-        self.deref_ir_mut(allocs).common_mut().name = Arc::from(name);
+        self.deref_ir_mut(allocs).common_mut().name = SymbolStr::new(name);
         symbols
             .try_export_symbol(self.raw_into(), allocs)
             .expect("Internal Error: should not fail exporting after name check");

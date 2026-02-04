@@ -294,6 +294,132 @@ pub enum UseKind {
     DisposedUse,
 }
 
+impl std::fmt::Display for UseKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use UseKind::*;
+        let s: &'static str = match self {
+            Sentinel => "Sentinel",
+            BinOpLhs => "BinOpLhs",
+            BinOpRhs => "BinOpRhs",
+            CallOpCallee => "CallOpCallee",
+            CastOpFrom => "CastOpFrom",
+            CmpLhs => "CmpLhs",
+            CmpRhs => "CmpRhs",
+            GepBase => "GepBase",
+            LoadSource => "LoadSource",
+            StoreSource => "StoreSource",
+            StoreTarget => "StoreTarget",
+            IndexExtractAggr => "IndexExtractAggr",
+            IndexExtractIndex => "IndexExtractIndex",
+            FieldExtractAggr => "FieldExtractAggr",
+            IndexInsertAggr => "IndexInsertAggr",
+            IndexInsertElem => "IndexInsertElem",
+            IndexInsertIndex => "IndexInsertIndex",
+            FieldInsertAggr => "FieldInsertAggr",
+            FieldInsertElem => "FieldInsertElem",
+            SelectCond => "SelectCond",
+            SelectThen => "SelectThen",
+            SelectElse => "SelectElse",
+            BranchCond => "BranchCond",
+            SwitchCond => "SwitchCond",
+            RetValue => "RetValue",
+            AmoRmwPtr => "AmoRmwPtr",
+            AmoRmwVal => "AmoRmwVal",
+            GlobalInit => "GlobalInit",
+            SplatArrayElem => "SplatArrayElem",
+            KVArrayDefaultElem => "KVArrayDefaultElem",
+            CallOpArg(index) => return write!(f, "CallOpArg:{index}"),
+            GepIndex(index) => return write!(f, "GepIndex:{index}"),
+            PhiIncomingBlock(index) => return write!(f, "PhiIncomingBlock:{index}"),
+            PhiIncomingValue(index) => return write!(f, "PhiIncomingValue:{index}"),
+            ArrayElem(index) => return write!(f, "ArrayElem:{index}"),
+            KVArrayElem(index) => return write!(f, "KVArrayElem:{index}"),
+            StructField(index) => return write!(f, "StructField:{index}"),
+            VecElem(index) => return write!(f, "VecElem:{index}"),
+            DisposedUse => "DisposedUse",
+        };
+        f.write_str(s)
+    }
+}
+impl std::str::FromStr for UseKind {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use UseKind::*;
+        let fixed = match s {
+            "Sentinel" => Sentinel,
+            "BinOpLhs" => BinOpLhs,
+            "BinOpRhs" => BinOpRhs,
+            "CallOpCallee" => CallOpCallee,
+            "CastOpFrom" => CastOpFrom,
+            "CmpLhs" => CmpLhs,
+            "CmpRhs" => CmpRhs,
+            "GepBase" => GepBase,
+            "LoadSource" => LoadSource,
+            "StoreSource" => StoreSource,
+            "StoreTarget" => StoreTarget,
+            "IndexExtractAggr" => IndexExtractAggr,
+            "IndexExtractIndex" => IndexExtractIndex,
+            "FieldExtractAggr" => FieldExtractAggr,
+            "IndexInsertAggr" => IndexInsertAggr,
+            "IndexInsertElem" => IndexInsertElem,
+            "IndexInsertIndex" => IndexInsertIndex,
+            "FieldInsertAggr" => FieldInsertAggr,
+            "FieldInsertElem" => FieldInsertElem,
+            "SelectCond" => SelectCond,
+            "SelectThen" => SelectThen,
+            "SelectElse" => SelectElse,
+            "BranchCond" => BranchCond,
+            "SwitchCond" => SwitchCond,
+            "RetValue" => RetValue,
+            "AmoRmwPtr" => AmoRmwPtr,
+            "AmoRmwVal" => AmoRmwVal,
+            "GlobalInit" => GlobalInit,
+            "SplatArrayElem" => SplatArrayElem,
+            "KVArrayDefaultElem" => KVArrayDefaultElem,
+            "DisposedUse" => DisposedUse,
+            _ => {
+                let (prefix, raw_index) = s.split_once(':').ok_or("Invalid UseKind format")?;
+                let index_u32 = |v: &str| v.parse::<u32>().map_err(|_| "Invalid UseKind index");
+                let index_usize = |v: &str| v.parse::<usize>().map_err(|_| "Invalid UseKind index");
+                return match prefix {
+                    "CallOpArg" => Ok(CallOpArg(index_u32(raw_index)?)),
+                    "GepIndex" => Ok(GepIndex(index_u32(raw_index)?)),
+                    "PhiIncomingBlock" => Ok(PhiIncomingBlock(index_u32(raw_index)?)),
+                    "PhiIncomingValue" => Ok(PhiIncomingValue(index_u32(raw_index)?)),
+                    "ArrayElem" => Ok(ArrayElem(index_usize(raw_index)?)),
+                    "KVArrayElem" => Ok(KVArrayElem(index_usize(raw_index)?)),
+                    "StructField" => Ok(StructField(index_usize(raw_index)?)),
+                    "VecElem" => Ok(VecElem(index_usize(raw_index)?)),
+                    _ => Err("Unknown UseKind"),
+                };
+            }
+        };
+        Ok(fixed)
+    }
+}
+#[cfg(feature = "serde")]
+impl serde_core::Serialize for UseKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde_core::Serializer,
+    {
+        use smol_str::ToSmolStr;
+        serializer.serialize_str(&self.to_smolstr())
+    }
+}
+#[cfg(feature = "serde")]
+impl<'de> serde_core::Deserialize<'de> for UseKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde_core::Deserializer<'de>,
+    {
+        use serde_core::{Deserialize, de::Error};
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        s.parse().map_err(D::Error::custom)
+    }
+}
+
 impl UseKind {
     pub fn is_phi_incoming(&self) -> bool {
         matches!(

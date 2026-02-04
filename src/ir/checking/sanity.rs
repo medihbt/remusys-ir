@@ -8,6 +8,7 @@
 //! - 指令父块 / 块父函数双向关系全量巡检
 
 use crate::{
+    SymbolStr,
     base::FixBitSet,
     ir::{checking::IRLocation, inst::*, module::allocs::IPoolAllocated, *},
     typing::{FPKind, FixVecType, IntType, PtrType, TypeContext},
@@ -16,15 +17,14 @@ use mtb_entity_slab::{EntityAlloc, IEntityAllocID};
 use std::{
     cell::{Cell, Ref, RefCell},
     collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
 };
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum IRSanityErr {
     #[error("Global `{name:?}` (ID {id:p}) is unexpectedly dead")]
-    DeadGlobal { name: Option<Arc<str>>, id: GlobalID },
+    DeadGlobal { name: Option<SymbolStr>, id: GlobalID },
     #[error("Global `{name}` is unpinned but still referenced")]
-    UnpinnedGlobal { name: Arc<str>, id: GlobalID },
+    UnpinnedGlobal { name: SymbolStr, id: GlobalID },
     #[error("Basic block ID {0:?} is unexpectedly dead")]
     DeadBlock(BlockID),
     #[error("Instruction ID {0:?} is unexpectedly dead")]
@@ -275,7 +275,7 @@ impl<'ir> SanityCheckCtx<'ir> {
     fn tctx(&self) -> &TypeContext {
         &self.module.tctx
     }
-    fn symbols(&self) -> Ref<'_, HashMap<Arc<str>, GlobalID>> {
+    fn symbols(&self) -> Ref<'_, HashMap<SymbolStr, GlobalID>> {
         Ref::map(self.module.symbols.borrow(), |x| &x.exported)
     }
     fn push_mark_expr(&self, eid: ExprID) {
@@ -298,7 +298,7 @@ impl<'ir> SanityCheckCtx<'ir> {
 
         for (name, &gid) in self.symbols().iter() {
             if !GlobalObj::id_is_live(gid, allocs) {
-                let name = Some(Arc::clone(name));
+                let name = Some(name.clone());
                 return Err(IRSanityErr::DeadGlobal { name, id: gid });
             }
             match gid.deref_ir(allocs) {
@@ -357,7 +357,7 @@ impl<'ir> SanityCheckCtx<'ir> {
                 }
                 ValueSSA::Global(glob) => {
                     if !self.module.symbol_pinned(glob) {
-                        let name = glob.deref_ir(allocs).name_arc();
+                        let name = glob.deref_ir(allocs).clone_name();
                         return Err(IRSanityErr::UnpinnedGlobal { name, id: glob });
                     }
                 }

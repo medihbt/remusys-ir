@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     ir::{
         AttrClass, AttrSet, Attribute, AttributePos, BlockID, GlobalID, GlobalObj, IPtrUniqueUser,
         IPtrValue, IRAllocs, ISubGlobal, ISubGlobalID, ISubValueSSA, ITraceableValue, IUser,
@@ -10,10 +11,7 @@ use crate::{
 };
 use mtb_entity_slab::{EntityList, EntityListIter, IPoliciedID, PtrID};
 use smallvec::SmallVec;
-use std::{
-    cell::{Cell, Ref, RefCell, RefMut},
-    sync::Arc,
-};
+use std::cell::{Cell, Ref, RefCell, RefMut};
 
 pub trait IFuncValue: IPtrValue {
     fn get_pointee_func_type(&self) -> FuncTypeID {
@@ -485,7 +483,7 @@ impl FuncBuilder {
             let body = FuncBody { blocks, entry };
             Some(body)
         };
-        let name = Arc::from(self.name.as_str());
+        let name = SymbolStr::new(self.name.as_str());
         let content_ty = self.functype.into_ir();
         let common = GlobalCommon::new(name, content_ty, 0, allocs);
         let f = FuncObj {

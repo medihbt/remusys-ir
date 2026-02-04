@@ -1,20 +1,22 @@
 use crate::{
+    SymbolStr,
     base::INullableValue,
     ir::{
         GlobalID, GlobalKind, IRAllocs, ISubGlobalID, ITraceableValue, IUser, IValueConvert,
         Module, OperandSet, UseID, UseKind, ValueSSA,
-        global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage},
+        global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage, TLSModel},
     },
     typing::ValTypeID,
 };
 use mtb_entity_slab::{IPoliciedID, PtrID};
-use std::{cell::Cell, sync::Arc};
+use std::cell::Cell;
 
 #[derive(Clone)]
 pub struct GlobalVar {
     pub common: GlobalCommon,
     pub initval: [UseID; 1],
     pub readonly: Cell<bool>,
+    pub tls_model: Cell<Option<TLSModel>>,
 }
 
 impl ITraceableValue for GlobalVar {
@@ -175,6 +177,19 @@ impl GlobalVarID {
     pub fn get_init(self, allocs: &IRAllocs) -> ValueSSA {
         self.init_use(allocs).get_operand(allocs)
     }
+
+    pub fn enable_tls(self, allocs: &IRAllocs, model: TLSModel) {
+        self.deref_ir(allocs).tls_model.set(Some(model));
+    }
+    pub fn disable_tls(self, allocs: &IRAllocs) {
+        self.deref_ir(allocs).tls_model.set(None);
+    }
+    pub fn set_tls_model(self, allocs: &IRAllocs, model: Option<TLSModel>) {
+        self.deref_ir(allocs).tls_model.set(model);
+    }
+    pub fn get_tls_model(self, allocs: &IRAllocs) -> Option<TLSModel> {
+        self.deref_ir(allocs).tls_model.get()
+    }
 }
 
 pub trait IGlobalVarBuildable: Clone {
@@ -225,17 +240,30 @@ pub trait IGlobalVarBuildable: Clone {
         self.inner_mut().back_linkage = Linkage::Private;
         self
     }
+    fn enable_tls(&mut self, model: TLSModel) -> &mut Self {
+        self.inner_mut().tls_model = Some(model);
+        self
+    }
+    fn disable_tls(&mut self) -> &mut Self {
+        self.inner_mut().tls_model = None;
+        self
+    }
+    fn tls_model(&mut self, model: Option<TLSModel>) -> &mut Self {
+        self.inner_mut().tls_model = model;
+        self
+    }
 
     fn build_obj(&self, allocs: &IRAllocs) -> GlobalVar {
         let inner = self.inner();
         let gvar = GlobalVar {
             common: GlobalCommon::new(
-                Arc::from(inner.name.as_str()),
+                SymbolStr::new(inner.name.as_str()),
                 inner.content_ty,
                 inner.align_log,
                 allocs,
             ),
             initval: [UseID::new(allocs, UseKind::GlobalInit)],
+            tls_model: Cell::new(inner.tls_model),
             readonly: Cell::new(inner.readonly),
         };
         // Apply linkage preference first
@@ -272,6 +300,7 @@ pub struct GlobalVarBuilder {
     pub initval: ValueSSA,
     pub readonly: bool,
     pub back_linkage: Linkage,
+    pub tls_model: Option<TLSModel>,
 }
 impl IGlobalVarBuildable for GlobalVarBuilder {
     fn inner(&self) -> &GlobalVarBuilder {
@@ -288,6 +317,7 @@ impl IGlobalVarBuildable for GlobalVarBuilder {
             align_log: 0,
             initval: ValueSSA::None,
             readonly: false,
+            tls_model: None,
             back_linkage: Linkage::DSOLocal,
         }
     }

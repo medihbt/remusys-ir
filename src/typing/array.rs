@@ -96,13 +96,13 @@ impl IValType for ArrayTypeID {
         ValTypeClass::Array
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let (nelems, elemty) = {
             let obj = self.deref(&f.allocs.arrays);
             (obj.nelems, obj.elemty)
         };
         write!(f, "[ {nelems} x ")?;
-        elemty.serialize(f)?;
+        elemty.format_ir(f)?;
         write!(f, " ]")
     }
 
@@ -162,6 +162,16 @@ impl ArrayTypeID {
                 return Self(handle as u32);
             }
         }
+        let new_arr = ArrayTypeObj::new(elemty, nelems);
+        let handle = alloc_arr.insert(new_arr);
+        ArrayTypeID(handle as u32)
+    }
+    /// # Safety
+    ///
+    /// this function does not check for duplicate types.
+    pub unsafe fn new_nodedup(tctx: &TypeContext, elemty: ValTypeID, nelems: usize) -> Self {
+        let mut allocs = tctx.allocs.borrow_mut();
+        let alloc_arr = &mut allocs.arrays;
         let new_arr = ArrayTypeObj::new(elemty, nelems);
         let handle = alloc_arr.insert(new_arr);
         ArrayTypeID(handle as u32)

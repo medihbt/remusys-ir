@@ -164,7 +164,7 @@ impl<'ir> TypeMappingHelper<'ir> {
         let alias = old_sa.deref_ir(self.old_tctx);
         let StructAliasObj { name, aliasee } = &*alias;
         let aliasee = self.map_struct_type(*aliasee);
-        let new_aliases = self.new_tctx.set_alias(name, aliasee);
+        let new_aliases = self.new_tctx.set_alias(name.clone(), aliasee);
         self.mapping.aliases[idx] = new_aliases.0;
         new_aliases
     }
@@ -234,7 +234,7 @@ impl<'old> ModuleClone<'old> {
         match cdata {
             ConstData::Undef(ty) => ConstData::Undef(self.clone_type(ty)),
             ConstData::Zero(scal) => ConstData::Zero(scal),
-            ConstData::PtrNull(ty) => ConstData::PtrNull(self.clone_type(ty)),
+            ConstData::PtrNull => ConstData::PtrNull,
             ConstData::Int(apint) => ConstData::Int(apint),
             ConstData::Float(fk, fv) => ConstData::Float(fk, fv),
         }
@@ -796,7 +796,7 @@ impl<'old> ModuleClone<'old> {
             ValueSSA::ConstData(data) => {
                 let data = match data {
                     ConstData::Undef(ty) => ConstData::Undef(self.clone_type(ty)),
-                    ConstData::PtrNull(ty) => ConstData::PtrNull(self.clone_type(ty)),
+                    ConstData::PtrNull => ConstData::PtrNull,
                     data => data,
                 };
                 ValueSSA::ConstData(data)
@@ -853,7 +853,7 @@ impl<'old> ModuleClone<'old> {
         self.insert_expr(old_expr, arr);
 
         let old_elems = old_arr.elems.iter().copied();
-        let new_elems = arr.get_elems(new_allocs).iter().copied();
+        let new_elems = arr.elem_uses(new_allocs).iter().copied();
         for (new_use, old_use) in new_elems.zip(old_elems) {
             let old_val = old_use.get_operand(&self.old_module.allocs);
             self.push_use(new_use, old_val);

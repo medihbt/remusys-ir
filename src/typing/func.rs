@@ -93,14 +93,14 @@ impl IValType for FuncTypeID {
         ValTypeClass::Func
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let func_obj = self.deref(&f.allocs.funcs);
         f.write_str("func(")?;
         for (i, arg) in func_obj.args.iter().enumerate() {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            arg.serialize(f)?;
+            arg.format_ir(f)?;
         }
         if func_obj.is_vararg {
             if !func_obj.args.is_empty() {
@@ -109,7 +109,7 @@ impl IValType for FuncTypeID {
             f.write_str("...")?;
         }
         f.write_str(") -> ")?;
-        func_obj.ret_type.serialize(f)
+        func_obj.ret_type.format_ir(f)
     }
 
     fn try_get_size_full(self, _: &TypeAllocs, _: &TypeContext) -> Option<usize> {
@@ -177,5 +177,20 @@ impl FuncTypeID {
         args: &[ValTypeID],
     ) -> Self {
         Self::new(tctx, ret, is_vararg, args.iter().copied())
+    }
+
+    /// # Safety
+    ///
+    /// this function may create duplicate function types
+    pub unsafe fn new_nodedup(
+        tctx: &TypeContext,
+        ret: ValTypeID,
+        is_vararg: bool,
+        args: &[ValTypeID],
+    ) -> Self {
+        let mut allocs = tctx.allocs.borrow_mut();
+        let new_func = FuncTypeObj::new(is_vararg, ret, Box::from(args));
+        let handle = allocs.funcs.insert(new_func);
+        Self(handle as u32)
     }
 }

@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     ir::{
         FuncID, GlobalID, GlobalObj, GlobalVarID, IRAllocs, IRMarker, ISubGlobal, ISubGlobalID,
         utils::module_clone::ModuleClone,
@@ -20,7 +21,7 @@ pub mod gc;
 pub mod managing;
 
 pub struct SymbolPool {
-    pub(super) exported: HashMap<Arc<str>, GlobalID>,
+    pub(super) exported: HashMap<SymbolStr, GlobalID>,
     pub(super) func_pool: HashSet<FuncID>,
     pub(super) var_pool: HashSet<GlobalVarID>,
 }
@@ -73,7 +74,7 @@ impl SymbolPool {
         use std::collections::hash_map::Entry;
         let obj = id.deref_ir(allocs);
         debug_assert!(self.symbol_pinned(id, allocs), "Exporting unpinned symbol");
-        let name_arc = obj.name_arc();
+        let name_arc = obj.clone_name();
         match self.exported.entry(name_arc) {
             Entry::Occupied(existed) => Err(*existed.get()),
             Entry::Vacant(v) => {

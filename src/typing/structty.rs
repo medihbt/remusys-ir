@@ -108,7 +108,7 @@ impl IValType for StructTypeID {
         ValTypeClass::Struct
     }
 
-    fn serialize<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
         let (begin_str, end_str) =
             if self.is_packed(f.tctx) { ("<{ ", " }>") } else { ("{ ", " }") };
         f.write_str(begin_str)?;
@@ -117,7 +117,7 @@ impl IValType for StructTypeID {
             if i > 0 {
                 f.write_str(", ")?;
             }
-            field.serialize(f)?;
+            field.format_ir(f)?;
         }
         f.write_str(end_str)
     }
@@ -187,6 +187,22 @@ impl StructTypeID {
         }
         let mut new_struct = StructTypeObj::new_raw(iter.collect(), packed);
         new_struct.hash = hash;
+        new_struct.init_offsets(&allocs, tctx);
+        let handle = allocs.structs.insert(new_struct);
+        Self(handle as u32)
+    }
+    /// # Safety
+    /// this method breaks the invariant that "a type can only be created once".
+    pub unsafe fn new_nodedup(
+        tctx: &TypeContext,
+        packed: bool,
+        fields: SmallVec<[ValTypeID; 8]>,
+    ) -> Self {
+        let (hash, _) = StructTypeObj::make_hash_and_len(packed, fields.iter().copied());
+        let mut new_struct = StructTypeObj::new_raw(fields, packed);
+        new_struct.hash = hash;
+
+        let mut allocs = tctx.allocs.borrow_mut();
         new_struct.init_offsets(&allocs, tctx);
         let handle = allocs.structs.insert(new_struct);
         Self(handle as u32)
