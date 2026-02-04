@@ -8,8 +8,8 @@ use crate::{
     typing::{AggrType, TypeContext, ValTypeID},
 };
 use mtb_entity_slab::{
-    EntityListError, EntityListNodeHead, EntityListRes, IEntityAllocID, IEntityListNodeID,
-    IPoliciedID, IndexedID, entity_id,
+    EntityListError, EntityListNodeHead, EntityListRes, IBasicEntityListID, IEntityAllocID,
+    IOrderCachedListNodeID, IPoliciedID, IndexedID, OrderRepr, entity_id,
 };
 use std::cell::Cell;
 
@@ -75,6 +75,7 @@ pub use self::{
 
 pub struct InstCommon {
     pub node_head: Cell<EntityListNodeHead<InstID>>,
+    pub order: Cell<usize>,
     pub parent_bb: Cell<Option<BlockID>>,
     pub users: Option<UserList>,
     pub opcode: Opcode,
@@ -85,10 +86,11 @@ impl Clone for InstCommon {
     fn clone(&self) -> Self {
         Self {
             node_head: Cell::new(EntityListNodeHead::none()),
-            parent_bb: Cell::new(self.parent_bb.get()),
+            order: self.order.clone(),
+            parent_bb: self.parent_bb.clone(),
             users: None,
             opcode: self.opcode,
-            disposed: Cell::new(self.disposed.get()),
+            disposed: self.disposed.clone(),
             ret_type: self.ret_type,
         }
     }
@@ -97,6 +99,7 @@ impl InstCommon {
     pub fn deep_cloned(&self, allocs: &IRAllocs) -> Self {
         Self {
             node_head: Cell::new(EntityListNodeHead::none()),
+            order: Cell::new(0),
             parent_bb: Cell::new(None),
             users: Some(UserList::new(&allocs.uses)),
             opcode: self.opcode,
@@ -108,6 +111,7 @@ impl InstCommon {
     pub fn new_sentinel() -> Self {
         Self {
             node_head: Cell::new(EntityListNodeHead::none()),
+            order: Cell::new(0),
             parent_bb: Cell::new(None),
             users: None,
             opcode: Opcode::GuideNode,
@@ -122,6 +126,7 @@ impl InstCommon {
     pub fn new(opcode: Opcode, ret_ty: ValTypeID) -> Self {
         Self {
             node_head: Cell::new(EntityListNodeHead::none()),
+            order: Cell::new(0),
             parent_bb: Cell::new(None),
             users: None,
             opcode,
@@ -274,6 +279,19 @@ pub trait ISubInstID: Copy {
     }
     fn try_get_jts(self, allocs: &IRAllocs) -> Option<JumpTargets<'_>> {
         self.deref_ir(allocs).try_get_jts()
+    }
+
+    /// Returns true if `self` comes before `latter` in instruction order.
+    fn comes_before(self, allocs: &IRAllocs, latter: impl ISubInstID) -> bool {
+        use std::cmp::Ordering;
+        let ord = InstObj::id_list_ord(allocs, self.raw_into(), latter.raw_into());
+        matches!(ord, Some(Ordering::Less))
+    }
+    /// Returns true if `self` comes after `former` in instruction order.
+    fn comes_after(self, allocs: &IRAllocs, former: impl ISubInstID) -> bool {
+        use std::cmp::Ordering;
+        let ord = InstObj::id_list_ord(allocs, former.raw_into(), self.raw_into());
+        matches!(ord, Some(Ordering::Greater))
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::InstObjT) -> Self {
@@ -689,7 +707,7 @@ impl ISubInst for InstObj {
         }
     }
 }
-impl IEntityListNodeID for InstID {
+impl IBasicEntityListID for InstID {
     fn obj_load_head(obj: &InstObj) -> EntityListNodeHead<Self> {
         obj.get_common().node_head.get()
     }
@@ -731,6 +749,18 @@ impl IEntityListNodeID for InstID {
         Ok(())
     }
 }
+impl IOrderCachedListNodeID for InstID {
+    /// Instruction list order is used for relative ordering within a basic block
+    /// so that some passes like dominance analysis can be easier.
+    const ORDER_REPR: OrderRepr = OrderRepr::Relative;
+
+    fn obj_load_order(obj: &InstObj) -> usize {
+        obj.get_common().order.get()
+    }
+    fn obj_store_order(obj: &InstObj, order: usize) {
+        obj.get_common().order.set(order);
+    }
+}
 impl InstObj {
     pub fn new_phi_end() -> Self {
         InstObj::PhiInstEnd(InstCommon::new(Opcode::PhiEnd, ValTypeID::Void))
@@ -741,6 +771,23 @@ impl InstObj {
 
     pub fn is_disposed(&self) -> bool {
         self.get_common().disposed.get()
+    }
+
+    fn id_list_ord(allocs: &IRAllocs, a: InstID, b: InstID) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        if a == b {
+            return Some(Ordering::Equal);
+        }
+        let a_parent = a.get_parent(allocs)?;
+        let b_parent = b.get_parent(allocs)?;
+        if a_parent != b_parent {
+            None
+        } else {
+            let list = a_parent.get_insts(allocs);
+            let a_ord = list.get_node_order(&allocs.insts, a);
+            let b_ord = list.get_node_order(&allocs.insts, b);
+            Some(a_ord.cmp(&b_ord))
+        }
     }
 }
 

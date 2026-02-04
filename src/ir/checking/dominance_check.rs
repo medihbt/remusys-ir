@@ -1,7 +1,7 @@
 use crate::{
     ir::{
         BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubGlobalID, ISubInstID, ISubValueSSA,
-        ITraceableValue, InstID, InstObj, InstOrderCache, Module, Use, UseKind, UserID, ValueSSA,
+        ITraceableValue, InstID, InstObj, Module, Use, UseKind, UserID, ValueSSA,
     },
     opt::{CfgBlockStat, CfgErr, CfgRes, DominatorTree},
 };
@@ -53,16 +53,13 @@ pub fn module_dominance_check(module: &Module) -> DominanceCheckRes {
 
 pub struct FuncDominanceCheck<'ir> {
     pub func_id: FuncID,
-    pub dom_tree: DominatorTree<InstOrderCache>,
+    pub dom_tree: DominatorTree,
     pub allocs: &'ir IRAllocs,
 }
 
 impl<'ir> FuncDominanceCheck<'ir> {
     pub fn new(allocs: &'ir IRAllocs, func_id: FuncID) -> CfgRes<Self> {
-        let inst_ord = InstOrderCache::new();
-        let dom_tree = DominatorTree::builder(allocs, func_id)?
-            .build()
-            .map_relation(inst_ord);
+        let dom_tree = DominatorTree::builder(allocs, func_id)?.build();
         Ok(Self { func_id, dom_tree, allocs })
     }
 
@@ -90,7 +87,7 @@ struct CheckStat<'ir> {
     expr_stack: Vec<ExprID>,
     allocs: &'ir IRAllocs,
     operand: InstID,
-    dt: &'ir DominatorTree<InstOrderCache>,
+    dt: &'ir DominatorTree,
 }
 
 impl<'ir> CheckStat<'ir> {

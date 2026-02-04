@@ -9,8 +9,8 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityListError, EntityListNodeHead, EntityListRes, EntityRingList, EntityRingListIter,
-    IEntityAllocID, IEntityRingListNodeID, IPoliciedID, PtrID, entity_id,
+    EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, EntityRingList,
+    IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID, IPoliciedID, PtrID, entity_id,
 };
 use std::{
     cell::{Cell, Ref},
@@ -461,7 +461,7 @@ pub struct Use {
     pub operand: Cell<ValueSSA>,
 }
 pub(in crate::ir) type UseRawPtr = PtrID<Use, <UseID as IPoliciedID>::PolicyT>;
-impl IEntityRingListNodeID for UseID {
+impl IBasicEntityListID for UseID {
     fn obj_load_head(obj: &Use) -> EntityListNodeHead<Self> {
         obj.list_head.get()
     }
@@ -479,11 +479,19 @@ impl IEntityRingListNodeID for UseID {
             operand: Cell::new(ValueSSA::None),
         }
     }
-    fn on_unplug(self, obj: &Use, _: &UseAlloc) -> EntityListRes<Self> {
-        obj.operand.set(ValueSSA::None);
+
+    fn on_push_prev(self, _: Self, _: &UseAlloc) -> EntityListRes<Self> {
+        Ok(())
+    }
+    fn on_push_next(self, _: Self, _: &UseAlloc) -> EntityListRes<Self> {
+        Ok(())
+    }
+    fn on_unplug(self, alloc: &UseAlloc) -> EntityListRes<Self> {
+        self.deref_alloc(alloc).operand.set(ValueSSA::None);
         Ok(())
     }
 }
+impl IEntityRingListNodeID for UseID {}
 impl Use {
     pub fn get_kind(&self) -> UseKind {
         self.kind.get()
@@ -604,7 +612,7 @@ impl UseIndex {
     }
 }
 
-pub type UseIter<'ir> = EntityRingListIter<'ir, UseID>;
+pub type UseIter<'ir> = EntityListIter<'ir, UseID>;
 pub type UserList = EntityRingList<UseID>;
 
 pub trait ITraceableValue {

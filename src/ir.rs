@@ -89,7 +89,6 @@ pub use self::{
             FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
-        inst_ordering::{InstOrderCache, InstOrdering, ListWalkOrder},
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
         numbering::{IRNumberValueMap, NumberOption},

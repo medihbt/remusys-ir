@@ -1,7 +1,13 @@
+//! DEPRECATED: Instruction list is `OrderCachedList` now so that we
+//! do not need any acceleration structure for instruction ordering.
+//! This module is kept only for reference.
+
+use mtb_entity_slab::IBasicEntityListID;
+
 use crate::ir::{BlockID, IRAllocs, ISubInstID, InstID};
-use mtb_entity_slab::IEntityListNodeID;
 use std::{borrow::Borrow, cell::RefCell, collections::HashMap};
 
+#[deprecated(note = "Instruction list is `OrderCachedList` now")]
 pub trait InstOrdering {
     /// Returns true if `f` comes before `b` in the instruction order.
     fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool;
@@ -26,18 +32,7 @@ pub struct ListWalkOrder;
 impl InstOrdering for ListWalkOrder {
     fn comes_before(&self, allocs: &IRAllocs, f: InstID, b: InstID) -> bool {
         // traivial list walk
-        let alloc = &allocs.insts;
-        let mut current = f;
-        while !current.is_sentinel(alloc) {
-            if current == b {
-                return true;
-            }
-            current = match current.get_next_id(alloc) {
-                Some(inst) => inst,
-                None => break,
-            };
-        }
-        false
+        f.comes_before(allocs, b)
     }
 
     fn on_inst_insert(&self, _: &IRAllocs, _: InstID) {}

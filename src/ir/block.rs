@@ -7,8 +7,8 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityList, EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IEntityAllocID,
-    IEntityListNodeID, IPoliciedID, IndexedID, PtrID, entity_id,
+    EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IBasicEntityListID,
+    IEntityAllocID, IEntityListNodeID, IPoliciedID, IndexedID, OrderCachedList, PtrID, entity_id,
 };
 use std::cell::Cell;
 
@@ -26,14 +26,14 @@ pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPoliciedID>::P
 pub type BlockRawIndex = IndexedID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
 
 pub struct BlockObjBody {
-    pub insts: EntityList<InstID>,
+    pub insts: OrderCachedList<InstID>,
     pub phi_end: InstID,
     pub users: UserList,
     pub preds: PredList,
 }
 impl BlockObjBody {
     pub(crate) fn new(allocs: &IRAllocs) -> Self {
-        let insts = EntityList::new(&allocs.insts);
+        let insts = OrderCachedList::new(&allocs.insts);
         let phi_end = InstID::allocate(allocs, InstObj::new_phi_end());
         insts
             .push_back_id(phi_end, &allocs.insts)
@@ -43,7 +43,7 @@ impl BlockObjBody {
         Self { insts, phi_end, users, preds }
     }
 }
-impl IEntityListNodeID for BlockID {
+impl IBasicEntityListID for BlockID {
     fn obj_load_head(obj: &BlockObj) -> EntityListNodeHead<Self> {
         obj.head.get()
     }
@@ -88,6 +88,7 @@ impl IEntityListNodeID for BlockID {
         Ok(())
     }
 }
+impl IEntityListNodeID for BlockID {}
 impl ITraceableValue for BlockObj {
     fn users(&self) -> &UserList {
         &self.get_body().users
@@ -123,7 +124,7 @@ impl BlockObj {
             .as_ref()
             .expect("Error: Attempted to access body of sentinel BlockObj")
     }
-    pub fn get_insts(&self) -> &EntityList<InstID> {
+    pub fn get_insts(&self) -> &OrderCachedList<InstID> {
         &self.get_body().insts
     }
     pub fn insts_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> EntityListIter<'ir, InstID> {
@@ -284,7 +285,7 @@ impl BlockID {
     pub fn get_body(self, allocs: &IRAllocs) -> &BlockObjBody {
         self.deref_ir(allocs).get_body()
     }
-    pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstID> {
+    pub fn get_insts(self, allocs: &IRAllocs) -> &OrderCachedList<InstID> {
         &self.get_body(allocs).insts
     }
     pub fn insts_iter(self, allocs: &IRAllocs) -> EntityListIter<'_, InstID> {

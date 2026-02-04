@@ -1,7 +1,7 @@
 use crate::{
     ir::{
         AttrClass, BlockID, ExprID, FuncID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID,
-        ISubInstID, IUser, InstID, InstObj, InstOrdering, PoolAllocatedDisposeRes, ValueSSA,
+        ISubInstID, IUser, InstID, InstObj, PoolAllocatedDisposeRes, ValueSSA,
         checking::FuncDominanceCheck,
     },
     opt::{CfgBlockStat, CfgDfsSeq, transforms::IFuncTransformPass},
@@ -31,7 +31,7 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
             .clone()
     }
 
-    fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
+    fn run_on_func(&mut self, func: FuncID) {
         // Implementation of Basic Dead Code Elimination algorithm goes here
         let dfs = if cfg!(debug_assertions) {
             const MSG: &str = "Failed to run dominance check";
@@ -42,7 +42,7 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
             let allocs = self.allocs;
             CfgDfsSeq::new_pre(allocs, func).unwrap()
         };
-        self.kill_blocks_and_analyze(&dfs, order, func);
+        self.kill_blocks_and_analyze(&dfs, func);
 
         let allocs = self.allocs;
         let mut live_marker = LiveInstMarker::new(allocs);
@@ -69,8 +69,6 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
             insts
                 .node_unplug(inst, &allocs.insts)
                 .expect("BasicFuncDCE: failed to unplug dead inst");
-            // 通知指令排序器该指令已被移除
-            order.on_inst_remove(block, inst);
         }
     }
 }
@@ -90,7 +88,7 @@ impl<'ir> BasicFuncDCE<'ir> {
         Ok(())
     }
 
-    fn kill_blocks_and_analyze(&mut self, dfs: &CfgDfsSeq, order: &dyn InstOrdering, func: FuncID) {
+    fn kill_blocks_and_analyze(&mut self, dfs: &CfgDfsSeq, func: FuncID) {
         // Implementation for removing dead blocks
         let allocs = self.allocs;
         let blocks = func.get_blocks(allocs).unwrap();
@@ -110,7 +108,6 @@ impl<'ir> BasicFuncDCE<'ir> {
             blocks
                 .node_unplug(block, &allocs.blocks)
                 .expect("BasicFuncDCE: failed to unplug dead block");
-            order.invalidate_block(allocs, block);
         }
         self.dead_inst.reserve_exact(insts_cap);
     }

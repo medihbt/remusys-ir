@@ -11,8 +11,8 @@ use crate::{
     },
 };
 use mtb_entity_slab::{
-    EntityListNodeHead, EntityListRes, EntityRingList, IEntityAllocID, IEntityRingListNodeID,
-    IPoliciedID, entity_id,
+    EntityListNodeHead, EntityListRes, EntityRingList, IBasicEntityListID, IEntityAllocID,
+    IEntityRingListNodeID, IPoliciedID, entity_id,
 };
 use std::{
     cell::Cell,
@@ -119,7 +119,7 @@ pub struct JumpTarget {
     /// 目标基本块的引用
     pub block: Cell<Option<BlockID>>,
 }
-impl IEntityRingListNodeID for JumpTargetID {
+impl IBasicEntityListID for JumpTargetID {
     fn obj_load_head(obj: &JumpTarget) -> EntityListNodeHead<Self> {
         obj.node_head.get()
     }
@@ -139,11 +139,19 @@ impl IEntityRingListNodeID for JumpTargetID {
             block: Cell::new(None),
         }
     }
-    fn on_unplug(self, obj: &JumpTarget, _: &JumpTargetAlloc) -> EntityListRes<Self> {
-        obj.block.set(None);
+
+    fn on_unplug(self, alloc: &JumpTargetAlloc) -> EntityListRes<Self> {
+        self.deref_alloc(alloc).block.set(None);
+        Ok(())
+    }
+    fn on_push_next(self, _: Self, _: &JumpTargetAlloc) -> EntityListRes<Self> {
+        Ok(())
+    }
+    fn on_push_prev(self, _: Self, _: &JumpTargetAlloc) -> EntityListRes<Self> {
         Ok(())
     }
 }
+impl IEntityRingListNodeID for JumpTargetID {}
 impl JumpTarget {
     pub fn new(kind: JumpTargetKind) -> Self {
         use JumpTargetKind::*;

@@ -4,7 +4,7 @@
 
 use crate::{
     base::DSU,
-    ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID, InstOrdering, ListWalkOrder},
+    ir::{BlockID, FuncID, IRAllocs, ISubInstID, InstID},
     opt::{CfgBlockStat, CfgDfsSeq, CfgRes, CfgSnapshot},
 };
 use smallvec::SmallVec;
@@ -46,7 +46,7 @@ impl Default for DominatorTreeNode {
     }
 }
 
-pub struct DominatorTree<Order = ListWalkOrder> {
+pub struct DominatorTree {
     /// 所属函数 ID.
     pub func_id: FuncID,
     /// DFS 序列. 根据是支配树还是后支配树, 其遍历顺序会有所不同.
@@ -54,8 +54,6 @@ pub struct DominatorTree<Order = ListWalkOrder> {
     pub dfs: CfgDfsSeq,
     /// 支配树节点列表, 按 DFS 序列顺序排列.
     pub nodes: Vec<DominatorTreeNode>,
-    /// 存储 “一条指令是否为另一条指令” 的数据结构
-    pub inst_order: Order,
 }
 
 impl DominatorTree {
@@ -69,14 +67,10 @@ impl DominatorTree {
     }
 }
 
-impl<Order> DominatorTree<Order> {
+impl DominatorTree {
     /// 根节点在 DFS 序列中的索引.
     pub const ROOT_INDEX: usize = 0;
 
-    pub fn map_relation<S: InstOrdering>(self, relation: S) -> DominatorTree<S> {
-        let Self { func_id, dfs, nodes, .. } = self;
-        DominatorTree { func_id, dfs, nodes, inst_order: relation }
-    }
     pub fn get_kind(&self) -> DomiTreeKind {
         if self.is_postdom() { DomiTreeKind::PostDom } else { DomiTreeKind::Dom }
     }
@@ -184,10 +178,7 @@ impl<Order> DominatorTree<Order> {
         self.block_dominates_block(inst_block, block)
     }
 
-    pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool
-    where
-        Order: InstOrdering,
-    {
+    pub fn inst_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
         if a == b {
             return true;
         }
@@ -203,20 +194,14 @@ impl<Order> DominatorTree<Order> {
             self.block_dominates_block(a_block, b_block)
         } else if !self.is_postdom() {
             // Same block: use instruction order
-            self.inst_order.comes_before(allocs, a, b)
+            a.comes_before(allocs, b)
         } else {
             // Postdom: reverse instruction order
-            self.inst_order.comes_before(allocs, b, a)
+            b.comes_before(allocs, a)
         }
     }
-    pub fn inst_strictly_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool
-    where
-        Order: InstOrdering,
-    {
-        if a == b {
-            return false;
-        }
-        self.inst_dominates_inst(allocs, a, b)
+    pub fn inst_strictly_dominates_inst(&self, allocs: &IRAllocs, a: InstID, b: InstID) -> bool {
+        a != b && self.inst_dominates_inst(allocs, a, b)
     }
 }
 
@@ -236,12 +221,6 @@ impl DominatorTreeBuilder {
         Ok(Self { func_id, dfs, cfg, is_postdom })
     }
 
-    pub fn build_with_relation<R>(self, relation: R) -> DominatorTree<R>
-    where
-        R: InstOrdering,
-    {
-        self.build().map_relation(relation)
-    }
     pub fn build(self) -> DominatorTree {
         const ROOT_DFN: usize = 0;
         const BRANCH_START: usize = 1;
@@ -323,12 +302,7 @@ impl DominatorTreeBuilder {
             dt_nodes[idom_dfn].children_dfn.push(dfn);
         }
 
-        DominatorTree {
-            func_id: self.func_id,
-            dfs: self.dfs,
-            nodes: dt_nodes,
-            inst_order: ListWalkOrder,
-        }
+        DominatorTree { func_id: self.func_id, dfs: self.dfs, nodes: dt_nodes }
     }
 
     fn nnodes(&self) -> usize {
@@ -342,12 +316,12 @@ impl DominatorTreeBuilder {
     }
 }
 
-pub struct DominanceFrontier<'ir, Order> {
-    pub dom_tree: &'ir DominatorTree<Order>,
+pub struct DominanceFrontier<'ir> {
+    pub dom_tree: &'ir DominatorTree,
     pub df: Box<[HashSet<usize>]>,
     pub cfg: CfgSnapshot,
 }
-impl<'ir, Order> DominanceFrontier<'ir, Order> {
+impl<'ir> DominanceFrontier<'ir> {
     pub fn get_df_of_block(&self, block: impl Into<CfgBlockStat>) -> Option<&HashSet<usize>> {
         let block = block.into();
         let dfn = match block {
@@ -363,7 +337,7 @@ impl<'ir, Order> DominanceFrontier<'ir, Order> {
         self.df.get(dfn)
     }
 
-    pub fn new(dom_tree: &'ir DominatorTree<Order>, allocs: &'ir IRAllocs) -> CfgRes<Self> {
+    pub fn new(dom_tree: &'ir DominatorTree, allocs: &'ir IRAllocs) -> CfgRes<Self> {
         let nnodes = dom_tree.nodes.len();
         let mut frontiers = vec![HashSet::new(); nnodes];
         let mut ret = Self {
