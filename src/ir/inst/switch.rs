@@ -1,9 +1,9 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, IUser, InstCommon,
-        InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet, UseID, UseKind,
-        ValueSSA,
+        BlockID, BlockSection, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst,
+        IUser, InstCommon, InstObj, JumpTargetID, JumpTargetKind, JumpTargets, Opcode, OperandSet,
+        UseID, UseKind, ValueSSA,
     },
     typing::{IntType, ValTypeID},
 };
@@ -69,6 +69,9 @@ impl ISubInst for SwitchInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Terminator
     }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
@@ -346,6 +349,8 @@ impl SwitchInstBuilder {
         self
     }
     pub fn cases(&mut self, cases: impl IntoIterator<Item = (i64, BlockID)>) -> &mut Self {
+        let cases = cases.into_iter();
+        self.cases.reserve(cases.size_hint().0);
         for (case_val, bb) in cases {
             self.cases.insert(case_val, bb);
         }

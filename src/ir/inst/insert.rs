@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ITraceableValue, IUser, InstCommon, InstObj, JumpTargets,
-        Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IRAllocs, ISubInst, ISubInstID, ITraceableValue, IUser, InstCommon, InstObj,
+        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -49,6 +49,9 @@ impl ISubInst for IndexInsertInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
     }
 
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
@@ -129,7 +132,7 @@ impl IndexInsertInst {
     }
 }
 
-_remusys_ir_subinst!(IndexInsertInstID, IndexInsertInst);
+_remusys_ir_subinst!(IndexInsertInstID, IndexInsertInst, section = Body);
 impl IndexInsertInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_type: AggrType) -> Self {
         let inst = IndexInsertInst::new_uninit(allocs, tctx, aggr_type);
@@ -213,6 +216,9 @@ impl ISubInst for FieldInsertInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
 
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
@@ -281,7 +287,7 @@ impl FieldInsertInst {
     }
 }
 
-_remusys_ir_subinst!(FieldInsertInstID, FieldInsertInst);
+_remusys_ir_subinst!(FieldInsertInstID, FieldInsertInst, section = Body);
 impl FieldInsertInstID {
     pub fn builder(aggr_type: AggrType) -> FieldInsertBuilder {
         FieldInsertBuilder::new(aggr_type)

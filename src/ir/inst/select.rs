@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstObj,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -39,6 +39,9 @@ impl ISubInst for SelectInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
     }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
@@ -128,7 +131,7 @@ impl SelectInst {
     }
 }
 
-_remusys_ir_subinst!(SelectInstID, SelectInst);
+_remusys_ir_subinst!(SelectInstID, SelectInst, section = Body);
 impl SelectInstID {
     pub fn new_uninit(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = SelectInst::new_uninit(allocs, ty);

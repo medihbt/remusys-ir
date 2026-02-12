@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj, JumpTargetID,
-        JumpTargets, Opcode, OperandSet, UseID,
+        BlockSection, IRAllocs, ISubInst, ISubInstID, ITerminatorInst, IUser, InstCommon, InstObj,
+        JumpTargetID, JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
@@ -32,6 +32,9 @@ impl ISubInst for UnreachableInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Terminator
     }
 
     fn is_terminator(&self) -> bool {

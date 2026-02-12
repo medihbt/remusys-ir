@@ -38,7 +38,7 @@ pub use self::{
         AttrClass, AttrError, AttrRes, AttrSet, Attribute, AttributePos, InlineAttr, IntExtAttr,
         PtrArgTargetAttr,
     },
-    block::{BlockID, BlockIndex, BlockObj},
+    block::{BlockID, BlockIndex, BlockObj, BlockSection},
     cmp_cond::CmpCond,
     constant::{
         array::{
@@ -89,6 +89,7 @@ pub use self::{
             FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
+        func_clone::*,
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
         numbering::{IRNumberValueMap, NumberOption},

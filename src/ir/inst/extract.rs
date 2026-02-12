@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser, InstCommon, InstObj,
-        JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITraceableValue, IUser,
+        InstCommon, InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
         inst::{
             AggrFieldInstBuilderCommon, IAggrFieldInst, IAggrFieldInstBuildable, IAggrIndexInst,
             IAggregateInst,
@@ -44,6 +44,9 @@ impl ISubInst for IndexExtractInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
     }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
@@ -107,7 +110,7 @@ impl IndexExtractInst {
     pub const OP_INDEX: usize = 1;
 }
 
-_remusys_ir_subinst!(IndexExtractInstID, IndexExtractInst);
+_remusys_ir_subinst!(IndexExtractInstID, IndexExtractInst, section = Body);
 impl IndexExtractInstID {
     pub fn new_uninit(allocs: &IRAllocs, tctx: &TypeContext, aggr_ty: AggrType) -> Self {
         let inst = IndexExtractInst::new_uninit(allocs, tctx, aggr_ty);
@@ -184,6 +187,9 @@ impl ISubInst for FieldExtractInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
             InstObj::FieldExtract(e) => Some(e),
@@ -235,7 +241,7 @@ impl FieldExtractInst {
     }
 }
 
-_remusys_ir_subinst!(FieldExtractInstID, FieldExtractInst);
+_remusys_ir_subinst!(FieldExtractInstID, FieldExtractInst, section = Body);
 impl FieldExtractInstID {
     pub fn builder(aggr_type: AggrType) -> FieldExtractBuilder {
         FieldExtractInst::builder(aggr_type)

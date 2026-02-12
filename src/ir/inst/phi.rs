@@ -1,8 +1,9 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        BlockID, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon, InstID, InstObj,
-        Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID, ValueSSA,
+        BlockID, BlockSection, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
+        InstID, InstObj, Opcode, OperandSet, PoolAllocatedDisposeRes, UseID, UseKind, UserID,
+        ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -121,6 +122,10 @@ impl ISubInst for PhiInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Phi
+    }
+
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
             InstObj::Phi(p) => Some(p),
@@ -249,7 +254,7 @@ impl PhiInst {
     }
 }
 
-_remusys_ir_subinst!(PhiInstID, PhiInst);
+_remusys_ir_subinst!(PhiInstID, PhiInst, section = Phi);
 impl PhiInstID {
     pub fn new_empty(allocs: &IRAllocs, ty: ValTypeID) -> Self {
         let inst = PhiInst::new_empty(ty);

@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -133,6 +133,9 @@ impl ISubInst for AmoRmwInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         let InstObj::AmoRmw(amormw) = inst else {
             return None;
@@ -223,7 +226,7 @@ impl AmoRmwInst {
     }
 }
 
-_remusys_ir_subinst!(AmoRmwInstID, AmoRmwInst);
+_remusys_ir_subinst!(AmoRmwInstID, AmoRmwInst, section = Body);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)

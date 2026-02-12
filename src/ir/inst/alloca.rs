@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, JumpTargets, Opcode,
-        OperandSet, UseID,
+        BlockSection, IPtrValue, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj,
+        JumpTargets, Opcode, OperandSet, UseID,
     },
     typing::ValTypeID,
 };
@@ -73,6 +73,9 @@ impl ISubInst for AllocaInst {
     fn into_ir(self) -> InstObj {
         InstObj::Alloca(self)
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
 
     fn try_get_jts(&self) -> Option<JumpTargets<'_>> {
         None
@@ -89,7 +92,7 @@ impl AllocaInst {
     }
 }
 
-_remusys_ir_subinst!(AllocaInstID, AllocaInst);
+_remusys_ir_subinst!(AllocaInstID, AllocaInst, section = Body);
 impl AllocaInstID {
     pub fn new(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, AllocaInst::new(pointee_ty, align_log2))

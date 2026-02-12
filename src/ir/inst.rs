@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        BlockID, BlockIndex, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets, Opcode,
-        OperandSet, UseID, UserList, ValueClass, ValueSSA,
+        BlockID, BlockIndex, BlockSection, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
+        JumpTargets, Opcode, OperandSet, UseID, UserList, ValueClass, ValueSSA,
         indexed_ir::PoolAllocatedIndex,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
@@ -146,6 +146,7 @@ impl InstCommon {
 pub trait ISubInst: IUser + Sized {
     fn get_common(&self) -> &InstCommon;
     fn common_mut(&mut self) -> &mut InstCommon;
+    fn get_block_section(&self) -> BlockSection;
 
     fn get_opcode(&self) -> Opcode {
         self.get_common().opcode
@@ -174,7 +175,7 @@ pub trait ISubInst: IUser + Sized {
     fn into_ir(self) -> InstObj;
 
     fn is_terminator(&self) -> bool {
-        false
+        self.get_block_section() == BlockSection::Terminator
     }
     fn try_get_jts(&self) -> Option<JumpTargets<'_>>;
 }
@@ -266,6 +267,7 @@ pub trait ISubInstID: Copy {
     fn set_parent(self, allocs: &IRAllocs, parent: Option<BlockID>) {
         self.deref_ir(allocs).set_parent(parent);
     }
+    fn get_block_section(self, allocs: &IRAllocs) -> BlockSection;
 
     fn get_operands(self, allocs: &IRAllocs) -> OperandSet<'_> {
         self.deref_ir(allocs).get_operands()
@@ -307,62 +309,6 @@ pub trait ISubInstID: Copy {
 #[macro_export]
 #[doc(hidden)]
 macro_rules! _remusys_ir_subinst {
-    ($IDType:ident, $ObjType:ident) => {
-        impl $crate::ir::ITraceableValue for $ObjType {
-            fn users(&self) -> &$crate::ir::UserList {
-                let Some(users) = &self.get_common().users else {
-                    panic!("Error: Attempted to get users of an instruction without user list");
-                };
-                users
-            }
-            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
-                self.get_common().users.as_ref()
-            }
-            fn get_valtype(&self) -> ValTypeID {
-                self.get_common().ret_type
-            }
-            fn has_unique_ref_semantics(&self) -> bool {
-                true
-            }
-        }
-
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDType(pub $crate::ir::inst::InstBackID);
-        impl std::fmt::Debug for $IDType {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                let tyname = stringify!($IDType);
-                let addr = self.into_raw_ptr();
-                write!(f, "{tyname}({addr:p})",)
-            }
-        }
-        impl $crate::ir::inst::ISubInstID for $IDType {
-            type InstObjT = $ObjType;
-
-            #[inline]
-            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
-                $IDType(ptr)
-            }
-            #[inline]
-            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
-                self.0
-            }
-        }
-        impl $crate::ir::IValueConvert for $IDType {
-            fn try_from_value(
-                value: $crate::ir::ValueSSA,
-                allocs: &$crate::ir::Module,
-            ) -> Option<Self> {
-                let inst_id = match value {
-                    $crate::ir::ValueSSA::Inst(id) => id,
-                    _ => return None,
-                };
-                Self::try_from_instid(inst_id, &allocs.allocs)
-            }
-            fn into_value(self) -> $crate::ir::ValueSSA {
-                $crate::ir::ValueSSA::Inst(self.raw_into())
-            }
-        }
-    };
     ($IDType:ident, $ObjType:ident, terminator) => {
         impl $crate::ir::ITraceableValue for $ObjType {
             fn users(&self) -> &$crate::ir::UserList {
@@ -406,6 +352,10 @@ macro_rules! _remusys_ir_subinst {
             fn is_terminator(self, _: &IRAllocs) -> bool {
                 true
             }
+            #[inline]
+            fn get_block_section(self, _: &IRAllocs) -> $crate::ir::BlockSection {
+                $crate::ir::BlockSection::Terminator
+            }
         }
         impl $crate::ir::IValueConvert for $IDType {
             fn try_from_value(
@@ -423,6 +373,66 @@ macro_rules! _remusys_ir_subinst {
             }
         }
         impl $crate::ir::ITerminatorID for $IDType {}
+    };
+    ($IDType:ident, $ObjType:ident, section = $Section:ident) => {
+        impl $crate::ir::ITraceableValue for $ObjType {
+            fn users(&self) -> &$crate::ir::UserList {
+                let Some(users) = &self.get_common().users else {
+                    panic!("Error: Attempted to get users of an instruction without user list");
+                };
+                users
+            }
+            fn try_get_users(&self) -> Option<&$crate::ir::UserList> {
+                self.get_common().users.as_ref()
+            }
+            fn get_valtype(&self) -> ValTypeID {
+                self.get_common().ret_type
+            }
+            fn has_unique_ref_semantics(&self) -> bool {
+                true
+            }
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $IDType(pub $crate::ir::inst::InstBackID);
+        impl std::fmt::Debug for $IDType {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                let tyname = stringify!($IDType);
+                let addr = self.into_raw_ptr();
+                write!(f, "{tyname}({addr:p})",)
+            }
+        }
+        impl $crate::ir::inst::ISubInstID for $IDType {
+            type InstObjT = $ObjType;
+
+            #[inline]
+            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
+                $IDType(ptr)
+            }
+            #[inline]
+            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
+                self.0
+            }
+            #[inline]
+            fn get_block_section(self, _: &IRAllocs) -> $crate::ir::BlockSection {
+                $crate::ir::BlockSection::$Section
+            }
+        }
+        impl $crate::ir::IValueConvert for $IDType {
+            fn try_from_value(
+                value: $crate::ir::ValueSSA,
+                allocs: &$crate::ir::Module,
+            ) -> Option<Self> {
+                let inst_id = match value {
+                    $crate::ir::ValueSSA::Inst(id) => id,
+                    _ => return None,
+                };
+                Self::try_from_instid(inst_id, &allocs.allocs)
+            }
+            fn into_value(self) -> $crate::ir::ValueSSA {
+                $crate::ir::ValueSSA::Inst(self.raw_into())
+            }
+        }
     };
 }
 
@@ -677,6 +687,17 @@ impl ISubInst for InstObj {
             Select(select) => select.common_mut(),
         }
     }
+    fn get_block_section(&self) -> BlockSection {
+        match self {
+            InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => BlockSection::PhiEnd,
+            InstObj::Unreachable(_)
+            | InstObj::Ret(_)
+            | InstObj::Jump(_)
+            | InstObj::Br(_)
+            | InstObj::Switch(_) => BlockSection::Terminator,
+            _ => BlockSection::Body,
+        }
+    }
 
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         Some(inst)
@@ -808,6 +829,10 @@ impl ISubInstID for InstID {
     #[inline]
     fn into_raw_ptr(self) -> <InstID as IPoliciedID>::BackID {
         self.0
+    }
+    #[inline]
+    fn get_block_section(self, allocs: &IRAllocs) -> BlockSection {
+        self.deref_ir(allocs).get_block_section()
     }
 }
 impl ISubValueSSA for InstID {

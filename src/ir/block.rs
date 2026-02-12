@@ -14,6 +14,35 @@ use std::cell::Cell;
 
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstID>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BlockSection {
+    /// The section of the block before the first non-Phi instruction.
+    /// This section should only contain Phi nodes, and is guaranteed
+    /// to be non-empty (it will contain a PhiEnd pseudo-instruction
+    /// if there are no actual Phi nodes).
+    Phi,
+    /// The "phi-end" pseudo-instruction, which serves as a marker for
+    /// the end of the Phi section.
+    PhiEnd,
+    /// The section of the block after the PhiEnd instruction, which
+    /// contains all non-Phi instructions.
+    Body,
+    /// The terminator instruction of the block, which must be the last instruction
+    /// in the block and must be a terminator.
+    Terminator,
+}
+
+impl BlockSection {
+    pub fn succ(self) -> Option<Self> {
+        match self {
+            BlockSection::Phi => Some(BlockSection::PhiEnd),
+            BlockSection::PhiEnd => Some(BlockSection::Body),
+            BlockSection::Body => Some(BlockSection::Terminator),
+            BlockSection::Terminator => None,
+        }
+    }
+}
+
 #[entity_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
 #[entity_id(BlockIndex, policy = 256, backend = index)]
 pub struct BlockObj {

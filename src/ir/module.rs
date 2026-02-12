@@ -7,13 +7,12 @@ use crate::{
     typing::{ArchInfo, TypeContext},
 };
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{
     borrow::Borrow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::Arc,
 };
 
 pub mod allocs;
@@ -38,6 +37,9 @@ impl SymbolPool {
     }
     pub fn var_pool(&self) -> &HashSet<GlobalVarID> {
         &self.var_pool
+    }
+    pub fn exported(&self) -> &HashMap<SymbolStr, GlobalID> {
+        &self.exported
     }
     pub(super) fn pool_add(&mut self, allocs: &IRAllocs, id: GlobalID) -> bool {
         match id.deref_ir(allocs) {

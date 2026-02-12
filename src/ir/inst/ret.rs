@@ -1,9 +1,9 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst, ITraceableValue, IUser,
-        InstCommon, InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet, UseID, UseKind,
-        ValueSSA,
+        BlockSection, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, ITerminatorInst,
+        ITraceableValue, IUser, InstCommon, InstObj, JumpTargetID, JumpTargets, Opcode, OperandSet,
+        UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -35,6 +35,9 @@ impl ISubInst for RetInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Terminator
     }
 
     fn is_terminator(&self) -> bool {

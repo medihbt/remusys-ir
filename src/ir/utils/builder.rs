@@ -112,7 +112,7 @@ impl Default for FocusDegradeConfig {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum IRBuildError {
     #[error("Global definition {0} already exists: {1:p}")]
     GlobalDefExists(String, GlobalID),

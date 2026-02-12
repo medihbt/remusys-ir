@@ -283,6 +283,9 @@ pub trait ISubGlobalID: Copy + 'static {
     fn get_name(self, allocs: &IRAllocs) -> &str {
         self.deref_ir(allocs).get_name()
     }
+    fn clone_name(self, allocs: &IRAllocs) -> SymbolStr {
+        self.deref_ir(allocs).clone_name()
+    }
     fn get_linkage(self, allocs: &IRAllocs) -> Linkage {
         self.deref_ir(allocs).get_linkage(allocs)
     }
