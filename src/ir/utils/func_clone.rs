@@ -499,6 +499,7 @@ impl<'ir> Inner<'ir> {
             InstObj::Call(call) => {
                 let mut call_builder = CallInst::builder(tctx, call.callee_ty);
                 call_builder
+                    .is_tail_call(call.is_tail_call.get())
                     .resize_nargs(call.arg_uses().len() as u32)
                     .expect(
                         "internal error: failed to resize call instruction when cloning function",
