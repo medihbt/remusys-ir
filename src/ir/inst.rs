@@ -690,6 +690,7 @@ impl ISubInst for InstObj {
     fn get_block_section(&self) -> BlockSection {
         match self {
             InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => BlockSection::PhiEnd,
+            InstObj::Phi(_) => BlockSection::Phi,
             InstObj::Unreachable(_)
             | InstObj::Ret(_)
             | InstObj::Jump(_)

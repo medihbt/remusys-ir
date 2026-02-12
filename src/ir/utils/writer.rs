@@ -726,6 +726,10 @@ impl IRFormatInst for SwitchInst {
         write.fmt_operand(cond)?;
         write.write_str(", label ")?;
         write.fmt_block_target(self.get_default_bb(allocs))?;
+        if self.case_jts().is_empty() {
+            write.write_str(" [ ]")?;
+            return Ok(());
+        }
         write.write_str(" [")?;
         write.inc_indent();
         for case in &*self.case_jts() {
@@ -740,7 +744,8 @@ impl IRFormatInst for SwitchInst {
             write.fmt_block_target(case.get_block(allocs))?;
         }
         write.dec_indent();
-        write.write_str(" ]")?;
+        write.wrap_indent()?;
+        write.write_str("]")?;
         Ok(())
     }
 }

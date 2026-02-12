@@ -411,12 +411,12 @@ impl<'ir> Inner<'ir> {
         };
 
         match (*phi_section, oinst.get_block_section()) {
-            (_, BlockSection::Terminator) => return section_not_body(BlockSection::Terminator),
             (true, BlockSection::Phi) | (false, BlockSection::Body) => {}
             (true, BlockSection::PhiEnd) => {
                 *phi_section = false;
                 return Ok(None); // phi-end is not cloned and not mapped, so we skip it.
             }
+            (_, BlockSection::Terminator) => return section_not_body(BlockSection::Terminator),
             (false, BlockSection::Phi) => return section_not_body(BlockSection::Phi),
             (false, BlockSection::PhiEnd) => return section_not_body(BlockSection::PhiEnd),
             (true, BlockSection::Body) => {
