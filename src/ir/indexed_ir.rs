@@ -2,8 +2,8 @@ use crate::{
     base::INullableValue,
     ir::{
         BlockIndex, ConstData, ExprIndex, FuncID, GlobalIndex, IRAllocs, ISubGlobalID, ISubInstID,
-        ITraceableValue, IUser, InstID, InstIndex, InstObj, JumpTargetIndex, OperandSet, UseIndex,
-        UseKind, UserList, ValueSSA,
+        ITraceableValue, IUser, InstID, InstIndex, InstObj, JumpTargetIndex, OperandSet,
+        PoolAllocatedID, UseIndex, UseKind, UserList, ValueSSA,
     },
     typing::AggrType,
 };
@@ -74,7 +74,7 @@ impl IndexedValue {
     }
 }
 
-pub trait PoolAllocatedIndex: Copy + Eq {
+pub trait IPoolAllocatedIndex: Copy + Eq {
     type Object;
     type PrimaryID;
 
@@ -93,7 +93,7 @@ pub trait PoolAllocatedIndex: Copy + Eq {
         self.try_deref_ir(allocs).expect("UAF detected")
     }
 }
-pub trait TraceableIndex: PoolAllocatedIndex {
+pub trait ITraceableIndex: IPoolAllocatedIndex {
     fn users_primary(self, allocs: &IRAllocs) -> &UserList;
     fn user_uses<T>(self, allocs: &IRAllocs) -> T
     where
@@ -106,7 +106,7 @@ pub trait TraceableIndex: PoolAllocatedIndex {
         iter.collect()
     }
 }
-pub trait UserIndex: TraceableIndex {
+pub trait IUserIndex: ITraceableIndex {
     fn get_primary_uses(self, allocs: &IRAllocs) -> OperandSet<'_>;
 
     fn get_use_by_kind(self, allocs: &IRAllocs, kind: UseKind) -> Option<UseIndex> {
@@ -121,7 +121,7 @@ pub trait UserIndex: TraceableIndex {
         primary_u.as_indexed(allocs)
     }
 }
-impl PoolAllocatedIndex for InstIndex {
+impl IPoolAllocatedIndex for InstIndex {
     type Object = InstObj;
     type PrimaryID = InstID;
 
@@ -136,7 +136,7 @@ impl PoolAllocatedIndex for InstIndex {
         self.0.try_deref(&allocs.insts)
     }
 }
-impl PoolAllocatedIndex for BlockIndex {
+impl IPoolAllocatedIndex for BlockIndex {
     type Object = crate::ir::BlockObj;
     type PrimaryID = crate::ir::BlockID;
 
@@ -151,7 +151,7 @@ impl PoolAllocatedIndex for BlockIndex {
         self.0.try_deref(&allocs.blocks)
     }
 }
-impl PoolAllocatedIndex for ExprIndex {
+impl IPoolAllocatedIndex for ExprIndex {
     type Object = crate::ir::constant::expr::ExprObj;
     type PrimaryID = crate::ir::constant::expr::ExprID;
 
@@ -166,7 +166,7 @@ impl PoolAllocatedIndex for ExprIndex {
         self.0.try_deref(&allocs.exprs)
     }
 }
-impl PoolAllocatedIndex for GlobalIndex {
+impl IPoolAllocatedIndex for GlobalIndex {
     type Object = crate::ir::GlobalObj;
     type PrimaryID = crate::ir::GlobalID;
 
@@ -182,7 +182,7 @@ impl PoolAllocatedIndex for GlobalIndex {
         self.0.try_deref(&allocs.globals)
     }
 }
-impl PoolAllocatedIndex for UseIndex {
+impl IPoolAllocatedIndex for UseIndex {
     type Object = crate::ir::Use;
     type PrimaryID = crate::ir::UseID;
 
@@ -197,7 +197,7 @@ impl PoolAllocatedIndex for UseIndex {
         self.0.try_deref(&allocs.uses)
     }
 }
-impl PoolAllocatedIndex for JumpTargetIndex {
+impl IPoolAllocatedIndex for JumpTargetIndex {
     type Object = crate::ir::JumpTarget;
     type PrimaryID = crate::ir::JumpTargetID;
 
@@ -212,18 +212,18 @@ impl PoolAllocatedIndex for JumpTargetIndex {
     }
 }
 
-impl<T> TraceableIndex for T
+impl<T> ITraceableIndex for T
 where
-    T: PoolAllocatedIndex,
+    T: IPoolAllocatedIndex,
     T::Object: ITraceableValue + 'static,
 {
     fn users_primary(self, allocs: &IRAllocs) -> &UserList {
         self.deref_ir(allocs).users()
     }
 }
-impl<T> UserIndex for T
+impl<T> IUserIndex for T
 where
-    T: TraceableIndex,
+    T: ITraceableIndex,
     T::Object: IUser + 'static,
 {
     fn get_primary_uses(self, allocs: &IRAllocs) -> OperandSet<'_> {
@@ -231,11 +231,83 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum PoolAllocatedIndex {
+    Inst(InstIndex),
+    Block(BlockIndex),
+    Expr(ExprIndex),
+    Global(GlobalIndex),
+    Use(UseIndex),
+    JT(JumpTargetIndex),
+}
+
+impl From<InstIndex> for PoolAllocatedIndex {
+    fn from(value: InstIndex) -> Self {
+        PoolAllocatedIndex::Inst(value)
+    }
+}
+impl From<BlockIndex> for PoolAllocatedIndex {
+    fn from(value: BlockIndex) -> Self {
+        PoolAllocatedIndex::Block(value)
+    }
+}
+impl From<ExprIndex> for PoolAllocatedIndex {
+    fn from(value: ExprIndex) -> Self {
+        PoolAllocatedIndex::Expr(value)
+    }
+}
+impl From<GlobalIndex> for PoolAllocatedIndex {
+    fn from(value: GlobalIndex) -> Self {
+        PoolAllocatedIndex::Global(value)
+    }
+}
+impl From<UseIndex> for PoolAllocatedIndex {
+    fn from(value: UseIndex) -> Self {
+        PoolAllocatedIndex::Use(value)
+    }
+}
+impl From<JumpTargetIndex> for PoolAllocatedIndex {
+    fn from(value: JumpTargetIndex) -> Self {
+        PoolAllocatedIndex::JT(value)
+    }
+}
+impl PoolAllocatedIndex {
+    pub fn from_primary(allocs: &IRAllocs, primary: PoolAllocatedID) -> Self {
+        use crate::ir::PoolAllocatedID as P;
+        use PoolAllocatedIndex as I;
+        match primary {
+            P::Inst(id) => I::Inst(id.to_indexed(allocs)),
+            P::Block(id) => I::Block(id.to_indexed(allocs)),
+            P::Expr(id) => I::Expr(id.to_indexed(allocs)),
+            P::Global(id) => I::Global(id.to_indexed(allocs)),
+            P::Use(id) => I::Use(id.to_indexed(allocs)),
+            P::JumpTarget(id) => I::JT(id.to_indexed(allocs)),
+        }
+    }
+
+    pub fn as_primary(self, allocs: &IRAllocs) -> Option<PoolAllocatedID> {
+        use crate::ir::PoolAllocatedID as P;
+        use PoolAllocatedIndex as I;
+        match self {
+            I::Inst(i) => i.as_primary(allocs).map(P::Inst),
+            I::Block(b) => b.as_primary(allocs).map(P::Block),
+            I::Expr(e) => e.as_primary(allocs).map(P::Expr),
+            I::Global(g) => g.as_primary(allocs).map(P::Global),
+            I::Use(u) => u.as_primary(allocs).map(P::Use),
+            I::JT(jt) => jt.as_primary(allocs).map(P::JumpTarget),
+        }
+    }
+    pub fn to_primary(self, allocs: &IRAllocs) -> PoolAllocatedID {
+        self.as_primary(allocs).expect("UAF detected")
+    }
+}
+
 macro_rules! _remusys_ir_indexed_serde {
     ($name:ident) => {
         #[cfg(feature = "serde")]
-        impl serde_core::Serialize for $name {
-            fn serialize<S: serde_core::Serializer>(
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(
                 &self,
                 serializer: S,
             ) -> Result<S::Ok, S::Error> {
@@ -243,15 +315,15 @@ macro_rules! _remusys_ir_indexed_serde {
             }
         }
         #[cfg(feature = "serde")]
-        impl<'de> serde_core::Deserialize<'de> for $name {
-            fn deserialize<D: serde_core::Deserializer<'de>>(
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D: serde::Deserializer<'de>>(
                 deserializer: D,
             ) -> Result<Self, D::Error> {
                 use mtb_entity_slab::IPoliciedID;
                 let inner = <mtb_entity_slab::IndexedID<
                     <Self as IPoliciedID>::ObjectT,
                     <Self as IPoliciedID>::PolicyT,
-                > as serde_core::Deserialize>::deserialize(deserializer)?;
+                > as serde::Deserialize>::deserialize(deserializer)?;
                 Ok(Self(inner))
             }
         }

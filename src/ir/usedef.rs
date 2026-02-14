@@ -2,7 +2,7 @@ use crate::{
     ir::{
         ExprID, GlobalID, IRAllocs, ISubExprID, ISubValueSSA, InstID, ValueClass, ValueSSA,
         global::ISubGlobalID,
-        indexed_ir::{IndexedValue, PoolAllocatedIndex},
+        indexed_ir::{IndexedValue, IPoolAllocatedIndex},
         inst::ISubInstID,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
@@ -399,22 +399,22 @@ impl std::str::FromStr for UseKind {
     }
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for UseKind {
+impl serde::Serialize for UseKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         use smol_str::ToSmolStr;
         serializer.serialize_str(&self.to_smolstr())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for UseKind {
+impl<'de> serde::Deserialize<'de> for UseKind {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        use serde_core::{Deserialize, de::Error};
+        use serde::{Deserialize, de::Error};
         let s: &str = Deserialize::deserialize(deserializer)?;
         s.parse().map_err(D::Error::custom)
     }

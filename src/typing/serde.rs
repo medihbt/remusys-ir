@@ -4,7 +4,7 @@
 
 use crate::typing::*;
 
-use serde_core::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use ::serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use smol_str::SmolStr;
 
 use std::str::FromStr;

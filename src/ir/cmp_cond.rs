@@ -161,21 +161,21 @@ impl std::fmt::Display for CmpCond {
 }
 
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for CmpCond {
+impl serde::Serialize for CmpCond {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         serializer.serialize_str(self.as_str())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for CmpCond {
+impl<'de> serde::Deserialize<'de> for CmpCond {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        CmpCond::from_str(&s).map_err(serde_core::de::Error::custom)
+        CmpCond::from_str(&s).map_err(serde::de::Error::custom)
     }
 }

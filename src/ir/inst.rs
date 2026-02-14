@@ -2,7 +2,7 @@ use crate::{
     ir::{
         BlockID, BlockIndex, BlockSection, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
         JumpTargets, Opcode, OperandSet, UseID, UserList, ValueClass, ValueSSA,
-        indexed_ir::PoolAllocatedIndex,
+        indexed_ir::IPoolAllocatedIndex,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::{AggrType, TypeContext, ValTypeID},

@@ -2,7 +2,7 @@ use crate::{
     base::{MixRef, MixRefIter},
     ir::{
         BlockID, BlockIndex, IRAllocs, ISubInst, ISubInstID, InstID, InstIndex, InstObj,
-        indexed_ir::PoolAllocatedIndex,
+        indexed_ir::IPoolAllocatedIndex,
         inst::{
             BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
             UnreachableInst, UnreachableInstID,
@@ -78,22 +78,22 @@ impl std::str::FromStr for JumpTargetKind {
     }
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for JumpTargetKind {
+impl serde::Serialize for JumpTargetKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         use smol_str::ToSmolStr;
         serializer.serialize_str(&self.to_smolstr())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for JumpTargetKind {
+impl<'de> serde::Deserialize<'de> for JumpTargetKind {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        use serde_core::{Deserialize, de::Error};
+        use serde::{Deserialize, de::Error};
         use std::str::FromStr;
         let s: &str = Deserialize::deserialize(deserializer)?;
         JumpTargetKind::from_str(s).map_err(Error::custom)

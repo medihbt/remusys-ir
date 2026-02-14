@@ -92,6 +92,7 @@ pub use self::{
         func_clone::*,
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
+        source_map::*,
         numbering::{IRNumberValueMap, NumberOption},
         writer::{
             IRFuncWriter, IRWriteErr, IRWriteFuncStat, IRWriteModuleStat, IRWriteOption,
