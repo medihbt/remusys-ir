@@ -2,7 +2,7 @@ use crate::{
     ir::{
         ExprID, GlobalID, IRAllocs, ISubExprID, ISubValueSSA, InstID, ValueClass, ValueSSA,
         global::ISubGlobalID,
-        indexed_ir::{IndexedValue, IPoolAllocatedIndex},
+        indexed_ir::{IPoolAllocatedIndex, IndexedValue},
         inst::ISubInstID,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },

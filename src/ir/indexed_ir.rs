@@ -307,18 +307,13 @@ macro_rules! _remusys_ir_indexed_serde {
     ($name:ident) => {
         #[cfg(feature = "serde")]
         impl serde::Serialize for $name {
-            fn serialize<S: serde::Serializer>(
-                &self,
-                serializer: S,
-            ) -> Result<S::Ok, S::Error> {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                 self.0.serialize(serializer)
             }
         }
         #[cfg(feature = "serde")]
         impl<'de> serde::Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(
-                deserializer: D,
-            ) -> Result<Self, D::Error> {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 use mtb_entity_slab::IPoliciedID;
                 let inner = <mtb_entity_slab::IndexedID<
                     <Self as IPoliciedID>::ObjectT,

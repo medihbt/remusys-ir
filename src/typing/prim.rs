@@ -68,7 +68,7 @@ impl IValType for FPKind {
         Some(align)
     }
 
-    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::fmt::Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         match self {
             FPKind::Ieee32 => f.write_str("float"),
             FPKind::Ieee64 => f.write_str("double"),
@@ -142,7 +142,7 @@ impl IValType for IntType {
         Some(closing.div_ceil(8) as usize)
     }
 
-    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::fmt::Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         write!(f, "i{}", self.0)
     }
 }
@@ -187,7 +187,7 @@ impl IValType for PtrType {
         Some(tctx.arch.ptr_nbits.div_ceil(8) as usize)
     }
 
-    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: std::fmt::Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         f.write_str("ptr")
     }
 }

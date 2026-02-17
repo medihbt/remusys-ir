@@ -5,3 +5,4 @@ pub mod module_clone;
 pub mod source_map;
 pub mod numbering;
 pub mod writer;
+pub mod serialize;

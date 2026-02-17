@@ -92,12 +92,10 @@ pub use self::{
         func_clone::*,
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
+        numbering::*,
+        serialize::*,
         source_map::*,
-        numbering::{IRNumberValueMap, NumberOption},
-        writer::{
-            IRFuncWriter, IRWriteErr, IRWriteFuncStat, IRWriteModuleStat, IRWriteOption,
-            IRWriteRes, IRWriter, WriteIR, write_ir_to_file,
-        },
+        writer::*,
     },
 };
 

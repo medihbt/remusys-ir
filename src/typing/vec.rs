@@ -23,7 +23,7 @@ impl IValType for FixVecType {
         ValTypeClass::FixVec
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         f.write_str("<")?;
         self.0.format_ir(f)?;
         write!(f, "x {}>", 1 << self.1)

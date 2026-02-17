@@ -237,23 +237,7 @@ pub struct AttrSet {
 }
 
 bitflags::bitflags! {
-    /// ```ignore
-    /// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-    /// pub enum Attribute {
-    ///     NoUndef,
-    ///     IntExt(IntExtAttr),
-    ///     PtrReadOnly,
-    ///     PtrNoCapture,
-    ///     FuncNoReturn,
-    ///     FuncInline(InlineAttr),
-    ///     FuncAlignStack(u8 /* log2 of alignment in bytes */),
-    ///     FuncPure,
-    ///     ArgPtrTarget(PtrArgTargetAttr),
-    ///     ArgArrPtrElem(ValTypeID),
-    ///     /// slimilar to LLVM `dereferenceable` attribute
-    ///     ArgPtrDerefBytes(usize),
-    /// }
-    /// ```
+    /// See the definition of `AttrSet` for the meaning of each bit field.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     struct AttrSetBits: u64 {
         const NONE          = 0x0000_0000;

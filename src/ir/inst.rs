@@ -1,6 +1,6 @@
 use crate::{
     ir::{
-        BlockID, BlockIndex, BlockSection, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
+        BlockID, BlockIndex, BlockSection, FuncID, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
         JumpTargets, Opcode, OperandSet, UseID, UserList, ValueClass, ValueSSA,
         indexed_ir::IPoolAllocatedIndex,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
@@ -266,6 +266,10 @@ pub trait ISubInstID: Copy {
     }
     fn set_parent(self, allocs: &IRAllocs, parent: Option<BlockID>) {
         self.deref_ir(allocs).set_parent(parent);
+    }
+    fn get_parent_func(self, allocs: &IRAllocs) -> Option<FuncID> {
+        self.get_parent(allocs)
+            .and_then(|bb_id| bb_id.get_parent_func(allocs))
     }
     fn get_block_section(self, allocs: &IRAllocs) -> BlockSection;
 

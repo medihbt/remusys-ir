@@ -7,8 +7,8 @@ use crate::{
 };
 use std::{
     cell::{Cell, Ref},
+    fmt::Write,
     hash::{DefaultHasher, Hash, Hasher},
-    io::Write,
 };
 
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ impl IValType for FuncTypeID {
         ValTypeClass::Func
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         let func_obj = self.deref(&f.allocs.funcs);
         f.write_str("func(")?;
         for (i, arg) in func_obj.args.iter().enumerate() {

@@ -6,7 +6,7 @@ use crate::{
         ValTypeClass, ValTypeID,
     },
 };
-use std::{cell::Ref, io::Write};
+use std::{cell::Ref, fmt::Write};
 
 #[derive(Debug, Clone)]
 pub struct StructAliasObj {
@@ -47,7 +47,7 @@ impl IValType for StructAliasID {
         ValTypeClass::StructAlias
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         let name = &self.deref(&f.allocs.aliases).name;
         write!(f, "%{name}")
     }

@@ -1,4 +1,3 @@
-// The old implementation of IR writing
 use crate::{
     SymbolStr,
     ir::{inst::*, module::allocs::IPoolAllocated, *},

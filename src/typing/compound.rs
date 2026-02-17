@@ -1,4 +1,4 @@
-use std::{fmt::Debug, io::Write};
+use std::fmt::{Debug, Write};
 
 use crate::{
     base::INullableValue,
@@ -57,7 +57,7 @@ impl IValType for ScalarType {
         }
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         match self {
             ScalarType::Ptr => f.write_str("ptr"),
             ScalarType::Int(bits) => write!(f, "i{}", bits),
@@ -169,7 +169,7 @@ impl IValType for AggrType {
         }
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         match self {
             AggrType::Array(id) => id.format_ir(f),
             AggrType::Struct(id) => id.format_ir(f),

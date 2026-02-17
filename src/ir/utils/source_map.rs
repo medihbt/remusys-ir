@@ -1,4 +1,5 @@
-use smol_str::format_smolstr;
+use smallvec::{SmallVec, smallvec};
+use smol_str::ToSmolStr;
 
 use crate::{
     SymbolStr,
@@ -9,70 +10,40 @@ use crate::{
         *,
     },
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LocalName {
-    Str(SymbolStr),
-    Cnt(usize),
-}
+use super::numbering::NumberOption;
+// #[derive(Debug, Clone, Copy)]
+// pub struct NumberOption {
+//     pub ignore_void: bool,
+//     pub ignore_terminator: bool,
+//     pub ignore_guide: bool,
+// }
 
-impl<'s> From<&'s str> for LocalName {
-    fn from(value: &'s str) -> Self {
-        if let Ok(index) = value.parse::<usize>() {
-            LocalName::Cnt(index)
-        } else {
-            LocalName::Str(SymbolStr::from(value))
-        }
-    }
-}
-impl From<SymbolStr> for LocalName {
-    fn from(value: SymbolStr) -> Self {
-        if let Ok(index) = value.parse::<usize>() {
-            LocalName::Cnt(index)
-        } else {
-            LocalName::Str(value)
-        }
-    }
-}
-impl From<LocalName> for SymbolStr {
-    fn from(val: LocalName) -> Self {
-        match val {
-            LocalName::Str(s) => s,
-            LocalName::Cnt(i) => format_smolstr!("{i}"),
-        }
-    }
-}
-impl std::fmt::Display for LocalName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LocalName::Str(s) => write!(f, "%{s}"),
-            LocalName::Cnt(i) => write!(f, "%{i}"),
-        }
-    }
-}
-impl LocalName {
-    pub fn as_symbol_str(&self) -> SymbolStr {
-        self.clone().into()
-    }
-}
+// impl NumberOption {
+//     pub fn ignore_all() -> Self {
+//         NumberOption {
+//             ignore_void: true,
+//             ignore_terminator: true,
+//             ignore_guide: true,
+//         }
+//     }
+//     pub fn ignore_none() -> Self {
+//         NumberOption {
+//             ignore_void: false,
+//             ignore_terminator: false,
+//             ignore_guide: false,
+//         }
+//     }
+// }
 
-#[derive(Debug, Clone)]
-pub struct IRFuncNameInfo {
-    pub index: GlobalIndex,
-    pub args: Box<[Option<LocalName>]>,
-}
-impl IRFuncNameInfo {
-    fn new(index: GlobalIndex, nargs: usize) -> Self {
-        Self { index, args: vec![None; nargs].into_boxed_slice() }
-    }
-}
-
+/// Persistent storage of explicit/string names.
+/// Only holds names that are considered persistent (from source or externally registered).
 #[derive(Debug, Clone, Default)]
 pub struct IRNameMap {
-    pub funcs: HashMap<GlobalIndex, IRFuncNameInfo>,
-    pub insts: HashMap<InstIndex, LocalName>,
-    pub blocks: HashMap<BlockIndex, LocalName>,
+    pub funcs: HashMap<GlobalIndex, Box<[Option<SymbolStr>]>>,
+    pub insts: HashMap<InstIndex, SymbolStr>,
+    pub blocks: HashMap<BlockIndex, SymbolStr>,
 }
 
 impl IRNameMap {
@@ -80,78 +51,49 @@ impl IRNameMap {
         Self::default()
     }
 
-    pub fn number_func(&mut self, allocs: &IRAllocs, func: FuncID, option: NumberOption) {
-        let func_index = func.to_indexed(allocs);
-        let mut number = 0;
-        let func_info = self.funcs.entry(func_index).or_insert_with(|| {
-            let nargs = func.deref_ir(allocs).args.len();
-            IRFuncNameInfo::new(func_index, nargs)
-        });
-
-        for arg in &mut func_info.args {
-            *arg = Some(Self::number_name(arg.take(), &mut number));
-        }
-        for (bbid, _) in func.blocks_iter(allocs) {
-            let bbindex = bbid.to_indexed(allocs);
-            let bbname = Self::number_name(self.blocks.remove(&bbindex), &mut number);
-            self.blocks.insert(bbindex, bbname);
-
-            for (instid, inst) in bbid.insts_iter(allocs) {
-                if option.ignore_guide && matches!(inst, InstObj::PhiInstEnd(_)) {
-                    continue;
-                }
-                if option.ignore_terminator && inst.is_terminator() {
-                    continue;
-                }
-                if option.ignore_void && inst.get_valtype() == ValTypeID::Void {
-                    continue;
-                }
-                let instindex = instid.to_indexed(allocs);
-                let instname = Self::number_name(self.insts.remove(&instindex), &mut number);
-                self.insts.insert(instindex, instname);
-            }
+    pub fn insert_func_args(&mut self, func_index: GlobalIndex, nargs: usize) {
+        self.funcs
+            .entry(func_index)
+            .or_insert_with(|| vec![None; nargs].into_boxed_slice());
+    }
+    pub fn set_func_arg(&mut self, func_index: GlobalIndex, arg: usize, name: SymbolStr) {
+        self.funcs
+            .entry(func_index)
+            .or_insert_with(|| vec![None; arg + 1].into_boxed_slice());
+        let Some(func_info) = self.funcs.get_mut(&func_index) else {
+            return;
+        };
+        if let Some(slot) = func_info.get_mut(arg) {
+            *slot = Some(name);
         }
     }
-    pub fn del_numbers(&mut self) {
-        self.funcs.values_mut().for_each(|info| {
-            for arg in &mut info.args {
-                if let Some(LocalName::Cnt(_)) = arg {
-                    *arg = None;
-                }
-            }
-        });
-        self.blocks
-            .retain(|_, name| matches!(name, LocalName::Str(_)));
-        self.insts
-            .retain(|_, name| matches!(name, LocalName::Str(_)));
+
+    pub fn insert_inst(&mut self, idx: InstIndex, name: SymbolStr) {
+        self.insts.insert(idx, name);
+    }
+    pub fn insert_block(&mut self, idx: BlockIndex, name: SymbolStr) {
+        self.blocks.insert(idx, name);
     }
 
-    pub fn all_names_of_func(&mut self, allocs: &IRAllocs, func: FuncID) -> HashSet<SymbolStr> {
-        let mut set = HashSet::new();
-        let func_index = func.to_indexed(allocs);
-
-        // collect argument names if present in the map
-        if let Some(info) = self.funcs.get(&func_index) {
-            for arg in info.args.iter().flatten() {
-                set.insert(arg.as_symbol_str());
+    /// Return persistent name for a value, if present.
+    pub fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+        let val = val.into_value();
+        match val {
+            ValueSSA::FuncArg(func_id, index) => {
+                let func_index = func_id.to_indexed(allocs);
+                let info = self.funcs.get(&func_index)?;
+                info.get(index as usize).and_then(|opt| opt.clone())
             }
+            ValueSSA::Block(block_id) => {
+                let block_index = block_id.to_indexed(allocs);
+                self.blocks.get(&block_index).cloned()
+            }
+            ValueSSA::Inst(inst_id) => {
+                let inst_index = inst_id.to_indexed(allocs);
+                self.insts.get(&inst_index).cloned()
+            }
+            _ => None,
         }
-
-        // collect block and instruction names for this function
-        for (bbid, _) in func.blocks_iter(allocs) {
-            let bbindex = bbid.to_indexed(allocs);
-            if let Some(name) = self.blocks.get(&bbindex) {
-                set.insert(name.as_symbol_str());
-            }
-
-            for (instid, _) in bbid.insts_iter(allocs) {
-                let instindex = instid.to_indexed(allocs);
-                if let Some(name) = self.insts.get(&instindex) {
-                    set.insert(name.as_symbol_str());
-                }
-            }
-        }
-        set
     }
 
     pub fn gc(&mut self, allocs: &IRAllocs) {
@@ -162,14 +104,94 @@ impl IRNameMap {
         self.insts
             .retain(|index, _| index.as_primary(allocs).is_some());
     }
+}
 
-    fn number_name(name: Option<LocalName>, number: &mut usize) -> LocalName {
-        match name {
-            Some(LocalName::Str(s)) => LocalName::Str(s),
-            _ => {
-                *number += 1;
-                LocalName::Cnt(*number - 1)
+pub struct FuncNumberMap<'a> {
+    pub names: &'a IRNameMap,
+    pub func: FuncID,
+    pub args: SmallVec<[u32; 4]>,
+    pub insts: HashMap<InstID, usize>,
+    pub blocks: HashMap<BlockID, usize>,
+}
+
+impl<'a> FuncNumberMap<'a> {
+    pub fn new(
+        allocs: &IRAllocs,
+        func_id: FuncID,
+        names: &'a IRNameMap,
+        option: NumberOption,
+    ) -> Self {
+        let mut number = 0usize;
+        let args = Self::number_args(allocs, func_id, names, &mut number);
+        let body = func_id.body_unwrap(allocs);
+        let mut blocks = HashMap::with_capacity(body.blocks.len());
+        let mut insts = HashMap::new();
+
+        for (bbid, bb) in body.blocks.iter(&allocs.blocks) {
+            let block_index = bbid.to_indexed(allocs);
+            if !names.blocks.contains_key(&block_index) {
+                blocks.insert(bbid, number);
+                number += 1;
             }
+
+            for (instid, inst) in bb.get_insts().iter(&allocs.insts) {
+                if option.ignore_guide && matches!(inst, InstObj::PhiInstEnd(_)) {
+                    continue;
+                }
+                if option.ignore_terminator && inst.is_terminator() {
+                    continue;
+                }
+                if option.ignore_void && inst.get_valtype() == ValTypeID::Void {
+                    continue;
+                }
+                let inst_index = instid.to_indexed(allocs);
+                if !names.insts.contains_key(&inst_index) {
+                    insts.insert(instid, number);
+                    number += 1;
+                }
+            }
+        }
+
+        Self { names, func: func_id, args, insts, blocks }
+    }
+
+    fn number_args(
+        allocs: &IRAllocs,
+        func_id: FuncID,
+        names: &'a IRNameMap,
+        number: &mut usize,
+    ) -> SmallVec<[u32; 4]> {
+        let func_obj = func_id.deref_ir(allocs);
+        let mut args: SmallVec<[u32; 4]> = smallvec![u32::MAX; func_obj.args.len()];
+        for (i, arg) in args.iter_mut().enumerate() {
+            let name = names.get_local_name(allocs, FuncArgID(func_id, i as u32));
+            if name.is_some() {
+                continue;
+            }
+            *arg = *number as u32;
+            *number += 1;
+        }
+        args
+    }
+
+    pub fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+        // prefer persistent
+        if let Some(p) = self.names.get_local_name(allocs, val) {
+            return Some(p);
+        }
+        let val = val.into_value();
+        match val {
+            ValueSSA::FuncArg(func_id, index) if func_id == self.func => {
+                let idx = index as usize;
+                if idx < self.args.len() && self.args[idx] != u32::MAX {
+                    Some(self.args[idx].to_smolstr())
+                } else {
+                    None
+                }
+            }
+            ValueSSA::Block(block_id) => self.blocks.get(&block_id).map(ToSmolStr::to_smolstr),
+            ValueSSA::Inst(inst_id) => self.insts.get(&inst_id).map(ToSmolStr::to_smolstr),
+            _ => None,
         }
     }
 }
@@ -374,5 +396,17 @@ impl SourceRangeMap {
             }
         }
         ranges
+    }
+
+    /// Merge source ranges from another map, overwriting any existing ranges for the same entities.
+    pub fn update_merge(&mut self, new_map: &Self) {
+        self.insts
+            .extend(new_map.insts.iter().map(|(k, v)| (*k, *v)));
+        self.blocks
+            .extend(new_map.blocks.iter().map(|(k, v)| (*k, *v)));
+        self.globals
+            .extend(new_map.globals.iter().map(|(k, v)| (*k, *v)));
+        self.uses.extend(new_map.uses.iter().map(|(k, v)| (*k, *v)));
+        self.jts.extend(new_map.jts.iter().map(|(k, v)| (*k, *v)));
     }
 }
