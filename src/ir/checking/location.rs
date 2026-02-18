@@ -1,7 +1,4 @@
-use crate::ir::{
-    BlockID, FuncID, GlobalVarID, IRAllocs, IRWriteOption, IRWriter, ISubGlobal, ISubGlobalID,
-    ISubInstID, InstID, JumpTargetID, Module, UseID, UserID, ValueSSA, WriteIR,
-};
+use crate::ir::*;
 use std::io::Write;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,78 +48,25 @@ impl From<ValueSSA> for IRLocation {
     }
 }
 impl IRLocation {
-    pub fn describe(&self, module: &Module, out: &mut dyn Write) {
-        let mut writer = IRWriter::from_module(out, module);
-        let allocs = &module.allocs;
-        match self {
-            IRLocation::Module => write!(writer, "Module {}", module.name).unwrap(),
-            IRLocation::GlobalVar(gvar) => writer.fmt_global_var(*gvar).unwrap(),
-            IRLocation::Func(func_id) => {
-                let func = func_id.deref_ir(allocs);
-                write!(writer, "Function @{}", func.get_name()).unwrap();
-            }
-            IRLocation::Block(block_id) => {
-                let Some(parent_func) = block_id.get_parent_func(allocs) else {
-                    write!(writer, "{:?} (orphan)", block_id).unwrap();
-                    return;
-                };
-                writer
-                    .switch_to_func(parent_func)
-                    .unwrap()
-                    .fmt_block_target(Some(*block_id))
-                    .unwrap();
-            }
-            IRLocation::Inst(inst_id) => {
-                Self::describe_inst(&mut writer, allocs, *inst_id);
-            }
-            IRLocation::Use(use_id) => {
-                let user = use_id.get_user(allocs);
-                let kind = use_id.get_kind(allocs);
-                let operand = use_id.get_operand(allocs);
-                writeln!(
-                    writer,
-                    "Use {use_id:?} (kind: {kind:?}, user: {user:?}, operand: {operand:?})"
-                )
-                .unwrap();
-
-                if let Some(UserID::Inst(inst)) = user {
-                    write!(writer, "Related inst:").unwrap();
-                    Self::describe_inst(&mut writer, allocs, inst);
-                    writeln!(writer).unwrap();
-                }
-            }
-            IRLocation::JumpTarget(jt) => {
-                let kind = jt.get_kind(allocs);
-                let termi = jt.get_terminator(allocs);
-                let block = jt.get_block(allocs);
-                write!(
-                    writer,
-                    "JumpTarget {jt:?} (kind: {kind:?}, termi: {termi:?}, block: {block:?})"
-                )
-                .unwrap();
-
-                if let Some(termi_id) = termi {
-                    write!(writer, "\nRelated terminator:").unwrap();
-                    Self::describe_inst(&mut writer, allocs, termi_id);
-                    writeln!(writer).unwrap();
-                }
-            }
-            IRLocation::Operand(op) => writer.fmt_operand(*op).unwrap(),
+    pub fn describe(&self, module: &Module, names: &IRNameMap, out: &mut dyn Write) {
+        if let IRLocation::Module = self {
+            write!(out, "Module {}", module.name).unwrap();
+            return;
         }
-    }
-
-    fn describe_inst(writer: &mut IRWriter<'_>, allocs: &IRAllocs, inst_id: InstID) {
-        let opcode = inst_id.get_opcode(allocs);
-        let Some(parent_bb) = inst_id.get_parent(allocs) else {
-            write!(writer, "{inst_id:?} opcode {opcode:?} (orphan)").unwrap();
-            return;
+        let mut serializer = IRSerializer::new(&mut *out, module, names);
+        let res = match self {
+            IRLocation::Module => unreachable!(),
+            IRLocation::GlobalVar(gvar) => serializer.fmt_global(gvar.raw_into()),
+            IRLocation::Func(func_id) => serializer.fmt_func(*func_id),
+            IRLocation::Block(block_id) => serializer.fmt_block(*block_id),
+            IRLocation::Inst(inst_id) => serializer.fmt_inst(*inst_id),
+            IRLocation::Use(use_id) => serializer.fmt_use_info(*use_id),
+            IRLocation::JumpTarget(jt) => serializer.fmt_jt_info(*jt),
+            IRLocation::Operand(val) => serializer.fmt_operand(*val),
         };
-        let Some(parent_func) = parent_bb.get_parent_func(allocs) else {
-            write!(writer, "{inst_id:?} opcode {opcode:?} (orphan block)").unwrap();
-            return;
-        };
-        writer.set_option(IRWriteOption::loud());
-        let inst_writer = writer.switch_to_func(parent_func).unwrap();
-        inst_writer.fmt_instid(inst_id).unwrap();
+        drop(serializer);
+        if let Err(e) = res {
+            write!(out, "Error describing location: {e}").unwrap();
+        }
     }
 }

@@ -12,30 +12,29 @@ use crate::{
 };
 use std::collections::HashMap;
 
-use super::numbering::NumberOption;
-// #[derive(Debug, Clone, Copy)]
-// pub struct NumberOption {
-//     pub ignore_void: bool,
-//     pub ignore_terminator: bool,
-//     pub ignore_guide: bool,
-// }
+#[derive(Debug, Clone, Copy)]
+pub struct NumberOption {
+    pub ignore_void: bool,
+    pub ignore_terminator: bool,
+    pub ignore_guide: bool,
+}
 
-// impl NumberOption {
-//     pub fn ignore_all() -> Self {
-//         NumberOption {
-//             ignore_void: true,
-//             ignore_terminator: true,
-//             ignore_guide: true,
-//         }
-//     }
-//     pub fn ignore_none() -> Self {
-//         NumberOption {
-//             ignore_void: false,
-//             ignore_terminator: false,
-//             ignore_guide: false,
-//         }
-//     }
-// }
+impl NumberOption {
+    pub fn ignore_all() -> Self {
+        NumberOption {
+            ignore_void: true,
+            ignore_terminator: true,
+            ignore_guide: true,
+        }
+    }
+    pub fn ignore_none() -> Self {
+        NumberOption {
+            ignore_void: false,
+            ignore_terminator: false,
+            ignore_guide: false,
+        }
+    }
+}
 
 /// Persistent storage of explicit/string names.
 /// Only holds names that are considered persistent (from source or externally registered).
@@ -271,6 +270,7 @@ pub struct SourceRangeMap {
     pub insts: HashMap<InstIndex, IRSourceRange>,
     pub blocks: HashMap<BlockIndex, IRSourceRange>,
     pub globals: HashMap<GlobalIndex, IRSourceRange>,
+    pub funcargs: HashMap<GlobalIndex, Box<[Option<IRSourceRange>]>>,
     pub uses: HashMap<UseIndex, IRSourceRange>,
     pub jts: HashMap<JumpTargetIndex, IRSourceRange>,
 }
@@ -296,6 +296,11 @@ impl SourceRangeMap {
             index
                 .try_deref_ir(allocs)
                 .is_some_and(|g| !g.obj_disposed())
+        });
+        self.funcargs.retain(|index, _| {
+            index
+                .try_deref_ir(allocs)
+                .is_some_and(|f| !f.obj_disposed())
         });
         self.uses.retain(|index, _| {
             index
@@ -357,6 +362,28 @@ impl SourceRangeMap {
             PoolAllocatedIndex::JT(jt_index) => self.jts.get(&jt_index),
             _ => None,
         }
+    }
+    pub fn funcarg_insert_range(
+        &mut self,
+        allocs: &IRAllocs,
+        arg: FuncArgID,
+        range: IRSourceRange,
+    ) {
+        let FuncArgID(func, idx) = arg;
+        let func_index = func.to_indexed(allocs);
+        let args = self
+            .funcargs
+            .entry(func_index)
+            .or_insert_with(|| vec![None; idx as usize].into_boxed_slice());
+        args[idx as usize] = Some(range);
+    }
+    pub fn funcarg_get_range(&self, allocs: &IRAllocs, arg: FuncArgID) -> Option<IRSourceRange> {
+        let FuncArgID(func, idx) = arg;
+        let func_index = func.to_indexed(allocs);
+        let Some(args) = self.funcargs.get(&func_index) else {
+            return None;
+        };
+        args.get(idx as usize)?.as_ref().copied()
     }
 
     /// Get all source ranges associated with the given value's users.

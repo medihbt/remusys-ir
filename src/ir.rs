@@ -89,13 +89,17 @@ pub use self::{
             FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
-        func_clone::*,
+        func_clone::{FuncClone, FuncCloneErr, FuncCloneMapping},
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
-        numbering::*,
-        serialize::*,
-        source_map::*,
-        writer::*,
+        serialize::{
+            FuncSerializer, IRSerializer, IRWriteErr, IRWriteOption, IRWriteRes, SerializeIR,
+            module_tostring, module_tostring_mapped, module_tostring_named, write_ir_to_file,
+        },
+        source_map::{
+            FuncNumberMap, IRNameMap, IRSourcePos, IRSourceRange, NumberOption, SourceMapWriter,
+            SourceRangeMap,
+        },
     },
 };
 

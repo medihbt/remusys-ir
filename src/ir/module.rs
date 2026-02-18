@@ -267,7 +267,7 @@ impl Module {
 mod tests {
     use super::*;
     use crate::{
-        ir::{IRWriteOption, IRWriter},
+        ir::{IRWriteOption, write_ir_to_file},
         testing::cases::test_case_cfg_deep_while_br,
     };
 
@@ -282,14 +282,10 @@ mod tests {
     fn test_gc() {
         let mut module = test_case_cfg_deep_while_br().module;
         module.begin_gc().finish();
-        write_module(&module, "../target/test_output_gc.ll");
-    }
-
-    fn write_module(module: &Module, path: &str) {
-        let file = std::fs::File::create(path).expect("Failed to create output file");
-        let mut file_writer = std::io::BufWriter::new(file);
-        let mut writer = IRWriter::from_module(&mut file_writer, module);
-        writer.set_option(IRWriteOption::loud());
-        writer.fmt_module().unwrap();
+        write_ir_to_file(
+            "../target/test_output_gc.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
     }
 }

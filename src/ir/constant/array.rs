@@ -1406,8 +1406,8 @@ mod tests {
     use crate::{
         base::APInt,
         ir::{
-            GlobalVarBuilder, IArrayExprID, IGlobalVarBuildable, IRBuilder, IRWriter, ISubExprID,
-            ISubValueSSA, KVArrayBuilder, ValueSSA, global::Linkage,
+            GlobalVarBuilder, IArrayExprID, IGlobalVarBuildable, IRBuilder, IRWriteOption,
+            ISubExprID, ISubValueSSA, KVArrayBuilder, ValueSSA, global::Linkage, write_ir_to_file,
         },
         typing::{ArchInfo, ArrayTypeID, IValType, ValTypeID},
     };
@@ -1439,9 +1439,7 @@ mod tests {
             .build_id(builder.module())
             .expect("Failed to build global variable `arr`");
         let module = builder.module;
-        let mut out = std::io::stdout();
-        let mut writer = IRWriter::from_module(&mut out, &module);
-        writer.fmt_module().unwrap();
+        write_ir_to_file("../target/kvarray-test.ll", &module, IRWriteOption::quiet());
 
         for (cnt, (val, u)) in kv_array_id.iter(&module.allocs).enumerate() {
             println!("[{cnt}]: Value: {val:?}, UseID: {u:?}");

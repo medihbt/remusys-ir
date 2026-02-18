@@ -113,10 +113,18 @@ pub type IRSanityRes<T = ()> = Result<T, IRSanityErr>;
 
 impl IRSanityErr {
     pub fn explain(&self, module: &Module, out: &mut dyn std::io::Write) -> std::io::Result<()> {
+        self.explain_with_names(module, &IRNameMap::default(), out)
+    }
+    pub fn explain_with_names(
+        &self,
+        module: &Module,
+        names: &IRNameMap,
+        out: &mut dyn std::io::Write,
+    ) -> std::io::Result<()> {
         writeln!(out, "IR Sanity Error: {}", self)?;
         write!(out, "Location: ")?;
         let loc = self.get_location(module);
-        loc.describe(module, out);
+        loc.describe(module, names, out);
         Ok(())
     }
 
