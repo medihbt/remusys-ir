@@ -1,8 +1,7 @@
 use crate::{
     ir::{
-        BlockID, BlockIndex, BlockSection, FuncID, IRAllocs, ISubValueSSA, ITraceableValue, IUser,
-        JumpTargets, Opcode, OperandSet, UseID, UserList, ValueClass, ValueSSA,
-        indexed_ir::IPoolAllocatedIndex,
+        BlockID, BlockSection, FuncID, IRAllocs, ISubValueSSA, ITraceableValue, IUser, JumpTargets,
+        Opcode, OperandSet, UseID, UserList, ValueClass, ValueSSA,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
     typing::{AggrType, TypeContext, ValTypeID},
@@ -227,19 +226,10 @@ pub trait ISubInstID: Copy {
     }
 
     fn as_raw_index(self, allocs: &IRAllocs) -> Option<InstRawIndex> {
-        let index = self.into_raw_ptr().to_index(&allocs.insts)?;
-        Some(InstRawIndex::from(index))
+        if self.is_alive(allocs) { Some(self.into_raw_ptr()) } else { None }
     }
     fn to_raw_index(self, allocs: &IRAllocs) -> InstRawIndex {
         self.as_raw_index(allocs)
-            .expect("Error: Attempted to get indexed ID of freed InstID")
-    }
-    fn as_indexed(self, allocs: &IRAllocs) -> Option<InstIndex> {
-        let index = self.into_raw_ptr().to_index(&allocs.insts)?;
-        Some(InstIndex(index))
-    }
-    fn to_indexed(self, allocs: &IRAllocs) -> InstIndex {
-        self.as_indexed(allocs)
             .expect("Error: Attempted to get indexed ID of freed InstID")
     }
     fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
@@ -479,8 +469,7 @@ pub trait IAggrIndexInst: IAggregateInst {
 /// ## Remusys IR Instructions
 ///
 /// Instruction object definition of Remusys-IR.
-#[entity_id(InstID, policy = 512, allocator_type = InstAlloc)]
-#[entity_id(InstIndex, policy = 512, backend = index)]
+#[entity_id(InstID, policy = 512, allocator_type = InstAlloc, backend = index)]
 pub enum InstObj {
     /// 指令链表的首尾引导结点, 不参与语义表达.
     GuideNode(InstCommon),
@@ -866,26 +855,5 @@ impl ISubValueSSA for InstID {
     }
     fn try_get_users(self, allocs: &IRAllocs) -> Option<&UserList> {
         self.deref_ir(allocs).try_get_users()
-    }
-}
-
-impl InstIndex {
-    pub fn get_opcode(self, allocs: &IRAllocs) -> Opcode {
-        self.to_primary(allocs).get_opcode(allocs)
-    }
-    pub fn get_rettype(self, allocs: &IRAllocs) -> ValTypeID {
-        self.to_primary(allocs).get_rettype(allocs)
-    }
-
-    pub fn get_parent(self, allocs: &IRAllocs) -> Option<BlockIndex> {
-        let block = self.to_primary(allocs).get_parent(allocs)?;
-        block.as_indexed(allocs)
-    }
-    pub fn set_parent(self, allocs: &IRAllocs, parent: Option<BlockIndex>) {
-        let parent_bb = match parent {
-            Some(idx) => idx.to_primary(allocs),
-            None => return self.to_primary(allocs).set_parent(allocs, None),
-        };
-        self.to_primary(allocs).set_parent(allocs, Some(parent_bb));
     }
 }

@@ -213,7 +213,7 @@ impl CfgSnapshot {
         for dfs_node in &dfs.nodes {
             let dfn = dfs_node.dfs_index;
             let label = match dfs_node.block {
-                CfgBlockStat::Block(block_id) => format!("{:#x}", block_id.to_raw_index(allocs)),
+                CfgBlockStat::Block(block_id) => format!("{:#x}", block_id.inner()),
                 CfgBlockStat::Virtual => "%VIRTUAL".to_string(),
             };
             writeln!(writer, "    {dfn} [label=\"{label}\"];").unwrap();

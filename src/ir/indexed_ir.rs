@@ -2,8 +2,8 @@ use crate::{
     base::INullableValue,
     ir::{
         BlockIndex, ConstData, ExprIndex, FuncID, GlobalIndex, IRAllocs, ISubGlobalID, ISubInstID,
-        ITraceableValue, IUser, InstID, InstIndex, InstObj, JumpTargetIndex, OperandSet,
-        PoolAllocatedID, UseIndex, UseKind, UserList, ValueSSA,
+        ITraceableValue, IUser, InstID, InstIndex, InstObj, JumpTargetID, JumpTargetIndex,
+        OperandSet, PoolAllocatedID, UseIndex, UseKind, UserList, ValueSSA,
     },
     typing::AggrType,
 };
@@ -202,7 +202,7 @@ impl IPoolAllocatedIndex for JumpTargetIndex {
     type PrimaryID = crate::ir::JumpTargetID;
 
     fn as_primary(self, allocs: &IRAllocs) -> Option<Self::PrimaryID> {
-        self.0.to_ptr(&allocs.jts).map(crate::ir::JumpTargetID)
+        self.try_deref_ir(allocs).map(|_| JumpTargetID(self.0))
     }
     fn try_from_primary(primary: Self::PrimaryID, allocs: &IRAllocs) -> Option<Self> {
         primary.as_indexed(allocs)

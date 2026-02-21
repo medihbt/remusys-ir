@@ -3,12 +3,7 @@ use smol_str::ToSmolStr;
 
 use crate::{
     SymbolStr,
-    ir::{
-        indexed_ir::{IPoolAllocatedIndex, PoolAllocatedIndex},
-        inst::*,
-        module::allocs::IPoolAllocated,
-        *,
-    },
+    ir::{inst::*, *},
 };
 use std::collections::HashMap;
 
@@ -40,9 +35,9 @@ impl NumberOption {
 /// Only holds names that are considered persistent (from source or externally registered).
 #[derive(Debug, Clone, Default)]
 pub struct IRNameMap {
-    pub funcs: HashMap<GlobalIndex, Box<[Option<SymbolStr>]>>,
-    pub insts: HashMap<InstIndex, SymbolStr>,
-    pub blocks: HashMap<BlockIndex, SymbolStr>,
+    pub funcs: HashMap<FuncID, Box<[Option<SymbolStr>]>>,
+    pub insts: HashMap<InstID, SymbolStr>,
+    pub blocks: HashMap<BlockID, SymbolStr>,
 }
 
 impl IRNameMap {
@@ -50,12 +45,12 @@ impl IRNameMap {
         Self::default()
     }
 
-    pub fn insert_func_args(&mut self, func_index: GlobalIndex, nargs: usize) {
+    pub fn insert_func_args(&mut self, func_index: FuncID, nargs: usize) {
         self.funcs
             .entry(func_index)
             .or_insert_with(|| vec![None; nargs].into_boxed_slice());
     }
-    pub fn set_func_arg(&mut self, func_index: GlobalIndex, arg: usize, name: SymbolStr) {
+    pub fn set_func_arg(&mut self, func_index: FuncID, arg: usize, name: SymbolStr) {
         self.funcs
             .entry(func_index)
             .or_insert_with(|| vec![None; arg + 1].into_boxed_slice());
@@ -67,41 +62,31 @@ impl IRNameMap {
         }
     }
 
-    pub fn insert_inst(&mut self, idx: InstIndex, name: SymbolStr) {
+    pub fn insert_inst(&mut self, idx: InstID, name: SymbolStr) {
         self.insts.insert(idx, name);
     }
-    pub fn insert_block(&mut self, idx: BlockIndex, name: SymbolStr) {
+    pub fn insert_block(&mut self, idx: BlockID, name: SymbolStr) {
         self.blocks.insert(idx, name);
     }
 
     /// Return persistent name for a value, if present.
-    pub fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+    pub fn get_local_name(&self, val: impl IValueConvert) -> Option<SymbolStr> {
         let val = val.into_value();
         match val {
             ValueSSA::FuncArg(func_id, index) => {
-                let func_index = func_id.to_indexed(allocs);
-                let info = self.funcs.get(&func_index)?;
+                let info = self.funcs.get(&func_id)?;
                 info.get(index as usize).and_then(|opt| opt.clone())
             }
-            ValueSSA::Block(block_id) => {
-                let block_index = block_id.to_indexed(allocs);
-                self.blocks.get(&block_index).cloned()
-            }
-            ValueSSA::Inst(inst_id) => {
-                let inst_index = inst_id.to_indexed(allocs);
-                self.insts.get(&inst_index).cloned()
-            }
+            ValueSSA::Block(block_id) => self.blocks.get(&block_id).cloned(),
+            ValueSSA::Inst(inst_id) => self.insts.get(&inst_id).cloned(),
             _ => None,
         }
     }
 
     pub fn gc(&mut self, allocs: &IRAllocs) {
-        self.funcs
-            .retain(|index, _| index.as_primary(allocs).is_some());
-        self.blocks
-            .retain(|index, _| index.as_primary(allocs).is_some());
-        self.insts
-            .retain(|index, _| index.as_primary(allocs).is_some());
+        self.funcs.retain(|index, _| index.is_alive(allocs));
+        self.blocks.retain(|index, _| index.is_alive(allocs));
+        self.insts.retain(|index, _| index.is_alive(allocs));
     }
 }
 
@@ -127,8 +112,7 @@ impl<'a> FuncNumberMap<'a> {
         let mut insts = HashMap::new();
 
         for (bbid, bb) in body.blocks.iter(&allocs.blocks) {
-            let block_index = bbid.to_indexed(allocs);
-            if !names.blocks.contains_key(&block_index) {
+            if !names.blocks.contains_key(&bbid) {
                 blocks.insert(bbid, number);
                 number += 1;
             }
@@ -143,8 +127,7 @@ impl<'a> FuncNumberMap<'a> {
                 if option.ignore_void && inst.get_valtype() == ValTypeID::Void {
                     continue;
                 }
-                let inst_index = instid.to_indexed(allocs);
-                if !names.insts.contains_key(&inst_index) {
+                if !names.insts.contains_key(&instid) {
                     insts.insert(instid, number);
                     number += 1;
                 }
@@ -163,7 +146,7 @@ impl<'a> FuncNumberMap<'a> {
         let func_obj = func_id.deref_ir(allocs);
         let mut args: SmallVec<[u32; 4]> = smallvec![u32::MAX; func_obj.args.len()];
         for (i, arg) in args.iter_mut().enumerate() {
-            let name = names.get_local_name(allocs, FuncArgID(func_id, i as u32));
+            let name = names.get_local_name(FuncArgID(func_id, i as u32));
             if name.is_some() {
                 continue;
             }
@@ -173,9 +156,9 @@ impl<'a> FuncNumberMap<'a> {
         args
     }
 
-    pub fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+    pub fn get_local_name(&self, val: impl IValueConvert) -> Option<SymbolStr> {
         // prefer persistent
-        if let Some(p) = self.names.get_local_name(allocs, val) {
+        if let Some(p) = self.names.get_local_name(val) {
             return Some(p);
         }
         let val = val.into_value();
@@ -267,12 +250,12 @@ impl<W> SourceMapWriter<W> {
 
 #[derive(Debug, Clone, Default)]
 pub struct SourceRangeMap {
-    pub insts: HashMap<InstIndex, IRSourceRange>,
-    pub blocks: HashMap<BlockIndex, IRSourceRange>,
-    pub globals: HashMap<GlobalIndex, IRSourceRange>,
-    pub funcargs: HashMap<GlobalIndex, Box<[Option<IRSourceRange>]>>,
-    pub uses: HashMap<UseIndex, IRSourceRange>,
-    pub jts: HashMap<JumpTargetIndex, IRSourceRange>,
+    pub insts: HashMap<InstID, IRSourceRange>,
+    pub blocks: HashMap<BlockID, IRSourceRange>,
+    pub globals: HashMap<GlobalID, IRSourceRange>,
+    pub funcargs: HashMap<FuncID, Box<[Option<IRSourceRange>]>>,
+    pub uses: HashMap<UseID, IRSourceRange>,
+    pub jts: HashMap<JumpTargetID, IRSourceRange>,
 }
 
 impl SourceRangeMap {
@@ -282,105 +265,47 @@ impl SourceRangeMap {
 
     /// Remove source ranges for any IR entities that have been deallocated.
     pub fn gc(&mut self, allocs: &IRAllocs) {
-        self.insts.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|i| !i.obj_disposed())
-        });
-        self.blocks.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|b| !b.obj_disposed())
-        });
-        self.globals.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|g| !g.obj_disposed())
-        });
-        self.funcargs.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|f| !f.obj_disposed())
-        });
-        self.uses.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|u| !u.obj_disposed())
-        });
-        self.jts.retain(|index, _| {
-            index
-                .try_deref_ir(allocs)
-                .is_some_and(|j| !j.obj_disposed())
-        });
+        self.insts.retain(|index, _| index.is_alive(allocs));
+        self.blocks.retain(|index, _| index.is_alive(allocs));
+        self.globals.retain(|index, _| index.is_alive(allocs));
+        self.funcargs.retain(|index, _| index.is_alive(allocs));
+        self.uses.retain(|index, _| index.is_alive(allocs));
+        self.jts.retain(|index, _| index.is_alive(allocs));
     }
 
-    pub fn primary_insert_range(
-        &mut self,
-        allocs: &IRAllocs,
-        id: impl Into<PoolAllocatedID>,
-        range: IRSourceRange,
-    ) {
-        let id = PoolAllocatedIndex::from_primary(allocs, id.into());
-        self.index_insert_range(id, range);
-    }
-    pub fn primary_get_range(
-        &self,
-        allocs: &IRAllocs,
-        id: impl Into<PoolAllocatedID>,
-    ) -> Option<&IRSourceRange> {
-        let id = PoolAllocatedIndex::from_primary(allocs, id.into());
-        self.index_get_range(id)
-    }
-    pub fn index_insert_range(&mut self, id: impl Into<PoolAllocatedIndex>, range: IRSourceRange) {
+    pub fn insert_range(&mut self, id: impl Into<PoolAllocatedID>, range: IRSourceRange) {
         let id = id.into();
         match id {
-            PoolAllocatedIndex::Inst(inst_index) => {
-                self.insts.insert(inst_index, range);
-            }
-            PoolAllocatedIndex::Block(block_index) => {
-                self.blocks.insert(block_index, range);
-            }
-            PoolAllocatedIndex::Global(global_index) => {
-                self.globals.insert(global_index, range);
-            }
-            PoolAllocatedIndex::Use(use_index) => {
-                self.uses.insert(use_index, range);
-            }
-            PoolAllocatedIndex::JT(jt_index) => {
-                self.jts.insert(jt_index, range);
-            }
-            _ => { /* ignore others */ }
-        }
+            PoolAllocatedID::Inst(inst) => self.insts.insert(inst, range),
+            PoolAllocatedID::Block(block) => self.blocks.insert(block, range),
+            PoolAllocatedID::Global(global) => self.globals.insert(global, range),
+            PoolAllocatedID::Use(u) => self.uses.insert(u, range),
+            PoolAllocatedID::JumpTarget(jt) => self.jts.insert(jt, range),
+            _ => return,
+        };
     }
-    pub fn index_get_range(&self, id: impl Into<PoolAllocatedIndex>) -> Option<&IRSourceRange> {
+    pub fn index_get_range(&self, id: impl Into<PoolAllocatedID>) -> Option<&IRSourceRange> {
         let id = id.into();
         match id {
-            PoolAllocatedIndex::Inst(inst_index) => self.insts.get(&inst_index),
-            PoolAllocatedIndex::Block(block_index) => self.blocks.get(&block_index),
-            PoolAllocatedIndex::Global(global_index) => self.globals.get(&global_index),
-            PoolAllocatedIndex::Use(use_index) => self.uses.get(&use_index),
-            PoolAllocatedIndex::JT(jt_index) => self.jts.get(&jt_index),
+            PoolAllocatedID::Inst(inst) => self.insts.get(&inst),
+            PoolAllocatedID::Block(block) => self.blocks.get(&block),
+            PoolAllocatedID::Global(global) => self.globals.get(&global),
+            PoolAllocatedID::Use(u) => self.uses.get(&u),
+            PoolAllocatedID::JumpTarget(jt) => self.jts.get(&jt),
             _ => None,
         }
     }
-    pub fn funcarg_insert_range(
-        &mut self,
-        allocs: &IRAllocs,
-        arg: FuncArgID,
-        range: IRSourceRange,
-    ) {
+    pub fn funcarg_insert_range(&mut self, arg: FuncArgID, range: IRSourceRange) {
         let FuncArgID(func, idx) = arg;
-        let func_index = func.to_indexed(allocs);
         let args = self
             .funcargs
-            .entry(func_index)
+            .entry(func)
             .or_insert_with(|| vec![None; idx as usize].into_boxed_slice());
         args[idx as usize] = Some(range);
     }
-    pub fn funcarg_get_range(&self, allocs: &IRAllocs, arg: FuncArgID) -> Option<IRSourceRange> {
+    pub fn funcarg_get_range(&self, arg: FuncArgID) -> Option<IRSourceRange> {
         let FuncArgID(func, idx) = arg;
-        let func_index = func.to_indexed(allocs);
-        let args = self.funcargs.get(&func_index)?;
+        let args = self.funcargs.get(&func)?;
         args.get(idx as usize)?.as_ref().copied()
     }
 
@@ -391,8 +316,7 @@ impl SourceRangeMap {
         };
         let mut ranges = Vec::new();
         for (useid, _) in traceable.user_iter(allocs) {
-            let use_index = useid.to_indexed(allocs);
-            if let Some(range) = self.uses.get(&use_index) {
+            if let Some(range) = self.uses.get(&useid) {
                 ranges.push(*range);
             }
         }
@@ -403,8 +327,7 @@ impl SourceRangeMap {
         let mut ranges = Vec::new();
         let preds = bb.get_preds(allocs);
         for (jt_id, _) in preds.iter(&allocs.jts) {
-            let jt_index = jt_id.to_indexed(allocs);
-            if let Some(range) = self.jts.get(&jt_index) {
+            if let Some(range) = self.jts.get(&jt_id) {
                 ranges.push(*range);
             }
         }
@@ -415,8 +338,7 @@ impl SourceRangeMap {
         let mut ranges = Vec::new();
         let succs = bb.get_succs(allocs);
         for jt_id in succs.iter() {
-            let jt_index = jt_id.to_indexed(allocs);
-            if let Some(range) = self.jts.get(&jt_index) {
+            if let Some(range) = self.jts.get(&jt_id) {
                 ranges.push(*range);
             }
         }

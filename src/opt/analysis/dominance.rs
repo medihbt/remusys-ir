@@ -85,7 +85,7 @@ impl DominatorTree {
         &self.nodes[dfn].children_dfn
     }
 
-    pub fn write_to_dot(&self, allocs: &IRAllocs, writer: &mut dyn std::io::Write) {
+    pub fn write_to_dot(&self, writer: &mut dyn std::io::Write) {
         writeln!(writer, "digraph dominator_tree {{").unwrap();
         writeln!(writer, "  rankdir=TB;").unwrap();
         writeln!(writer, "  node [shape=rect];").unwrap();
@@ -93,7 +93,7 @@ impl DominatorTree {
         // Emit nodes: use DFS index as node id; label with block index or VROOT/VEXIT
         for (dfn, node) in self.dfs.nodes.iter().enumerate() {
             let label = match node.block {
-                CfgBlockStat::Block(bid) => format!("{:#x}", bid.to_raw_index(allocs)),
+                CfgBlockStat::Block(bid) => format!("{:#x}", bid.inner()),
                 CfgBlockStat::Virtual => {
                     if self.is_postdom() {
                         "%VEXIT".to_string()
@@ -417,7 +417,7 @@ mod tests {
 
         let dom = DominatorTree::builder(allocs, fid).unwrap().build();
         let mut file = File::create("../target/test_dom.dot").expect("Failed to create dot file");
-        dom.write_to_dot(allocs, &mut file);
+        dom.write_to_dot(&mut file);
     }
 
     #[test]
@@ -434,6 +434,6 @@ mod tests {
         let post = DominatorTree::postdom_builder(allocs, fid).unwrap().build();
         let mut dot_file =
             File::create("../target/test_postdom.dot").expect("Failed to create dot file");
-        post.write_to_dot(allocs, &mut dot_file);
+        post.write_to_dot(&mut dot_file);
     }
 }

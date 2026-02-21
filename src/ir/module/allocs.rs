@@ -16,7 +16,7 @@ use crate::ir::{
 };
 use mtb_entity_slab::{
     EntityAlloc, IAllocPolicy, IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID,
-    IPoliciedID, PtrID,
+    IPoliciedID,
 };
 use std::{cell::RefCell, collections::VecDeque};
 use thiserror::Error;
@@ -167,7 +167,7 @@ pub type PoolAllocatedDisposeRes<T = ()> = Result<T, PoolAllocatedDisposeErr>;
 
 pub(crate) trait IPoolAllocated: Sized {
     type PolicyT: IAllocPolicy;
-    type PtrID: IPoliciedID<ObjectT = Self, PolicyT = Self::PolicyT> + Into<PoolAllocatedID>;
+    type PrimaryID: IPoliciedID<ObjectT = Self, PolicyT = Self::PolicyT> + Into<PoolAllocatedID>;
     type MinRelatedPoolT: AsRef<IRAllocs>;
 
     const _CLASS: PoolAllocatedClass;
@@ -175,11 +175,11 @@ pub(crate) trait IPoolAllocated: Sized {
     fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self, Self::PolicyT>;
     fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self, Self::PolicyT>;
 
-    fn init_self_id(&self, id: Self::PtrID, allocs: &IRAllocs);
-    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PtrID;
+    fn init_self_id(&self, id: Self::PrimaryID, allocs: &IRAllocs);
+    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PrimaryID;
 
     fn obj_disposed(&self) -> bool;
-    fn id_is_live(id: Self::PtrID, allocs: &IRAllocs) -> bool {
+    fn id_is_live(id: Self::PrimaryID, allocs: &IRAllocs) -> bool {
         let alloc = Self::get_alloc(allocs);
         let ptr = id.into_backend();
         let Some(obj) = ptr.try_deref(alloc) else {
@@ -188,9 +188,12 @@ pub(crate) trait IPoolAllocated: Sized {
         !obj.obj_disposed()
     }
 
-    fn dispose_obj(&self, id: Self::PtrID, pool: &Self::MinRelatedPoolT)
-    -> PoolAllocatedDisposeRes;
-    fn dispose_id(id: Self::PtrID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
+    fn dispose_obj(
+        &self,
+        id: Self::PrimaryID,
+        pool: &Self::MinRelatedPoolT,
+    ) -> PoolAllocatedDisposeRes;
+    fn dispose_id(id: Self::PrimaryID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
         let alloc = Self::get_alloc(pool.as_ref());
         let ptr = id.into_backend();
         let Some(obj) = ptr.try_deref(alloc) else {
@@ -202,8 +205,10 @@ pub(crate) trait IPoolAllocated: Sized {
     }
 }
 
+type BackID<T> = <T as IPoliciedID>::BackID;
+
 impl IPoolAllocated for BlockObj {
-    type PtrID = BlockID;
+    type PrimaryID = BlockID;
     type PolicyT = <BlockID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -218,7 +223,7 @@ impl IPoolAllocated for BlockObj {
 
     fn allocate(allocs: &IRAllocs, obj: Self) -> BlockID {
         let alloc = &allocs.blocks;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<BlockID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(BlockID(ptr), allocs);
         BlockID(ptr)
     }
@@ -266,7 +271,7 @@ impl IPoolAllocated for BlockObj {
 }
 
 impl IPoolAllocated for InstObj {
-    type PtrID = InstID;
+    type PrimaryID = InstID;
     type PolicyT = <InstID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -330,7 +335,7 @@ impl IPoolAllocated for InstObj {
 }
 
 impl IPoolAllocated for ExprObj {
-    type PtrID = ExprID;
+    type PrimaryID = ExprID;
     type PolicyT = <ExprID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -351,7 +356,7 @@ impl IPoolAllocated for ExprObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.exprs;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<ExprID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(ExprID(ptr), allocs);
         ExprID(ptr)
     }
@@ -369,7 +374,7 @@ impl IPoolAllocated for ExprObj {
 }
 
 impl IPoolAllocated for GlobalObj {
-    type PtrID = GlobalID;
+    type PrimaryID = GlobalID;
     type PolicyT = <GlobalID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = Module;
 
@@ -409,7 +414,7 @@ impl IPoolAllocated for GlobalObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.globals;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<GlobalID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(GlobalID(ptr), allocs);
         GlobalID(ptr)
     }
@@ -435,7 +440,7 @@ impl IPoolAllocated for GlobalObj {
 }
 
 impl IPoolAllocated for Use {
-    type PtrID = UseID;
+    type PrimaryID = UseID;
     type PolicyT = <UseID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -455,7 +460,7 @@ impl IPoolAllocated for Use {
             UseKind::DisposedUse,
             "Cannot allocate a disposed Use"
         );
-        let ptr = PtrID::allocate_from(&allocs.uses, obj);
+        let ptr = BackID::<UseID>::allocate_from(&allocs.uses, obj);
         ptr.deref(&allocs.uses).init_self_id(UseID(ptr), allocs);
         UseID(ptr)
     }
@@ -476,7 +481,7 @@ impl IPoolAllocated for Use {
 }
 
 impl IPoolAllocated for JumpTarget {
-    type PtrID = JumpTargetID;
+    type PrimaryID = JumpTargetID;
     type PolicyT = <JumpTargetID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -491,7 +496,7 @@ impl IPoolAllocated for JumpTarget {
 
     fn init_self_id(&self, _: JumpTargetID, _: &IRAllocs) {}
     fn allocate(allocs: &IRAllocs, obj: Self) -> JumpTargetID {
-        let ptr = PtrID::allocate_from(&allocs.jts, obj);
+        let ptr = BackID::<JumpTargetID>::allocate_from(&allocs.jts, obj);
         ptr.deref(&allocs.jts)
             .init_self_id(JumpTargetID(ptr), allocs);
         JumpTargetID(ptr)

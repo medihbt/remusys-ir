@@ -2,7 +2,6 @@ use crate::{
     ir::{
         ExprID, GlobalID, IRAllocs, ISubExprID, ISubValueSSA, InstID, ValueClass, ValueSSA,
         global::ISubGlobalID,
-        indexed_ir::{IPoolAllocatedIndex, IndexedValue},
         inst::ISubInstID,
         module::allocs::{IPoolAllocated, PoolAllocatedDisposeRes},
     },
@@ -10,7 +9,7 @@ use crate::{
 };
 use mtb_entity_slab::{
     EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, EntityRingList,
-    IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID, IPoliciedID, PtrID, entity_id,
+    IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID, IPoliciedID, entity_id,
 };
 use std::{
     cell::{Cell, Ref},
@@ -452,15 +451,13 @@ impl UseKind {
 }
 
 #[derive(Clone)]
-#[entity_id(UseID, policy = 4096, allocator_type = UseAlloc)]
-#[entity_id(UseIndex, policy = 4096, backend = index)]
+#[entity_id(UseID, policy = 4096, allocator_type = UseAlloc, backend = index)]
 pub struct Use {
     list_head: Cell<EntityListNodeHead<UseID>>,
     kind: Cell<UseKind>,
     pub user: Cell<Option<UserID>>,
     pub operand: Cell<ValueSSA>,
 }
-pub(in crate::ir) type UseRawPtr = PtrID<Use, <UseID as IPoliciedID>::PolicyT>;
 impl IBasicEntityListID for UseID {
     fn obj_load_head(obj: &Use) -> EntityListNodeHead<Self> {
         obj.list_head.get()
@@ -514,15 +511,8 @@ impl Use {
 }
 
 impl UseID {
-    pub fn inner(self) -> UseRawPtr {
+    pub fn inner(self) -> <UseID as IPoliciedID>::BackID {
         self.0
-    }
-
-    pub fn as_indexed(self, allocs: &IRAllocs) -> Option<UseIndex> {
-        self.0.to_index(&allocs.uses).map(UseIndex)
-    }
-    pub fn to_indexed(self, allocs: &IRAllocs) -> UseIndex {
-        self.as_indexed(allocs).expect("UAF detected")
     }
 
     pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
@@ -536,6 +526,15 @@ impl UseID {
 
     pub fn deref_ir(self, allocs: &IRAllocs) -> &Use {
         self.inner().deref(&allocs.uses)
+    }
+    pub fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Use> {
+        self.inner().try_deref(&allocs.uses)
+    }
+    pub fn is_alive(self, allocs: &IRAllocs) -> bool {
+        match self.try_deref_ir(allocs) {
+            Some(u) => !u.obj_disposed(),
+            None => false,
+        }
     }
 
     pub fn get_kind(self, allocs: &IRAllocs) -> UseKind {
@@ -595,20 +594,6 @@ impl UseID {
                 operand: Cell::new(ValueSSA::None),
             },
         )
-    }
-}
-
-impl UseIndex {
-    pub fn get_kind(self, allocs: &IRAllocs) -> UseKind {
-        self.deref_ir(allocs).kind.get()
-    }
-    pub fn get_operand(self, allocs: &IRAllocs) -> IndexedValue {
-        let value = self.deref_ir(allocs).operand.get();
-        IndexedValue::try_from_value(value, allocs).unwrap_or(IndexedValue::None)
-    }
-    pub fn set_operand(self, allocs: &IRAllocs, value: IndexedValue) -> bool {
-        let ir_value = value.into_value(allocs);
-        self.to_primary(allocs).set_operand(allocs, ir_value)
     }
 }
 

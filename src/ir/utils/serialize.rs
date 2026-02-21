@@ -103,10 +103,10 @@ enum NameMapRepr<'a> {
     Number(Rc<FuncNumberMap<'a>>),
 }
 impl<'a> NameMapRepr<'a> {
-    fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+    fn get_local_name(&self, val: impl IValueConvert) -> Option<SymbolStr> {
         match self {
-            NameMapRepr::Name(m) => m.get_local_name(allocs, val),
-            NameMapRepr::Number(m) => m.get_local_name(allocs, val),
+            NameMapRepr::Name(m) => m.get_local_name(val),
+            NameMapRepr::Number(m) => m.get_local_name(val),
         }
     }
 
@@ -281,10 +281,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
     }
 
     fn insert_range(&mut self, id: impl Into<PoolAllocatedID>, range: IRSourceRange) {
-        let allocs = &self.env.module.allocs;
         let id = id.into();
         if let Some(srcmap) = &mut self.writer.srcmap {
-            srcmap.primary_insert_range(allocs, id, range);
+            srcmap.insert_range(id, range);
         }
     }
     fn fmt_use(&mut self, use_id: UseID) -> IRWriteRes {
@@ -319,7 +318,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
     fn fmt_value_mapped(&mut self, val: ValueSSA) -> IRWriteRes {
         let allocs = &self.env.module.allocs;
-        if let Some(name) = self.env.names.get_local_name(allocs, val) {
+        if let Some(name) = self.env.names.get_local_name(val) {
             return write!(self, "%{name}");
         }
         match val {
@@ -586,7 +585,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
         let end_pos = self.writer.curr_pos();
         if let Some(srcmap) = &mut self.writer.srcmap {
-            srcmap.primary_insert_range(allocs, gid, (begin_pos, end_pos));
+            srcmap.insert_range(gid, (begin_pos, end_pos));
         }
         Ok(())
     }
@@ -637,13 +636,13 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
             let arg_id = FuncArgID(func_id, idx as u32);
             let begin_pos = self.writer.curr_pos();
-            match self.env.names.get_local_name(allocs, arg_id) {
+            match self.env.names.get_local_name(arg_id) {
                 Some(name) => write!(self, " %{name}")?,
                 None => write!(self, " %{idx}")?,
             };
             let end_pos = self.writer.curr_pos();
             if let Some(srcmap) = &mut self.writer.srcmap {
-                srcmap.funcarg_insert_range(allocs, arg_id, (begin_pos, end_pos));
+                srcmap.funcarg_insert_range(arg_id, (begin_pos, end_pos));
             }
         }
         if func.is_vararg {
@@ -703,10 +702,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         };
         self.writer.wrap_indent()?;
         if option.show_ptrid {
-            let (index, gene) = {
-                let indexed = block_id.to_indexed(allocs);
-                (indexed.0.get_order(), indexed.0.get_generation())
-            };
+            let (index, gene) = (block_id.0.get_order(), block_id.0.get_generation());
             let addr = block_id.0;
             write!(
                 self,
@@ -721,7 +717,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             self.fmtln_users(block)?;
         }
         let begin_pos = self.writer.curr_pos();
-        let name = match self.env.names.get_local_name(allocs, block_id) {
+        let name = match self.env.names.get_local_name(block_id) {
             Some(name) => name,
             None => format_smolstr!("block:{:x}", block_id.get_entity_index(allocs)),
         };
@@ -731,10 +727,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         for (inst_id, inst) in block.get_insts().iter(&allocs.insts) {
             self.writer.wrap_indent()?;
             if option.show_ptrid {
-                let (index, gene) = {
-                    let indexed = inst_id.to_indexed(allocs);
-                    (indexed.0.get_order(), indexed.0.get_generation())
-                };
+                let (index, gene) = (inst_id.0.get_order(), inst_id.0.get_generation());
                 let addr = inst_id.0;
                 write!(
                     self,
@@ -746,7 +739,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
                 self.fmtln_users(inst)?;
             }
             let begin_pos = self.writer.curr_pos();
-            if let Some(name) = self.env.names.get_local_name(allocs, inst_id)
+            if let Some(name) = self.env.names.get_local_name(inst_id)
                 && inst.serialize_has_number()
             {
                 write!(self, "%{name} = ")?;

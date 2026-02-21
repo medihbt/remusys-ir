@@ -279,6 +279,12 @@ pub trait ISubGlobalID: Copy + 'static {
         self.try_deref_ir_mut(allocs)
             .expect("Invalid GlobalObj variant")
     }
+    fn is_alive(self, allocs: &IRAllocs) -> bool {
+        match self.try_deref_ir(allocs) {
+            Some(g) => !g.get_common().dispose_mark.get(),
+            None => false,
+        }
+    }
 
     fn get_name(self, allocs: &IRAllocs) -> &str {
         self.deref_ir(allocs).get_name()

@@ -1,5 +1,3 @@
-use mtb_entity_slab::{GenIndex, IndexedID};
-
 mod apint;
 mod bitset;
 mod dsu;
@@ -32,15 +30,5 @@ pub trait INullableValue: Copy + Eq {
 
     fn unwrap(&self) -> Self {
         if self.is_null() { panic!("Tried to unwrap a null value") } else { *self }
-    }
-}
-
-impl<E, P> INullableValue for IndexedID<E, P> {
-    fn new_null() -> Self {
-        IndexedID::from(GenIndex::new_basic_null())
-    }
-
-    fn is_null(&self) -> bool {
-        self.indexed.is_null()
     }
 }

@@ -25,7 +25,6 @@ mod usedef;
 mod utils;
 
 pub mod checking;
-pub mod indexed_ir;
 pub mod inst;
 
 use crate::{
@@ -38,7 +37,7 @@ pub use self::{
         AttrClass, AttrError, AttrRes, AttrSet, Attribute, AttributePos, InlineAttr, IntExtAttr,
         PtrArgTargetAttr,
     },
-    block::{BlockID, BlockIndex, BlockObj, BlockSection},
+    block::{BlockID, BlockObj, BlockSection},
     cmp_cond::CmpCond,
     constant::{
         array::{
@@ -47,15 +46,13 @@ pub use self::{
             KVArrayElemIter, KVArrayExpr, KVArrayExprID, SplatArrayExpr, SplatArrayExprID,
         },
         data::ConstData,
-        expr::{
-            AggrZero, ExprCommon, ExprID, ExprIndex, ExprObj, ExprRawIndex, ISubExpr, ISubExprID,
-        },
+        expr::{AggrZero, ExprBackID, ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
         structure::{StructExpr, StructExprID},
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalID, GlobalIndex, GlobalKind, GlobalObj, GlobalRawIndex, ISubGlobal,
-        ISubGlobalID, Linkage, TLSModel,
+        GlobalCommon, GlobalID, GlobalKind, GlobalObj, GlobalRawIndex, ISubGlobal, ISubGlobalID,
+        Linkage, TLSModel,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
             IFuncUniqueUser, IFuncValue,
@@ -63,12 +60,11 @@ pub use self::{
         var::{GlobalVar, GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable},
     },
     inst::{
-        AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstIndex, InstObj, InstRawIndex,
-        SyncScope,
+        AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstObj, InstRawIndex, SyncScope,
     },
     jumping::{
-        ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetIndex, JumpTargetKind,
-        JumpTargets, JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
+        ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,
+        JumpTargetsBlockIter, PredList, TerminatorID, TerminatorObj,
     },
     managed::{ManagedBlock, ManagedExpr, ManagedGlobal, ManagedInst, ManagedJT, ManagedUse},
     module::{
@@ -81,8 +77,8 @@ pub use self::{
     },
     opcode::{InstKind, Opcode},
     usedef::{
-        ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIndex, UseIter, UseKind,
-        UserID, UserList,
+        ITraceableValue, IUser, OperandSet, OperandUseIter, Use, UseID, UseIter, UseKind, UserID,
+        UserList,
     },
     utils::{
         builder::{
