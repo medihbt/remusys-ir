@@ -380,9 +380,7 @@ impl SourceRangeMap {
     pub fn funcarg_get_range(&self, allocs: &IRAllocs, arg: FuncArgID) -> Option<IRSourceRange> {
         let FuncArgID(func, idx) = arg;
         let func_index = func.to_indexed(allocs);
-        let Some(args) = self.funcargs.get(&func_index) else {
-            return None;
-        };
+        let args = self.funcargs.get(&func_index)?;
         args.get(idx as usize)?.as_ref().copied()
     }
 
