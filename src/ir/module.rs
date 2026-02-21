@@ -7,13 +7,12 @@ use crate::{
     typing::{ArchInfo, TypeContext},
 };
 #[cfg(not(target_arch = "wasm32"))]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::{
     borrow::Borrow,
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::Arc,
 };
 
 pub mod allocs;
@@ -38,6 +37,9 @@ impl SymbolPool {
     }
     pub fn var_pool(&self) -> &HashSet<GlobalVarID> {
         &self.var_pool
+    }
+    pub fn exported(&self) -> &HashMap<SymbolStr, GlobalID> {
+        &self.exported
     }
     pub(super) fn pool_add(&mut self, allocs: &IRAllocs, id: GlobalID) -> bool {
         match id.deref_ir(allocs) {
@@ -265,7 +267,7 @@ impl Module {
 mod tests {
     use super::*;
     use crate::{
-        ir::{IRWriteOption, IRWriter},
+        ir::{IRWriteOption, write_ir_to_file},
         testing::cases::test_case_cfg_deep_while_br,
     };
 
@@ -280,14 +282,10 @@ mod tests {
     fn test_gc() {
         let mut module = test_case_cfg_deep_while_br().module;
         module.begin_gc().finish();
-        write_module(&module, "../target/test_output_gc.ll");
-    }
-
-    fn write_module(module: &Module, path: &str) {
-        let file = std::fs::File::create(path).expect("Failed to create output file");
-        let mut file_writer = std::io::BufWriter::new(file);
-        let mut writer = IRWriter::from_module(&mut file_writer, module);
-        writer.set_option(IRWriteOption::loud());
-        writer.fmt_module().unwrap();
+        write_ir_to_file(
+            "../target/test_output_gc.ll",
+            &module,
+            IRWriteOption::quiet(),
+        );
     }
 }

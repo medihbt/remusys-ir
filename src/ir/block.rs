@@ -7,12 +7,41 @@ use crate::{
     typing::ValTypeID,
 };
 use mtb_entity_slab::{
-    EntityList, EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IEntityAllocID,
-    IEntityListNodeID, IPoliciedID, IndexedID, PtrID, entity_id,
+    EntityListError, EntityListIter, EntityListNodeHead, EntityListRes, IBasicEntityListID,
+    IEntityAllocID, IEntityListNodeID, IPoliciedID, IndexedID, OrderCachedList, PtrID, entity_id,
 };
 use std::cell::Cell;
 
 type TermiReplaceRes<'ir> = Result<Option<ManagedInst<'ir>>, EntityListError<InstID>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BlockSection {
+    /// The section of the block before the first non-Phi instruction.
+    /// This section should only contain Phi nodes, and is guaranteed
+    /// to be non-empty (it will contain a PhiEnd pseudo-instruction
+    /// if there are no actual Phi nodes).
+    Phi,
+    /// The "phi-end" pseudo-instruction, which serves as a marker for
+    /// the end of the Phi section.
+    PhiEnd,
+    /// The section of the block after the PhiEnd instruction, which
+    /// contains all non-Phi instructions.
+    Body,
+    /// The terminator instruction of the block, which must be the last instruction
+    /// in the block and must be a terminator.
+    Terminator,
+}
+
+impl BlockSection {
+    pub fn succ(self) -> Option<Self> {
+        match self {
+            BlockSection::Phi => Some(BlockSection::PhiEnd),
+            BlockSection::PhiEnd => Some(BlockSection::Body),
+            BlockSection::Body => Some(BlockSection::Terminator),
+            BlockSection::Terminator => None,
+        }
+    }
+}
 
 #[entity_id(BlockID, policy = 256, allocator_type = BlockAlloc)]
 #[entity_id(BlockIndex, policy = 256, backend = index)]
@@ -26,14 +55,14 @@ pub(in crate::ir) type BlockRawPtr = PtrID<BlockObj, <BlockID as IPoliciedID>::P
 pub type BlockRawIndex = IndexedID<BlockObj, <BlockID as IPoliciedID>::PolicyT>;
 
 pub struct BlockObjBody {
-    pub insts: EntityList<InstID>,
+    pub insts: OrderCachedList<InstID>,
     pub phi_end: InstID,
     pub users: UserList,
     pub preds: PredList,
 }
 impl BlockObjBody {
     pub(crate) fn new(allocs: &IRAllocs) -> Self {
-        let insts = EntityList::new(&allocs.insts);
+        let insts = OrderCachedList::new(&allocs.insts);
         let phi_end = InstID::allocate(allocs, InstObj::new_phi_end());
         insts
             .push_back_id(phi_end, &allocs.insts)
@@ -43,7 +72,7 @@ impl BlockObjBody {
         Self { insts, phi_end, users, preds }
     }
 }
-impl IEntityListNodeID for BlockID {
+impl IBasicEntityListID for BlockID {
     fn obj_load_head(obj: &BlockObj) -> EntityListNodeHead<Self> {
         obj.head.get()
     }
@@ -88,6 +117,7 @@ impl IEntityListNodeID for BlockID {
         Ok(())
     }
 }
+impl IEntityListNodeID for BlockID {}
 impl ITraceableValue for BlockObj {
     fn users(&self) -> &UserList {
         &self.get_body().users
@@ -123,7 +153,7 @@ impl BlockObj {
             .as_ref()
             .expect("Error: Attempted to access body of sentinel BlockObj")
     }
-    pub fn get_insts(&self) -> &EntityList<InstID> {
+    pub fn get_insts(&self) -> &OrderCachedList<InstID> {
         &self.get_body().insts
     }
     pub fn insts_iter<'ir>(&'ir self, allocs: &'ir IRAllocs) -> EntityListIter<'ir, InstID> {
@@ -284,7 +314,7 @@ impl BlockID {
     pub fn get_body(self, allocs: &IRAllocs) -> &BlockObjBody {
         self.deref_ir(allocs).get_body()
     }
-    pub fn get_insts(self, allocs: &IRAllocs) -> &EntityList<InstID> {
+    pub fn get_insts(self, allocs: &IRAllocs) -> &OrderCachedList<InstID> {
         &self.get_body(allocs).insts
     }
     pub fn insts_iter(self, allocs: &IRAllocs) -> EntityListIter<'_, InstID> {

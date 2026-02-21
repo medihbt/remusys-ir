@@ -2,7 +2,7 @@ use crate::{
     base::{MixRef, MixRefIter},
     ir::{
         BlockID, BlockIndex, IRAllocs, ISubInst, ISubInstID, InstID, InstIndex, InstObj,
-        indexed_ir::PoolAllocatedIndex,
+        indexed_ir::IPoolAllocatedIndex,
         inst::{
             BrInst, BrInstID, JumpInst, JumpInstID, RetInst, RetInstID, SwitchInst, SwitchInstID,
             UnreachableInst, UnreachableInstID,
@@ -11,8 +11,8 @@ use crate::{
     },
 };
 use mtb_entity_slab::{
-    EntityListNodeHead, EntityListRes, EntityRingList, IEntityAllocID, IEntityRingListNodeID,
-    IPoliciedID, entity_id,
+    EntityListNodeHead, EntityListRes, EntityRingList, IBasicEntityListID, IEntityAllocID,
+    IEntityRingListNodeID, IPoliciedID, entity_id,
 };
 use std::{
     cell::Cell,
@@ -78,22 +78,22 @@ impl std::str::FromStr for JumpTargetKind {
     }
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for JumpTargetKind {
+impl serde::Serialize for JumpTargetKind {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         use smol_str::ToSmolStr;
         serializer.serialize_str(&self.to_smolstr())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for JumpTargetKind {
+impl<'de> serde::Deserialize<'de> for JumpTargetKind {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        use serde_core::{Deserialize, de::Error};
+        use serde::{Deserialize, de::Error};
         use std::str::FromStr;
         let s: &str = Deserialize::deserialize(deserializer)?;
         JumpTargetKind::from_str(s).map_err(Error::custom)
@@ -119,7 +119,7 @@ pub struct JumpTarget {
     /// 目标基本块的引用
     pub block: Cell<Option<BlockID>>,
 }
-impl IEntityRingListNodeID for JumpTargetID {
+impl IBasicEntityListID for JumpTargetID {
     fn obj_load_head(obj: &JumpTarget) -> EntityListNodeHead<Self> {
         obj.node_head.get()
     }
@@ -139,11 +139,19 @@ impl IEntityRingListNodeID for JumpTargetID {
             block: Cell::new(None),
         }
     }
-    fn on_unplug(self, obj: &JumpTarget, _: &JumpTargetAlloc) -> EntityListRes<Self> {
-        obj.block.set(None);
+
+    fn on_unplug(self, alloc: &JumpTargetAlloc) -> EntityListRes<Self> {
+        self.deref_alloc(alloc).block.set(None);
+        Ok(())
+    }
+    fn on_push_next(self, _: Self, _: &JumpTargetAlloc) -> EntityListRes<Self> {
+        Ok(())
+    }
+    fn on_push_prev(self, _: Self, _: &JumpTargetAlloc) -> EntityListRes<Self> {
         Ok(())
     }
 }
+impl IEntityRingListNodeID for JumpTargetID {}
 impl JumpTarget {
     pub fn new(kind: JumpTargetKind) -> Self {
         use JumpTargetKind::*;

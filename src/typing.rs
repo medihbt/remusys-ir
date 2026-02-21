@@ -1,5 +1,3 @@
-use std::io::Write;
-
 mod alias;
 mod array;
 mod compound;
@@ -10,6 +8,10 @@ mod prim;
 mod serde;
 mod structty;
 mod vec;
+
+use crate::SymbolStr;
+use smol_str::SmolStrBuilder;
+use std::fmt::Write;
 
 pub use self::{
     alias::{StructAliasID, StructAliasObj},
@@ -62,14 +64,14 @@ pub trait IValType: Copy {
     fn class_id(self) -> ValTypeClass;
 
     /// 序列化
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()>;
-    fn get_display_name(self, tctx: &TypeContext) -> String {
-        let mut buffer = Vec::new();
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result;
+    fn get_display_name(self, tctx: &TypeContext) -> SymbolStr {
+        let mut buffer = SmolStrBuilder::new();
         let formatter = TypeFormatter::new(&mut buffer, tctx);
         self.format_ir(&formatter)
-            .expect("Serialization to Vec<u8> should not fail");
+            .expect("Serialization to String should not fail");
         drop(formatter);
-        String::from_utf8(buffer).expect("Type names should be valid UTF-8")
+        buffer.finish()
     }
     fn println(&self, tctx: &TypeContext) {
         let name = self.get_display_name(tctx);
@@ -208,7 +210,7 @@ impl IValType for ValTypeID {
         }
     }
 
-    fn format_ir<T: std::io::Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         match self {
             ValTypeID::Void => f.write_str("void"),
             ValTypeID::Ptr => f.write_str("ptr"),

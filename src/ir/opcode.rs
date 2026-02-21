@@ -208,21 +208,21 @@ static OPCODE_NAMES: [&str; Opcode::ReservedCnt as usize] = [
 static OPCODE_NAME_MAP: OnceLock<HashMap<&'static str, Opcode>> = OnceLock::new();
 
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for Opcode {
+impl serde::Serialize for Opcode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         serializer.serialize_str(self.get_name())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for Opcode {
+impl<'de> serde::Deserialize<'de> for Opcode {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        use serde_core::de::Error;
+        use serde::de::Error;
         let s = <&str>::deserialize(deserializer)?;
         match Opcode::from_str(s) {
             Ok(op) => Ok(op),

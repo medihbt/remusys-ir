@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -37,22 +37,22 @@ impl FromStr for AmoOrdering {
     }
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for AmoOrdering {
+impl serde::Serialize for AmoOrdering {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         serializer.serialize_str(self.as_str())
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for AmoOrdering {
+impl<'de> serde::Deserialize<'de> for AmoOrdering {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        AmoOrdering::from_str(&s).map_err(serde_core::de::Error::custom)
+        AmoOrdering::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 impl AmoOrdering {
@@ -132,6 +132,9 @@ impl ISubInst for AmoRmwInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
     }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         let InstObj::AmoRmw(amormw) = inst else {
@@ -223,7 +226,7 @@ impl AmoRmwInst {
     }
 }
 
-_remusys_ir_subinst!(AmoRmwInstID, AmoRmwInst);
+_remusys_ir_subinst!(AmoRmwInstID, AmoRmwInst, section = Body);
 impl AmoRmwInstID {
     pub fn builder(opcode: Opcode, value_ty: ValTypeID) -> AmoRmwBuilder {
         AmoRmwBuilder::new(opcode, value_ty)

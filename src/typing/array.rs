@@ -7,7 +7,7 @@ use crate::{
 };
 use std::{
     cell::{Cell, Ref},
-    io::Write,
+    fmt::Write,
 };
 
 #[derive(Debug, Clone)]
@@ -96,7 +96,7 @@ impl IValType for ArrayTypeID {
         ValTypeClass::Array
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         let (nelems, elemty) = {
             let obj = self.deref(&f.allocs.arrays);
             (obj.nelems, obj.elemty)

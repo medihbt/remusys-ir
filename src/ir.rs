@@ -38,7 +38,7 @@ pub use self::{
         AttrClass, AttrError, AttrRes, AttrSet, Attribute, AttributePos, InlineAttr, IntExtAttr,
         PtrArgTargetAttr,
     },
-    block::{BlockID, BlockIndex, BlockObj},
+    block::{BlockID, BlockIndex, BlockObj, BlockSection},
     cmp_cond::CmpCond,
     constant::{
         array::{
@@ -89,13 +89,16 @@ pub use self::{
             FocusDegradeConfig, FocusDegradeOp, IRBuildError, IRBuildRes, IRBuilder, IRFocus,
             IRFullFocus, InstIDSummary, InstInsertPos, TermiBuildRes,
         },
-        inst_ordering::{InstOrderCache, InstOrdering, ListWalkOrder},
+        func_clone::{FuncClone, FuncCloneErr, FuncCloneMapping},
         llvm_adapt::LLVMAdaptMapping,
         module_clone::ModuleClone,
-        numbering::{IRNumberValueMap, NumberOption},
-        writer::{
-            IRFuncWriter, IRWriteErr, IRWriteFuncStat, IRWriteModuleStat, IRWriteOption,
-            IRWriteRes, IRWriter, WriteIR, write_ir_to_file,
+        serialize::{
+            FuncSerializer, IRSerializer, IRWriteErr, IRWriteOption, IRWriteRes, SerializeIR,
+            module_tostring, module_tostring_mapped, module_tostring_named, write_ir_to_file,
+        },
+        source_map::{
+            FuncNumberMap, IRNameMap, IRSourcePos, IRSourceRange, NumberOption, SourceMapWriter,
+            SourceRangeMap,
         },
     },
 };

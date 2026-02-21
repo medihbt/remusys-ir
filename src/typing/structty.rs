@@ -7,8 +7,8 @@ use crate::{
 use smallvec::SmallVec;
 use std::{
     cell::Ref,
+    fmt::Write,
     hash::{DefaultHasher, Hash, Hasher},
-    io::Write,
 };
 
 /// Nameless structure type, similar to Tuple in Rust.
@@ -108,7 +108,7 @@ impl IValType for StructTypeID {
         ValTypeClass::Struct
     }
 
-    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::io::Result<()> {
+    fn format_ir<T: Write>(self, f: &TypeFormatter<T>) -> std::fmt::Result {
         let (begin_str, end_str) =
             if self.is_packed(f.tctx) { ("<{ ", " }>") } else { ("{ ", " }") };
         f.write_str(begin_str)?;

@@ -3,7 +3,7 @@ use crate::ir::{
     UserID, ValueSSA,
     module::allocs::{IPoolAllocated, PoolAllocatedDisposeErr, PoolAllocatedDisposeRes},
 };
-use mtb_entity_slab::{EntityList, IEntityListNodeID};
+use mtb_entity_slab::{EntityList, IEntityListNodeID, IOrderCachedListNodeID, OrderCachedList};
 use std::panic::Location;
 
 pub(super) fn traceable_init_id<T: ITraceableValue>(t: &T, self_id: ValueSSA, allocs: &IRAllocs) {
@@ -30,6 +30,20 @@ pub(super) fn dispose_entity_list<T>(
 ) -> PoolAllocatedDisposeRes
 where
     T: IPoolAllocated<PtrID: IEntityListNodeID>,
+{
+    let alloc = T::get_alloc(pool.as_ref());
+    while let Ok(id) = list.pop_front(alloc) {
+        T::dispose_id(id, pool)?;
+    }
+    T::dispose_id(list.head, pool)?;
+    T::dispose_id(list.tail, pool)
+}
+pub(super) fn dispose_order_list<T>(
+    list: &OrderCachedList<T::PtrID>,
+    pool: &T::MinRelatedPoolT,
+) -> PoolAllocatedDisposeRes
+where
+    T: IPoolAllocated<PtrID: IOrderCachedListNodeID>,
 {
     let alloc = T::get_alloc(pool.as_ref());
     while let Ok(id) = list.pop_front(alloc) {

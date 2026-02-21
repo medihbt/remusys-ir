@@ -22,10 +22,10 @@ pub enum Linkage {
     Private,
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for Linkage {
+impl serde::Serialize for Linkage {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         let s = match self {
             Linkage::External => "external",
@@ -36,17 +36,17 @@ impl serde_core::Serialize for Linkage {
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for Linkage {
+impl<'de> serde::Deserialize<'de> for Linkage {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         let s = smol_str::SmolStr::deserialize(deserializer)?;
         match s.as_str() {
             "external" => Ok(Linkage::External),
             "dso_local" => Ok(Linkage::DSOLocal),
             "private" => Ok(Linkage::Private),
-            _ => Err(serde_core::de::Error::custom("Invalid Linkage string")),
+            _ => Err(serde::de::Error::custom("Invalid Linkage string")),
         }
     }
 }
@@ -78,10 +78,10 @@ pub enum TLSModel {
     LocalExec,
 }
 #[cfg(feature = "serde")]
-impl serde_core::Serialize for TLSModel {
+impl serde::Serialize for TLSModel {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde_core::Serializer,
+        S: serde::Serializer,
     {
         let s = match self {
             TLSModel::GeneralDynamic => "generaldynamic",
@@ -93,10 +93,10 @@ impl serde_core::Serialize for TLSModel {
     }
 }
 #[cfg(feature = "serde")]
-impl<'de> serde_core::Deserialize<'de> for TLSModel {
+impl<'de> serde::Deserialize<'de> for TLSModel {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde_core::Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
         let s = smol_str::SmolStr::deserialize(deserializer)?;
         match s.as_str() {
@@ -104,7 +104,7 @@ impl<'de> serde_core::Deserialize<'de> for TLSModel {
             "localdynamic" => Ok(TLSModel::LocalDynamic),
             "initialexec" => Ok(TLSModel::InitialExec),
             "localexec" => Ok(TLSModel::LocalExec),
-            _ => Err(serde_core::de::Error::custom("Invalid TLSModel string")),
+            _ => Err(serde::de::Error::custom("Invalid TLSModel string")),
         }
     }
 }
@@ -282,6 +282,9 @@ pub trait ISubGlobalID: Copy + 'static {
 
     fn get_name(self, allocs: &IRAllocs) -> &str {
         self.deref_ir(allocs).get_name()
+    }
+    fn clone_name(self, allocs: &IRAllocs) -> SymbolStr {
+        self.deref_ir(allocs).clone_name()
     }
     fn get_linkage(self, allocs: &IRAllocs) -> Linkage {
         self.deref_ir(allocs).get_linkage(allocs)

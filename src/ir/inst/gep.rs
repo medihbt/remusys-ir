@@ -2,8 +2,9 @@ use crate::{
     _remusys_ir_subinst,
     base::INullableValue,
     ir::{
-        IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA, IUser, InstCommon,
-        InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IPtrUniqueUser, IPtrValue, IRAllocs, ISubInst, ISubInstID, ISubValueSSA,
+        IUser, InstCommon, InstObj, JumpTargets, Module, Opcode, OperandSet, UseID, UseKind,
+        ValueSSA,
     },
     typing::{IValType, StructTypeID, TypeContext, ValTypeID},
 };
@@ -85,6 +86,9 @@ impl ISubInst for GEPInst {
     }
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
+    }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
     }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
@@ -184,7 +188,7 @@ impl GEPInst {
     }
 }
 
-_remusys_ir_subinst!(GEPInstID, GEPInst);
+_remusys_ir_subinst!(GEPInstID, GEPInst, section = Body);
 impl GEPInstID {
     pub fn new_uninit(
         allocs: &IRAllocs,
@@ -519,6 +523,10 @@ impl<'ir> GEPInstBuilder<'ir> {
     }
     pub fn add_index(&mut self, idx: ValueSSA) -> GEPTypeState {
         self.try_add_index(idx).expect("GEPInstBuilder failed")
+    }
+    pub fn reserve_indices(&mut self, n: usize) -> &mut Self {
+        self.indices.reserve(n);
+        self
     }
     pub fn add_indices(&mut self, indices: &[ValueSSA]) -> &mut Self {
         for idx in indices {

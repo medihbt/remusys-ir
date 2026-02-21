@@ -274,6 +274,11 @@ impl FuncID {
         FuncBuilder::new(tctx, name, functy)
     }
 
+    /// Get the function's type.
+    pub fn get_functype(self, allocs: &IRAllocs) -> FuncTypeID {
+        self.deref_ir(allocs).get_pointee_func_type()
+    }
+
     pub fn get_body(self, allocs: &IRAllocs) -> Option<&FuncBody> {
         self.deref_ir(allocs).body.as_ref()
     }

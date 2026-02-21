@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj, Opcode,
-        OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon, InstObj,
+        Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::ValTypeID,
 };
@@ -62,6 +62,9 @@ impl ISubInst for LoadInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
             InstObj::Load(load) => Some(load),
@@ -109,7 +112,7 @@ impl LoadInst {
     }
 }
 
-_remusys_ir_subinst!(LoadInstID, LoadInst);
+_remusys_ir_subinst!(LoadInstID, LoadInst, section = Body);
 impl LoadInstID {
     pub fn new_uninit(allocs: &IRAllocs, pointee_ty: ValTypeID, align_log2: u8) -> Self {
         Self::allocate(allocs, LoadInst::new_uninit(allocs, pointee_ty, align_log2))

@@ -2,7 +2,7 @@ use crate::{
     base::FixBitSet,
     ir::{
         BlockID, ConstData, FuncID, IRBuilder, IRFocus, ISubInstID, ITraceableValue, IValueConvert,
-        InstID, InstObj, InstOrdering, Module, UserID, ValueSSA,
+        InstID, InstObj, Module, UserID, ValueSSA,
         inst::{AllocaInst, AllocaInstID, LoadInstID, PhiInstID, StoreInstID},
     },
     opt::{CfgBlockStat, DominanceFrontier, DominatorTree, IFuncTransformPass},
@@ -14,8 +14,8 @@ use std::{
     sync::Arc,
 };
 
-type DT<'a> = DominatorTree<&'a dyn InstOrdering>;
-type DF<'a> = DominanceFrontier<'a, &'a dyn InstOrdering>;
+type DT = DominatorTree;
+type DF<'a> = DominanceFrontier<'a>;
 
 pub struct Mem2Reg<'ir> {
     pub module: &'ir Module,
@@ -26,13 +26,12 @@ impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
         Arc::from("Mem2Reg")
     }
 
-    fn run_on_func(&mut self, order: &dyn InstOrdering, func: FuncID) {
+    fn run_on_func(&mut self, func: FuncID) {
         let allocas = self.dump_promotable_allocas(func);
         let allocs = &self.module.allocs;
-        let dt: DominatorTree<&dyn InstOrdering> = DominatorTree::builder(allocs, func)
+        let dt: DominatorTree = DominatorTree::builder(allocs, func)
             .expect("Dominance building error in Mem2Reg")
-            .build()
-            .map_relation(order);
+            .build();
         let df = DominanceFrontier::new(&dt, allocs).unwrap();
         for alloca in &allocas {
             self.promote_one_alloca(&df, alloca);
@@ -107,37 +106,36 @@ impl<'ir> Mem2Reg<'ir> {
 
     fn promote_one_alloca(&self, df: &DF, info: &PromoteInfo) {
         if info.stores.is_empty() {
-            return self.promote_nostore(df, info);
+            return self.promote_nostore(info);
         }
         if info.stores.len() == 1 {
             return self.promote_single_store(df, info);
         }
         if let Some(local_bb) = self.info_as_local(info) {
             // alloca 只在一个基本块内使用，可以直接进行局部提升
-            return self.promote_local(df, info, local_bb);
+            return self.promote_local(info, local_bb);
         }
 
         let cfg_dfn_phi = self.insert_phis(df, info);
         self.rename(df, info, cfg_dfn_phi);
     }
 
-    fn promote_nostore(&self, df: &DF, info: &PromoteInfo) {
+    fn promote_nostore(&self, info: &PromoteInfo) {
         // 如果没有 store，则说明 alloca 没有被写入过，直接将 load 全部替换为 undef 即可
         let allocs = &self.module.allocs;
         let mut builder = IRBuilder::new(self.module);
         let undef = ValueSSA::ConstData(ConstData::Undef(info.valty));
-        let order = &df.dom_tree.inst_order;
 
         for &load in &info.loads {
             load.deref_ir(allocs)
                 .replace_self_with(allocs, undef)
                 .expect("Internal error: failed to replace load with undef");
             builder
-                .remove_inst_with_order(load, order)
+                .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
         }
         builder
-            .remove_inst_with_order(info.alloca, order)
+            .remove_inst(info.alloca)
             .expect("Internal error: failed to remove alloca instruction");
     }
     fn promote_single_store(&self, df: &DF, info: &PromoteInfo) {
@@ -145,7 +143,6 @@ impl<'ir> Mem2Reg<'ir> {
         let store = info.stores[0];
         let stored_val = store.get_source(allocs);
         let mut builder = IRBuilder::new(self.module);
-        let order = &df.dom_tree.inst_order;
 
         let mut remove_defs = true;
         let dt = df.dom_tree;
@@ -160,15 +157,15 @@ impl<'ir> Mem2Reg<'ir> {
                 .replace_self_with(allocs, stored_val)
                 .expect("Internal error: failed to replace load with stored value");
             builder
-                .remove_inst_with_order(load, order)
+                .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
         }
         if remove_defs {
             builder
-                .remove_inst_with_order(store, order)
+                .remove_inst(store)
                 .expect("Internal error: failed to remove store instruction");
             builder
-                .remove_inst_with_order(info.alloca, order)
+                .remove_inst(info.alloca)
                 .expect("Internal error: failed to remove alloca instruction");
         }
     }
@@ -194,7 +191,7 @@ impl<'ir> Mem2Reg<'ir> {
         }
         ret
     }
-    fn promote_local(&self, df: &DF, info: &PromoteInfo, local_bb: BlockID) {
+    fn promote_local(&self, info: &PromoteInfo, local_bb: BlockID) {
         let mut value = ValueSSA::ConstData(ConstData::Undef(info.valty));
         let allocs = &self.module.allocs;
         let stores = Self::dump_insts(&info.stores);
@@ -218,7 +215,7 @@ impl<'ir> Mem2Reg<'ir> {
         let mut builder = IRBuilder::new(self.module);
         for &load in &info.loads {
             builder
-                .remove_inst_with_order(load, df.dom_tree.inst_order)
+                .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
         }
     }
@@ -248,9 +245,7 @@ impl<'ir> Mem2Reg<'ir> {
             };
             builder.set_focus(IRFocus::Block(block));
             let phi = PhiInstID::new_empty(allocs, info.valty);
-            builder
-                .insert_inst_with_order(phi, df.dom_tree.inst_order)
-                .expect("Failed to insert phi");
+            builder.insert_inst(phi).expect("Failed to insert phi");
             ret.insert(dfn, phi);
         }
         ret
@@ -284,8 +279,7 @@ struct Rename<'t> {
     defuse: HashSet<InstID>,
     stack: SmallVec<[ValueSSA; 16]>,
     df: &'t DF<'t>,
-    dt: &'t DT<'t>,
-    order: &'t dyn InstOrdering,
+    dt: &'t DT,
     info: &'t PromoteInfo,
 }
 
@@ -310,7 +304,6 @@ impl<'t> Rename<'t> {
             stack: SmallVec::new(),
             df,
             dt: df.dom_tree,
-            order: df.dom_tree.inst_order,
             info,
         }
     }
@@ -355,7 +348,7 @@ impl<'t> Rename<'t> {
             };
             if removed {
                 self.builder
-                    .remove_inst_with_order(inst_id, self.order)
+                    .remove_inst(inst_id)
                     .expect("Internal error: failed to remove load/store instruction");
             }
         }
@@ -413,7 +406,7 @@ impl<'t> Rename<'t> {
 
         // finally remove the original alloca
         self.builder
-            .remove_inst_with_order(self.info.alloca, self.order)
+            .remove_inst(self.info.alloca)
             .expect("Internal error: failed to remove alloca instruction");
         self.info.alloca.dispose(allocs).unwrap();
         for &def in &self.info.stores {
@@ -444,8 +437,7 @@ mod tests {
             .map(FuncID::raw_from)
             .expect("test case has no main function");
 
-        let orders = InstOrderCache::new();
-        Mem2Reg::new(&module).run_on_func(&orders, main_func);
+        Mem2Reg::new(&module).run_on_func(main_func);
         write_ir_to_file(
             "../target/test-mem2reg-after.ll",
             &module,

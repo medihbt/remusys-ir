@@ -1,8 +1,8 @@
 use crate::{
     _remusys_ir_subinst,
     ir::{
-        IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser, InstCommon,
-        InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
+        BlockSection, IFuncUniqueUser, IPtrUniqueUser, IRAllocs, ISubInst, ISubInstID, IUser,
+        InstCommon, InstObj, JumpTargets, Opcode, OperandSet, UseID, UseKind, ValueSSA,
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
@@ -69,6 +69,9 @@ impl ISubInst for CallInst {
     fn common_mut(&mut self) -> &mut InstCommon {
         &mut self.common
     }
+    fn get_block_section(&self) -> BlockSection {
+        BlockSection::Body
+    }
     fn try_from_ir_ref(inst: &InstObj) -> Option<&Self> {
         match inst {
             InstObj::Call(c) => Some(c),
@@ -124,7 +127,7 @@ impl CallInst {
     }
 }
 
-_remusys_ir_subinst!(CallInstID, CallInst);
+_remusys_ir_subinst!(CallInstID, CallInst, section = Body);
 impl CallInstID {
     pub fn callee_use(self, allocs: &IRAllocs) -> UseID {
         self.deref_ir(allocs).callee_use()

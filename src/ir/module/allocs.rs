@@ -11,10 +11,11 @@ use crate::ir::{
     global::GlobalAlloc,
     inst::{InstAlloc, InstBackID},
     jumping::JumpTargetAlloc,
+    module::managing::dispose_order_list,
     usedef::UseAlloc,
 };
 use mtb_entity_slab::{
-    EntityAlloc, IAllocPolicy, IEntityAllocID, IEntityListNodeID, IEntityRingListNodeID,
+    EntityAlloc, IAllocPolicy, IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID,
     IPoliciedID, PtrID,
 };
 use std::{cell::RefCell, collections::VecDeque};
@@ -254,7 +255,7 @@ impl IPoolAllocated for BlockObj {
         let Some(body) = &self.body else {
             return Ok(());
         };
-        dispose_entity_list::<InstObj>(&body.insts, allocs)?;
+        dispose_order_list::<InstObj>(&body.insts, allocs)?;
         traceable_dispose(self, allocs)?;
 
         // clean up predecessors
