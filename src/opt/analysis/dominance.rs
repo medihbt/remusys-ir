@@ -416,8 +416,11 @@ mod tests {
         let allocs = &module.allocs;
 
         let dom = DominatorTree::builder(allocs, fid).unwrap().build();
-        let mut file = File::create("../target/test_dom.dot").expect("Failed to create dot file");
-        dom.write_to_dot(&mut file);
+        if cfg!(not(miri)) {
+            let mut file =
+                File::create("../target/test_dom.dot").expect("Failed to create dot file");
+            dom.write_to_dot(&mut file);
+        }
     }
 
     #[test]
@@ -432,8 +435,10 @@ mod tests {
             .expect("func not found");
 
         let post = DominatorTree::postdom_builder(allocs, fid).unwrap().build();
-        let mut dot_file =
-            File::create("../target/test_postdom.dot").expect("Failed to create dot file");
-        post.write_to_dot(&mut dot_file);
+        if cfg!(not(miri)) {
+            let mut dot_file =
+                File::create("../target/test_postdom.dot").expect("Failed to create dot file");
+            post.write_to_dot(&mut dot_file);
+        }
     }
 }

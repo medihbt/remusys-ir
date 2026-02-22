@@ -338,7 +338,7 @@ impl SourceRangeMap {
         let mut ranges = Vec::new();
         let succs = bb.get_succs(allocs);
         for jt_id in succs.iter() {
-            if let Some(range) = self.jts.get(&jt_id) {
+            if let Some(range) = self.jts.get(jt_id) {
                 ranges.push(*range);
             }
         }

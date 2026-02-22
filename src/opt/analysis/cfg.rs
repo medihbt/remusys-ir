@@ -246,8 +246,10 @@ mod tests {
             .map(FuncID::raw_from)
             .unwrap();
         let cfg_snapshot = CfgSnapshot::new(allocs, func_id).unwrap();
-        let mut cfg_file =
-            File::create("../target/test_cfg_snapshot.dot").expect("Failed to create dot file");
-        cfg_snapshot.write_to_dot(allocs, &mut cfg_file);
+        if cfg!(not(miri)) {
+            let mut cfg_file =
+                File::create("../target/test_cfg_snapshot.dot").expect("Failed to create dot file");
+            cfg_snapshot.write_to_dot(allocs, &mut cfg_file);
+        }
     }
 }

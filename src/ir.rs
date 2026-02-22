@@ -37,7 +37,7 @@ pub use self::{
         AttrClass, AttrError, AttrRes, AttrSet, Attribute, AttributePos, InlineAttr, IntExtAttr,
         PtrArgTargetAttr,
     },
-    block::{BlockID, BlockObj, BlockSection},
+    block::{BlockID, BlockInnerID, BlockObj, BlockSection},
     cmp_cond::CmpCond,
     constant::{
         array::{
@@ -46,12 +46,12 @@ pub use self::{
             KVArrayElemIter, KVArrayExpr, KVArrayExprID, SplatArrayExpr, SplatArrayExprID,
         },
         data::ConstData,
-        expr::{AggrZero, ExprBackID, ExprCommon, ExprID, ExprObj, ISubExpr, ISubExprID},
+        expr::{AggrZero, ExprCommon, ExprID, ExprInnerID, ExprObj, ISubExpr, ISubExprID},
         structure::{StructExpr, StructExprID},
         vec::{FixVec, FixVecID},
     },
     global::{
-        GlobalCommon, GlobalID, GlobalKind, GlobalObj, GlobalRawIndex, ISubGlobal, ISubGlobalID,
+        GlobalCommon, GlobalID, GlobalInnerID, GlobalKind, GlobalObj, ISubGlobal, ISubGlobalID,
         Linkage, TLSModel,
         func::{
             FuncArg, FuncArgID, FuncBody, FuncBuilder, FuncID, FuncObj, FuncTerminateMode,
@@ -60,7 +60,8 @@ pub use self::{
         var::{GlobalVar, GlobalVarBuilder, GlobalVarID, IGlobalVarBuildable},
     },
     inst::{
-        AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstObj, InstRawIndex, SyncScope,
+        AmoOrdering, ISubInst, ISubInstID, InstCommon, InstID, InstInnerID, InstObj, InstRawIndex,
+        SyncScope,
     },
     jumping::{
         ITerminatorID, ITerminatorInst, JumpTarget, JumpTargetID, JumpTargetKind, JumpTargets,

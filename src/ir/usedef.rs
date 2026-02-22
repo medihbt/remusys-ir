@@ -133,9 +133,9 @@ pub enum UserID {
 impl std::fmt::Debug for UserID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserID::Expr(id) => write!(f, "Expr({:p})", id.into_raw_ptr()),
-            UserID::Inst(id) => write!(f, "Inst({:p})", id.into_raw_ptr()),
-            UserID::Global(id) => write!(f, "Global({:p})", id.into_raw_ptr()),
+            UserID::Expr(id) => write!(f, "Expr({:p})", id.into_inner()),
+            UserID::Inst(id) => write!(f, "Inst({:p})", id.into_backend()),
+            UserID::Global(id) => write!(f, "Global({:p})", id.into_inner()),
         }
     }
 }

@@ -2,13 +2,12 @@ use crate::{
     SymbolStr,
     base::INullableValue,
     ir::{
-        GlobalID, GlobalKind, IRAllocs, ISubGlobalID, ITraceableValue, IUser, IValueConvert,
-        Module, OperandSet, UseID, UseKind, ValueSSA,
+        GlobalID, GlobalInnerID, GlobalKind, IRAllocs, ISubGlobalID, ITraceableValue, IUser,
+        IValueConvert, Module, OperandSet, UseID, UseKind, ValueSSA,
         global::{GlobalCommon, GlobalObj, ISubGlobal, Linkage, TLSModel},
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IPoliciedID, PtrID};
 use std::cell::Cell;
 
 #[derive(Clone)]
@@ -120,7 +119,7 @@ impl GlobalVar {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalVarID(pub PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>);
+pub struct GlobalVarID(pub GlobalInnerID);
 impl std::fmt::Debug for GlobalVarID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "GlobalVarID({:p})", self.0)
@@ -129,10 +128,10 @@ impl std::fmt::Debug for GlobalVarID {
 impl ISubGlobalID for GlobalVarID {
     type GlobalT = GlobalVar;
 
-    fn from_raw_ptr(id: PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>) -> Self {
+    fn from_inner(id: GlobalInnerID) -> Self {
         GlobalVarID(id)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
+    fn into_inner(self) -> GlobalInnerID {
         self.0
     }
 }

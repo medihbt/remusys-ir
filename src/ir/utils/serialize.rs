@@ -39,7 +39,9 @@ pub fn module_tostring_mapped(
 }
 pub fn write_ir_to_file(path: impl AsRef<Path>, module: &Module, option: IRWriteOption) {
     let str = module_tostring(module, option).unwrap();
-    std::fs::write(path, str).unwrap();
+    if cfg!(not(miri)) {
+        std::fs::write(path, str).unwrap();
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -594,10 +596,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         let options = self.env.option;
         if options.show_ptrid {
             let addr = gid.0;
-            let (index, gene) = {
-                let indexed = gid.to_indexed(allocs);
-                (indexed.0.get_order(), indexed.0.get_generation())
-            };
+            let (index, gene) = (gid.0.get_order(), gid.0.get_generation());
             write!(
                 self,
                 "; {kind} addr={addr:p}, index={index:x}, gen={gene:x}"

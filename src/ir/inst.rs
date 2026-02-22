@@ -181,14 +181,14 @@ pub trait ISubInst: IUser + Sized {
 pub trait ISubInstID: Copy {
     type InstObjT: ISubInst + 'static;
 
-    fn from_raw_ptr(ptr: <InstID as IPoliciedID>::BackID) -> Self;
-    fn into_raw_ptr(self) -> <InstID as IPoliciedID>::BackID;
+    fn from_inner(ptr: InstInnerID) -> Self;
+    fn into_inner(self) -> InstInnerID;
 
     fn raw_from(id: InstID) -> Self {
-        Self::from_raw_ptr(id.into())
+        Self::from_inner(id.into())
     }
     fn raw_into(self) -> InstID {
-        InstID(self.into_raw_ptr())
+        InstID(self.into_inner())
     }
 
     fn try_from_instid(id: InstID, allocs: &IRAllocs) -> Option<Self> {
@@ -200,14 +200,14 @@ pub trait ISubInstID: Copy {
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::InstObjT> {
-        let inst = self.into_raw_ptr().try_deref(&allocs.insts)?;
+        let inst = self.into_inner().try_deref(&allocs.insts)?;
         if inst.is_disposed() {
             return None;
         }
         Self::InstObjT::try_from_ir_ref(inst)
     }
     fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::InstObjT> {
-        let inst = self.into_raw_ptr().deref_mut(&mut allocs.insts);
+        let inst = self.into_inner().deref_mut(&mut allocs.insts);
         if inst.is_disposed() {
             return None;
         }
@@ -226,7 +226,7 @@ pub trait ISubInstID: Copy {
     }
 
     fn as_raw_index(self, allocs: &IRAllocs) -> Option<InstRawIndex> {
-        if self.is_alive(allocs) { Some(self.into_raw_ptr()) } else { None }
+        if self.is_alive(allocs) { Some(self.into_inner()) } else { None }
     }
     fn to_raw_index(self, allocs: &IRAllocs) -> InstRawIndex {
         self.as_raw_index(allocs)
@@ -323,11 +323,11 @@ macro_rules! _remusys_ir_subinst {
         }
 
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDType(pub $crate::ir::inst::InstBackID);
+        pub struct $IDType(pub $crate::ir::inst::InstInnerID);
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
-                let addr = self.into_raw_ptr();
+                let addr = self.into_inner();
                 write!(f, "{tyname}({addr:p})",)
             }
         }
@@ -335,11 +335,11 @@ macro_rules! _remusys_ir_subinst {
             type InstObjT = $ObjType;
 
             #[inline]
-            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
+            fn from_inner(ptr: $crate::ir::inst::InstInnerID) -> Self {
                 $IDType(ptr)
             }
             #[inline]
-            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
+            fn into_inner(self) -> $crate::ir::inst::InstInnerID {
                 self.0
             }
             #[inline]
@@ -388,11 +388,11 @@ macro_rules! _remusys_ir_subinst {
         }
 
         #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDType(pub $crate::ir::inst::InstBackID);
+        pub struct $IDType(pub $crate::ir::inst::InstInnerID);
         impl std::fmt::Debug for $IDType {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 let tyname = stringify!($IDType);
-                let addr = self.into_raw_ptr();
+                let addr = self.into_inner();
                 write!(f, "{tyname}({addr:p})",)
             }
         }
@@ -400,11 +400,11 @@ macro_rules! _remusys_ir_subinst {
             type InstObjT = $ObjType;
 
             #[inline]
-            fn from_raw_ptr(ptr: $crate::ir::inst::InstBackID) -> Self {
+            fn from_inner(ptr: $crate::ir::inst::InstInnerID) -> Self {
                 $IDType(ptr)
             }
             #[inline]
-            fn into_raw_ptr(self) -> $crate::ir::inst::InstBackID {
+            fn into_inner(self) -> $crate::ir::inst::InstInnerID {
                 self.0
             }
             #[inline]
@@ -543,7 +543,7 @@ pub enum InstObj {
 }
 
 pub type InstRawIndex = IndexedID<InstObj, <InstID as IPoliciedID>::PolicyT>;
-pub type InstBackID = <InstID as IPoliciedID>::BackID;
+pub type InstInnerID = <InstID as IPoliciedID>::BackID;
 
 impl IUser for InstObj {
     fn get_operands(&self) -> OperandSet<'_> {
@@ -808,7 +808,7 @@ impl InstObj {
 
 impl std::fmt::Pointer for InstID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.into_raw_ptr().fmt(f)
+        self.0.fmt(f)
     }
 }
 /// InstID should be implemented manually because of the macro_rules! subinst_id
@@ -817,11 +817,11 @@ impl ISubInstID for InstID {
     type InstObjT = InstObj;
 
     #[inline]
-    fn from_raw_ptr(ptr: <InstID as IPoliciedID>::BackID) -> Self {
+    fn from_inner(ptr: <InstID as IPoliciedID>::BackID) -> Self {
         Self(ptr)
     }
     #[inline]
-    fn into_raw_ptr(self) -> <InstID as IPoliciedID>::BackID {
+    fn into_inner(self) -> <InstID as IPoliciedID>::BackID {
         self.0
     }
     #[inline]

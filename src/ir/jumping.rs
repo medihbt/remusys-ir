@@ -82,6 +82,7 @@ impl serde::Serialize for JumpTargetKind {
     where
         S: serde::Serializer,
     {
+        use smol_str::ToSmolStr;
         serializer.serialize_str(&self.to_smolstr())
     }
 }
@@ -197,7 +198,10 @@ impl JumpTargetID {
         self.0.try_deref(&allocs.jts)
     }
     pub fn is_alive(self, allocs: &IRAllocs) -> bool {
-        self.try_deref_ir(allocs).is_some()
+        match self.try_deref_ir(allocs) {
+            Some(jt) => !jt.is_disposed(),
+            None => false,
+        }
     }
 
     pub fn get_kind(self, allocs: &IRAllocs) -> JumpTargetKind {
@@ -359,24 +363,24 @@ pub enum TerminatorObj<'ir> {
 }
 impl TerminatorID {
     pub fn raw_unreach(id: InstID) -> Self {
-        TerminatorID::Unreachable(UnreachableInstID(id.into_raw_ptr()))
+        TerminatorID::Unreachable(UnreachableInstID::raw_from(id))
     }
     pub fn raw_ret(id: InstID) -> Self {
-        TerminatorID::Ret(RetInstID(id.into_raw_ptr()))
+        TerminatorID::Ret(RetInstID::raw_from(id))
     }
     pub fn raw_jump(id: InstID) -> Self {
-        TerminatorID::Jump(JumpInstID(id.into_raw_ptr()))
+        TerminatorID::Jump(JumpInstID::raw_from(id))
     }
     pub fn raw_br(id: InstID) -> Self {
-        TerminatorID::Br(BrInstID(id.into_raw_ptr()))
+        TerminatorID::Br(BrInstID::raw_from(id))
     }
     pub fn raw_switch(id: InstID) -> Self {
-        TerminatorID::Switch(SwitchInstID(id.into_raw_ptr()))
+        TerminatorID::Switch(SwitchInstID::raw_from(id))
     }
 
     pub fn try_from_ir(allocs: &IRAllocs, inst_id: impl ISubInstID) -> Option<Self> {
         use TerminatorID::*;
-        let inst_ptr = inst_id.into_raw_ptr();
+        let inst_ptr = inst_id.into_inner();
         match inst_ptr.deref(&allocs.insts) {
             InstObj::Unreachable(_) => Some(Unreachable(UnreachableInstID(inst_ptr))),
             InstObj::Ret(_) => Some(Ret(RetInstID(inst_ptr))),

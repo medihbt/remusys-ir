@@ -50,7 +50,7 @@ pub struct BlockObj {
     pub(crate) body: Option<BlockObjBody>,
     pub(crate) dispose_mark: Cell<bool>,
 }
-pub type BlockBackID = <BlockID as IPoliciedID>::BackID;
+pub type BlockInnerID = <BlockID as IPoliciedID>::BackID;
 
 pub struct BlockObjBody {
     pub insts: OrderCachedList<InstID>,
@@ -269,7 +269,7 @@ impl ISubValueSSA for BlockID {
 }
 
 impl BlockID {
-    pub fn inner(self) -> BlockBackID {
+    pub fn inner(self) -> BlockInnerID {
         self.0
     }
 

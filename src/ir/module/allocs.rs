@@ -9,7 +9,7 @@ use crate::ir::{
     block::BlockAlloc,
     constant::expr::ExprAlloc,
     global::GlobalAlloc,
-    inst::{InstAlloc, InstBackID},
+    inst::{InstAlloc, InstInnerID},
     jumping::JumpTargetAlloc,
     module::managing::dispose_order_list,
     usedef::UseAlloc,
@@ -96,13 +96,13 @@ impl IRAllocs {
                     b.inner().free(blocks);
                 }
                 Inst(i) => {
-                    i.into_raw_ptr().free(insts);
+                    i.into_backend().free(insts);
                 }
                 Expr(e) => {
-                    e.into_raw_ptr().free(exprs);
+                    e.into_inner().free(exprs);
                 }
                 Global(g) => {
-                    g.into_raw_ptr().free(globals);
+                    g.into_inner().free(globals);
                 }
                 Use(u) => {
                     u.inner().free(uses);
@@ -309,7 +309,7 @@ impl IPoolAllocated for InstObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.insts;
-        let ptr = InstBackID::allocate_from(alloc, obj);
+        let ptr = InstInnerID::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(InstID(ptr), allocs);
         InstID(ptr)
     }
@@ -531,9 +531,9 @@ impl std::fmt::Debug for PoolAllocatedID {
         use PoolAllocatedID::*;
         match self {
             Block(b) => write!(f, "BlockID({:p})", b.inner()),
-            Inst(i) => write!(f, "InstID({:p})", i.into_raw_ptr()),
-            Expr(e) => write!(f, "ExprID({:p})", e.into_raw_ptr()),
-            Global(g) => write!(f, "GlobalID({:p})", g.into_raw_ptr()),
+            Inst(i) => write!(f, "InstID({:p})", i.into_backend()),
+            Expr(e) => write!(f, "ExprID({:p})", e.into_inner()),
+            Global(g) => write!(f, "GlobalID({:p})", g.into_inner()),
             Use(u) => write!(f, "UseID({:p})", u.0),
             JumpTarget(j) => write!(f, "JumpTargetID({:p})", j.0),
         }
@@ -612,4 +612,31 @@ impl PoolAllocatedID {
             JumpTarget(j) => j.try_get_entity_index(allocs),
         }
     }
+}
+
+#[cfg(feature = "serde")]
+mod serde_adapt {
+    use super::BackID;
+    use crate::ir::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    macro_rules! indexed_id_serde {
+        ($id:ident) => {
+            impl Serialize for $id {
+                fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                    self.0.serialize(serializer)
+                }
+            }
+            impl<'de> Deserialize<'de> for $id {
+                fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                    BackID::<$id>::deserialize(deserializer).map($id)
+                }
+            }
+        };
+        ($($id:ident),*) => {
+            $(indexed_id_serde!($id);)*
+        };
+    }
+
+    indexed_id_serde!(InstID, ExprID, GlobalID, BlockID, UseID, JumpTargetID);
 }
