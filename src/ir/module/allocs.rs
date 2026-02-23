@@ -618,25 +618,80 @@ impl PoolAllocatedID {
 mod serde_adapt {
     use super::BackID;
     use crate::ir::*;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use mtb_entity_slab::GenIndex;
+    use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
+        de::{Error, Unexpected::Other},
+    };
+    use smol_str::format_smolstr;
+    use std::num::NonZero;
+
+    #[derive(Clone)]
+    struct IndexedIDSerde<'s>(GenIndex, &'s str);
+
+    impl<'s> Serialize for IndexedIDSerde<'s> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let Self(index, prefix) = self;
+            let (real, gene) = index.tear();
+            let s = format_smolstr!("{prefix}:{real:x}:{gene:x}");
+            s.as_str().serialize(serializer)
+        }
+    }
+    impl<'de> Deserialize<'de> for IndexedIDSerde<'de> {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let s: &str = Deserialize::deserialize(deserializer)?;
+            let mut parts = s.split(':');
+            let Some(prefix) = parts.next() else {
+                return Err(Error::missing_field("prefix"));
+            };
+            let Some(real) = parts.next() else {
+                return Err(Error::missing_field("real-index"));
+            };
+            let Some(gene) = parts.next() else {
+                return Err(Error::missing_field("generation"));
+            };
+            let None = parts.next() else {
+                return Err(Error::invalid_length(4 + parts.count(), &"3"));
+            };
+            let real = usize::from_str_radix(real, 16).map_err(Error::custom)?;
+            let gene = u16::from_str_radix(gene, 16).map_err(Error::custom)?;
+            let Some(gene) = NonZero::new(gene) else {
+                return Err(Error::invalid_value(Other("nonzero u16"), &"0"));
+            };
+            Ok(Self(GenIndex::compose(real, gene), prefix))
+        }
+    }
 
     macro_rules! indexed_id_serde {
-        ($id:ident) => {
+        ($id:ident => $prefix:expr) => {
             impl Serialize for $id {
                 fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                    self.0.serialize(serializer)
+                    let back = self.0;
+                    IndexedIDSerde(back.indexed, $prefix).serialize(serializer)
                 }
             }
             impl<'de> Deserialize<'de> for $id {
                 fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-                    BackID::<$id>::deserialize(deserializer).map($id)
+                    let IndexedIDSerde(gen_index, prefix) =
+                        IndexedIDSerde::deserialize(deserializer)?;
+                    const ERRMSG: &str =
+                        concat!("Expected prefix ", $prefix, " for ", stringify!($id));
+                    if prefix != $prefix {
+                        return Err(Error::invalid_value(Other("incorrect prefix"), &ERRMSG));
+                    }
+                    Ok(Self(BackID::<$id>::from(gen_index)))
                 }
             }
         };
-        ($($id:ident),*) => {
-            $(indexed_id_serde!($id);)*
-        };
+        ($($id:ident => $prefix:expr),* $(,)?) => { $(indexed_id_serde!($id => $prefix);)* };
     }
 
-    indexed_id_serde!(InstID, ExprID, GlobalID, BlockID, UseID, JumpTargetID);
+    indexed_id_serde! {
+        InstID   => "i",
+        ExprID   => "e",
+        GlobalID => "g",
+        BlockID  => "b",
+        UseID    => "u",
+        JumpTargetID => "j",
+    }
 }
