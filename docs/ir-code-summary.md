@@ -65,14 +65,14 @@ pub fn free_disposed(&mut self) {
 > 摘自 src/ir/module/allocs.rs：
 ````rust
 pub(crate) trait IPoolAllocated: Sized {
-	type PtrID: IPoliciedID<ObjectT = Self> + Into<PoolAllocatedID>;
+	type PrimaryID: IPoliciedID<ObjectT = Self> + Into<PoolAllocatedID>;
 	type MinRelatedPoolT: AsRef<IRAllocs>;
 
-	fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PtrID;
-	fn dispose_obj(&self, id: Self::PtrID, pool: &Self::MinRelatedPoolT)
+	fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PrimaryID;
+	fn dispose_obj(&self, id: Self::PrimaryID, pool: &Self::MinRelatedPoolT)
 		-> PoolAllocatedDisposeRes;
 
-	fn dispose_id(id: Self::PtrID, pool: &Self::MinRelatedPoolT)
+	fn dispose_id(id: Self::PrimaryID, pool: &Self::MinRelatedPoolT)
 		-> PoolAllocatedDisposeRes {
 		let alloc = Self::get_alloc(pool.as_ref());
 		let Some(obj) = id.into_backend().try_deref(alloc) else {

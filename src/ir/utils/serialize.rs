@@ -62,7 +62,7 @@ pub type IRWriteRes<T = ()> = Result<T, IRWriteErr>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IRWriteOption {
-    pub show_ptrid: bool,
+    pub show_indexed: bool,
     pub show_users: bool,
     pub show_preds: bool,
     pub mangle_unexported: bool,
@@ -71,7 +71,7 @@ pub struct IRWriteOption {
 impl IRWriteOption {
     pub fn loud() -> Self {
         Self {
-            show_ptrid: true,
+            show_indexed: true,
             show_users: true,
             show_preds: true,
             mangle_unexported: true,
@@ -82,8 +82,8 @@ impl IRWriteOption {
         Self::default()
     }
 
-    pub fn show_ptrid(self, val: bool) -> Self {
-        Self { show_ptrid: val, ..self }
+    pub fn show_indexed(self, val: bool) -> Self {
+        Self { show_indexed: val, ..self }
     }
     pub fn show_users(self, val: bool) -> Self {
         Self { show_users: val, ..self }
@@ -594,13 +594,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
     fn fmt_global_header_prefix(&mut self, gid: GlobalID, kind: &str) -> IRWriteRes {
         let allocs = &self.env.module.allocs;
         let options = self.env.option;
-        if options.show_ptrid {
-            let addr = gid.0;
+        if options.show_indexed {
             let (index, gene) = (gid.0.get_order(), gid.0.get_generation());
-            write!(
-                self,
-                "; {kind} addr={addr:p}, index={index:x}, gen={gene:x}"
-            )?;
+            write!(self, "; {kind} index={index:x}, gen={gene:x}")?;
             self.writer.wrap_indent()?;
         }
         if options.show_users {
@@ -700,12 +696,11 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             (&env.module.allocs, env.option)
         };
         self.writer.wrap_indent()?;
-        if option.show_ptrid {
+        if option.show_indexed {
             let (index, gene) = (block_id.0.get_order(), block_id.0.get_generation());
-            let addr = block_id.0;
             write!(
                 self,
-                "; block addr={addr:p}, id=%block:{index:x}, gen={gene:x}"
+                "; block id=%block:{index:x}, gen={gene:x}"
             )?;
             self.writer.wrap_indent()?;
         }
@@ -725,12 +720,11 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
         for (inst_id, inst) in block.get_insts().iter(&allocs.insts) {
             self.writer.wrap_indent()?;
-            if option.show_ptrid {
+            if option.show_indexed {
                 let (index, gene) = (inst_id.0.get_order(), inst_id.0.get_generation());
-                let addr = inst_id.0;
                 write!(
                     self,
-                    "; inst addr={addr:p}, id=%inst:{index:x}, gen={gene:x}"
+                    "; inst id=%inst:{index:x}, gen={gene:x}"
                 )?;
                 self.writer.wrap_indent()?;
             }
