@@ -9,7 +9,7 @@ mod serde;
 mod structty;
 mod vec;
 
-use crate::SymbolStr;
+use crate::{SymbolStr, base::ISlabID};
 use smol_str::SmolStrBuilder;
 use std::fmt::Write;
 
@@ -221,6 +221,20 @@ impl IValType for ValTypeID {
             ValTypeID::Struct(s) => s.format_ir(f),
             ValTypeID::StructAlias(sa) => sa.format_ir(f),
             ValTypeID::Func(func) => func.format_ir(f),
+        }
+    }
+}
+
+impl ValTypeID {
+    pub fn is_alive(self, tctx: &TypeContext) -> bool {
+        match self {
+            ValTypeID::Int(bits) => bits <= 128,
+            ValTypeID::FixVec(FixVecType(ScalarType::Int(i), _)) => i <= 128,
+            ValTypeID::Array(arr) => arr.try_deref(&tctx.allocs.borrow().arrays).is_some(),
+            ValTypeID::Struct(struc) => struc.try_deref(&tctx.allocs.borrow().structs).is_some(),
+            ValTypeID::StructAlias(sa) => sa.try_deref(&tctx.allocs.borrow().aliases).is_some(),
+            ValTypeID::Func(f) => f.try_deref(&tctx.allocs.borrow().funcs).is_some(),
+            _ => true,
         }
     }
 }

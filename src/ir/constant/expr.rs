@@ -87,6 +87,16 @@ pub trait ISubExprID: Copy {
         let expr = self.into_inner().deref_mut(&mut allocs.exprs);
         Self::ExprObjT::from_ir_mut(expr)
     }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::ExprObjT> {
+        let expr = self.into_inner().try_deref(&allocs.exprs)?;
+        if expr.obj_disposed() {
+            return None;
+        }
+        Self::ExprObjT::try_from_ir_ref(expr)
+    }
+    fn is_alive(self, allocs: &IRAllocs) -> bool {
+        self.try_deref_ir(allocs).is_some()
+    }
 
     fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
         let id = ExprObj::allocate(allocs, obj.into_ir());

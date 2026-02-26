@@ -698,10 +698,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         self.writer.wrap_indent()?;
         if option.show_indexed {
             let (index, gene) = (block_id.0.get_order(), block_id.0.get_generation());
-            write!(
-                self,
-                "; block id=%block:{index:x}, gen={gene:x}"
-            )?;
+            write!(self, "; block id=%block:{index:x}, gen={gene:x}")?;
             self.writer.wrap_indent()?;
         }
         if option.show_preds {
@@ -722,10 +719,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             self.writer.wrap_indent()?;
             if option.show_indexed {
                 let (index, gene) = (inst_id.0.get_order(), inst_id.0.get_generation());
-                write!(
-                    self,
-                    "; inst id=%inst:{index:x}, gen={gene:x}"
-                )?;
+                write!(self, "; inst id=%inst:{index:x}, gen={gene:x}")?;
                 self.writer.wrap_indent()?;
             }
             if option.show_users {
@@ -1194,6 +1188,12 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
         let func = func_id.deref_ir(allocs);
         ctx.fmt_func(func_id, func)
     }
+    fn fmt_func_header(&mut self, func_id: FuncID) -> IRWriteRes<IRSourceRange> {
+        let mut ctx = self._protected_tear();
+        let allocs = &ctx.env.module.allocs;
+        let func = func_id.deref_ir(allocs);
+        ctx.fmt_func_header(func_id, func)
+    }
     fn fmt_block(&mut self, block_id: BlockID) -> IRWriteRes {
         let mut ctx = self._protected_tear();
         let allocs = &ctx.env.module.allocs;
@@ -1283,6 +1283,10 @@ impl<'ir, 'names, W: Write> IRSerializer<'ir, 'names, W> {
             options: IRWriteOption::default(),
             cache: Cache::default(),
         }
+    }
+
+    pub fn source_map(&self) -> Option<&SourceRangeMap> {
+        self.writer.srcmap.as_ref()
     }
 
     pub fn with_func<'a>(

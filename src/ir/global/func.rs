@@ -308,6 +308,9 @@ impl FuncID {
         self.deref_ir(allocs).block_iter(allocs)
     }
 
+    pub fn args(self, allocs: &IRAllocs) -> &[FuncArg] {
+        &self.deref_ir(allocs).args
+    }
     pub fn get_arg(self, allocs: &IRAllocs, index: usize) -> Option<&FuncArg> {
         let func = self.deref_ir(allocs);
         func.args.get(index)
