@@ -512,12 +512,15 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         Ok(())
     }
 
-    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes {
+    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes<IRSourceRange> {
         let allocs = &self.env.module.allocs;
+        let begin_pos = self.writer.curr_pos();
         match global_id.deref_ir(allocs) {
-            GlobalObj::Var(gvar) => self.fmt_global_var(GlobalVarID::raw_from(global_id), gvar),
-            GlobalObj::Func(func) => self.fmt_func(FuncID::raw_from(global_id), func),
+            GlobalObj::Var(gvar) => self.fmt_global_var(GlobalVarID::raw_from(global_id), gvar)?,
+            GlobalObj::Func(func) => self.fmt_func(FuncID::raw_from(global_id), func)?,
         }
+        let end_pos = self.writer.curr_pos();
+        Ok((begin_pos, end_pos))
     }
     fn fmt_type_aliases(&mut self) -> IRWriteRes {
         let tctx = &self.env.module.tctx;
@@ -1176,7 +1179,9 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
     fn enable_srcmap(&mut self) -> &mut Self;
     fn dump_srcmap(&mut self) -> Option<SourceRangeMap>;
 
-    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes {
+    fn curr_pos(&self) -> IRSourcePos;
+
+    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes<IRSourceRange> {
         self._protected_tear().fmt_global(global_id)
     }
     fn fmt_module(&mut self) -> IRWriteRes {
@@ -1249,6 +1254,10 @@ impl<'ir, 'names, W: Write> SerializeIR<'ir, 'names, W> for IRSerializer<'ir, 'n
             writer: &mut self.writer,
             cache: &mut self.cache,
         }
+    }
+
+    fn curr_pos(&self) -> IRSourcePos {
+        self.writer.curr_pos()
     }
 
     fn set_options(&mut self, options: IRWriteOption) -> &mut Self {
@@ -1338,6 +1347,10 @@ impl<'ir, 'names, W: Write> SerializeIR<'ir, 'names, W> for FuncSerializer<'ir, 
         FmtCtx { env, cache, writer }
     }
 
+    fn curr_pos(&self) -> IRSourcePos {
+        self.writer.curr_pos()
+    }
+
     fn set_options(&mut self, options: IRWriteOption) -> &mut Self {
         self.options = options;
         self
@@ -1389,5 +1402,9 @@ impl<'ir, 'names, W: Write> FuncSerializer<'ir, 'names, W> {
             options: IRWriteOption::default(),
             cache: Cache::default(),
         }
+    }
+
+    pub fn get_numbers(&self) -> Rc<FuncNumberMap<'names>> {
+        self.numbers.clone()
     }
 }

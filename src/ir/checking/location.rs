@@ -56,8 +56,8 @@ impl IRLocation {
         let mut serializer = IRSerializer::new(&mut *out, module, names);
         let res = match self {
             IRLocation::Module => unreachable!(),
-            IRLocation::GlobalVar(gvar) => serializer.fmt_global(gvar.raw_into()),
             IRLocation::Func(func_id) => serializer.fmt_func(*func_id),
+            IRLocation::GlobalVar(gvar) => serializer.fmt_global(gvar.raw_into()).map(drop),
             IRLocation::Block(block_id) => serializer.fmt_block(*block_id),
             IRLocation::Inst(inst_id) => serializer.fmt_inst(*inst_id),
             IRLocation::Use(use_id) => serializer.fmt_use_info(*use_id),

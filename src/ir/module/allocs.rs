@@ -624,47 +624,130 @@ mod serde_adapt {
         Deserialize, Deserializer, Serialize, Serializer,
         de::{Error, Unexpected::Other},
     };
-    use smol_str::format_smolstr;
-    use std::num::NonZero;
+    use smol_str::{SmolStr, ToSmolStr};
+    use std::{
+        num::{NonZero, ParseIntError},
+        str::FromStr,
+    };
 
-    #[derive(Clone)]
-    struct IndexedIDSerde<'s>(GenIndex, &'s str);
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum PoolKind {
+        Block,
+        Inst,
+        Expr,
+        Global,
+        Use,
+        JumpTarget,
+    }
 
-    impl<'s> Serialize for IndexedIDSerde<'s> {
-        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            let Self(index, prefix) = self;
-            let (real, gene) = index.tear();
-            let s = format_smolstr!("{prefix}:{real:x}:{gene:x}");
-            s.as_str().serialize(serializer)
+    impl PoolKind {
+        fn prefix(self) -> &'static str {
+            match self {
+                PoolKind::Block => "b",
+                PoolKind::Inst => "i",
+                PoolKind::Expr => "e",
+                PoolKind::Global => "g",
+                PoolKind::Use => "u",
+                PoolKind::JumpTarget => "j",
+            }
+        }
+
+        fn from_str(s: &str) -> Option<Self> {
+            match s {
+                "b" => Some(Self::Block),
+                "i" => Some(Self::Inst),
+                "e" => Some(Self::Expr),
+                "g" => Some(Self::Global),
+                "u" => Some(Self::Use),
+                "j" => Some(Self::JumpTarget),
+                _ => None,
+            }
         }
     }
-    impl<'de> Deserialize<'de> for IndexedIDSerde<'de> {
+
+    enum ParseErr {
+        MissingPrefix,
+        InvalidPrefix(SmolStr),
+        MissingRealIndex,
+        MissingGeneration,
+        TooManyParts(usize),
+        ParseInt(ParseIntError),
+        GenerationZero,
+    }
+    impl std::fmt::Display for ParseErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ParseErr::MissingPrefix => write!(f, "Missing prefix"),
+                ParseErr::InvalidPrefix(p) => write!(f, "Invalid prefix: {}", p),
+                ParseErr::MissingRealIndex => write!(f, "Missing real index part"),
+                ParseErr::MissingGeneration => write!(f, "Missing generation part"),
+                ParseErr::TooManyParts(nparts) => write!(f, "Too many parts {nparts} in ID string"),
+                ParseErr::ParseInt(e) => write!(f, "Integer parse error: {}", e),
+                ParseErr::GenerationZero => write!(f, "Generation cannot be zero"),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct IndexedIDSerde(GenIndex, PoolKind);
+
+    impl std::fmt::Display for IndexedIDSerde {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let Self(index, prefix) = self;
+            let (real, gene) = index.tear();
+            write!(f, "{}:{real:x}:{gene:x}", prefix.prefix())
+        }
+    }
+    impl std::str::FromStr for IndexedIDSerde {
+        type Err = ParseErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let mut parts = s.split(':');
+            let prefix = parts.next().ok_or(ParseErr::MissingPrefix)?;
+            let real = parts.next().ok_or(ParseErr::MissingRealIndex)?;
+            let gene = parts.next().ok_or(ParseErr::MissingGeneration)?;
+            if parts.next().is_some() {
+                // 4 = prefix + real + gene + at least one extra part
+                return Err(ParseErr::TooManyParts(parts.count() + 4));
+            }
+            let pool_kind =
+                PoolKind::from_str(prefix).ok_or_else(|| ParseErr::InvalidPrefix(prefix.into()))?;
+            let real = usize::from_str_radix(real, 16).map_err(ParseErr::ParseInt)?;
+            let gene = u16::from_str_radix(gene, 16).map_err(ParseErr::ParseInt)?;
+            let gene = NonZero::new(gene).ok_or(ParseErr::GenerationZero)?;
+            Ok(IndexedIDSerde(GenIndex::compose(real, gene), pool_kind))
+        }
+    }
+
+    impl Serialize for IndexedIDSerde {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.to_smolstr().serialize(serializer)
+        }
+    }
+    impl<'de> Deserialize<'de> for IndexedIDSerde {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
             let s: &str = Deserialize::deserialize(deserializer)?;
-            let mut parts = s.split(':');
-            let Some(prefix) = parts.next() else {
-                return Err(Error::missing_field("prefix"));
+            let err = match IndexedIDSerde::from_str(s) {
+                Ok(id) => return Ok(id),
+                Err(e) => e,
             };
-            let Some(real) = parts.next() else {
-                return Err(Error::missing_field("real-index"));
+            let err: D::Error = match err {
+                ParseErr::MissingPrefix => D::Error::missing_field("prefix"),
+                ParseErr::InvalidPrefix(_) => D::Error::invalid_value(Other(s), &"Invalid prefix"),
+                ParseErr::MissingRealIndex => D::Error::missing_field("real index"),
+                ParseErr::MissingGeneration => D::Error::missing_field("generation"),
+                ParseErr::TooManyParts(nparts) => D::Error::invalid_length(nparts, &"3"),
+                ParseErr::ParseInt(e) => D::Error::custom(e),
+                ParseErr::GenerationZero => {
+                    D::Error::invalid_value(Other(s), &"non-zero u16 hex integer")
+                }
             };
-            let Some(gene) = parts.next() else {
-                return Err(Error::missing_field("generation"));
-            };
-            let None = parts.next() else {
-                return Err(Error::invalid_length(4 + parts.count(), &"3"));
-            };
-            let real = usize::from_str_radix(real, 16).map_err(Error::custom)?;
-            let gene = u16::from_str_radix(gene, 16).map_err(Error::custom)?;
-            let Some(gene) = NonZero::new(gene) else {
-                return Err(Error::invalid_value(Other("nonzero u16"), &"0"));
-            };
-            Ok(Self(GenIndex::compose(real, gene), prefix))
+            Err(err)
         }
     }
 
     macro_rules! indexed_id_serde {
-        ($id:ident => $prefix:expr) => {
+        ($id:ident => ($prefix:expr, $prefix_ch:expr)) => {
             impl Serialize for $id {
                 fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
                     let back = self.0;
@@ -676,23 +759,42 @@ mod serde_adapt {
                     let IndexedIDSerde(gen_index, prefix) =
                         IndexedIDSerde::deserialize(deserializer)?;
                     const ERRMSG: &str =
-                        concat!("Expected prefix ", $prefix, " for ", stringify!($id));
+                        concat!("Expected prefix ", $prefix_ch, " for ", stringify!($id));
                     if prefix != $prefix {
                         return Err(Error::invalid_value(Other("incorrect prefix"), &ERRMSG));
                     }
                     Ok(Self(BackID::<$id>::from(gen_index)))
                 }
             }
+
+            impl FromStr for $id {
+                type Err = String;
+
+                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                    let IndexedIDSerde(gen_index, prefix) = IndexedIDSerde::from_str(s)
+                        .map_err(|e| e.to_string())?;
+                    if prefix != $prefix {
+                        return Err(format!("Expected prefix '{}', found '{}'", $prefix_ch, prefix.prefix()));
+                    }
+                    Ok(Self(BackID::<$id>::from(gen_index)))
+                }
+            }
+            impl $id {
+                pub fn to_strid(self) -> SmolStr {
+                    let back = self.0;
+                    IndexedIDSerde(back.indexed, $prefix).to_smolstr()
+                }
+            }
         };
-        ($($id:ident => $prefix:expr),* $(,)?) => { $(indexed_id_serde!($id => $prefix);)* };
+        ($($id:ident => ($prefix:expr, $prefix_ch:expr)),* $(,)?) => { $(indexed_id_serde!($id => ($prefix, $prefix_ch));)* };
     }
 
     indexed_id_serde! {
-        InstID   => "i",
-        ExprID   => "e",
-        GlobalID => "g",
-        BlockID  => "b",
-        UseID    => "u",
-        JumpTargetID => "j",
+        InstID   => (PoolKind::Inst, "i"),
+        ExprID   => (PoolKind::Expr, "e"),
+        GlobalID => (PoolKind::Global, "g"),
+        BlockID  => (PoolKind::Block, "b"),
+        UseID    => (PoolKind::Use, "u"),
+        JumpTargetID => (PoolKind::JumpTarget, "j"),
     }
 }
