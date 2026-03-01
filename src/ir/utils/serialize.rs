@@ -1181,6 +1181,10 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
 
     fn curr_pos(&self) -> IRSourcePos;
 
+    fn wrap_and_indent(&mut self) -> IRWriteRes {
+        self._protected_tear().writer.wrap_indent()
+    }
+
     fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes<IRSourceRange> {
         self._protected_tear().fmt_global(global_id)
     }
