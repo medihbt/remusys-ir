@@ -797,4 +797,33 @@ mod serde_adapt {
         UseID    => (PoolKind::Use, "u"),
         JumpTargetID => (PoolKind::JumpTarget, "j"),
     }
+
+    impl FromStr for PoolAllocatedID {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let IndexedIDSerde(_, prefix) = IndexedIDSerde::from_str(s)
+                .map_err(|e| format!("Failed to parse PoolAllocatedID: {e}"))?;
+            match prefix {
+                PoolKind::Block => Ok(PoolAllocatedID::Block(BlockID::from_str(s)?)),
+                PoolKind::Inst => Ok(PoolAllocatedID::Inst(InstID::from_str(s)?)),
+                PoolKind::Expr => Ok(PoolAllocatedID::Expr(ExprID::from_str(s)?)),
+                PoolKind::Global => Ok(PoolAllocatedID::Global(GlobalID::from_str(s)?)),
+                PoolKind::Use => Ok(PoolAllocatedID::Use(UseID::from_str(s)?)),
+                PoolKind::JumpTarget => Ok(PoolAllocatedID::JumpTarget(JumpTargetID::from_str(s)?)),
+            }
+        }
+    }
+    impl PoolAllocatedID {
+        pub fn to_strid(self) -> SmolStr {
+            match self {
+                PoolAllocatedID::Block(b) => b.to_strid(),
+                PoolAllocatedID::Inst(i) => i.to_strid(),
+                PoolAllocatedID::Expr(e) => e.to_strid(),
+                PoolAllocatedID::Global(g) => g.to_strid(),
+                PoolAllocatedID::Use(u) => u.to_strid(),
+                PoolAllocatedID::JumpTarget(j) => j.to_strid(),
+            }
+        }
+    }
 }
