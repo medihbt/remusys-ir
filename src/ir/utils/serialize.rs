@@ -1372,6 +1372,13 @@ impl<'ir, 'names> FuncSerializer<'ir, 'names, Vec<u8>> {
     pub fn new_buffered(module: &'ir Module, func: FuncID, names: &'names IRNameMap) -> Self {
         Self::new(Vec::new(), module, func, names)
     }
+    pub fn try_new_buffered(
+        module: &'ir Module,
+        func: FuncID,
+        names: &'names IRNameMap,
+    ) -> IRWriteRes<Self> {
+        Self::try_new(Vec::new(), module, func, names)
+    }
     pub fn with_numbers_buffered(module: &'ir Module, numbers: Rc<FuncNumberMap<'names>>) -> Self {
         Self::with_numbers(Vec::new(), module, numbers)
     }
@@ -1394,6 +1401,25 @@ impl<'ir, 'names, W: Write> FuncSerializer<'ir, 'names, W> {
         ));
         Self::with_numbers(writer, module, numbers)
     }
+    pub fn try_new(
+        writer: W,
+        module: &'ir Module,
+        func: FuncID,
+        names: &'names IRNameMap,
+    ) -> IRWriteRes<Self> {
+        let allocs = &module.allocs;
+        if func.is_extern(allocs) {
+            return Err(IRWriteErr::FuncIsExtern(func.clone_name(allocs)));
+        }
+        let numbers = Rc::new(FuncNumberMap::new(
+            allocs,
+            func,
+            names,
+            NumberOption::ignore_all(),
+        ));
+        Ok(Self::with_numbers(writer, module, numbers))
+    }
+
     pub fn with_numbers(
         writer: W,
         module: &'ir Module,

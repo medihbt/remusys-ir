@@ -45,10 +45,15 @@ impl IRNameMap {
         Self::default()
     }
 
-    pub fn insert_func_args(&mut self, func_index: FuncID, nargs: usize) {
+    pub fn func_args_or_insert(
+        &mut self,
+        func_id: FuncID,
+        nargs: usize,
+    ) -> &mut [Option<SymbolStr>] {
         self.funcs
-            .entry(func_index)
+            .entry(func_id)
             .or_insert_with(|| vec![None; nargs].into_boxed_slice());
+        self.funcs.get_mut(&func_id).unwrap()
     }
     pub fn set_func_arg(&mut self, func_index: FuncID, arg: usize, name: SymbolStr) {
         self.funcs
