@@ -300,13 +300,24 @@ impl SourceRangeMap {
             _ => None,
         }
     }
-    pub fn funcarg_insert_range(&mut self, arg: FuncArgID, range: IRSourceRange) {
+    pub fn funcarg_insert_range(
+        &mut self,
+        allocs: &IRAllocs,
+        arg: FuncArgID,
+        range: IRSourceRange,
+    ) {
         let FuncArgID(func, idx) = arg;
-        let args = self
-            .funcargs
-            .entry(func)
-            .or_insert_with(|| vec![None; idx as usize].into_boxed_slice());
-        args[idx as usize] = Some(range);
+        let args = self.funcargs.entry(func).or_insert_with(|| {
+            let len = func.args(allocs).len();
+            vec![None; len].into_boxed_slice()
+        });
+        let Some(arg) = args.get_mut(idx as usize) else {
+            panic!(
+                "internal error: argument index {idx} out of bounds for function {func:?} with {} args",
+                args.len()
+            );
+        };
+        *arg = Some(range);
     }
     pub fn funcarg_get_range(&self, arg: FuncArgID) -> Option<IRSourceRange> {
         let FuncArgID(func, idx) = arg;

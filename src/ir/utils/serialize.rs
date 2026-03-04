@@ -634,13 +634,12 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
             let arg_id = FuncArgID(func_id, idx as u32);
             let begin_pos = self.writer.curr_pos();
-            match self.env.names.get_local_name(arg_id) {
-                Some(name) => write!(self, " %{name}")?,
-                None => write!(self, " %{idx}")?,
-            };
+            if let Some(name) = self.env.names.get_local_name(arg_id) {
+                write!(self, " %{name}")?;
+            }
             let end_pos = self.writer.curr_pos();
             if let Some(srcmap) = &mut self.writer.srcmap {
-                srcmap.funcarg_insert_range(arg_id, (begin_pos, end_pos));
+                srcmap.funcarg_insert_range(allocs, arg_id, (begin_pos, end_pos));
             }
         }
         if func.is_vararg {

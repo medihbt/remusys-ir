@@ -726,20 +726,20 @@ mod serde_adapt {
     }
     impl<'de> Deserialize<'de> for IndexedIDSerde {
         fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            let s: &str = Deserialize::deserialize(deserializer)?;
-            let err = match IndexedIDSerde::from_str(s) {
+            let s: SmolStr = Deserialize::deserialize(deserializer)?;
+            let err = match IndexedIDSerde::from_str(&s) {
                 Ok(id) => return Ok(id),
                 Err(e) => e,
             };
             let err: D::Error = match err {
                 ParseErr::MissingPrefix => D::Error::missing_field("prefix"),
-                ParseErr::InvalidPrefix(_) => D::Error::invalid_value(Other(s), &"Invalid prefix"),
+                ParseErr::InvalidPrefix(_) => D::Error::invalid_value(Other(&s), &"Invalid prefix"),
                 ParseErr::MissingRealIndex => D::Error::missing_field("real index"),
                 ParseErr::MissingGeneration => D::Error::missing_field("generation"),
                 ParseErr::TooManyParts(nparts) => D::Error::invalid_length(nparts, &"3"),
                 ParseErr::ParseInt(e) => D::Error::custom(e),
                 ParseErr::GenerationZero => {
-                    D::Error::invalid_value(Other(s), &"non-zero u16 hex integer")
+                    D::Error::invalid_value(Other(&s), &"non-zero u16 hex integer")
                 }
             };
             Err(err)
