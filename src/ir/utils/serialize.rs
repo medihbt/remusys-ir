@@ -572,6 +572,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
     fn fmt_global_var(&mut self, id: GlobalVarID, gvar: &GlobalVar) -> IRWriteRes {
         let allocs = &self.env.module.allocs;
         let gid = id.raw_into();
+        let content_ty = self.type_name(gvar.get_ptr_pointee_type());
 
         self.fmt_global_header_prefix(gid, "gvar")?;
 
@@ -583,6 +584,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         if let Some(tls) = gvar.tls_model.get() {
             write!(self, "thread_local({}) ", tls.get_ir_text())?;
         }
+        write!(self, "{content_ty} ")?;
         if !gvar.is_extern(allocs) {
             self.fmt_use(gvar.initval[0])?;
         }
