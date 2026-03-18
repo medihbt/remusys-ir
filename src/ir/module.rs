@@ -85,6 +85,9 @@ impl SymbolPool {
             }
         }
     }
+    pub fn unexport_symbol(&mut self, id: GlobalID, allocs: &IRAllocs) {
+        self.exported.remove(id.get_name(allocs));
+    }
 
     fn gc_mark(&self, marker: &mut IRMarker<'_>) {
         if cfg!(debug_assertions) {

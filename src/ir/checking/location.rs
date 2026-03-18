@@ -62,7 +62,7 @@ impl IRLocation {
             IRLocation::Inst(inst_id) => serializer.fmt_inst(*inst_id),
             IRLocation::Use(use_id) => serializer.fmt_use_info(*use_id),
             IRLocation::JumpTarget(jt) => serializer.fmt_jt_info(*jt),
-            IRLocation::Operand(val) => serializer.fmt_operand(*val),
+            IRLocation::Operand(val) => serializer.fmt_operand(*val).map(drop),
         };
         drop(serializer);
         if let Err(e) = res {

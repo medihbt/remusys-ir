@@ -310,18 +310,22 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             Some(bb) => ValueSSA::Block(bb),
             None => ValueSSA::None,
         };
-        self.fmt_value_mapped(block_id)
+        self.fmt_value_mapped(block_id)?;
+        Ok(())
     }
 
-    fn fmt_value(&mut self, val: ValueSSA) -> IRWriteRes {
+    fn fmt_value(&mut self, val: ValueSSA) -> IRWriteRes<IRSourceRange> {
         let mapped = self.map_value(val);
         self.fmt_value_mapped(mapped)
     }
 
-    fn fmt_value_mapped(&mut self, val: ValueSSA) -> IRWriteRes {
+    fn fmt_value_mapped(&mut self, val: ValueSSA) -> IRWriteRes<IRSourceRange> {
         let allocs = &self.env.module.allocs;
+        let begin_pos = self.writer.curr_pos();
         if let Some(name) = self.env.names.get_local_name(val) {
-            return write!(self, "%{name}");
+            write!(self, "%{name}")?;
+            let end_pos = self.writer.curr_pos();
+            return Ok((begin_pos, end_pos));
         }
         match val {
             ValueSSA::None => self.write_str("none"),
@@ -340,7 +344,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             ValueSSA::Global(global) => {
                 write!(self, "@{}", self.env.nameof_global(global))
             }
-        }
+        }?;
+        let end_pos = self.writer.curr_pos();
+        Ok((begin_pos, end_pos))
     }
 
     fn fmt_const_data(&mut self, data: ConstData) -> IRWriteRes {
@@ -1216,7 +1222,7 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
         let inst = inst_id.deref_ir(allocs);
         inst.serialize_ir(&mut ctx)
     }
-    fn fmt_operand(&mut self, op: ValueSSA) -> IRWriteRes {
+    fn fmt_operand(&mut self, op: ValueSSA) -> IRWriteRes<IRSourceRange> {
         self._protected_tear().fmt_value_mapped(op)
     }
     fn fmt_use_info(&mut self, useid: UseID) -> IRWriteRes {

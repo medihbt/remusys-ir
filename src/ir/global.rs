@@ -329,6 +329,20 @@ pub trait ISubGlobalID: Copy + 'static {
             .try_export_symbol(self.raw_into(), &module.allocs)?;
         Ok(self)
     }
+    /// 尝试取消导出自己. 如果自己没有被导出, 或者导出的 ID 与自己不匹配,
+    /// 则返回 false. 否则返回 true.
+    fn unexport(self, module: &Module) -> bool {
+        let mut symbols = module.symbols.borrow_mut();
+        let name = self.get_name(&module.allocs);
+        let Some(exported_id) = symbols.get_symbol_by_name(name) else {
+            return false;
+        };
+        if exported_id != self.raw_into() {
+            return false;
+        }
+        symbols.exported.remove(name);
+        true
+    }
     /// 如果自己没有导出, 就重命名为 name 并导出全局符号.
     /// 如果 name 已被占用, 或者自己已经被导出, 则返回 Err (已有符号ID).
     fn rename_and_export(self, name: &str, module: &mut Module) -> Result<Self, GlobalExportErr> {
