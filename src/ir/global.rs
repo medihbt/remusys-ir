@@ -9,7 +9,7 @@ use crate::{
     },
     typing::ValTypeID,
 };
-use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
+use mtb_entity_slab::{IEntityAllocID, IPoliciedID, entity_id};
 use std::cell::Cell;
 
 pub mod func;
@@ -231,44 +231,38 @@ impl<T: ISubGlobal> IPtrValue for T {
 pub trait ISubGlobalID: Copy + 'static {
     type GlobalT: ISubGlobal;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>) -> Self;
-    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>;
+    fn from_inner(ptr: GlobalInnerID) -> Self;
+    fn into_inner(self) -> GlobalInnerID;
     fn raw_from(id: GlobalID) -> Self {
-        Self::from_raw_ptr(id.0)
+        Self::from_inner(id.0)
     }
     fn raw_into(self) -> GlobalID {
-        GlobalID(self.into_raw_ptr())
+        GlobalID(self.into_inner())
     }
 
     fn try_from_global(allocs: &IRAllocs, id: GlobalID) -> Option<Self> {
-        let g = id.into_raw_ptr().deref(&allocs.globals);
+        let g = id.into_inner().deref(&allocs.globals);
         if Self::GlobalT::try_from_ir_ref(g).is_some() { Some(Self::raw_from(id)) } else { None }
     }
     fn from_global(allocs: &IRAllocs, id: GlobalID) -> Self {
         Self::try_from_global(allocs, id).expect("Invalid GlobalObj variant")
     }
 
-    fn as_indexed(self, allocs: &IRAllocs) -> Option<GlobalIndex> {
-        self.into_raw_ptr()
-            .to_index(&allocs.globals)
-            .map(GlobalIndex)
-    }
-    fn to_indexed(self, allocs: &IRAllocs) -> GlobalIndex {
-        self.as_indexed(allocs).expect("UAF detected")
-    }
     fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
-        self.as_indexed(allocs).map(|x| x.0.get_order())
+        if self.is_alive(allocs) { Some(self.into_inner().get_order()) } else { None }
     }
     fn get_entity_index(self, allocs: &IRAllocs) -> usize {
-        self.to_indexed(allocs).0.get_order()
+        self.try_get_entity_index(allocs)
+            .expect("Invalid GlobalObj variant or the global has been disposed")
     }
 
     fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::GlobalT> {
-        let g = self.into_raw_ptr().deref(&allocs.globals);
-        Self::GlobalT::try_from_ir_ref(g)
+        self.into_inner()
+            .try_deref(&allocs.globals)
+            .and_then(Self::GlobalT::try_from_ir_ref)
     }
     fn try_deref_ir_mut(self, allocs: &mut IRAllocs) -> Option<&mut Self::GlobalT> {
-        let g = self.into_raw_ptr().deref_mut(&mut allocs.globals);
+        let g = self.into_inner().deref_mut(&mut allocs.globals);
         Self::GlobalT::try_from_ir_mut(g)
     }
     fn deref_ir(self, allocs: &IRAllocs) -> &Self::GlobalT {
@@ -278,6 +272,12 @@ pub trait ISubGlobalID: Copy + 'static {
     fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::GlobalT {
         self.try_deref_ir_mut(allocs)
             .expect("Invalid GlobalObj variant")
+    }
+    fn is_alive(self, allocs: &IRAllocs) -> bool {
+        match self.try_deref_ir(allocs) {
+            Some(g) => !g.get_common().dispose_mark.get(),
+            None => false,
+        }
     }
 
     fn get_name(self, allocs: &IRAllocs) -> &str {
@@ -329,6 +329,20 @@ pub trait ISubGlobalID: Copy + 'static {
             .try_export_symbol(self.raw_into(), &module.allocs)?;
         Ok(self)
     }
+    /// 尝试取消导出自己. 如果自己没有被导出, 或者导出的 ID 与自己不匹配,
+    /// 则返回 false. 否则返回 true.
+    fn unexport(self, module: &Module) -> bool {
+        let mut symbols = module.symbols.borrow_mut();
+        let name = self.get_name(&module.allocs);
+        let Some(exported_id) = symbols.get_symbol_by_name(name) else {
+            return false;
+        };
+        if exported_id != self.raw_into() {
+            return false;
+        }
+        symbols.exported.remove(name);
+        true
+    }
     /// 如果自己没有导出, 就重命名为 name 并导出全局符号.
     /// 如果 name 已被占用, 或者自己已经被导出, 则返回 Err (已有符号ID).
     fn rename_and_export(self, name: &str, module: &mut Module) -> Result<Self, GlobalExportErr> {
@@ -360,14 +374,12 @@ pub trait ISubGlobalID: Copy + 'static {
     }
 }
 
-#[entity_id(GlobalID, policy = 128, allocator_type = GlobalAlloc)]
-#[entity_id(GlobalIndex, policy = 128, backend = index)]
+#[entity_id(GlobalID, policy = 128, allocator_type = GlobalAlloc, backend = index)]
 pub enum GlobalObj {
     Var(GlobalVar),
     Func(FuncObj),
 }
-
-pub type GlobalRawIndex = IndexedID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>;
+pub type GlobalInnerID = <GlobalID as IPoliciedID>::BackID;
 
 impl ITraceableValue for GlobalObj {
     fn users(&self) -> &UserList {
@@ -457,10 +469,10 @@ impl std::fmt::Pointer for GlobalID {
 impl ISubGlobalID for GlobalID {
     type GlobalT = GlobalObj;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>) -> Self {
+    fn from_inner(ptr: GlobalInnerID) -> Self {
         GlobalID(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
+    fn into_inner(self) -> GlobalInnerID {
         self.0
     }
 }

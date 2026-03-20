@@ -89,21 +89,21 @@ impl IRLiveSet {
             "Cannot sweep while there are disposed objects pending cleanup."
         );
         // use 和 jt 在 dispose 时会维护环链表, 如果不 dispose 会破坏 use-def 关系
-        for (id, up, u) in allocs.uses.iter() {
+        for (id, _, u) in allocs.uses.iter() {
             if self.uses.get(id.get_order()) {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = u.dispose_obj(UseID(up), allocs);
-            allocs.push_disposed(UseID(up));
+            let _ = u.dispose_obj(UseID(id), allocs);
+            allocs.push_disposed(UseID(id));
         }
-        for (id, jp, jt) in allocs.jts.iter() {
+        for (id, _, jt) in allocs.jts.iter() {
             if self.jts.get(id.get_order()) {
                 continue;
             }
             // 重复 dispose 不是一个错误, 忽略即可.
-            let _ = jt.dispose_obj(JumpTargetID(jp), allocs);
-            allocs.push_disposed(JumpTargetID(jp));
+            let _ = jt.dispose_obj(JumpTargetID(id), allocs);
+            allocs.push_disposed(JumpTargetID(id));
         }
         let mut num_freed = allocs.num_pending_disposed();
         // 清理掉已经 dispose 的对象.

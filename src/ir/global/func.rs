@@ -4,12 +4,12 @@ use crate::{
         AttrClass, AttrSet, Attribute, AttributePos, BlockID, GlobalID, GlobalObj, IPtrUniqueUser,
         IPtrValue, IRAllocs, ISubGlobal, ISubGlobalID, ISubValueSSA, ITraceableValue, IUser,
         IValueConvert, Module, OperandSet, TerminatorID, UseID, UserList, ValueClass, ValueSSA,
-        global::{GlobalCommon, Linkage},
+        global::{GlobalCommon, GlobalInnerID, Linkage},
         inst::{RetInstID, UnreachableInstID},
     },
     typing::{FuncTypeID, IValType, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{EntityList, EntityListIter, IPoliciedID, PtrID};
+use mtb_entity_slab::{EntityList, EntityListIter};
 use smallvec::SmallVec;
 use std::cell::{Cell, Ref, RefCell, RefMut};
 
@@ -242,7 +242,7 @@ impl FuncObj {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FuncID(pub PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>);
+pub struct FuncID(pub GlobalInnerID);
 impl std::fmt::Debug for FuncID {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "FuncID({:p})", self.0)
@@ -251,10 +251,10 @@ impl std::fmt::Debug for FuncID {
 impl ISubGlobalID for FuncID {
     type GlobalT = FuncObj;
 
-    fn from_raw_ptr(ptr: PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT>) -> Self {
+    fn from_inner(ptr: GlobalInnerID) -> Self {
         FuncID(ptr)
     }
-    fn into_raw_ptr(self) -> PtrID<GlobalObj, <GlobalID as IPoliciedID>::PolicyT> {
+    fn into_inner(self) -> GlobalInnerID {
         self.0
     }
 }
@@ -308,6 +308,9 @@ impl FuncID {
         self.deref_ir(allocs).block_iter(allocs)
     }
 
+    pub fn args(self, allocs: &IRAllocs) -> &[FuncArg] {
+        &self.deref_ir(allocs).args
+    }
     pub fn get_arg(self, allocs: &IRAllocs, index: usize) -> Option<&FuncArg> {
         let func = self.deref_ir(allocs);
         func.args.get(index)

@@ -301,20 +301,19 @@ impl ConstArrayData {
         }
     }
     pub fn index_get(&self, index: usize) -> ValueSSA {
+        ValueSSA::ConstData(self.index_get_const(index))
+    }
+    pub fn index_get_const(&self, index: usize) -> ConstData {
         match self {
             ConstArrayData::I8(v) => APInt::new(v[index] as i128, 8).into(),
             ConstArrayData::I16(v) => APInt::new(v[index] as i128, 16).into(),
             ConstArrayData::I32(v) => APInt::new(v[index] as i128, 32).into(),
             ConstArrayData::I64(v) => APInt::new(v[index] as i128, 64).into(),
             ConstArrayData::I128(v) => APInt::new(v[index], 128).into(),
-            ConstArrayData::F32(v) => {
-                ValueSSA::ConstData(ConstData::Float(FPKind::Ieee32, v[index] as f64))
-            }
-            ConstArrayData::F64(v) => {
-                ValueSSA::ConstData(ConstData::Float(FPKind::Ieee64, v[index]))
-            }
+            ConstArrayData::F32(v) => ConstData::Float(FPKind::Ieee32, v[index] as f64),
+            ConstArrayData::F64(v) => ConstData::Float(FPKind::Ieee64, v[index]),
             ConstArrayData::APInt(v) => v[index].into(),
-            ConstArrayData::FreeStyle(v) => v[index].into_ir(),
+            ConstArrayData::FreeStyle(v) => v[index],
         }
     }
     fn index_set_unwrap(&mut self, index: usize, val: ValueSSA) {

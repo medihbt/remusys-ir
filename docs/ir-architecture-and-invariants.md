@@ -110,7 +110,7 @@ Remusys‑IR 的首要目标为教学与可读性：代码应便于学生、研�
 
 ### ID 与 pool 一致性
 
-- 每个 `PtrID`/Slab ID 应在其对应 pool 中可解引用，或为约定的 null handle。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 都假定此不变式成立。
+- 每个 `PrimaryID`/Slab ID（indexed backend）应在其对应 pool 中可解引用，或为约定的 null handle。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 都假定此不变式成立。
 
 ### 链表与哨兵完整性
 
@@ -180,7 +180,7 @@ Remusys-IR 采用 pool/slab 分配+显式 dispose 的混合资源管理模型，
 
 **核心不变式与检查点**
 以下是不变式与实现层面需要关注的关键点（实现中有显式检查或依赖这些假设）：
-- **ID 与 Pool 一致性**: 一个 `PtrID`/`*ID` 在对应 pool 中必须可被 deref（或为特定 null handle）。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 期望 handle 与 slab/pool 保持一致。
+- **ID 与 Pool 一致性**: 一个 `PrimaryID`/`*ID`（indexed backend）在对应 pool 中必须可被 deref（或为特定 null handle）。`ISlabID`/`IPoolAllocated` 的 `deref`/`deref_mut`/`free` 期望 handle 与 slab/pool 保持一致。
 - **哨兵与链表完整性**: `UserList`、`EntityList`、`WeakList` 等采用哨兵节点。实现假定链表在正常运行时不会出现孤立的已释放节点；`WeakList::drop` 在遇到已释放节点会 panic（代码中有相应检测）。
 - **dispose 的幂等性**: `inst_dispose` 与 `global_common_dispose` 会检查 `disposed` / `dispose_mark`，并在重复 dispose 时返回错误以避免双重释放的未定义行为。
 - **Use/User 一致性**: 在初始化/改变某个 Value 的 ID 时，要保证 `Use.operand` 与目标 `UserList` 同步（见 `traceable_init_id`），否则可能出现 use 指向旧 ID 导致检查失败。变换中必须在更改 operand 前后正确维护 `UserList`。

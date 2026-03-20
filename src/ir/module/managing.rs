@@ -25,11 +25,11 @@ pub(super) fn user_init_id<T: IUser>(t: &T, self_id: UserID, allocs: &IRAllocs) 
 // Dispose helpers
 
 pub(super) fn dispose_entity_list<T>(
-    list: &EntityList<T::PtrID>,
+    list: &EntityList<T::PrimaryID>,
     pool: &T::MinRelatedPoolT,
 ) -> PoolAllocatedDisposeRes
 where
-    T: IPoolAllocated<PtrID: IEntityListNodeID>,
+    T: IPoolAllocated<PrimaryID: IEntityListNodeID>,
 {
     let alloc = T::get_alloc(pool.as_ref());
     while let Ok(id) = list.pop_front(alloc) {
@@ -39,11 +39,11 @@ where
     T::dispose_id(list.tail, pool)
 }
 pub(super) fn dispose_order_list<T>(
-    list: &OrderCachedList<T::PtrID>,
+    list: &OrderCachedList<T::PrimaryID>,
     pool: &T::MinRelatedPoolT,
 ) -> PoolAllocatedDisposeRes
 where
-    T: IPoolAllocated<PtrID: IOrderCachedListNodeID>,
+    T: IPoolAllocated<PrimaryID: IOrderCachedListNodeID>,
 {
     let alloc = T::get_alloc(pool.as_ref());
     while let Ok(id) = list.pop_front(alloc) {

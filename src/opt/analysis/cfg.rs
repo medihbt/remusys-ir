@@ -213,7 +213,7 @@ impl CfgSnapshot {
         for dfs_node in &dfs.nodes {
             let dfn = dfs_node.dfs_index;
             let label = match dfs_node.block {
-                CfgBlockStat::Block(block_id) => format!("{:#x}", block_id.to_raw_index(allocs)),
+                CfgBlockStat::Block(block_id) => format!("{:#x}", block_id.inner()),
                 CfgBlockStat::Virtual => "%VIRTUAL".to_string(),
             };
             writeln!(writer, "    {dfn} [label=\"{label}\"];").unwrap();
@@ -246,8 +246,10 @@ mod tests {
             .map(FuncID::raw_from)
             .unwrap();
         let cfg_snapshot = CfgSnapshot::new(allocs, func_id).unwrap();
-        let mut cfg_file =
-            File::create("../target/test_cfg_snapshot.dot").expect("Failed to create dot file");
-        cfg_snapshot.write_to_dot(allocs, &mut cfg_file);
+        if cfg!(not(miri)) {
+            let mut cfg_file =
+                File::create("../target/test_cfg_snapshot.dot").expect("Failed to create dot file");
+            cfg_snapshot.write_to_dot(allocs, &mut cfg_file);
+        }
     }
 }

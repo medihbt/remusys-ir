@@ -36,17 +36,29 @@ This project currently has no FFI bindings. In the future, if time permits and t
 
 LLVM-like intermediate representation providing a complete framework for data flow and control flow analysis. The IR module includes the following components:
 
-- Operand definitions -- operands and constants
-- Instruction + data flow definitions
-- Basic block + control flow definitions
+- Type system: Defines the types, type relationships, and type storage used throughout the entire IR system.
+- Operand definitions: Centered around the `ValueSSA` enum, defining scalar constants and other value semantics as untraceable Values, and instructions and other traceable Values.
+- Data flow definitions: Using `Use | UseID | IUser | ITraceableValue` as the core, defines a complete `def-use` chain paradigm, standardizing the producers and consumers of instructions, globals, and other operations.
+- Control flow definitions: Centered around `BlockID | JumpTarget | ITerminatorInst`, etc., defines a control flow system similar to and parallel to `def-use`.
 
 ### Optimizer (Opt)
 
-Partial analysis tools have been implemented. A complete optimizer is waiting to be implemented...
+Remusys-IR still lacks a complete optimization manager; the `opt` module is merely a collection of a few IR transformation rules.
+
+Implemented analysis rules include:
+
+- Dominator tree
+
+Implemented transformation rules include:
+
+- Mem2Reg
+- Conservative DCE
 
 ### Backend (MIR)
 
-Uses [Remusys InstGen DSL (RIG)](https://codeberg.org/medihbt/remusys-instgen) to define instruction structures, implementing most AArch64 basic instruction sets.
+During the competition phase, Remusys-IR had MIR (see the `old-with-slab` branch) for backend representation and backend optimization, but the code quality was poor and has been removed. Currently, there is no suitable MIR construction approach, so it is not implemented.
+
+The current Remusys-IR is an intermediate representation without a backend. The current validation method is to utilize the intersection of Remusys-IR Text and LLVM IR Text, converting the IR to LLVM-compatible text to be validated by LLVM.
 
 ## Feature List
 

@@ -10,7 +10,7 @@ use crate::{
     },
     typing::{AggrType, IValType, StructTypeID, TypeContext, ValTypeID},
 };
-use mtb_entity_slab::{IEntityAllocID, IPoliciedID, IndexedID, PtrID, entity_id};
+use mtb_entity_slab::{IEntityAllocID, IPoliciedID, entity_id};
 use std::cell::Cell;
 
 pub struct ExprCommon {
@@ -64,28 +64,38 @@ pub trait ISubExpr: IUser + Sized {
 pub trait ISubExprID: Copy {
     type ExprObjT: ISubExpr + 'static;
 
-    fn from_raw_ptr(id: ExprRawPtr) -> Self;
-    fn into_raw_ptr(self) -> ExprRawPtr;
+    fn from_inner(id: ExprInnerID) -> Self;
+    fn into_inner(self) -> ExprInnerID;
 
     fn raw_from(id: ExprID) -> Self {
-        Self::from_raw_ptr(id.0)
+        Self::from_inner(id.0)
     }
     fn raw_into(self) -> ExprID {
-        ExprID(self.into_raw_ptr())
+        ExprID(self.into_inner())
     }
 
     fn try_from_expr(id: ExprID, allocs: &IRAllocs) -> Option<Self> {
         let id = id.0;
         let expr = id.deref(&allocs.exprs);
-        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::from_raw_ptr(id))
+        Self::ExprObjT::try_from_ir_ref(expr).map(|_| Self::from_inner(id))
     }
     fn deref_ir(self, allocs: &IRAllocs) -> &Self::ExprObjT {
-        let expr = self.into_raw_ptr().deref(&allocs.exprs);
+        let expr = self.into_inner().deref(&allocs.exprs);
         Self::ExprObjT::from_ir_ref(expr)
     }
     fn deref_ir_mut(self, allocs: &mut IRAllocs) -> &mut Self::ExprObjT {
-        let expr = self.into_raw_ptr().deref_mut(&mut allocs.exprs);
+        let expr = self.into_inner().deref_mut(&mut allocs.exprs);
         Self::ExprObjT::from_ir_mut(expr)
+    }
+    fn try_deref_ir(self, allocs: &IRAllocs) -> Option<&Self::ExprObjT> {
+        let expr = self.into_inner().try_deref(&allocs.exprs)?;
+        if expr.obj_disposed() {
+            return None;
+        }
+        Self::ExprObjT::try_from_ir_ref(expr)
+    }
+    fn is_alive(self, allocs: &IRAllocs) -> bool {
+        self.try_deref_ir(allocs).is_some()
     }
 
     fn allocate(allocs: &IRAllocs, obj: Self::ExprObjT) -> Self {
@@ -118,14 +128,14 @@ macro_rules! _remusys_ir_subexpr {
         }
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub struct $IDName(pub $crate::ir::constant::expr::ExprRawPtr);
+        pub struct $IDName(pub $crate::ir::constant::expr::ExprInnerID);
         impl $crate::ir::ISubExprID for $IDName {
             type ExprObjT = $ObjType;
 
-            fn from_raw_ptr(id: $crate::ir::constant::expr::ExprRawPtr) -> Self {
+            fn from_inner(id: $crate::ir::constant::expr::ExprInnerID) -> Self {
                 Self(id)
             }
-            fn into_raw_ptr(self) -> $crate::ir::constant::expr::ExprRawPtr {
+            fn into_inner(self) -> $crate::ir::constant::expr::ExprInnerID {
                 self.0
             }
         }
@@ -152,8 +162,7 @@ macro_rules! _remusys_ir_subexpr {
 }
 
 #[derive(Clone)]
-#[entity_id(ExprID, policy = 256, allocator_type = ExprAlloc)]
-#[entity_id(ExprIndex, policy = 256, backend = index)]
+#[entity_id(ExprID, policy = 256, allocator_type = ExprAlloc, backend = index)]
 pub enum ExprObj {
     Array(ArrayExpr),
     DataArray(DataArrayExpr),
@@ -162,8 +171,7 @@ pub enum ExprObj {
     Struct(StructExpr),
     FixVec(FixVec),
 }
-pub(in crate::ir) type ExprRawPtr = PtrID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
-pub type ExprRawIndex = IndexedID<ExprObj, <ExprID as IPoliciedID>::PolicyT>;
+pub type ExprInnerID = <ExprID as IPoliciedID>::BackID;
 
 impl ITraceableValue for ExprObj {
     fn users(&self) -> &UserList {
@@ -271,10 +279,10 @@ impl std::fmt::Pointer for ExprID {
 impl ISubExprID for ExprID {
     type ExprObjT = ExprObj;
 
-    fn from_raw_ptr(id: ExprRawPtr) -> Self {
+    fn from_inner(id: ExprInnerID) -> Self {
         Self(id)
     }
-    fn into_raw_ptr(self) -> ExprRawPtr {
+    fn into_inner(self) -> ExprInnerID {
         self.0
     }
 }
@@ -311,23 +319,6 @@ impl ISubValueSSA for ExprID {
     }
 }
 impl ExprID {
-    pub fn as_indexed(self, allocs: &IRAllocs) -> Option<ExprIndex> {
-        let indexed_id = self.0.to_index(&allocs.exprs)?;
-        Some(ExprIndex(indexed_id))
-    }
-    pub fn to_indexed(self, allocs: &IRAllocs) -> ExprIndex {
-        self.as_indexed(allocs)
-            .expect("Error: Attempted to get indexed ID of freed ExprID")
-    }
-    pub fn try_from_indexed(indexed: ExprIndex, allocs: &IRAllocs) -> Option<Self> {
-        let raw_ptr = indexed.0.to_ptr(&allocs.exprs)?;
-        Some(ExprID(raw_ptr))
-    }
-    pub fn from_indexed(indexed: ExprIndex, allocs: &IRAllocs) -> Self {
-        Self::try_from_indexed(indexed, allocs)
-            .expect("Error: Attempted to get ExprID from freed ExprIndex")
-    }
-
     pub fn try_get_entity_index(self, allocs: &IRAllocs) -> Option<usize> {
         let indexed_id = self.0.to_index(&allocs.exprs)?;
         Some(indexed_id.get_order())

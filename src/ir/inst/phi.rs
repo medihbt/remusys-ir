@@ -187,6 +187,9 @@ impl PhiInst {
         PhiInstBuilder::new(allocs, ty)
     }
 
+    /// 获取所有传入的 `UseSlotPair` 列表.
+    ///
+    /// `UseSlotPair` 是一个 2 长度数组, 语义是 `[value_use, block_use]`, 分别对应传入的值和对应的前驱基本块.
     pub fn incoming_uses(&self) -> Ref<'_, [UseSlotPair]> {
         Ref::map(self.operands.borrow(), |ops| ops.as_slice())
     }

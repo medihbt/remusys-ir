@@ -39,7 +39,9 @@ pub fn module_tostring_mapped(
 }
 pub fn write_ir_to_file(path: impl AsRef<Path>, module: &Module, option: IRWriteOption) {
     let str = module_tostring(module, option).unwrap();
-    std::fs::write(path, str).unwrap();
+    if cfg!(not(miri)) {
+        std::fs::write(path, str).unwrap();
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -60,7 +62,7 @@ pub type IRWriteRes<T = ()> = Result<T, IRWriteErr>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IRWriteOption {
-    pub show_ptrid: bool,
+    pub show_indexed: bool,
     pub show_users: bool,
     pub show_preds: bool,
     pub mangle_unexported: bool,
@@ -69,7 +71,7 @@ pub struct IRWriteOption {
 impl IRWriteOption {
     pub fn loud() -> Self {
         Self {
-            show_ptrid: true,
+            show_indexed: true,
             show_users: true,
             show_preds: true,
             mangle_unexported: true,
@@ -80,8 +82,8 @@ impl IRWriteOption {
         Self::default()
     }
 
-    pub fn show_ptrid(self, val: bool) -> Self {
-        Self { show_ptrid: val, ..self }
+    pub fn show_indexed(self, val: bool) -> Self {
+        Self { show_indexed: val, ..self }
     }
     pub fn show_users(self, val: bool) -> Self {
         Self { show_users: val, ..self }
@@ -103,10 +105,10 @@ enum NameMapRepr<'a> {
     Number(Rc<FuncNumberMap<'a>>),
 }
 impl<'a> NameMapRepr<'a> {
-    fn get_local_name(&self, allocs: &IRAllocs, val: impl IValueConvert) -> Option<SymbolStr> {
+    fn get_local_name(&self, val: impl IValueConvert) -> Option<SymbolStr> {
         match self {
-            NameMapRepr::Name(m) => m.get_local_name(allocs, val),
-            NameMapRepr::Number(m) => m.get_local_name(allocs, val),
+            NameMapRepr::Name(m) => m.get_local_name(val),
+            NameMapRepr::Number(m) => m.get_local_name(val),
         }
     }
 
@@ -281,10 +283,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
     }
 
     fn insert_range(&mut self, id: impl Into<PoolAllocatedID>, range: IRSourceRange) {
-        let allocs = &self.env.module.allocs;
         let id = id.into();
         if let Some(srcmap) = &mut self.writer.srcmap {
-            srcmap.primary_insert_range(allocs, id, range);
+            srcmap.insert_range(id, range);
         }
     }
     fn fmt_use(&mut self, use_id: UseID) -> IRWriteRes {
@@ -309,18 +310,22 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             Some(bb) => ValueSSA::Block(bb),
             None => ValueSSA::None,
         };
-        self.fmt_value_mapped(block_id)
+        self.fmt_value_mapped(block_id)?;
+        Ok(())
     }
 
-    fn fmt_value(&mut self, val: ValueSSA) -> IRWriteRes {
+    fn fmt_value(&mut self, val: ValueSSA) -> IRWriteRes<IRSourceRange> {
         let mapped = self.map_value(val);
         self.fmt_value_mapped(mapped)
     }
 
-    fn fmt_value_mapped(&mut self, val: ValueSSA) -> IRWriteRes {
+    fn fmt_value_mapped(&mut self, val: ValueSSA) -> IRWriteRes<IRSourceRange> {
         let allocs = &self.env.module.allocs;
-        if let Some(name) = self.env.names.get_local_name(allocs, val) {
-            return write!(self, "%{name}");
+        let begin_pos = self.writer.curr_pos();
+        if let Some(name) = self.env.names.get_local_name(val) {
+            write!(self, "%{name}")?;
+            let end_pos = self.writer.curr_pos();
+            return Ok((begin_pos, end_pos));
         }
         match val {
             ValueSSA::None => self.write_str("none"),
@@ -339,7 +344,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             ValueSSA::Global(global) => {
                 write!(self, "@{}", self.env.nameof_global(global))
             }
-        }
+        }?;
+        let end_pos = self.writer.curr_pos();
+        Ok((begin_pos, end_pos))
     }
 
     fn fmt_const_data(&mut self, data: ConstData) -> IRWriteRes {
@@ -511,12 +518,15 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         Ok(())
     }
 
-    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes {
+    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes<IRSourceRange> {
         let allocs = &self.env.module.allocs;
+        let begin_pos = self.writer.curr_pos();
         match global_id.deref_ir(allocs) {
-            GlobalObj::Var(gvar) => self.fmt_global_var(GlobalVarID::raw_from(global_id), gvar),
-            GlobalObj::Func(func) => self.fmt_func(FuncID::raw_from(global_id), func),
+            GlobalObj::Var(gvar) => self.fmt_global_var(GlobalVarID::raw_from(global_id), gvar)?,
+            GlobalObj::Func(func) => self.fmt_func(FuncID::raw_from(global_id), func)?,
         }
+        let end_pos = self.writer.curr_pos();
+        Ok((begin_pos, end_pos))
     }
     fn fmt_type_aliases(&mut self) -> IRWriteRes {
         let tctx = &self.env.module.tctx;
@@ -568,6 +578,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
     fn fmt_global_var(&mut self, id: GlobalVarID, gvar: &GlobalVar) -> IRWriteRes {
         let allocs = &self.env.module.allocs;
         let gid = id.raw_into();
+        let content_ty = self.type_name(gvar.get_ptr_pointee_type());
 
         self.fmt_global_header_prefix(gid, "gvar")?;
 
@@ -579,6 +590,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
         if let Some(tls) = gvar.tls_model.get() {
             write!(self, "thread_local({}) ", tls.get_ir_text())?;
         }
+        write!(self, "{content_ty} ")?;
         if !gvar.is_extern(allocs) {
             self.fmt_use(gvar.initval[0])?;
         }
@@ -586,23 +598,16 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
         let end_pos = self.writer.curr_pos();
         if let Some(srcmap) = &mut self.writer.srcmap {
-            srcmap.primary_insert_range(allocs, gid, (begin_pos, end_pos));
+            srcmap.insert_range(gid, (begin_pos, end_pos));
         }
         Ok(())
     }
     fn fmt_global_header_prefix(&mut self, gid: GlobalID, kind: &str) -> IRWriteRes {
         let allocs = &self.env.module.allocs;
         let options = self.env.option;
-        if options.show_ptrid {
-            let addr = gid.0;
-            let (index, gene) = {
-                let indexed = gid.to_indexed(allocs);
-                (indexed.0.get_order(), indexed.0.get_generation())
-            };
-            write!(
-                self,
-                "; {kind} addr={addr:p}, index={index:x}, gen={gene:x}"
-            )?;
+        if options.show_indexed {
+            let (index, gene) = (gid.0.get_order(), gid.0.get_generation());
+            write!(self, "; {kind} index={index:x}, gen={gene:x}")?;
             self.writer.wrap_indent()?;
         }
         if options.show_users {
@@ -637,10 +642,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
             let arg_id = FuncArgID(func_id, idx as u32);
             let begin_pos = self.writer.curr_pos();
-            match self.env.names.get_local_name(allocs, arg_id) {
-                Some(name) => write!(self, " %{name}")?,
-                None => write!(self, " %{idx}")?,
-            };
+            if let Some(name) = self.env.names.get_local_name(arg_id) {
+                write!(self, " %{name}")?;
+            }
             let end_pos = self.writer.curr_pos();
             if let Some(srcmap) = &mut self.writer.srcmap {
                 srcmap.funcarg_insert_range(allocs, arg_id, (begin_pos, end_pos));
@@ -702,16 +706,9 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             (&env.module.allocs, env.option)
         };
         self.writer.wrap_indent()?;
-        if option.show_ptrid {
-            let (index, gene) = {
-                let indexed = block_id.to_indexed(allocs);
-                (indexed.0.get_order(), indexed.0.get_generation())
-            };
-            let addr = block_id.0;
-            write!(
-                self,
-                "; block addr={addr:p}, id=%block:{index:x}, gen={gene:x}"
-            )?;
+        if option.show_indexed {
+            let (index, gene) = (block_id.0.get_order(), block_id.0.get_generation());
+            write!(self, "; block id=%block:{index:x}, gen={gene:x}")?;
             self.writer.wrap_indent()?;
         }
         if option.show_preds {
@@ -721,7 +718,7 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
             self.fmtln_users(block)?;
         }
         let begin_pos = self.writer.curr_pos();
-        let name = match self.env.names.get_local_name(allocs, block_id) {
+        let name = match self.env.names.get_local_name(block_id) {
             Some(name) => name,
             None => format_smolstr!("block:{:x}", block_id.get_entity_index(allocs)),
         };
@@ -730,23 +727,16 @@ impl<'ir, 'names, 'ctx, W: Write> FmtCtx<'ir, 'names, 'ctx, W> {
 
         for (inst_id, inst) in block.get_insts().iter(&allocs.insts) {
             self.writer.wrap_indent()?;
-            if option.show_ptrid {
-                let (index, gene) = {
-                    let indexed = inst_id.to_indexed(allocs);
-                    (indexed.0.get_order(), indexed.0.get_generation())
-                };
-                let addr = inst_id.0;
-                write!(
-                    self,
-                    "; inst addr={addr:p}, id=%inst:{index:x}, gen={gene:x}"
-                )?;
+            if option.show_indexed {
+                let (index, gene) = (inst_id.0.get_order(), inst_id.0.get_generation());
+                write!(self, "; inst id=%inst:{index:x}, gen={gene:x}")?;
                 self.writer.wrap_indent()?;
             }
             if option.show_users {
                 self.fmtln_users(inst)?;
             }
             let begin_pos = self.writer.curr_pos();
-            if let Some(name) = self.env.names.get_local_name(allocs, inst_id)
+            if let Some(name) = self.env.names.get_local_name(inst_id)
                 && inst.serialize_has_number()
             {
                 write!(self, "%{name} = ")?;
@@ -1196,7 +1186,13 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
     fn enable_srcmap(&mut self) -> &mut Self;
     fn dump_srcmap(&mut self) -> Option<SourceRangeMap>;
 
-    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes {
+    fn curr_pos(&self) -> IRSourcePos;
+
+    fn wrap_and_indent(&mut self) -> IRWriteRes {
+        self._protected_tear().writer.wrap_indent()
+    }
+
+    fn fmt_global(&mut self, global_id: GlobalID) -> IRWriteRes<IRSourceRange> {
         self._protected_tear().fmt_global(global_id)
     }
     fn fmt_module(&mut self) -> IRWriteRes {
@@ -1207,6 +1203,12 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
         let allocs = &ctx.env.module.allocs;
         let func = func_id.deref_ir(allocs);
         ctx.fmt_func(func_id, func)
+    }
+    fn fmt_func_header(&mut self, func_id: FuncID) -> IRWriteRes<IRSourceRange> {
+        let mut ctx = self._protected_tear();
+        let allocs = &ctx.env.module.allocs;
+        let func = func_id.deref_ir(allocs);
+        ctx.fmt_func_header(func_id, func)
     }
     fn fmt_block(&mut self, block_id: BlockID) -> IRWriteRes {
         let mut ctx = self._protected_tear();
@@ -1220,7 +1222,7 @@ pub trait SerializeIR<'ir, 'names, W: Write> {
         let inst = inst_id.deref_ir(allocs);
         inst.serialize_ir(&mut ctx)
     }
-    fn fmt_operand(&mut self, op: ValueSSA) -> IRWriteRes {
+    fn fmt_operand(&mut self, op: ValueSSA) -> IRWriteRes<IRSourceRange> {
         self._protected_tear().fmt_value_mapped(op)
     }
     fn fmt_use_info(&mut self, useid: UseID) -> IRWriteRes {
@@ -1265,6 +1267,10 @@ impl<'ir, 'names, W: Write> SerializeIR<'ir, 'names, W> for IRSerializer<'ir, 'n
         }
     }
 
+    fn curr_pos(&self) -> IRSourcePos {
+        self.writer.curr_pos()
+    }
+
     fn set_options(&mut self, options: IRWriteOption) -> &mut Self {
         self.options = options;
         self
@@ -1297,6 +1303,10 @@ impl<'ir, 'names, W: Write> IRSerializer<'ir, 'names, W> {
             options: IRWriteOption::default(),
             cache: Cache::default(),
         }
+    }
+
+    pub fn source_map(&self) -> Option<&SourceRangeMap> {
+        self.writer.srcmap.as_ref()
     }
 
     pub fn with_func<'a>(
@@ -1348,6 +1358,10 @@ impl<'ir, 'names, W: Write> SerializeIR<'ir, 'names, W> for FuncSerializer<'ir, 
         FmtCtx { env, cache, writer }
     }
 
+    fn curr_pos(&self) -> IRSourcePos {
+        self.writer.curr_pos()
+    }
+
     fn set_options(&mut self, options: IRWriteOption) -> &mut Self {
         self.options = options;
         self
@@ -1364,6 +1378,13 @@ impl<'ir, 'names, W: Write> SerializeIR<'ir, 'names, W> for FuncSerializer<'ir, 
 impl<'ir, 'names> FuncSerializer<'ir, 'names, Vec<u8>> {
     pub fn new_buffered(module: &'ir Module, func: FuncID, names: &'names IRNameMap) -> Self {
         Self::new(Vec::new(), module, func, names)
+    }
+    pub fn try_new_buffered(
+        module: &'ir Module,
+        func: FuncID,
+        names: &'names IRNameMap,
+    ) -> IRWriteRes<Self> {
+        Self::try_new(Vec::new(), module, func, names)
     }
     pub fn with_numbers_buffered(module: &'ir Module, numbers: Rc<FuncNumberMap<'names>>) -> Self {
         Self::with_numbers(Vec::new(), module, numbers)
@@ -1387,6 +1408,25 @@ impl<'ir, 'names, W: Write> FuncSerializer<'ir, 'names, W> {
         ));
         Self::with_numbers(writer, module, numbers)
     }
+    pub fn try_new(
+        writer: W,
+        module: &'ir Module,
+        func: FuncID,
+        names: &'names IRNameMap,
+    ) -> IRWriteRes<Self> {
+        let allocs = &module.allocs;
+        if func.is_extern(allocs) {
+            return Err(IRWriteErr::FuncIsExtern(func.clone_name(allocs)));
+        }
+        let numbers = Rc::new(FuncNumberMap::new(
+            allocs,
+            func,
+            names,
+            NumberOption::ignore_all(),
+        ));
+        Ok(Self::with_numbers(writer, module, numbers))
+    }
+
     pub fn with_numbers(
         writer: W,
         module: &'ir Module,
@@ -1399,5 +1439,9 @@ impl<'ir, 'names, W: Write> FuncSerializer<'ir, 'names, W> {
             options: IRWriteOption::default(),
             cache: Cache::default(),
         }
+    }
+
+    pub fn get_numbers(&self) -> Rc<FuncNumberMap<'names>> {
+        self.numbers.clone()
     }
 }

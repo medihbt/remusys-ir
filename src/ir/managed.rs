@@ -4,7 +4,7 @@ use mtb_entity_slab::IPoliciedID;
 
 struct IRManagedImpl<'ir, T: IPoolAllocated> {
     pool: &'ir T::MinRelatedPoolT,
-    id: T::PtrID,
+    id: T::PrimaryID,
 }
 impl<'ir, T: IPoolAllocated> Drop for IRManagedImpl<'ir, T> {
     fn drop(&mut self) {
@@ -12,7 +12,7 @@ impl<'ir, T: IPoolAllocated> Drop for IRManagedImpl<'ir, T> {
     }
 }
 impl<'ir, T: IPoolAllocated> IRManagedImpl<'ir, T> {
-    pub fn new(pool: &'ir T::MinRelatedPoolT, id: T::PtrID) -> Self {
+    pub fn new(pool: &'ir T::MinRelatedPoolT, id: T::PrimaryID) -> Self {
         Self { pool, id }
     }
 
@@ -21,7 +21,7 @@ impl<'ir, T: IPoolAllocated> IRManagedImpl<'ir, T> {
         self.id.deref_alloc(alloc)
     }
 
-    pub fn release(self) -> T::PtrID {
+    pub fn release(self) -> T::PrimaryID {
         let id = self.id;
         std::mem::forget(self);
         id

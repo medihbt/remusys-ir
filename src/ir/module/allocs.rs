@@ -9,14 +9,14 @@ use crate::ir::{
     block::BlockAlloc,
     constant::expr::ExprAlloc,
     global::GlobalAlloc,
-    inst::{InstAlloc, InstBackID},
+    inst::{InstAlloc, InstInnerID},
     jumping::JumpTargetAlloc,
     module::managing::dispose_order_list,
     usedef::UseAlloc,
 };
 use mtb_entity_slab::{
     EntityAlloc, IAllocPolicy, IBasicEntityListID, IEntityAllocID, IEntityRingListNodeID,
-    IPoliciedID, PtrID,
+    IPoliciedID,
 };
 use std::{cell::RefCell, collections::VecDeque};
 use thiserror::Error;
@@ -96,13 +96,13 @@ impl IRAllocs {
                     b.inner().free(blocks);
                 }
                 Inst(i) => {
-                    i.into_raw_ptr().free(insts);
+                    i.into_backend().free(insts);
                 }
                 Expr(e) => {
-                    e.into_raw_ptr().free(exprs);
+                    e.into_inner().free(exprs);
                 }
                 Global(g) => {
-                    g.into_raw_ptr().free(globals);
+                    g.into_inner().free(globals);
                 }
                 Use(u) => {
                     u.inner().free(uses);
@@ -167,7 +167,7 @@ pub type PoolAllocatedDisposeRes<T = ()> = Result<T, PoolAllocatedDisposeErr>;
 
 pub(crate) trait IPoolAllocated: Sized {
     type PolicyT: IAllocPolicy;
-    type PtrID: IPoliciedID<ObjectT = Self, PolicyT = Self::PolicyT> + Into<PoolAllocatedID>;
+    type PrimaryID: IPoliciedID<ObjectT = Self, PolicyT = Self::PolicyT> + Into<PoolAllocatedID>;
     type MinRelatedPoolT: AsRef<IRAllocs>;
 
     const _CLASS: PoolAllocatedClass;
@@ -175,11 +175,11 @@ pub(crate) trait IPoolAllocated: Sized {
     fn get_alloc(allocs: &IRAllocs) -> &EntityAlloc<Self, Self::PolicyT>;
     fn _alloc_mut(allocs: &mut IRAllocs) -> &mut EntityAlloc<Self, Self::PolicyT>;
 
-    fn init_self_id(&self, id: Self::PtrID, allocs: &IRAllocs);
-    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PtrID;
+    fn init_self_id(&self, id: Self::PrimaryID, allocs: &IRAllocs);
+    fn allocate(allocs: &IRAllocs, obj: Self) -> Self::PrimaryID;
 
     fn obj_disposed(&self) -> bool;
-    fn id_is_live(id: Self::PtrID, allocs: &IRAllocs) -> bool {
+    fn id_is_live(id: Self::PrimaryID, allocs: &IRAllocs) -> bool {
         let alloc = Self::get_alloc(allocs);
         let ptr = id.into_backend();
         let Some(obj) = ptr.try_deref(alloc) else {
@@ -188,9 +188,12 @@ pub(crate) trait IPoolAllocated: Sized {
         !obj.obj_disposed()
     }
 
-    fn dispose_obj(&self, id: Self::PtrID, pool: &Self::MinRelatedPoolT)
-    -> PoolAllocatedDisposeRes;
-    fn dispose_id(id: Self::PtrID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
+    fn dispose_obj(
+        &self,
+        id: Self::PrimaryID,
+        pool: &Self::MinRelatedPoolT,
+    ) -> PoolAllocatedDisposeRes;
+    fn dispose_id(id: Self::PrimaryID, pool: &Self::MinRelatedPoolT) -> PoolAllocatedDisposeRes {
         let alloc = Self::get_alloc(pool.as_ref());
         let ptr = id.into_backend();
         let Some(obj) = ptr.try_deref(alloc) else {
@@ -202,8 +205,10 @@ pub(crate) trait IPoolAllocated: Sized {
     }
 }
 
+type BackID<T> = <T as IPoliciedID>::BackID;
+
 impl IPoolAllocated for BlockObj {
-    type PtrID = BlockID;
+    type PrimaryID = BlockID;
     type PolicyT = <BlockID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -218,7 +223,7 @@ impl IPoolAllocated for BlockObj {
 
     fn allocate(allocs: &IRAllocs, obj: Self) -> BlockID {
         let alloc = &allocs.blocks;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<BlockID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(BlockID(ptr), allocs);
         BlockID(ptr)
     }
@@ -266,7 +271,7 @@ impl IPoolAllocated for BlockObj {
 }
 
 impl IPoolAllocated for InstObj {
-    type PtrID = InstID;
+    type PrimaryID = InstID;
     type PolicyT = <InstID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -304,7 +309,7 @@ impl IPoolAllocated for InstObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.insts;
-        let ptr = InstBackID::allocate_from(alloc, obj);
+        let ptr = InstInnerID::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(InstID(ptr), allocs);
         InstID(ptr)
     }
@@ -330,7 +335,7 @@ impl IPoolAllocated for InstObj {
 }
 
 impl IPoolAllocated for ExprObj {
-    type PtrID = ExprID;
+    type PrimaryID = ExprID;
     type PolicyT = <ExprID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -351,7 +356,7 @@ impl IPoolAllocated for ExprObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.exprs;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<ExprID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(ExprID(ptr), allocs);
         ExprID(ptr)
     }
@@ -369,7 +374,7 @@ impl IPoolAllocated for ExprObj {
 }
 
 impl IPoolAllocated for GlobalObj {
-    type PtrID = GlobalID;
+    type PrimaryID = GlobalID;
     type PolicyT = <GlobalID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = Module;
 
@@ -409,7 +414,7 @@ impl IPoolAllocated for GlobalObj {
             obj.common_mut().users = Some(UserList::new(&allocs.uses));
         }
         let alloc = &allocs.globals;
-        let ptr = PtrID::allocate_from(alloc, obj);
+        let ptr = BackID::<GlobalID>::allocate_from(alloc, obj);
         ptr.deref(alloc).init_self_id(GlobalID(ptr), allocs);
         GlobalID(ptr)
     }
@@ -435,7 +440,7 @@ impl IPoolAllocated for GlobalObj {
 }
 
 impl IPoolAllocated for Use {
-    type PtrID = UseID;
+    type PrimaryID = UseID;
     type PolicyT = <UseID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -455,7 +460,7 @@ impl IPoolAllocated for Use {
             UseKind::DisposedUse,
             "Cannot allocate a disposed Use"
         );
-        let ptr = PtrID::allocate_from(&allocs.uses, obj);
+        let ptr = BackID::<UseID>::allocate_from(&allocs.uses, obj);
         ptr.deref(&allocs.uses).init_self_id(UseID(ptr), allocs);
         UseID(ptr)
     }
@@ -476,7 +481,7 @@ impl IPoolAllocated for Use {
 }
 
 impl IPoolAllocated for JumpTarget {
-    type PtrID = JumpTargetID;
+    type PrimaryID = JumpTargetID;
     type PolicyT = <JumpTargetID as IPoliciedID>::PolicyT;
     type MinRelatedPoolT = IRAllocs;
 
@@ -491,7 +496,7 @@ impl IPoolAllocated for JumpTarget {
 
     fn init_self_id(&self, _: JumpTargetID, _: &IRAllocs) {}
     fn allocate(allocs: &IRAllocs, obj: Self) -> JumpTargetID {
-        let ptr = PtrID::allocate_from(&allocs.jts, obj);
+        let ptr = BackID::<JumpTargetID>::allocate_from(&allocs.jts, obj);
         ptr.deref(&allocs.jts)
             .init_self_id(JumpTargetID(ptr), allocs);
         JumpTargetID(ptr)
@@ -526,9 +531,9 @@ impl std::fmt::Debug for PoolAllocatedID {
         use PoolAllocatedID::*;
         match self {
             Block(b) => write!(f, "BlockID({:p})", b.inner()),
-            Inst(i) => write!(f, "InstID({:p})", i.into_raw_ptr()),
-            Expr(e) => write!(f, "ExprID({:p})", e.into_raw_ptr()),
-            Global(g) => write!(f, "GlobalID({:p})", g.into_raw_ptr()),
+            Inst(i) => write!(f, "InstID({:p})", i.into_backend()),
+            Expr(e) => write!(f, "ExprID({:p})", e.into_inner()),
+            Global(g) => write!(f, "GlobalID({:p})", g.into_inner()),
             Use(u) => write!(f, "UseID({:p})", u.0),
             JumpTarget(j) => write!(f, "JumpTargetID({:p})", j.0),
         }
@@ -605,6 +610,219 @@ impl PoolAllocatedID {
             Global(g) => g.try_get_entity_index(allocs),
             Use(u) => u.try_get_entity_index(allocs),
             JumpTarget(j) => j.try_get_entity_index(allocs),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+mod serde_adapt {
+    use super::BackID;
+    use crate::ir::*;
+    use mtb_entity_slab::GenIndex;
+    use serde::{
+        Deserialize, Deserializer, Serialize, Serializer,
+        de::{Error, Unexpected::Other},
+    };
+    use smol_str::{SmolStr, ToSmolStr};
+    use std::{
+        num::{NonZero, ParseIntError},
+        str::FromStr,
+    };
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum PoolKind {
+        Block,
+        Inst,
+        Expr,
+        Global,
+        Use,
+        JumpTarget,
+    }
+
+    impl PoolKind {
+        fn prefix(self) -> &'static str {
+            match self {
+                PoolKind::Block => "b",
+                PoolKind::Inst => "i",
+                PoolKind::Expr => "e",
+                PoolKind::Global => "g",
+                PoolKind::Use => "u",
+                PoolKind::JumpTarget => "j",
+            }
+        }
+
+        fn from_str(s: &str) -> Option<Self> {
+            match s {
+                "b" => Some(Self::Block),
+                "i" => Some(Self::Inst),
+                "e" => Some(Self::Expr),
+                "g" => Some(Self::Global),
+                "u" => Some(Self::Use),
+                "j" => Some(Self::JumpTarget),
+                _ => None,
+            }
+        }
+    }
+
+    enum ParseErr {
+        MissingPrefix,
+        InvalidPrefix(SmolStr),
+        MissingRealIndex,
+        MissingGeneration,
+        TooManyParts(usize),
+        ParseInt(ParseIntError),
+        GenerationZero,
+    }
+    impl std::fmt::Display for ParseErr {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ParseErr::MissingPrefix => write!(f, "Missing prefix"),
+                ParseErr::InvalidPrefix(p) => write!(f, "Invalid prefix: {}", p),
+                ParseErr::MissingRealIndex => write!(f, "Missing real index part"),
+                ParseErr::MissingGeneration => write!(f, "Missing generation part"),
+                ParseErr::TooManyParts(nparts) => write!(f, "Too many parts {nparts} in ID string"),
+                ParseErr::ParseInt(e) => write!(f, "Integer parse error: {}", e),
+                ParseErr::GenerationZero => write!(f, "Generation cannot be zero"),
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct IndexedIDSerde(GenIndex, PoolKind);
+
+    impl std::fmt::Display for IndexedIDSerde {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let Self(index, prefix) = self;
+            let (real, gene) = index.tear();
+            write!(f, "{}:{real:x}:{gene:x}", prefix.prefix())
+        }
+    }
+    impl std::str::FromStr for IndexedIDSerde {
+        type Err = ParseErr;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let mut parts = s.split(':');
+            let prefix = parts.next().ok_or(ParseErr::MissingPrefix)?;
+            let real = parts.next().ok_or(ParseErr::MissingRealIndex)?;
+            let gene = parts.next().ok_or(ParseErr::MissingGeneration)?;
+            if parts.next().is_some() {
+                // 4 = prefix + real + gene + at least one extra part
+                return Err(ParseErr::TooManyParts(parts.count() + 4));
+            }
+            let pool_kind =
+                PoolKind::from_str(prefix).ok_or_else(|| ParseErr::InvalidPrefix(prefix.into()))?;
+            let real = usize::from_str_radix(real, 16).map_err(ParseErr::ParseInt)?;
+            let gene = u16::from_str_radix(gene, 16).map_err(ParseErr::ParseInt)?;
+            let gene = NonZero::new(gene).ok_or(ParseErr::GenerationZero)?;
+            Ok(IndexedIDSerde(GenIndex::compose(real, gene), pool_kind))
+        }
+    }
+
+    impl Serialize for IndexedIDSerde {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            self.to_smolstr().serialize(serializer)
+        }
+    }
+    impl<'de> Deserialize<'de> for IndexedIDSerde {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let s: SmolStr = Deserialize::deserialize(deserializer)?;
+            let err = match IndexedIDSerde::from_str(&s) {
+                Ok(id) => return Ok(id),
+                Err(e) => e,
+            };
+            let err: D::Error = match err {
+                ParseErr::MissingPrefix => D::Error::missing_field("prefix"),
+                ParseErr::InvalidPrefix(_) => D::Error::invalid_value(Other(&s), &"Invalid prefix"),
+                ParseErr::MissingRealIndex => D::Error::missing_field("real index"),
+                ParseErr::MissingGeneration => D::Error::missing_field("generation"),
+                ParseErr::TooManyParts(nparts) => D::Error::invalid_length(nparts, &"3"),
+                ParseErr::ParseInt(e) => D::Error::custom(e),
+                ParseErr::GenerationZero => {
+                    D::Error::invalid_value(Other(&s), &"non-zero u16 hex integer")
+                }
+            };
+            Err(err)
+        }
+    }
+
+    macro_rules! indexed_id_serde {
+        ($id:ident => ($prefix:expr, $prefix_ch:expr)) => {
+            impl Serialize for $id {
+                fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                    let back = self.0;
+                    IndexedIDSerde(back.indexed, $prefix).serialize(serializer)
+                }
+            }
+            impl<'de> Deserialize<'de> for $id {
+                fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                    let IndexedIDSerde(gen_index, prefix) =
+                        IndexedIDSerde::deserialize(deserializer)?;
+                    const ERRMSG: &str =
+                        concat!("Expected prefix ", $prefix_ch, " for ", stringify!($id));
+                    if prefix != $prefix {
+                        return Err(Error::invalid_value(Other("incorrect prefix"), &ERRMSG));
+                    }
+                    Ok(Self(BackID::<$id>::from(gen_index)))
+                }
+            }
+
+            impl FromStr for $id {
+                type Err = String;
+
+                fn from_str(s: &str) -> Result<Self, Self::Err> {
+                    let IndexedIDSerde(gen_index, prefix) = IndexedIDSerde::from_str(s)
+                        .map_err(|e| e.to_string())?;
+                    if prefix != $prefix {
+                        return Err(format!("Expected prefix '{}', found '{}'", $prefix_ch, prefix.prefix()));
+                    }
+                    Ok(Self(BackID::<$id>::from(gen_index)))
+                }
+            }
+            impl $id {
+                pub fn to_strid(self) -> SmolStr {
+                    let back = self.0;
+                    IndexedIDSerde(back.indexed, $prefix).to_smolstr()
+                }
+            }
+        };
+        ($($id:ident => ($prefix:expr, $prefix_ch:expr)),* $(,)?) => { $(indexed_id_serde!($id => ($prefix, $prefix_ch));)* };
+    }
+
+    indexed_id_serde! {
+        InstID   => (PoolKind::Inst, "i"),
+        ExprID   => (PoolKind::Expr, "e"),
+        GlobalID => (PoolKind::Global, "g"),
+        BlockID  => (PoolKind::Block, "b"),
+        UseID    => (PoolKind::Use, "u"),
+        JumpTargetID => (PoolKind::JumpTarget, "j"),
+    }
+
+    impl FromStr for PoolAllocatedID {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let IndexedIDSerde(_, prefix) = IndexedIDSerde::from_str(s)
+                .map_err(|e| format!("Failed to parse PoolAllocatedID: {e}"))?;
+            match prefix {
+                PoolKind::Block => Ok(PoolAllocatedID::Block(BlockID::from_str(s)?)),
+                PoolKind::Inst => Ok(PoolAllocatedID::Inst(InstID::from_str(s)?)),
+                PoolKind::Expr => Ok(PoolAllocatedID::Expr(ExprID::from_str(s)?)),
+                PoolKind::Global => Ok(PoolAllocatedID::Global(GlobalID::from_str(s)?)),
+                PoolKind::Use => Ok(PoolAllocatedID::Use(UseID::from_str(s)?)),
+                PoolKind::JumpTarget => Ok(PoolAllocatedID::JumpTarget(JumpTargetID::from_str(s)?)),
+            }
+        }
+    }
+    impl PoolAllocatedID {
+        pub fn to_strid(self) -> SmolStr {
+            match self {
+                PoolAllocatedID::Block(b) => b.to_strid(),
+                PoolAllocatedID::Inst(i) => i.to_strid(),
+                PoolAllocatedID::Expr(e) => e.to_strid(),
+                PoolAllocatedID::Global(g) => g.to_strid(),
+                PoolAllocatedID::Use(u) => u.to_strid(),
+                PoolAllocatedID::JumpTarget(j) => j.to_strid(),
+            }
         }
     }
 }

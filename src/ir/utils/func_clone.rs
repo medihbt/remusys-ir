@@ -504,12 +504,14 @@ impl<'ir> Inner<'ir> {
                     .expect(
                         "internal error: failed to resize call instruction when cloning function",
                     );
+                let old_callee = call.get_callee(allocs);
                 let call_inst = call_builder
                     .is_tail_call(call.is_tail_call.get())
                     .builder_uninit(true)
                     .build_id(allocs);
-                let old_callee = call.get_callee(allocs);
                 self.use_setval(call_inst.callee_use(allocs), old_callee);
+
+                let call = CallInstID::raw_from(oinst_id).deref_ir(allocs);
                 for (idx, old_arg_use) in call.arg_uses().iter().enumerate() {
                     let old_arg = old_arg_use.get_operand(allocs);
                     let new_arg_use = call_inst.arg_uses(allocs)[idx];

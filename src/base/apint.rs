@@ -995,6 +995,48 @@ int_as_u128!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize
 );
 
+#[cfg(feature = "serde")]
+mod serde_impl {
+    use super::APInt;
+    use crate::SymbolStr;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use smol_str::ToSmolStr;
+    use std::num::ParseIntError;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct APIntDt {
+        bits: u8,
+        value: SymbolStr,
+    }
+    impl From<APInt> for APIntDt {
+        fn from(value: APInt) -> Self {
+            Self { bits: value.bits(), value: value.as_signed().to_smolstr() }
+        }
+    }
+    impl TryFrom<APIntDt> for APInt {
+        type Error = ParseIntError;
+
+        fn try_from(value: APIntDt) -> Result<Self, Self::Error> {
+            let bits = value.bits;
+            let value_str = value.value.as_str();
+            let int_value = value_str.parse::<i128>()?;
+            Ok(APInt::new_full(int_value as u128, bits))
+        }
+    }
+
+    impl Serialize for APInt {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            APIntDt::from(*self).serialize(serializer)
+        }
+    }
+    impl<'de> Deserialize<'de> for APInt {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let dt = APIntDt::deserialize(deserializer)?;
+            APInt::try_from(dt).map_err(serde::de::Error::custom)
+        }
+    }
+}
+
 #[cfg(test)]
 mod testing {
     use super::APInt;
