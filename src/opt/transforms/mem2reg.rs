@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     base::FixBitSet,
     ir::{
         BlockID, ConstData, FuncID, IRBuilder, IRFocus, ISubInstID, ITraceableValue, IValueConvert,
@@ -9,10 +10,7 @@ use crate::{
     typing::{IValType, ScalarType, ValTypeID},
 };
 use smallvec::SmallVec;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 
 type DT = DominatorTree;
 type DF<'a> = DominanceFrontier<'a>;
@@ -22,8 +20,8 @@ pub struct Mem2Reg<'ir> {
 }
 
 impl<'ir> IFuncTransformPass for Mem2Reg<'ir> {
-    fn get_name(&self) -> Arc<str> {
-        Arc::from("Mem2Reg")
+    fn get_name(&self) -> SymbolStr {
+        SymbolStr::new("Mem2Reg")
     }
 
     fn run_on_func(&mut self, func: FuncID) {

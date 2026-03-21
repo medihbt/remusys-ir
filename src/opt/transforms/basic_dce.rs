@@ -1,4 +1,5 @@
 use crate::{
+    SymbolStr,
     ir::{
         AttrClass, BlockID, ExprID, FuncID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID,
         ISubInstID, IUser, InstID, InstObj, PoolAllocatedDisposeRes, ValueSSA,
@@ -6,10 +7,7 @@ use crate::{
     },
     opt::{CfgBlockStat, CfgDfsSeq, transforms::IFuncTransformPass},
 };
-use std::{
-    collections::{HashSet, VecDeque},
-    sync::{Arc, OnceLock},
-};
+use std::collections::{HashSet, VecDeque};
 
 pub struct BasicFuncDCE<'ir> {
     allocs: &'ir IRAllocs,
@@ -17,18 +15,14 @@ pub struct BasicFuncDCE<'ir> {
     pub dead_block: Vec<BlockID>,
 }
 
-static BASIC_DCE_NAME: OnceLock<Arc<str>> = OnceLock::new();
-
 impl<'ir> Drop for BasicFuncDCE<'ir> {
     fn drop(&mut self) {
         self.dispose().expect("BasicFuncDCE: failed to dispose");
     }
 }
 impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
-    fn get_name(&self) -> Arc<str> {
-        BASIC_DCE_NAME
-            .get_or_init(|| Arc::from("BasicFuncDCE"))
-            .clone()
+    fn get_name(&self) -> SymbolStr {
+        SymbolStr::new("BasicFuncDCE")
     }
 
     fn run_on_func(&mut self, func: FuncID) {
