@@ -12,6 +12,7 @@ use std::{
     borrow::Borrow,
     cell::RefCell,
     collections::{HashMap, HashSet},
+    ops::Deref,
     rc::Rc,
 };
 
@@ -112,6 +113,13 @@ pub struct Module {
     pub tctx: TypeContext,
     pub symbols: RefCell<SymbolPool>,
     pub name: String,
+}
+
+impl Deref for Module {
+    type Target = IRAllocs;
+    fn deref(&self) -> &Self::Target {
+        &self.allocs
+    }
 }
 
 impl AsRef<IRAllocs> for Module {
