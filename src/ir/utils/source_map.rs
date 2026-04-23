@@ -35,7 +35,7 @@ impl NumberOption {
 /// Only holds names that are considered persistent (from source or externally registered).
 #[derive(Debug, Clone, Default)]
 pub struct IRNameMap {
-    pub funcs: HashMap<FuncID, Box<[Option<SymbolStr>]>>,
+    pub funcs: HashMap<FuncID, Vec<Option<SymbolStr>>>,
     pub insts: HashMap<InstID, SymbolStr>,
     pub blocks: HashMap<BlockID, SymbolStr>,
 }
@@ -52,18 +52,24 @@ impl IRNameMap {
     ) -> &mut [Option<SymbolStr>] {
         self.funcs
             .entry(func_id)
-            .or_insert_with(|| vec![None; nargs].into_boxed_slice());
+            .or_insert_with(|| vec![None; nargs]);
         self.funcs.get_mut(&func_id).unwrap()
     }
     pub fn set_func_arg(&mut self, func_index: FuncID, arg: usize, name: SymbolStr) {
-        self.funcs
-            .entry(func_index)
-            .or_insert_with(|| vec![None; arg + 1].into_boxed_slice());
-        let Some(func_info) = self.funcs.get_mut(&func_index) else {
-            return;
-        };
-        if let Some(slot) = func_info.get_mut(arg) {
-            *slot = Some(name);
+        use std::collections::hash_map::Entry;
+        match self.funcs.entry(func_index) {
+            Entry::Occupied(occupied) => {
+                let func_info = occupied.into_mut();
+                if arg >= func_info.len() {
+                    func_info.resize(arg + 1, None);
+                }
+                func_info[arg] = Some(name);
+            }
+            Entry::Vacant(vacant) => {
+                let mut func_info = vec![None; arg + 1];
+                func_info[arg] = Some(name);
+                vacant.insert(func_info);
+            }
         }
     }
 
