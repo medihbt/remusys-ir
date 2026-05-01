@@ -363,11 +363,9 @@ impl<'ir> SanityCheckCtx<'ir> {
                 ValueSSA::ConstExpr(exp) => {
                     self.push_mark_expr(exp);
                 }
-                ValueSSA::Global(glob) => {
-                    if !self.module.symbol_pinned(glob) {
-                        let name = glob.deref_ir(allocs).clone_name();
-                        return Err(IRSanityErr::UnpinnedGlobal { name, id: glob });
-                    }
+                ValueSSA::Global(glob) if !self.module.symbol_pinned(glob) => {
+                    let name = glob.deref_ir(allocs).clone_name();
+                    return Err(IRSanityErr::UnpinnedGlobal { name, id: glob });
                 }
                 _ => {}
             }
