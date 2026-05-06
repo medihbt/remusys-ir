@@ -1,16 +1,16 @@
 use crate::{
     SymbolStr,
     ir::{
-        AttrClass, BlockID, ExprID, FuncID, GlobalObj, IRAllocs, ISubExprID, ISubGlobalID,
-        ISubInstID, IUser, InstID, InstObj, PoolAllocatedDisposeRes, ValueSSA,
-        checking::FuncDominanceCheck,
+        AttrClass, BlockID, ExprID, FuncID, GlobalObj, IRAllocs, IRBuilder, IRFocus, ISubExprID,
+        ISubGlobalID, ISubInstID, IUser, InstID, InstObj, Module, PoolAllocatedDisposeRes,
+        ValueSSA, checking::FuncDominanceCheck,
     },
     opt::{CfgBlockStat, CfgDfsSeq, transforms::IFuncTransformPass},
 };
 use std::collections::{HashSet, VecDeque};
 
 pub struct BasicFuncDCE<'ir> {
-    allocs: &'ir IRAllocs,
+    module: &'ir Module,
     pub dead_inst: Vec<(BlockID, InstID)>,
     pub dead_block: Vec<BlockID>,
 }
@@ -26,19 +26,21 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
     }
 
     fn run_on_func(&mut self, func: FuncID) {
+        self.dead_inst.clear();
+        self.dead_block.clear();
         // Implementation of Basic Dead Code Elimination algorithm goes here
         let dfs = if cfg!(debug_assertions) {
             const MSG: &str = "Failed to run dominance check";
-            let func_check = FuncDominanceCheck::new(self.allocs, func).expect(MSG);
+            let func_check = FuncDominanceCheck::new(self.module, func).expect(MSG);
             func_check.run().expect(MSG);
             func_check.dom_tree.dfs
         } else {
-            let allocs = self.allocs;
+            let allocs = self.module;
             CfgDfsSeq::new_pre(allocs, func).unwrap()
         };
         self.kill_blocks_and_analyze(&dfs, func);
 
-        let allocs = self.allocs;
+        let allocs = self.module;
         let mut live_marker = LiveInstMarker::new(allocs);
         for node in &dfs.nodes {
             let CfgBlockStat::Block(block) = node.block else {
@@ -56,35 +58,36 @@ impl<'ir> IFuncTransformPass for BasicFuncDCE<'ir> {
             .retain(|(_, inst)| !live_marker.live_insts.contains(inst));
         self.dead_inst.shrink_to_fit();
         for &(block, inst) in &self.dead_inst {
-            let insts = block.get_insts(allocs);
+            let mut builder = IRBuilder::new(self.module);
+            builder.set_focus(IRFocus::Block(block));
             // 卸接死指令，使得教具/工具可以在最终 dispose 之前观察到这些
             // 指令已从所属 block 的指令链中移除。真正的资源释放发生在
             // `cleanup()`：这里不做 dispose 以便上层工具接收删除信号。
-            insts
-                .node_unplug(inst, &allocs.insts)
-                .expect("BasicFuncDCE: failed to unplug dead inst");
+            builder
+                .remove_inst(inst)
+                .expect("BasicFuncDCE: failed to remove dead inst");
         }
     }
 }
 
 impl<'ir> BasicFuncDCE<'ir> {
-    pub fn new(allocs: &'ir IRAllocs) -> Self {
-        Self { allocs, dead_inst: Vec::new(), dead_block: Vec::new() }
+    pub fn new(module: &'ir Module) -> Self {
+        Self { module, dead_inst: Vec::new(), dead_block: Vec::new() }
     }
 
     pub fn dispose(&mut self) -> PoolAllocatedDisposeRes {
         for (_, inst) in self.dead_inst.drain(..) {
-            inst.dispose(self.allocs)?;
+            inst.dispose(self.module)?;
         }
         for block in self.dead_block.drain(..) {
-            block.dispose(self.allocs)?;
+            block.dispose(self.module)?;
         }
         Ok(())
     }
 
     fn kill_blocks_and_analyze(&mut self, dfs: &CfgDfsSeq, func: FuncID) {
         // Implementation for removing dead blocks
-        let allocs = self.allocs;
+        let allocs = self.module;
         let blocks = func.get_blocks(allocs).unwrap();
         let mut insts_cap = 0;
         for (block, _) in blocks.iter(&allocs.blocks) {
@@ -113,10 +116,10 @@ impl<'ir> BasicFuncDCE<'ir> {
             GuideNode(_) | PhiInstEnd(_) | Unreachable(_) | Ret(_) | Jump(_) | Br(_)
             | Switch(_) | Store(_) | AmoRmw(_) => true,
             Call(call) => {
-                let func = call.get_callee(self.allocs);
+                let func = call.get_callee(self.module);
                 // FuncObj 有个 Pure Attribute, 标记为 Pure 的函数调用没有副作用
                 if let ValueSSA::Global(global) = func
-                    && let GlobalObj::Func(funcobj) = global.deref_ir(self.allocs)
+                    && let GlobalObj::Func(funcobj) = global.deref_ir(self.module)
                 {
                     !funcobj.has_attr_class(AttrClass::FuncPure)
                 } else {

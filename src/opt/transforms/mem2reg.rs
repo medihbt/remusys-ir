@@ -131,10 +131,12 @@ impl<'ir> Mem2Reg<'ir> {
             builder
                 .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
+            load.dispose(allocs).unwrap();
         }
         builder
             .remove_inst(info.alloca)
             .expect("Internal error: failed to remove alloca instruction");
+        info.alloca.dispose(allocs).unwrap();
     }
     fn promote_single_store(&self, df: &DF, info: &PromoteInfo) {
         let allocs = &self.module.allocs;
@@ -157,14 +159,17 @@ impl<'ir> Mem2Reg<'ir> {
             builder
                 .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
+            load.dispose(allocs).unwrap();
         }
         if remove_defs {
             builder
                 .remove_inst(store)
                 .expect("Internal error: failed to remove store instruction");
+            store.dispose(allocs).unwrap();
             builder
                 .remove_inst(info.alloca)
                 .expect("Internal error: failed to remove alloca instruction");
+            info.alloca.dispose(allocs).unwrap();
         }
     }
 
@@ -215,7 +220,12 @@ impl<'ir> Mem2Reg<'ir> {
             builder
                 .remove_inst(load)
                 .expect("Internal error: failed to remove load instruction");
+            load.dispose(allocs).unwrap();
         }
+        for &store in &info.stores {
+            store.dispose(allocs).unwrap();
+        }
+        info.alloca.dispose(allocs).unwrap();
     }
     fn dump_insts(insts: &[impl ISubInstID]) -> HashSet<InstID> {
         HashSet::from_iter(insts.iter().copied().map(ISubInstID::raw_into))

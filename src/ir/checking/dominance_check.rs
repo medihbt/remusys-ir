@@ -1,7 +1,7 @@
 use crate::{
     ir::{
-        BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubGlobalID, ISubInstID, ISubValueSSA,
-        ITraceableValue, InstID, InstObj, Module, Use, UseKind, UserID, ValueSSA,
+        BlockID, ExprID, FuncID, IRAllocs, ISubExprID, ISubGlobalID, ISubInst, ISubInstID,
+        ISubValueSSA, ITraceableValue, InstID, InstObj, Module, Use, UseKind, UserID, ValueSSA,
     },
     opt::{CfgBlockStat, CfgErr, CfgRes, DominatorTree},
 };
@@ -11,6 +11,9 @@ use std::{collections::HashSet, fmt::Debug};
 pub enum DominanceCheckErr {
     #[error("Operand {operand:?} does not dominate its user {user:?}")]
     NotDominated { operand: ValueSSA, user: UserID },
+
+    #[error("Instruction {inst:?} does not have a parent block")]
+    InstructionWithoutParent { inst: InstID },
 
     #[error("CFG error: {0}")]
     Cfg(#[from] CfgErr),
@@ -73,7 +76,14 @@ impl<'ir> FuncDominanceCheck<'ir> {
             for (inst_id, iobj) in block.insts_iter(allocs) {
                 match iobj {
                     InstObj::GuideNode(_) | InstObj::PhiInstEnd(_) => continue,
-                    _ => CheckStat::new(self, inst_id).operand_dominates_all_uses()?,
+                    iobj => {
+                        if iobj.get_parent().is_none() {
+                            return Err(DominanceCheckErr::InstructionWithoutParent {
+                                inst: inst_id,
+                            });
+                        }
+                        CheckStat::new(self, inst_id).operand_dominates_all_uses()?;
+                    }
                 }
             }
         }
@@ -135,6 +145,10 @@ impl<'ir> CheckStat<'ir> {
         let allocs = self.allocs;
         let dt = self.dt;
         let operand = self.operand;
+
+        if inst_id.get_parent(allocs).is_none() {
+            return Err(DominanceCheckErr::InstructionWithoutParent { inst: inst_id });
+        }
 
         let dominates = match user_use.get_kind() {
             UseKind::PhiIncomingValue(group_idx) => {

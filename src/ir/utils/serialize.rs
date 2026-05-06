@@ -1154,7 +1154,7 @@ impl IRSerializeInst for PhiInst {
             first = false;
 
             ctx.fmt_use(*uval)?;
-            ctx.write_str(", label ")?;
+            ctx.write_str(", ")?;
             ctx.fmt_use(*ublk)?;
             ctx.write_str("]")?;
         }
